@@ -94,11 +94,14 @@ const handleCommand = async (command) => {
   
   .header-left {
     width: var(--sidebar-width);
+    display: flex;
+    align-items: center;
     
-    .logo {
-      font-size: 18px;
+    .logo-text {
+      font-size: 14px;
       font-weight: 600;
       color: #333;
+      white-space: nowrap;
     }
   }
   
