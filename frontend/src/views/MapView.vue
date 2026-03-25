@@ -119,31 +119,151 @@
       </div>
     </div>
 
-    <!-- 添加/编辑点位对话框 -->
+    <!-- 添加/编辑门店对话框 -->
     <el-dialog
       v-model="markerDialogVisible"
-      :title="editingMarker ? '编辑点位' : '添加点位'"
-      width="500px"
+      :title="editingMarker ? '编辑门店' : '添加门店'"
+      width="700px"
     >
-      <el-form ref="markerFormRef" :model="markerForm" :rules="markerRules" label-width="80px">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="markerForm.name" placeholder="请输入点位名称" />
+      <el-form ref="markerFormRef" :model="markerForm" :rules="markerRules" label-width="90px">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="门店编号" prop="store_code">
+              <el-input v-model="markerForm.store_code" placeholder="如: BJ001" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="品牌" prop="brand">
+              <el-input v-model="markerForm.brand" placeholder="品牌名称" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="门店名称" prop="name">
+              <el-input v-model="markerForm.name" placeholder="门店名称" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="门店类型" prop="store_type">
+              <el-select v-model="markerForm.store_type" placeholder="请选择" style="width: 100%">
+                <el-option label="已开业" value="已开业" />
+                <el-option label="重点候选" value="重点候选" />
+                <el-option label="一般候选" value="一般候选" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">地址信息</el-divider>
+        
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="城市" prop="city">
+              <el-input v-model="markerForm.city" placeholder="如: 北京市" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="区县" prop="district">
+              <el-input v-model="markerForm.district" placeholder="如: 朝阳区" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="区域经理" prop="area_manager">
+              <el-input v-model="markerForm.area_manager" placeholder="区域经理姓名" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="电话1" prop="phone1">
+              <el-input v-model="markerForm.phone1" placeholder="区域经理电话" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="店长" prop="store_manager">
+              <el-input v-model="markerForm.store_manager" placeholder="店长姓名" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="电话2" prop="phone2">
+              <el-input v-model="markerForm.phone2" placeholder="店长电话" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="地址" prop="address">
+          <el-input v-model="markerForm.address" placeholder="详细地址" />
         </el-form-item>
-        <el-form-item label="类别" prop="category">
-          <el-select v-model="markerForm.category" placeholder="请选择类别" style="width: 100%">
-            <el-option v-for="cat in markerStore.categories" :key="cat" :label="cat" :value="cat" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="markerForm.status" placeholder="请选择状态" style="width: 100%">
-            <el-option v-for="st in markerStore.statuses" :key="st" :label="st" :value="st" />
-          </el-select>
-        </el-form-item>
+
+        <el-divider content-position="left">经营信息</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="开店日期" prop="open_date">
+              <el-input v-model="markerForm.open_date" placeholder="如: 2024-01-01" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="营业时间" prop="business_hours">
+              <el-input v-model="markerForm.business_hours" placeholder="如: 08:00-22:00" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="面积(㎡)" prop="area">
+              <el-input-number v-model="markerForm.area" :min="0" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="座位数" prop="seats">
+              <el-input-number v-model="markerForm.seats" :min="0" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="租金(元/月)" prop="rent">
+              <el-input-number v-model="markerForm.rent" :min="0" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="门店区分" prop="store_category">
+              <el-select v-model="markerForm.store_category" placeholder="直营/加盟" style="width: 100%">
+                <el-option label="直营" value="直营" />
+                <el-option label="加盟" value="加盟" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="联系人" prop="contact_person">
+              <el-input v-model="markerForm.contact_person" placeholder="业主/联系人" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="联系电话" prop="contact_phone">
+              <el-input v-model="markerForm.contact_phone" placeholder="联系电话" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <el-form-item label="坐标">
           <el-input :model-value="`${markerForm.latitude?.toFixed(6)}, ${markerForm.longitude?.toFixed(6)}`" disabled />
         </el-form-item>
-        <el-form-item label="描述" prop="description">
-          <el-input v-model="markerForm.description" type="textarea" :rows="3" placeholder="请输入描述信息" />
+
+        <el-form-item label="备注" prop="description">
+          <el-input v-model="markerForm.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -173,7 +293,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { useMarkerStore } from '@/stores/marker'
 import {
-  createCustomIcon, getCategoryIcon, getStatusColor,
+  createCustomIcon, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 
@@ -204,20 +324,41 @@ const markerDialogVisible = ref(false)
 const editingMarker = ref(null)
 const markerFormRef = ref(null)
 
-// 点位表单
+// 点位表单 - 门店管理
 const markerForm = reactive({
+  // 基础信息
+  store_code: '',
+  brand: '',
   name: '',
-  category: '',
-  status: '',
+  store_type: '',
+  // 地址信息
+  city: '',
+  district: '',
+  area_manager: '',
+  phone1: '',
+  store_manager: '',
+  phone2: '',
+  address: '',
+  // 经营信息
+  open_date: '',
+  business_hours: '',
+  area: null,
+  seats: null,
+  rent: null,
+  store_category: '',
+  // 联系信息
+  contact_person: '',
+  contact_phone: '',
+  description: '',
+  // 系统字段
   latitude: 0,
   longitude: 0,
-  description: ''
+  status: '正常'
 })
 
 const markerRules = {
-  name: [{ required: true, message: '请输入点位名称', trigger: 'blur' }],
-  category: [{ required: true, message: '请选择类别', trigger: 'change' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }]
+  name: [{ required: true, message: '请输入门店名称', trigger: 'blur' }],
+  store_type: [{ required: true, message: '请选择门店类型', trigger: 'change' }]
 }
 
 // 高德地图瓦片配置
@@ -331,10 +472,9 @@ const loadMarkers = async () => {
   businessLayer = L.layerGroup()
 
   markerStore.markers.forEach(markerData => {
-    const icon = createCustomIcon(
-      getStatusColor(markerData.status),
-      getCategoryIcon(markerData.category)
-    )
+    // 使用门店类型颜色: 已开业=绿, 重点候选=红, 一般候选=黄
+    const iconColor = getStoreTypeColor(markerData.store_type)
+    const icon = createCustomIcon(iconColor, '📍')
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,
@@ -342,12 +482,19 @@ const loadMarkers = async () => {
     })
 
     marker.bindPopup(`
-      <div style="min-width: 180px">
-        <h4 style="margin: 0 0 8px 0">${markerData.name}</h4>
-        <p style="margin: 4px 0"><strong>类别:</strong> ${markerData.category}</p>
-        <p style="margin: 4px 0"><strong>状态:</strong> <span style="color: ${getStatusColor(markerData.status)}">${markerData.status}</span></p>
-        <p style="margin: 4px 0"><strong>坐标:</strong> ${markerData.latitude.toFixed(6)}, ${markerData.longitude.toFixed(6)}</p>
-        ${markerData.description ? `<p style="margin: 4px 0"><strong>描述:</strong> ${markerData.description}</p>` : ''}
+      <div style="min-width: 220px; font-size: 13px;">
+        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
+        <p style="margin: 4px 0;"><strong>地址:</strong> ${(markerData.city || '') + (markerData.district || '') + (markerData.address || '-')}</p>
+        <p style="margin: 4px 0;"><strong>区域经理:</strong> ${markerData.area_manager || '-'} ${markerData.phone1 || ''}</p>
+        <p style="margin: 4px 0;"><strong>店长:</strong> ${markerData.store_manager || '-'} ${markerData.phone2 || ''}</p>
+        ${markerData.area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.area}㎡</p>` : ''}
+        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
+        ${markerData.rent ? `<p style="margin: 4px 0;"><strong>租金:</strong> ¥${markerData.rent.toLocaleString()}/月</p>` : ''}
+        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
+        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
+        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
         <div style="margin-top: 10px; display: flex; gap: 8px;">
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
           <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #f56c6c; color: white; border: none; border-radius: 4px;">删除</button>
@@ -376,12 +523,10 @@ const loadMarkers = async () => {
   })
 
   markerStore.markers.forEach(markerData => {
-    const icon = createCustomIcon(
-      getStatusColor(markerData.status),
-      getCategoryIcon(markerData.category)
-    )
+    const iconColor = getStoreTypeColor(markerData.store_type)
+    const icon = createCustomIcon(iconColor, '📍')
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
-    marker.bindPopup(`<b>${markerData.name}</b><br/>${markerData.category}`)
+    marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
     markerClusterGroup.addLayer(marker)
   })
 
@@ -682,28 +827,62 @@ const saveMarker = async () => {
 const resetMarkerForm = () => {
   editingMarker.value = null
   Object.assign(markerForm, {
+    store_code: '',
+    brand: '',
     name: '',
-    category: '',
-    status: '',
+    store_type: '',
+    city: '',
+    district: '',
+    area_manager: '',
+    phone1: '',
+    store_manager: '',
+    phone2: '',
+    address: '',
+    open_date: '',
+    business_hours: '',
+    area: null,
+    seats: null,
+    rent: null,
+    store_category: '',
+    contact_person: '',
+    contact_phone: '',
+    description: '',
     latitude: 0,
     longitude: 0,
-    description: ''
+    status: '正常'
   })
 }
 
-// 编辑点位
+// 编辑门店
 const editMarker = async (id) => {
   const marker = markerStore.markers.find(m => m.id === id)
   if (!marker) return
 
   editingMarker.value = id
   Object.assign(markerForm, {
+    store_code: marker.store_code || '',
+    brand: marker.brand || '',
     name: marker.name,
-    category: marker.category,
-    status: marker.status,
+    store_type: marker.store_type || '',
+    city: marker.city || '',
+    district: marker.district || '',
+    area_manager: marker.area_manager || '',
+    phone1: marker.phone1 || '',
+    store_manager: marker.store_manager || '',
+    phone2: marker.phone2 || '',
+    address: marker.address || '',
+    open_date: marker.open_date || '',
+    business_hours: marker.business_hours || '',
+    area: marker.area || null,
+    seats: marker.seats || null,
+    rent: marker.rent || null,
+    store_category: marker.store_category || '',
+    contact_person: marker.contact_person || '',
+    contact_phone: marker.contact_phone || '',
+    description: marker.description || '',
     latitude: marker.latitude,
     longitude: marker.longitude,
-    description: marker.description || ''
+    status: marker.status || '正常'
   })
   markerDialogVisible.value = true
 }

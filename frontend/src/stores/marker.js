@@ -8,7 +8,8 @@ export const useMarkerStore = defineStore('marker', {
     markers: [],
     loading: false,
     categories: ['门店', '设备', '人员', '仓库', '站点'],
-    statuses: ['正常', '告警', '维护', '停用']
+    statuses: ['正常', '告警', '维护', '停用'],
+    storeTypes: ['已开业', '重点候选', '一般候选']
   }),
   
   actions: {

@@ -41,15 +41,37 @@ export async function initDatabase() {
     )
   `)
 
-  // 创建点位表
+  // 创建点位表 - 门店管理
   db.run(`
     CREATE TABLE IF NOT EXISTS markers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      -- 基础信息
+      store_code TEXT,
+      brand TEXT,
       name TEXT NOT NULL,
-      category TEXT DEFAULT '门店',
+      store_type TEXT DEFAULT '已开业',
+      -- 地址信息
+      city TEXT,
+      district TEXT,
+      area_manager TEXT,
+      phone1 TEXT,
+      store_manager TEXT,
+      phone2 TEXT,
+      address TEXT,
+      -- 经营信息
+      open_date TEXT,
+      business_hours TEXT,
+      area REAL,
+      seats INTEGER,
+      rent REAL,
+      store_category TEXT,
+      -- 联系信息
+      contact_person TEXT,
+      contact_phone TEXT,
+      description TEXT,
+      -- 系统字段
       latitude REAL NOT NULL,
       longitude REAL NOT NULL,
-      description TEXT,
       status TEXT DEFAULT '正常',
       icon_color TEXT DEFAULT '#409eff',
       user_id INTEGER,
@@ -79,29 +101,92 @@ export async function initDatabase() {
     console.log('默认管理员账户已创建: admin / admin123')
   }
 
-  // 插入示例数据
+  // 插入示例门店数据
   const markerCount = db.exec("SELECT COUNT(*) as count FROM markers")
   if (markerCount.length === 0 || markerCount[0].values[0][0] === 0) {
-    const sampleMarkers = [
-      { name: '北京天安门', category: '门店', lat: 39.9072, lng: 116.3910, status: '正常', desc: '首都标志性建筑' },
-      { name: '故宫博物院', category: '门店', lat: 39.9163, lng: 116.3972, status: '正常', desc: '中国古代皇家宫殿' },
-      { name: '北京站', category: '站点', lat: 39.9046, lng: 116.4273, status: '正常', desc: '北京火车站' },
-      { name: '朝阳区某设备', category: '设备', lat: 39.9288, lng: 116.4564, status: '告警', desc: '需要维护' },
-      { name: '海淀区仓库', category: '仓库', lat: 39.9890, lng: 116.3063, status: '正常', desc: '主要存储中心' },
-      { name: '国贸大厦', category: '门店', lat: 39.9088, lng: 116.4610, status: '正常', desc: 'CBD核心区' },
-      { name: '中关村', category: '门店', lat: 39.9830, lng: 116.3120, status: '正常', desc: '中国硅谷' },
-      { name: '三里屯', category: '门店', lat: 39.9358, lng: 116.4475, status: '维护', desc: '时尚购物区' },
-      { name: '望京SOHO', category: '门店', lat: 39.9965, lng: 116.4710, status: '正常', desc: '现代化办公区' },
-      { name: '北京南站', category: '站点', lat: 39.8653, lng: 116.3785, status: '正常', desc: '高铁站' }
+    const sampleStores = [
+      {
+        store_code: 'BJ001', brand: '星巴克', name: '星巴克国贸店', store_type: '已开业',
+        city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
+        store_manager: '王芳', phone2: '13800138002', address: '国贸大厦一层',
+        open_date: '2023-01-15', business_hours: '07:00-22:00', area: 200, seats: 80,
+        rent: 50000, store_category: '直营', contact_person: '张总', contact_phone: '13900139001',
+        description: 'CBD核心区门店，业绩良好', lat: 39.9088, lng: 116.4610, status: '正常', icon: '#67c23a'
+      },
+      {
+        store_code: 'BJ002', brand: '星巴克', name: '星巴克中关村店', store_type: '已开业',
+        city: '北京市', district: '海淀区', area_manager: '李明', phone1: '13800138001',
+        store_manager: '赵雪', phone2: '13800138003', address: '中关村大街1号',
+        open_date: '2022-06-20', business_hours: '08:00-21:00', area: 150, seats: 60,
+        rent: 45000, store_category: '直营', contact_person: '刘总', contact_phone: '13900139002',
+        description: '中国硅谷核心区域', lat: 39.9830, lng: 116.3120, status: '正常', icon: '#67c23a'
+      },
+      {
+        store_code: 'BJ003', brand: '星巴克', name: '星巴克望京候选点', store_type: '重点候选',
+        city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
+        store_manager: '', phone2: '', address: '望京SOHO T2',
+        open_date: '', business_hours: '', area: 180, seats: 70,
+        rent: 42000, store_category: '加盟', contact_person: '陈总', contact_phone: '13900139003',
+        description: '写字楼密集区，人流量大，重点跟进', lat: 39.9965, lng: 116.4710, status: '正常', icon: '#f56c6c'
+      },
+      {
+        store_code: 'BJ004', brand: '星巴克', name: '星巴克三里屯店', store_type: '已开业',
+        city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
+        store_manager: '周丽', phone2: '13800138004', address: '三里屯太古里',
+        open_date: '2021-09-10', business_hours: '09:00-23:00', area: 250, seats: 100,
+        rent: 80000, store_category: '直营', contact_person: '吴总', contact_phone: '13900139004',
+        description: '时尚地标，年轻人聚集地', lat: 39.9358, lng: 116.4475, status: '正常', icon: '#67c23a'
+      },
+      {
+        store_code: 'BJ005', brand: '星巴克', name: '星巴克通州候选A', store_type: '一般候选',
+        city: '北京市', district: '通州区', area_manager: '李明', phone1: '13800138001',
+        store_manager: '', phone2: '', address: '通州万达广场',
+        open_date: '', business_hours: '', area: 160, seats: 50,
+        rent: 28000, store_category: '加盟', contact_person: '孙总', contact_phone: '13900139005',
+        description: '新城区，发展潜力一般', lat: 39.9072, lng: 116.6560, status: '正常', icon: '#e6a23c'
+      },
+      {
+        store_code: 'SH001', brand: '星巴克', name: '星巴克陆家嘴店', store_type: '已开业',
+        city: '上海市', district: '浦东新区', area_manager: '王强', phone1: '13800138005',
+        store_manager: '李娜', phone2: '13800138006', address: '陆家嘴环路1000号',
+        open_date: '2023-03-01', business_hours: '07:30-22:00', area: 300, seats: 120,
+        rent: 120000, store_category: '直营', contact_person: '郑总', contact_phone: '13900139006',
+        description: '金融核心区，高端客群', lat: 31.2399, lng: 121.4998, status: '正常', icon: '#67c23a'
+      },
+      {
+        store_code: 'SH002', brand: '星巴克', name: '星巴克静安候选', store_type: '重点候选',
+        city: '上海市', district: '静安区', area_manager: '王强', phone1: '13800138005',
+        store_manager: '', phone2: '', address: '静安寺商圈',
+        open_date: '', business_hours: '', area: 200, seats: 80,
+        rent: 90000, store_category: '直营', contact_person: '钱总', contact_phone: '13900139007',
+        description: '老牌商业区，客流稳定', lat: 31.2299, lng: 121.4476, status: '正常', icon: '#f56c6c'
+      },
+      {
+        store_code: 'GZ001', brand: '星巴克', name: '星巴克天河城店', store_type: '已开业',
+        city: '广州市', district: '天河区', area_manager: '陈静', phone1: '13800138007',
+        store_manager: '林美', phone2: '13800138008', address: '天河路208号',
+        open_date: '2022-11-20', business_hours: '08:00-22:00', area: 180, seats: 70,
+        rent: 60000, store_category: '直营', contact_person: '黄总', contact_phone: '13900139008',
+        description: '华南第一商圈', lat: 23.1392, lng: 113.3192, status: '正常', icon: '#67c23a'
+      }
     ]
 
-    for (const m of sampleMarkers) {
+    for (const m of sampleStores) {
       db.run(`
-        INSERT INTO markers (name, category, latitude, longitude, status, description)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [m.name, m.category, m.lat, m.lng, m.status, m.desc])
+        INSERT INTO markers (
+          store_code, brand, name, store_type, city, district, area_manager, phone1,
+          store_manager, phone2, address, open_date, business_hours, area, seats,
+          rent, store_category, contact_person, contact_phone, description,
+          latitude, longitude, status, icon_color
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        m.store_code, m.brand, m.name, m.store_type, m.city, m.district, m.area_manager, m.phone1,
+        m.store_manager, m.phone2, m.address, m.open_date, m.business_hours, m.area, m.seats,
+        m.rent, m.store_category, m.contact_person, m.contact_phone, m.description,
+        m.lat, m.lng, m.status, m.icon
+      ])
     }
-    console.log(`已插入 ${sampleMarkers.length} 条示例点位数据`)
+    console.log(`已插入 ${sampleStores.length} 条示例门店数据`)
   }
 
   // 保存数据库

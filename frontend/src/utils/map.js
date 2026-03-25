@@ -45,6 +45,16 @@ export function getStatusColor(status) {
   return colorMap[status] || '#409eff'
 }
 
+// 获取门店类型颜色
+export function getStoreTypeColor(storeType) {
+  const colorMap = {
+    '已开业': '#67c23a',  // 绿色
+    '重点候选': '#f56c6c', // 红色
+    '一般候选': '#e6a23c'   // 黄色
+  }
+  return colorMap[storeType] || '#409eff'
+}
+
 // 格式化坐标
 export function formatCoordinate(num, precision = 6) {
   return parseFloat(num).toFixed(precision)

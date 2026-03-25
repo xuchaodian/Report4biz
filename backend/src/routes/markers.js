@@ -8,62 +8,68 @@ import { authenticate } from '../middleware/auth.js'
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
-// 获取所有点位
+// 获取所有门店
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const markers = db.prepare(`
-      SELECT id, name, category, latitude, longitude, description, status, icon_color, created_at, updated_at
-      FROM markers
-      ORDER BY created_at DESC
+      SELECT * FROM markers ORDER BY created_at DESC
     `).all()
 
     res.json({ markers })
   } catch (error) {
-    console.error('获取点位列表错误:', error)
+    console.error('获取门店列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })
   }
 })
 
-// 获取单个点位
+// 获取单个门店
 router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
     const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
 
     if (!marker) {
-      return res.status(404).json({ message: '点位不存在' })
+      return res.status(404).json({ message: '门店不存在' })
     }
 
     res.json({ marker })
   } catch (error) {
-    console.error('获取点位详情错误:', error)
+    console.error('获取门店详情错误:', error)
     res.status(500).json({ message: '获取数据失败' })
   }
 })
 
-// 创建点位
+// 创建门店
 router.post('/', authenticate, (req, res) => {
   try {
-    const { name, category, latitude, longitude, description, status, icon_color } = req.body
+    const {
+      store_code, brand, name, store_type,
+      city, district, area_manager, phone1, store_manager, phone2, address,
+      open_date, business_hours, area, seats, rent,
+      store_category, contact_person, contact_phone, description,
+      latitude, longitude, status, icon_color
+    } = req.body
 
     if (!name || latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ message: '名称和坐标不能为空' })
+      return res.status(400).json({ message: '门店名称和坐标不能为空' })
     }
 
     const db = getDb()
     const result = db.prepare(`
-      INSERT INTO markers (name, category, latitude, longitude, description, status, icon_color, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO markers (
+        store_code, brand, name, store_type,
+        city, district, area_manager, phone1, store_manager, phone2, address,
+        open_date, business_hours, area, seats, rent,
+        store_category, contact_person, contact_phone, description,
+        latitude, longitude, status, icon_color, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      name,
-      category || '门店',
-      latitude,
-      longitude,
-      description || '',
-      status || '正常',
-      icon_color || '#409eff',
-      req.user.id
+      store_code || '', brand || '', name, store_type || '已开业',
+      city || '', district || '', area_manager || '', phone1 || '', store_manager || '', phone2 || '', address || '',
+      open_date || '', business_hours || '', area || null, seats || null, rent || null,
+      store_category || '', contact_person || '', contact_phone || '', description || '',
+      latitude, longitude, status || '正常', icon_color || '#409eff', req.user.id
     )
 
     const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(result.lastInsertRowid)
@@ -73,34 +79,62 @@ router.post('/', authenticate, (req, res) => {
       marker
     })
   } catch (error) {
-    console.error('创建点位错误:', error)
+    console.error('创建门店错误:', error)
     res.status(500).json({ message: '添加失败' })
   }
 })
 
-// 更新点位
+// 更新门店
 router.put('/:id', authenticate, (req, res) => {
   try {
-    const { name, category, latitude, longitude, description, status, icon_color } = req.body
+    const {
+      store_code, brand, name, store_type,
+      city, district, area_manager, phone1, store_manager, phone2, address,
+      open_date, business_hours, area, seats, rent,
+      store_category, contact_person, contact_phone, description,
+      latitude, longitude, status, icon_color
+    } = req.body
 
     const db = getDb()
 
-    // 检查点位是否存在
+    // 检查门店是否存在
     const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
     if (!existingMarker) {
-      return res.status(404).json({ message: '点位不存在' })
+      return res.status(404).json({ message: '门店不存在' })
     }
 
     db.prepare(`
-      UPDATE markers
-      SET name = ?, category = ?, latitude = ?, longitude = ?, description = ?, status = ?, icon_color = ?, updated_at = datetime('now')
+      UPDATE markers SET
+        store_code = ?, brand = ?, name = ?, store_type = ?,
+        city = ?, district = ?, area_manager = ?, phone1 = ?, store_manager = ?, phone2 = ?, address = ?,
+        open_date = ?, business_hours = ?, area = ?, seats = ?, rent = ?,
+        store_category = ?, contact_person = ?, contact_phone = ?, description = ?,
+        latitude = ?, longitude = ?, status = ?, icon_color = ?,
+        updated_at = datetime('now')
       WHERE id = ?
     `).run(
+      store_code ?? existingMarker.store_code,
+      brand ?? existingMarker.brand,
       name ?? existingMarker.name,
-      category ?? existingMarker.category,
+      store_type ?? existingMarker.store_type,
+      city ?? existingMarker.city,
+      district ?? existingMarker.district,
+      area_manager ?? existingMarker.area_manager,
+      phone1 ?? existingMarker.phone1,
+      store_manager ?? existingMarker.store_manager,
+      phone2 ?? existingMarker.phone2,
+      address ?? existingMarker.address,
+      open_date ?? existingMarker.open_date,
+      business_hours ?? existingMarker.business_hours,
+      area ?? existingMarker.area,
+      seats ?? existingMarker.seats,
+      rent ?? existingMarker.rent,
+      store_category ?? existingMarker.store_category,
+      contact_person ?? existingMarker.contact_person,
+      contact_phone ?? existingMarker.contact_phone,
+      description ?? existingMarker.description,
       latitude ?? existingMarker.latitude,
       longitude ?? existingMarker.longitude,
-      description ?? existingMarker.description,
       status ?? existingMarker.status,
       icon_color ?? existingMarker.icon_color,
       req.params.id
@@ -113,31 +147,31 @@ router.put('/:id', authenticate, (req, res) => {
       marker
     })
   } catch (error) {
-    console.error('更新点位错误:', error)
+    console.error('更新门店错误:', error)
     res.status(500).json({ message: '更新失败' })
   }
 })
 
-// 删除点位
+// 删除门店
 router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
 
     const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
     if (!existingMarker) {
-      return res.status(404).json({ message: '点位不存在' })
+      return res.status(404).json({ message: '门店不存在' })
     }
 
     db.prepare('DELETE FROM markers WHERE id = ?').run(req.params.id)
 
     res.json({ message: '删除成功' })
   } catch (error) {
-    console.error('删除点位错误:', error)
+    console.error('删除门店错误:', error)
     res.status(500).json({ message: '删除失败' })
   }
 })
 
-// 导入点位
+// 导入门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
@@ -152,20 +186,30 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       complete: (results) => {
         const db = getDb()
         const imported = []
-        
+
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue
 
           const result = db.prepare(`
-            INSERT INTO markers (name, category, latitude, longitude, description, status, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO markers (
+              store_code, brand, name, store_type,
+              city, district, area_manager, phone1, store_manager, phone2, address,
+              open_date, business_hours, area, seats, rent,
+              store_category, contact_person, contact_phone, description,
+              latitude, longitude, status, icon_color, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
-            row.name,
-            row.category || '门店',
-            parseFloat(row.latitude),
-            parseFloat(row.longitude),
-            row.description || '',
+            row.store_code || '', row.brand || '', row.name, row.store_type || '已开业',
+            row.city || '', row.district || '', row.area_manager || '', row.phone1 || '',
+            row.store_manager || '', row.phone2 || '', row.address || '',
+            row.open_date || '', row.business_hours || '',
+            row.area ? parseFloat(row.area) : null,
+            row.seats ? parseInt(row.seats) : null,
+            row.rent ? parseFloat(row.rent) : null,
+            row.store_category || '', row.contact_person || '', row.contact_phone || '', row.description || '',
+            parseFloat(row.latitude), parseFloat(row.longitude),
             row.status || '正常',
+            row.icon_color || '#409eff',
             req.user.id
           )
 
@@ -189,7 +233,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
   }
 })
 
-// 导出点位
+// 导出门店
 router.get('/export', authenticate, (req, res) => {
   try {
     const db = getDb()
@@ -202,7 +246,7 @@ router.get('/export', authenticate, (req, res) => {
   }
 })
 
-// 空间查询 - 获取范围内的点位
+// 空间查询 - 获取范围内的门店
 router.get('/query/bounds', authenticate, (req, res) => {
   try {
     const { north, south, east, west } = req.query
