@@ -1,0 +1,62 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+
+const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/RegisterView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/',
+    component: () => import('@/views/MainLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'Map',
+        component: () => import('@/views/MapView.vue')
+      },
+      {
+        path: 'data',
+        name: 'Data',
+        component: () => import('@/views/DataView.vue')
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('@/views/UsersView.vue'),
+        meta: { requiresAdmin: true }
+      }
+    ]
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes
+})
+
+// 路由守卫
+router.beforeEach((to, from, next) => {
+  const userStore = useUserStore()
+  
+  if (to.meta.requiresAuth && !userStore.isLoggedIn) {
+    next('/login')
+  } else if (to.meta.requiresAdmin && !userStore.isAdmin) {
+    next('/')
+  } else if ((to.path === '/login' || to.path === '/register') && userStore.isLoggedIn) {
+    next('/')
+  } else {
+    next()
+  }
+})
+
+export default router

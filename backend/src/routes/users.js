@@ -1,0 +1,150 @@
+import express from 'express'
+import bcrypt from 'bcryptjs'
+import { getDb } from '../models/database.js'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
+
+const router = express.Router()
+
+// 获取用户列表
+router.get('/', authenticate, requireAdmin, (req, res) => {
+  try {
+    const db = getDb()
+    const users = db.prepare(`
+      SELECT id, username, email, role, created_at
+      FROM users
+      ORDER BY created_at DESC
+    `).all()
+
+    res.json({ users })
+  } catch (error) {
+    console.error('获取用户列表错误:', error)
+    res.status(500).json({ message: '获取用户列表失败' })
+  }
+})
+
+// 创建用户
+router.post('/', authenticate, requireAdmin, (req, res) => {
+  try {
+    const { username, email, password, role } = req.body
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: '请填写所有必填字段' })
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: '密码至少6个字符' })
+    }
+
+    const db = getDb()
+
+    // 检查用户名或邮箱是否已存在
+    const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(username, email)
+    if (existing) {
+      return res.status(400).json({ message: '用户名或邮箱已存在' })
+    }
+
+    // 加密密码
+    const hashedPassword = bcrypt.hashSync(password, 10)
+
+    // 创建用户
+    const result = db.prepare(`
+      INSERT INTO users (username, email, password, role)
+      VALUES (?, ?, ?, ?)
+    `).run(username, email, hashedPassword, role || 'user')
+
+    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
+
+    res.status(201).json({
+      message: '用户创建成功',
+      user
+    })
+  } catch (error) {
+    console.error('创建用户错误:', error)
+    res.status(500).json({ message: '创建用户失败' })
+  }
+})
+
+// 更新用户
+router.put('/:id', authenticate, requireAdmin, (req, res) => {
+  try {
+    const { email, password, role } = req.body
+    const userId = req.params.id
+
+    const db = getDb()
+
+    // 检查用户是否存在
+    const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!existingUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // 更新用户信息
+    const updates = []
+    const params = []
+
+    if (email) {
+      updates.push('email = ?')
+      params.push(email)
+    }
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ message: '密码至少6个字符' })
+      }
+      updates.push('password = ?')
+      params.push(bcrypt.hashSync(password, 10))
+    }
+
+    if (role) {
+      updates.push('role = ?')
+      params.push(role)
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' })
+    }
+
+    params.push(userId)
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(userId)
+
+    res.json({
+      message: '用户更新成功',
+      user
+    })
+  } catch (error) {
+    console.error('更新用户错误:', error)
+    res.status(500).json({ message: '更新用户失败' })
+  }
+})
+
+// 删除用户
+router.delete('/:id', authenticate, requireAdmin, (req, res) => {
+  try {
+    const userId = req.params.id
+
+    const db = getDb()
+
+    // 检查用户是否存在
+    const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!existingUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // 不能删除自己
+    if (existingUser.id === req.user.id) {
+      return res.status(400).json({ message: '不能删除自己的账号' })
+    }
+
+    // 删除用户
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+
+    res.json({ message: '用户删除成功' })
+  } catch (error) {
+    console.error('删除用户错误:', error)
+    res.status(500).json({ message: '删除用户失败' })
+  }
+})
+
+export default router
