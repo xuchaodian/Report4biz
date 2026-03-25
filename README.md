@@ -1,4 +1,4 @@
-# GeoManager - WebGIS 地理信息管理系统
+# 选址赢家Online - 智能选址分析平台
 
 🌐 基于 Vue 3 + Node.js 的企业级WebGIS系统
 

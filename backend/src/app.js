@@ -47,7 +47,7 @@ async function start() {
     app.listen(PORT, () => {
       console.log(`
 ╔════════════════════════════════════════════╗
-║   GeoManager Backend Server               ║
+║   选址赢家Online Backend Server          ║
 ║   运行在 http://localhost:${PORT}             ║
 ╚════════════════════════════════════════════╝
       `)

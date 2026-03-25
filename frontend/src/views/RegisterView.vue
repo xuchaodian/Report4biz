@@ -2,7 +2,8 @@
   <div class="register-container">
     <div class="register-box">
       <div class="register-header">
-        <h1>🌐 GeoManager</h1>
+        <img src="@/assets/logo.png" alt="Logo" class="login-logo">
+        <h1>选址赢家Online</h1>
         <p>创建您的账号</p>
       </div>
       

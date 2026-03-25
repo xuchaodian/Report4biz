@@ -1,4 +1,4 @@
-# GeoManager WebGIS 系统 - 阿里云部署指南
+# 选址赢家Online - 阿里云部署指南
 
 ## 一、服务器准备
 

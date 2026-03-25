@@ -3,7 +3,8 @@
     <!-- 顶部导航栏 -->
     <header class="header">
       <div class="header-left">
-        <h1 class="logo">🌐 GeoManager</h1>
+        <img src="@/assets/logo.png" alt="Logo" class="header-logo">
+        <h1 class="logo-text">选址赢家Online</h1>
       </div>
       
       <nav class="nav-menu">

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# GeoManager 启动脚本
+# 选址赢家Online 启动脚本
 
 echo "=========================================="
-echo "   GeoManager WebGIS 系统"
+echo "   选址赢家Online 系统"
 echo "=========================================="
 
 # 设置Node.js路径

@@ -2,8 +2,9 @@
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
-        <h1>🌐 GeoManager</h1>
-        <p>地理信息管理系统</p>
+        <img src="@/assets/logo.png" alt="Logo" class="login-logo">
+        <h1>选址赢家Online</h1>
+        <p>智能选址分析平台</p>
       </div>
       
       <el-form

@@ -76,3 +76,23 @@ body {
 ::-webkit-scrollbar-track {
   background: #f1f3f5;
 }
+
+/* Logo样式 */
+.login-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 16px;
+  object-fit: contain;
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+  object-fit: contain;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
