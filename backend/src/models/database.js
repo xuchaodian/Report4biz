@@ -49,7 +49,7 @@ export async function initDatabase() {
       store_code TEXT,
       brand TEXT,
       name TEXT NOT NULL,
-      store_type TEXT DEFAULT '已开业',
+      store_type TEXT DEFAULT '社区店',
       -- 地址信息
       city TEXT,
       district TEXT,
@@ -83,7 +83,7 @@ export async function initDatabase() {
 
   // 创建索引
   try {
-    db.run(`CREATE INDEX IF NOT EXISTS idx_markers_category ON markers(category)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_markers_category ON markers(store_category)`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_markers_status ON markers(status)`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_markers_user ON markers(user_id)`)
   } catch (e) {
@@ -110,7 +110,7 @@ export async function initDatabase() {
         city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
         store_manager: '王芳', phone2: '13800138002', address: '国贸大厦一层',
         open_date: '2023-01-15', business_hours: '07:00-22:00', area: 200, seats: 80,
-        rent: 50000, store_category: '直营', contact_person: '张总', contact_phone: '13900139001',
+        rent: 50000, store_category: '商场店', contact_person: '张总', contact_phone: '13900139001',
         description: 'CBD核心区门店，业绩良好', latitude: 39.9088, longitude: 116.4610, status: '正常', icon_color: '#67c23a'
       },
       {
@@ -118,7 +118,7 @@ export async function initDatabase() {
         city: '北京市', district: '海淀区', area_manager: '李明', phone1: '13800138001',
         store_manager: '赵雪', phone2: '13800138003', address: '中关村大街1号',
         open_date: '2022-06-20', business_hours: '08:00-21:00', area: 150, seats: 60,
-        rent: 45000, store_category: '直营', contact_person: '刘总', contact_phone: '13900139002',
+        rent: 45000, store_category: '写字楼店', contact_person: '刘总', contact_phone: '13900139002',
         description: '中国硅谷核心区域', latitude: 39.9830, longitude: 116.3120, status: '正常', icon_color: '#67c23a'
       },
       {
@@ -126,7 +126,7 @@ export async function initDatabase() {
         city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
         store_manager: '', phone2: '', address: '望京SOHO T2',
         open_date: '', business_hours: '', area: 180, seats: 70,
-        rent: 42000, store_category: '加盟', contact_person: '陈总', contact_phone: '13900139003',
+        rent: 42000, store_category: '写字楼店', contact_person: '陈总', contact_phone: '13900139003',
         description: '写字楼密集区，人流量大，重点跟进', latitude: 39.9965, longitude: 116.4710, status: '正常', icon_color: '#f56c6c'
       },
       {
@@ -134,7 +134,7 @@ export async function initDatabase() {
         city: '北京市', district: '朝阳区', area_manager: '李明', phone1: '13800138001',
         store_manager: '周丽', phone2: '13800138004', address: '三里屯太古里',
         open_date: '2021-09-10', business_hours: '09:00-23:00', area: 250, seats: 100,
-        rent: 80000, store_category: '直营', contact_person: '吴总', contact_phone: '13900139004',
+        rent: 80000, store_category: '临街店', contact_person: '吴总', contact_phone: '13900139004',
         description: '时尚地标，年轻人聚集地', latitude: 39.9358, longitude: 116.4475, status: '正常', icon_color: '#67c23a'
       },
       {
@@ -142,7 +142,7 @@ export async function initDatabase() {
         city: '北京市', district: '通州区', area_manager: '李明', phone1: '13800138001',
         store_manager: '', phone2: '', address: '通州万达广场',
         open_date: '', business_hours: '', area: 160, seats: 50,
-        rent: 28000, store_category: '加盟', contact_person: '孙总', contact_phone: '13900139005',
+        rent: 28000, store_category: '社区店', contact_person: '孙总', contact_phone: '13900139005',
         description: '新城区，发展潜力一般', latitude: 39.9072, longitude: 116.6560, status: '正常', icon_color: '#e6a23c'
       },
       {
@@ -150,15 +150,15 @@ export async function initDatabase() {
         city: '上海市', district: '浦东新区', area_manager: '王强', phone1: '13800138005',
         store_manager: '李娜', phone2: '13800138006', address: '陆家嘴环路1000号',
         open_date: '2023-03-01', business_hours: '07:30-22:00', area: 300, seats: 120,
-        rent: 120000, store_category: '直营', contact_person: '郑总', contact_phone: '13900139006',
+        rent: 120000, store_category: '商场店', contact_person: '郑总', contact_phone: '13900139006',
         description: '金融核心区，高端客群', latitude: 31.2399, longitude: 121.4998, status: '正常', icon_color: '#67c23a'
       },
       {
-        store_code: 'SH002', brand: '星巴克', name: '星巴克静安候选', store_type: '重点候选',
+        store_code: 'SH002', brand: '星巴克', name: '星巴克静安候选', store_type: '一般候选',
         city: '上海市', district: '静安区', area_manager: '王强', phone1: '13800138005',
         store_manager: '', phone2: '', address: '静安寺商圈',
         open_date: '', business_hours: '', area: 200, seats: 80,
-        rent: 90000, store_category: '直营', contact_person: '钱总', contact_phone: '13900139007',
+        rent: 90000, store_category: '临街店', contact_person: '钱总', contact_phone: '13900139007',
         description: '老牌商业区，客流稳定', latitude: 31.2299, longitude: 121.4476, status: '正常', icon_color: '#f56c6c'
       },
       {
@@ -166,7 +166,7 @@ export async function initDatabase() {
         city: '广州市', district: '天河区', area_manager: '陈静', phone1: '13800138007',
         store_manager: '林美', phone2: '13800138008', address: '天河路208号',
         open_date: '2022-11-20', business_hours: '08:00-22:00', area: 180, seats: 70,
-        rent: 60000, store_category: '直营', contact_person: '黄总', contact_phone: '13900139008',
+        rent: 60000, store_category: '商场店', contact_person: '黄总', contact_phone: '13900139008',
         description: '华南第一商圈', latitude: 23.1392, longitude: 113.3192, status: '正常', icon_color: '#67c23a'
       }
     ]
@@ -183,7 +183,7 @@ export async function initDatabase() {
         m.store_code, m.brand, m.name, m.store_type, m.city, m.district, m.area_manager, m.phone1,
         m.store_manager, m.phone2, m.address, m.open_date, m.business_hours, m.area, m.seats,
         m.rent, m.store_category, m.contact_person, m.contact_phone, m.description,
-        m.lat, m.lng, m.status, m.icon
+        m.latitude, m.longitude, m.status, m.icon_color
       ])
     }
     console.log(`已插入 ${sampleStores.length} 条示例门店数据`)

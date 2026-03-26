@@ -30,7 +30,9 @@
       </el-input>
 
       <el-select v-model="filterStoreType" placeholder="按门店类型" style="width: 120px" clearable @change="handleSearch">
-        <el-option v-for="type in markerStore.storeTypes" :key="type" :label="type" :value="type" />
+        <el-option label="已开业" value="已开业" />
+        <el-option label="重点候选" value="重点候选" />
+        <el-option label="一般候选" value="一般候选" />
       </el-select>
 
       <el-select v-model="filterCity" placeholder="按城市" style="width: 120px" clearable @change="handleSearch">
@@ -39,6 +41,10 @@
 
       <el-select v-model="filterDistrict" placeholder="按区县" style="width: 120px" clearable @change="handleSearch">
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
+      </el-select>
+
+      <el-select v-model="filterStoreCategory" placeholder="按门店区分" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
       <span class="统计">共 {{ filteredMarkers.length }} 条数据</span>
@@ -73,8 +79,8 @@
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="rent" label="租金" width="100" align="right">
-          <template #default="{ row }">{{ row.rent ? '¥' + row.rent.toLocaleString() : '-' }}</template>
+        <el-table-column prop="store_category" label="门店区分" width="100" align="center">
+          <template #default="{ row }">{{ row.store_category || '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
@@ -132,7 +138,9 @@
           <el-col :span="12">
             <el-form-item label="门店类型" prop="store_type">
               <el-select v-model="form.store_type" placeholder="请选择" style="width: 100%">
-                <el-option v-for="t in markerStore.storeTypes" :key="t" :label="t" :value="t" />
+                <el-option label="已开业" value="已开业" />
+                <el-option label="重点候选" value="重点候选" />
+                <el-option label="一般候选" value="一般候选" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -219,9 +227,8 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="门店区分" prop="store_category">
-              <el-select v-model="form.store_category" placeholder="直营/加盟" style="width: 100%">
-                <el-option label="直营" value="直营" />
-                <el-option label="加盟" value="加盟" />
+              <el-select v-model="form.store_category" placeholder="请选择" style="width: 100%">
+                <el-option v-for="c in markerStore.storeCategories" :key="c" :label="c" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -318,6 +325,7 @@ const searchKeyword = ref('')
 const filterStoreType = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
+const filterStoreCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -376,6 +384,12 @@ const districtList = computed(() => {
   return districts.sort()
 })
 
+// 门店区分列表
+const categoryList = computed(() => {
+  const categories = [...new Set(markerStore.markers.map(m => m.store_category).filter(Boolean))]
+  return categories.sort()
+})
+
 // 筛选后的数据
 const filteredMarkers = computed(() => {
   return markerStore.markers.filter(marker => {
@@ -386,7 +400,8 @@ const filteredMarkers = computed(() => {
     const matchType = !filterStoreType.value || marker.store_type === filterStoreType.value
     const matchCity = !filterCity.value || marker.city === filterCity.value
     const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
-    return matchKeyword && matchType && matchCity && matchDistrict
+    const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
+    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory
   })
 })
 
@@ -401,8 +416,8 @@ const paginatedMarkers = computed(() => {
 const getStoreTypeTag = (type) => {
   const typeMap = {
     '已开业': 'success',
-    '重点候选': 'danger',
-    '一般候选': 'warning'
+    '重点候选': 'warning',
+    '一般候选': 'info'
   }
   return typeMap[type] || ''
 }

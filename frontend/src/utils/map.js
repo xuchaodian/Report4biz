@@ -9,8 +9,141 @@ const colors = {
   info: '#909399'
 }
 
-// 创建自定义图标
+// SVG 地图标记样式
+export const svgMarkerStyles = {
+  // 经典地图钉
+  pin: (color) => `
+    <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 26 16 26s16-14 16-26C32 7.163 24.837 0 16 0z" 
+            fill="${color}" filter="url(#shadow)"/>
+      <circle cx="16" cy="16" r="8" fill="white" opacity="0.9"/>
+      <circle cx="16" cy="16" r="5" fill="${color}"/>
+    </svg>
+  `,
+  
+  // 店铺标记
+  store: (color) => `
+    <svg width="36" height="44" viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadowStore" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="3" stdDeviation="2" flood-opacity="0.35"/>
+        </filter>
+      </defs>
+      <!-- 标记头部 -->
+      <path d="M18 0C8.059 0 0 8.059 0 18c0 6 3 11.4 7.5 14.7L18 44l10.5-11.3C33 29.4 36 24 36 18 36 8.059 27.941 0 18 0z" 
+            fill="${color}" filter="url(#shadowStore)"/>
+      <!-- 白色圆形背景 -->
+      <circle cx="18" cy="17" r="10" fill="white"/>
+      <!-- 店铺图标 -->
+      <path d="M18 9l-8 4v6h5v3h6v-3h5v-6l-8-4zm0 3l4 2v3h-8v-3l4-2z" fill="${color}"/>
+    </svg>
+  `,
+  
+  // 简约圆点
+  dot: (color) => `
+    <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadowDot" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <circle cx="12" cy="12" r="10" fill="${color}" stroke="white" stroke-width="2" filter="url(#shadowDot)"/>
+      <circle cx="12" cy="12" r="5" fill="white" opacity="0.85"/>
+    </svg>
+  `,
+  
+  // 菱形标记
+  diamond: (color) => `
+    <svg width="32" height="38" viewBox="0 0 32 38" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadowDiamond" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <path d="M16 0L32 16L16 38L0 16L16 0z" fill="${color}" filter="url(#shadowDiamond)"/>
+      <path d="M16 6L26 16L16 30L6 16L16 6z" fill="white" opacity="0.3"/>
+      <circle cx="16" cy="16" r="4" fill="white"/>
+    </svg>
+  `,
+  
+  // 旗帜标记
+  flag: (color) => `
+    <svg width="28" height="40" viewBox="0 0 28 40" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadowFlag" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <!-- 旗杆 -->
+      <rect x="5" y="8" width="3" height="32" fill="#666"/>
+      <circle cx="6.5" cy="6" r="4" fill="${color}"/>
+      <!-- 旗帜 -->
+      <path d="M8 8h16l-3 8 3 8H8V8z" fill="${color}" filter="url(#shadowFlag)"/>
+      <path d="M10 12h8M10 16h6M10 20h8" stroke="white" stroke-width="1.5" opacity="0.6"/>
+    </svg>
+  `,
+  
+  // 星形标记
+  star: (color) => `
+    <svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadowStar" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.3"/>
+        </filter>
+      </defs>
+      <polygon points="18,2 22,14 34,14 24,22 28,34 18,26 8,34 12,22 2,14 14,14" 
+               fill="${color}" filter="url(#shadowStar)"/>
+      <polygon points="18,8 20,14 26,14 21,18 23,24 18,20 13,24 15,18 10,14 16,14" 
+               fill="white" opacity="0.4"/>
+    </svg>
+  `
+}
+
+// 创建自定义 SVG 图标
 export function createCustomIcon(color = 'default', icon = '📍') {
+  const bgColor = colors[color] || color
+  const svgContent = svgMarkerStyles.store(bgColor)
+  
+  return L.divIcon({
+    className: 'custom-svg-marker',
+    html: `<div class="custom-marker-svg">${svgContent}</div>`,
+    iconSize: [36, 44],
+    iconAnchor: [18, 44],
+    popupAnchor: [0, -44]
+  })
+}
+
+// 创建带样式的 SVG 图标
+export function createSvgIcon(color, style = 'store') {
+  const svgContent = svgMarkerStyles[style] ? svgMarkerStyles[style](color) : svgMarkerStyles.store(color)
+  
+  const sizeMap = {
+    pin: [32, 42],
+    store: [36, 44],
+    dot: [24, 24],
+    diamond: [32, 38],
+    flag: [28, 40],
+    star: [36, 36]
+  }
+  
+  const size = sizeMap[style] || [36, 44]
+  
+  return L.divIcon({
+    className: 'custom-svg-marker',
+    html: `<div class="custom-marker-svg">${svgContent}</div>`,
+    iconSize: size,
+    iconAnchor: [size[0] / 2, size[1]],
+    popupAnchor: [0, -size[1]]
+  })
+}
+
+// 旧函数保持兼容
+export function createOldIcon(color = 'default', icon = '📍') {
   const bgColor = colors[color] || color
   
   return L.divIcon({

@@ -31,10 +31,13 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
+            </el-button>
+            <el-button type="warning" link @click="handleResetPassword(row)">
+              <el-icon><RefreshRight /></el-icon>
             </el-button>
             <el-button
               type="danger"
@@ -83,7 +86,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
 
@@ -201,6 +204,22 @@ const handleDelete = async (row) => {
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error(error.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+const handleResetPassword = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要重置用户「${row.username}」的密码吗？重置后密码为「123456」。`, '重置密码', {
+      type: 'warning',
+      confirmButtonText: '确定重置',
+      cancelButtonText: '取消'
+    })
+    await api.post(`/users/${row.id}/reset-password`)
+    ElMessage.success('密码已重置为 123456')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.message || '重置失败')
     }
   }
 }

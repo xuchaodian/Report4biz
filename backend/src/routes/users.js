@@ -64,6 +64,61 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
   }
 })
 
+// 用户修改自己的信息（只需要登录，不需要 admin）
+router.put('/me', authenticate, (req, res) => {
+  try {
+    const { email, password } = req.body
+    const userId = req.user.id
+
+    const db = getDb()
+
+    // 检查用户是否存在
+    const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!existingUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // 更新用户信息
+    const updates = []
+    const params = []
+
+    if (email) {
+      // 检查邮箱是否被其他用户使用
+      const emailExists = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, userId)
+      if (emailExists) {
+        return res.status(400).json({ message: '该邮箱已被其他用户使用' })
+      }
+      updates.push('email = ?')
+      params.push(email)
+    }
+
+    if (password) {
+      if (password.length < 6) {
+        return res.status(400).json({ message: '密码至少6个字符' })
+      }
+      updates.push('password = ?')
+      params.push(bcrypt.hashSync(password, 10))
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' })
+    }
+
+    params.push(userId)
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(userId)
+
+    res.json({
+      message: '修改成功',
+      user
+    })
+  } catch (error) {
+    console.error('修改个人信息错误:', error)
+    res.status(500).json({ message: '修改失败' })
+  }
+})
+
 // 更新用户
 router.put('/:id', authenticate, requireAdmin, (req, res) => {
   try {
@@ -144,6 +199,27 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
   } catch (error) {
     console.error('删除用户错误:', error)
     res.status(500).json({ message: '删除用户失败' })
+  }
+})
+
+// 重置密码
+router.post('/:id/reset-password', authenticate, requireAdmin, (req, res) => {
+  try {
+    const userId = req.params.id
+    const db = getDb()
+
+    const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!existingUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    const hashedPassword = bcrypt.hashSync('123456', 10)
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, userId)
+
+    res.json({ message: '密码已重置为 123456' })
+  } catch (error) {
+    console.error('重置密码错误:', error)
+    res.status(500).json({ message: '重置密码失败' })
   }
 })
 

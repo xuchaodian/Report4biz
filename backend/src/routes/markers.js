@@ -8,13 +8,22 @@ import { authenticate } from '../middleware/auth.js'
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
-// 获取所有门店
+// 获取所有门店（管理员看全部，普通用户看自己的+公共门店）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const markers = db.prepare(`
-      SELECT * FROM markers ORDER BY created_at DESC
-    `).all()
+    let markers
+    
+    // 管理员查看所有门店，普通用户查看自己的+公共门店
+    if (req.user.role === 'admin') {
+      markers = db.prepare(`
+        SELECT * FROM markers ORDER BY created_at DESC
+      `).all()
+    } else {
+      markers = db.prepare(`
+        SELECT * FROM markers WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC
+      `).all(req.user.id)
+    }
 
     res.json({ markers })
   } catch (error) {
@@ -23,11 +32,11 @@ router.get('/', authenticate, (req, res) => {
   }
 })
 
-// 获取单个门店
+// 获取单个门店（按用户隔离）
 router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
+    const marker = db.prepare('SELECT * FROM markers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
 
     if (!marker) {
       return res.status(404).json({ message: '门店不存在' })
@@ -62,10 +71,11 @@ router.post('/', authenticate, (req, res) => {
         city, district, area_manager, phone1, store_manager, phone2, address,
         open_date, business_hours, area, seats, rent,
         store_category, contact_person, contact_phone, description,
-        latitude, longitude, status, icon_color, user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        latitude, longitude, status, icon_color, user_id,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
-      store_code || '', brand || '', name, store_type || '已开业',
+      store_code || '', brand || '', name, store_type || '社区店',
       city || '', district || '', area_manager || '', phone1 || '', store_manager || '', phone2 || '', address || '',
       open_date || '', business_hours || '', area || null, seats || null, rent || null,
       store_category || '', contact_person || '', contact_phone || '', description || '',
@@ -97,8 +107,8 @@ router.put('/:id', authenticate, (req, res) => {
 
     const db = getDb()
 
-    // 检查门店是否存在
-    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
+    // 检查门店是否存在且属于当前用户
+    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
     if (!existingMarker) {
       return res.status(404).json({ message: '门店不存在' })
     }
@@ -157,12 +167,13 @@ router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
 
-    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
+    // 检查门店是否存在且属于当前用户
+    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
     if (!existingMarker) {
       return res.status(404).json({ message: '门店不存在' })
     }
 
-    db.prepare('DELETE FROM markers WHERE id = ?').run(req.params.id)
+    db.prepare('DELETE FROM markers WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id)
 
     res.json({ message: '删除成功' })
   } catch (error) {
@@ -196,10 +207,11 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               city, district, area_manager, phone1, store_manager, phone2, address,
               open_date, business_hours, area, seats, rent,
               store_category, contact_person, contact_phone, description,
-              latitude, longitude, status, icon_color, user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              latitude, longitude, status, icon_color, user_id,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '已开业',
+            row.store_code || '', row.brand || '', row.name, row.store_type || '社区店',
             row.city || '', row.district || '', row.area_manager || '', row.phone1 || '',
             row.store_manager || '', row.phone2 || '', row.address || '',
             row.open_date || '', row.business_hours || '',
@@ -233,11 +245,11 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
   }
 })
 
-// 导出门店
+// 导出门店（按用户隔离）
 router.get('/export', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const markers = db.prepare('SELECT * FROM markers ORDER BY created_at DESC').all()
+    const markers = db.prepare('SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
 
     res.json(markers)
   } catch (error) {
@@ -258,9 +270,10 @@ router.get('/query/bounds', authenticate, (req, res) => {
     const db = getDb()
     const markers = db.prepare(`
       SELECT * FROM markers
-      WHERE latitude BETWEEN ? AND ?
+      WHERE user_id = ?
+      AND latitude BETWEEN ? AND ?
       AND longitude BETWEEN ? AND ?
-    `).all(south, north, west, east)
+    `).all(req.user.id, south, north, west, east)
 
     res.json({ markers, count: markers.length })
   } catch (error) {

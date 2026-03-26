@@ -1,84 +1,142 @@
 <template>
   <div class="map-view">
-    <!-- 工具栏 -->
+    <!-- 左上角地址检索框 -->
+    <div class="search-panel">
+      <el-input
+        v-model="searchKeyword"
+        placeholder="输入地址搜索定位..."
+        size="default"
+        @keyup.enter="searchAddress"
+      >
+        <template #append>
+          <el-button :icon="Search" @click="searchAddress" />
+        </template>
+      </el-input>
+      <div v-if="searchResults.length > 0" class="search-results">
+        <div
+          v-for="(result, index) in searchResults"
+          :key="index"
+          class="search-result-item"
+          @click="goToLocation(result)"
+        >
+          <el-icon><Location /></el-icon>
+          <span>{{ result.display_name }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工具栏 - 右上角收起/展开 -->
     <div class="toolbar">
-      <!-- 基础工具 -->
-      <div class="tool-group">
-        <el-tooltip content="测量距离" placement="bottom">
-          <el-button :type="activeTool === 'measure' ? 'primary' : ''" @click="setTool('measure')">
-            <el-icon><Odometer /></el-icon>
-          </el-button>
-        </el-tooltip>
-        <el-tooltip content="测量面积" placement="bottom">
-          <el-button :type="activeTool === 'area' ? 'primary' : ''" @click="setTool('area')">
-            <el-icon><Aim /></el-icon>
-          </el-button>
-        </el-tooltip>
+      <div class="toolbar-header" @click="toolbarExpanded = !toolbarExpanded">
+        <span class="toolbar-title">地图工具箱</span>
+        <el-icon class="toolbar-arrow" :class="{ expanded: toolbarExpanded }">
+          <ArrowRight />
+        </el-icon>
       </div>
-
-      <el-divider direction="vertical" />
-
-      <!-- 绘制工具 -->
-      <div class="tool-group">
-        <el-tooltip content="标注点" placement="bottom">
-          <el-button :type="activeTool === 'marker' ? 'primary' : ''" @click="setTool('marker')">
+      <div v-show="toolbarExpanded" class="toolbar-body">
+        <!-- 标注点 -->
+        <el-tooltip content="标注点" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'marker' }" @click="setTool('marker')">
             <el-icon><Location /></el-icon>
-          </el-button>
+            <span>标注点</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="绘制折线" placement="bottom">
-          <el-button :type="activeTool === 'polyline' ? 'primary' : ''" @click="setTool('polyline')">
+        <!-- 测量距离 -->
+        <el-tooltip content="测量距离" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'measure' }" @click="setTool('measure')">
+            <el-icon><Odometer /></el-icon>
+            <span>测量距离</span>
+          </div>
+        </el-tooltip>
+        <!-- 测量面积 -->
+        <el-tooltip content="测量面积" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'area' }" @click="setTool('area')">
+            <el-icon><Aim /></el-icon>
+            <span>测量面积</span>
+          </div>
+        </el-tooltip>
+        <!-- 绘制折线 -->
+        <el-tooltip content="绘制折线" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'polyline' }" @click="setTool('polyline')">
             <el-icon><Connection /></el-icon>
-          </el-button>
+            <span>绘制折线</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="绘制多边形" placement="bottom">
-          <el-button :type="activeTool === 'polygon' ? 'primary' : ''" @click="setTool('polygon')">
+        <!-- 绘制多边形 -->
+        <el-tooltip content="绘制多边形" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'polygon' }" @click="setTool('polygon')">
             <el-icon><Coordinate /></el-icon>
-          </el-button>
+            <span>绘制多边形</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="绘制矩形" placement="bottom">
-          <el-button :type="activeTool === 'rectangle' ? 'primary' : ''" @click="setTool('rectangle')">
+        <!-- 绘制矩形 -->
+        <el-tooltip content="绘制矩形" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'rectangle' }" @click="setTool('rectangle')">
             <el-icon><Crop /></el-icon>
-          </el-button>
+            <span>绘制矩形</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="绘制圆形" placement="bottom">
-          <el-button :type="activeTool === 'circle' ? 'primary' : ''" @click="setTool('circle')">
+        <!-- 绘制圆形 -->
+        <el-tooltip content="绘制圆形" placement="left">
+          <div class="tool-item" :class="{ active: activeTool === 'circle' }" @click="setTool('circle')">
             <el-icon><FullScreen /></el-icon>
-          </el-button>
+            <span>绘制圆形</span>
+          </div>
         </el-tooltip>
-      </div>
-
-      <el-divider direction="vertical" />
-
-      <!-- 可视化工具 -->
-      <div class="tool-group">
-        <el-tooltip content="热力图" placement="bottom">
-          <el-button :type="showHeatmap ? 'primary' : ''" @click="toggleHeatmap">
+        <el-divider style="margin: 6px 0;" />
+        <!-- 热力图 -->
+        <el-tooltip content="热力图" placement="left">
+          <div class="tool-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
             <el-icon><DataLine /></el-icon>
-          </el-button>
+            <span>热力图</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="聚合显示" placement="bottom">
-          <el-button :type="showCluster ? 'primary' : ''" @click="toggleCluster">
+        <!-- 聚合显示 -->
+        <el-tooltip content="聚合显示" placement="left">
+          <div class="tool-item" :class="{ active: showCluster }" @click="toggleCluster">
             <el-icon><Grid /></el-icon>
-          </el-button>
+            <span>聚合显示</span>
+          </div>
         </el-tooltip>
-      </div>
-
-      <el-divider direction="vertical" />
-
-      <!-- 其他工具 -->
-      <div class="tool-group">
-        <el-tooltip content="清除绘制" placement="bottom">
-          <el-button @click="clearDrawings">
+        <!-- 图标样式 -->
+        <el-tooltip content="图标样式" placement="left">
+          <el-popover placement="left" :width="200" trigger="click">
+            <template #reference>
+              <div class="tool-item">
+                <el-icon><Collection /></el-icon>
+                <span>图标样式</span>
+              </div>
+            </template>
+            <div class="marker-style-selector">
+              <div 
+                v-for="style in markerStyleOptions" 
+                :key="style.value"
+                class="style-option"
+                :class="{ active: currentMarkerStyle === style.value }"
+                @click="changeMarkerStyle(style.value)"
+              >
+                <span class="style-icon">{{ style.icon }}</span>
+                <span>{{ style.label }}</span>
+              </div>
+            </div>
+          </el-popover>
+        </el-tooltip>
+        <el-divider style="margin: 6px 0;" />
+        <!-- 清除绘制 -->
+        <el-tooltip content="清除绘制" placement="left">
+          <div class="tool-item" @click="clearDrawings">
             <el-icon><Delete /></el-icon>
-          </el-button>
+            <span>清除绘制</span>
+          </div>
         </el-tooltip>
-        <el-tooltip content="定位数据" placement="bottom">
-          <el-button @click="fitBounds">
+        <!-- 定位数据 -->
+        <el-tooltip content="定位数据" placement="left">
+          <div class="tool-item" @click="fitBounds">
             <el-icon><View /></el-icon>
-          </el-button>
+            <span>定位数据</span>
+          </div>
         </el-tooltip>
       </div>
-
       <!-- 测量结果显示 -->
       <div v-if="measurementResult" class="measurement-result">
         {{ measurementResult }}
@@ -96,27 +154,34 @@
       </span>
     </div>
 
-    <!-- 图层控制面板 -->
-    <div class="layer-panel">
-      <div class="panel-header">
-        <span>图层控制</span>
+    <!-- 图层控制面板 - 右下角 -->
+    <div class="layer-switcher">
+      <div class="layer-switcher-title">图层</div>
+      <div class="layer-options">
+        <div
+          class="layer-option"
+          :class="{ active: baseMapType === 'vec' }"
+          @click="baseMapType = 'vec'"
+        >
+          <img :src="vecMapPreview" alt="矢量" />
+          <span>标准</span>
+        </div>
+        <div
+          class="layer-option"
+          :class="{ active: baseMapType === 'img' }"
+          @click="baseMapType = 'img'"
+        >
+          <img :src="imgMapPreview" alt="影像" />
+          <span>影像</span>
+        </div>
       </div>
-      <div class="panel-content">
-        <div class="layer-item">
-          <span>底图</span>
-          <el-select v-model="baseMapType" size="small" style="width: 100px">
-            <el-option label="矢量地图" value="vec" />
-            <el-option label="影像地图" value="img" />
-          </el-select>
-        </div>
-        <div class="layer-item">
-          <el-switch v-model="showBusinessLayer" active-text="业务图层" />
-        </div>
-        <div class="layer-item">
-          <span>透明度</span>
-          <el-slider v-model="layerOpacity" :min="0" :max="1" :step="0.1" size="small" style="width: 100px" />
-        </div>
-      </div>
+    </div>
+
+    <!-- 缩放控件容器 -->
+    <div class="zoom-control-container">
+      <div class="zoom-in" @click="zoomIn">+</div>
+      <div class="zoom-line"></div>
+      <div class="zoom-out" @click="zoomOut">−</div>
     </div>
 
     <!-- 添加/编辑门店对话框 -->
@@ -271,37 +336,36 @@
         <el-button type="primary" @click="saveMarker">确定</el-button>
       </template>
     </el-dialog>
-
-    <!-- 鹰眼图 -->
-    <div class="minimap-container">
-      <div id="minimap" class="minimap" />
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, Odometer, Aim
+  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, Collection
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
+import 'leaflet.heat'
 import { useMarkerStore } from '@/stores/marker'
 import {
-  createCustomIcon, getCategoryIcon, getStatusColor, getStoreTypeColor,
+  createCustomIcon, createSvgIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
+import vecMapPreview from '@/assets/vec-map-preview.jpeg?url'
+import imgMapPreview from '@/assets/img-map-preview.jpeg?url'
 
 const markerStore = useMarkerStore()
+const route = useRoute() // 获取路由参数
 
 // 地图实例
 let map = null
-let minimap = null
 let tileLayer = null
 let businessLayer = null
 let markerClusterGroup = null
@@ -313,6 +377,7 @@ let measurePoints = []
 
 // 状态变量
 const activeTool = ref('')
+const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
 const showBusinessLayer = ref(true)
@@ -323,6 +388,21 @@ const measurementResult = ref('')
 const markerDialogVisible = ref(false)
 const editingMarker = ref(null)
 const markerFormRef = ref(null)
+const currentMarkerStyle = ref('store') // 当前图标样式
+
+// 图标样式选项
+const markerStyleOptions = [
+  { value: 'store', label: '店铺', icon: '🏪' },
+  { value: 'pin', label: '图钉', icon: '📍' },
+  { value: 'dot', label: '圆点', icon: '🔵' },
+  { value: 'diamond', label: '菱形', icon: '🔷' },
+  { value: 'flag', label: '旗帜', icon: '🚩' },
+  { value: 'star', label: '星形', icon: '⭐' }
+]
+
+// 地址搜索
+const searchKeyword = ref('')
+const searchResults = ref([])
 
 // 点位表单 - 门店管理
 const markerForm = reactive({
@@ -375,11 +455,11 @@ const gaodeTiles = {
 
 // 初始化地图
 const initMap = () => {
-  // 主地图
+  // 主地图 - 禁用默认缩放控件
   map = L.map('map', {
     center: [39.9042, 116.4074],
     zoom: 10,
-    zoomControl: true
+    zoomControl: false
   })
 
   // 加载底图
@@ -394,13 +474,55 @@ const initMap = () => {
     currentCoords.value = e.latlng
   })
 
-  // 初始化鹰眼图
-  nextTick(() => {
-    initMinimap()
-  })
-
   // 加载点位数据
   loadMarkers()
+}
+
+// 地址搜索
+const searchAddress = async () => {
+  if (!searchKeyword.value.trim()) return
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchKeyword.value)}&limit=5`,
+      {
+        headers: {
+          'Accept-Language': 'zh-CN'
+        }
+      }
+    )
+    const data = await response.json()
+    searchResults.value = data
+  } catch (error) {
+    ElMessage.error('搜索失败，请重试')
+  }
+}
+
+// 跳转到搜索位置
+const goToLocation = (result) => {
+  if (map && result.lat && result.lon) {
+    map.setView([parseFloat(result.lat), parseFloat(result.lon)], 16)
+    // 添加临时标记
+    const marker = L.marker([parseFloat(result.lat), parseFloat(result.lon)], {
+      icon: L.divIcon({
+        className: 'temp-marker',
+        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + searchKeyword.value + '</div>',
+        iconSize: [120, 30]
+      })
+    }).addTo(map)
+    // 3秒后移除
+    setTimeout(() => map.removeLayer(marker), 3000)
+  }
+  searchResults.value = []
+}
+
+// 缩放控制
+const zoomIn = () => {
+  if (map) map.zoomIn()
+}
+
+const zoomOut = () => {
+  if (map) map.zoomOut()
 }
 
 // 加载底图
@@ -420,42 +542,11 @@ const loadBaseMap = () => {
 // 监控底图切换
 watch(baseMapType, loadBaseMap)
 
-// 初始化鹰眼图
-const initMinimap = () => {
-  if (!document.getElementById('minimap')) return
-
-  minimap = L.map('minimap', {
-    center: map.getCenter(),
-    zoom: map.getZoom() - 4,
-    zoomControl: false,
-    dragging: false,
-    scrollWheelZoom: false
-  })
-  L.tileLayer(gaodeTiles.vec.url, {
-    subdomains: gaodeTiles.vec.subdomains
-  }).addTo(minimap)
-
-  // 同步主地图移动
-  map.on('move', () => {
-    if (minimap) {
-      minimap.setView(map.getCenter(), map.getZoom() - 4)
-    }
-  })
-
-  // 鹰眼图矩形
-  const boundsRect = L.rectangle(map.getBounds(), { color: '#409eff', weight: 2, fillOpacity: 0 })
-  minimap.addLayer(boundsRect)
-
-  map.on('moveend', () => {
-    if (boundsRect) {
-      boundsRect.setBounds(map.getBounds())
-    }
-  })
-}
-
 // 加载点位
 const loadMarkers = async () => {
+  console.log('=== loadMarkers 开始 ===')
   await markerStore.fetchMarkers()
+  console.log('门店数据:', markerStore.markers)
 
   // 清除原有图层
   if (businessLayer) {
@@ -471,10 +562,13 @@ const loadMarkers = async () => {
   // 创建点位图层
   businessLayer = L.layerGroup()
 
+  console.log('开始创建标记点, 数量:', markerStore.markers.length)
+
   markerStore.markers.forEach(markerData => {
+    console.log('创建标记:', markerData.name, '坐标:', markerData.latitude, markerData.longitude)
     // 使用门店类型颜色: 已开业=绿, 重点候选=红, 一般候选=黄
     const iconColor = getStoreTypeColor(markerData.store_type)
-    const icon = createCustomIcon(iconColor, '📍')
+    const icon = createSvgIcon(iconColor, currentMarkerStyle.value)
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,
@@ -524,7 +618,7 @@ const loadMarkers = async () => {
 
   markerStore.markers.forEach(markerData => {
     const iconColor = getStoreTypeColor(markerData.store_type)
-    const icon = createCustomIcon(iconColor, '📍')
+    const icon = createSvgIcon(iconColor, currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
     marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
     markerClusterGroup.addLayer(marker)
@@ -788,6 +882,13 @@ const clearDrawings = () => {
   ElMessage.success('已清除')
 }
 
+// 切换图标样式
+const changeMarkerStyle = (style) => {
+  currentMarkerStyle.value = style
+  loadMarkers() // 重新加载标记以应用新样式
+  ElMessage.success(`已切换为${markerStyleOptions.find(s => s.value === style)?.label}样式`)
+}
+
 // 定位数据范围
 const fitBounds = () => {
   if (markerStore.markers.length === 0) {
@@ -906,6 +1007,18 @@ onMounted(() => {
   // 等待DOM渲染完成后初始化地图
   nextTick(() => {
     initMap()
+
+    // 检查是否有门店跳转参数
+    const { lat, lng } = route.query
+
+    // 延迟处理，等待点位数据加载
+    setTimeout(() => {
+      if (lat && lng) {
+        // 跳转到指定位置
+        map.setView([parseFloat(lat), parseFloat(lng)], 16)
+        ElMessage.success('已跳转到门店位置')
+      }
+    }, 1500)
   })
 
   // 添加地图点击事件监听
@@ -933,29 +1046,146 @@ onUnmounted(() => {
 .toolbar {
   position: absolute;
   top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 70px;
   background: white;
-  padding: 8px 16px;
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  overflow: hidden;
 
-  .tool-group {
+  .toolbar-header {
+    padding: 8px 12px;
+    cursor: pointer;
     display: flex;
-    gap: 4px;
+    align-items: center;
+    justify-content: space-between;
+    background: #f5f7fa;
+    border-bottom: 1px solid #eee;
+
+    .toolbar-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+
+    .toolbar-arrow {
+      transition: transform 0.3s;
+      font-size: 14px;
+      color: #666;
+
+      &.expanded {
+        transform: rotate(90deg);
+      }
+    }
+  }
+
+  .toolbar-body {
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    .tool-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+
+      .el-icon {
+        font-size: 16px;
+        flex-shrink: 0;
+      }
+
+      span {
+        font-size: 13px;
+        color: #333;
+      }
+
+      &:hover {
+        background: #f5f7fa;
+      }
+
+      &.active {
+        background: #ecf5ff;
+        span {
+          color: #409eff;
+        }
+        .el-icon {
+          color: #409eff;
+        }
+      }
+    }
+
+    .el-divider {
+      margin: 6px 0;
+    }
   }
 
   .measurement-result {
     background: #ecf5ff;
     padding: 4px 12px;
-    border-radius: 4px;
     font-size: 14px;
     color: #409eff;
     font-weight: 500;
+    text-align: center;
+    border-top: 1px solid #eee;
+  }
+}
+
+// 图标样式选择器
+.marker-style-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  
+  .style-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #eee;
+    
+    &:hover {
+      background: #f5f7fa;
+      border-color: #409eff;
+    }
+    
+    &.active {
+      background: #ecf5ff;
+      border-color: #409eff;
+      color: #409eff;
+    }
+    
+    .style-icon {
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+    
+    span:last-child {
+      font-size: 12px;
+    }
+  }
+}
+
+// SVG 图标容器样式
+:deep(.custom-svg-marker) {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker-svg {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: transform 0.2s;
+  
+  &:hover {
+    transform: scale(1.1);
   }
 }
 
@@ -976,55 +1206,152 @@ onUnmounted(() => {
   z-index: 1000;
 }
 
-.layer-panel {
+.layer-switcher {
   position: absolute;
-  top: 70px;
+  bottom: 10px;
   right: 10px;
   background: white;
-  width: 200px;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   z-index: 1000;
+  overflow: hidden;
 
-  .panel-header {
-    padding: 12px;
+  .layer-switcher-title {
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #666;
     border-bottom: 1px solid #eee;
-    font-weight: 500;
   }
 
-  .panel-content {
-    padding: 12px;
+  .layer-options {
+    display: flex;
+    padding: 6px;
 
-    .layer-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
+    .layer-option {
+      width: 52px;
+      height: 52px;
+      margin-right: 6px;
+      border-radius: 4px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      position: relative;
 
       &:last-child {
-        margin-bottom: 0;
+        margin-right: 0;
+      }
+
+      &:hover {
+        border-color: #409eff;
+      }
+
+      &.active {
+        border-color: #409eff;
+      }
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
       }
 
       span {
-        font-size: 13px;
-        color: #666;
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        font-size: 10px;
+        text-align: center;
+        padding: 2px 0;
       }
     }
   }
 }
 
-.minimap-container {
+// 自定义缩放控件 - 在图层控制上方
+.zoom-control-container {
   position: absolute;
-  bottom: 10px;
+  bottom: 110px;
   right: 10px;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  .zoom-in,
+  .zoom-out {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    color: #333;
+    font-weight: bold;
+    background: white;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #f5f5f5;
+    }
+  }
+
+  .zoom-line {
+    width: 32px;
+    height: 1px;
+    background: #eee;
+  }
+}
+
+.search-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 320px;
   z-index: 1000;
 
-  .minimap {
-    width: 180px;
-    height: 120px;
-    border-radius: 8px;
-    overflow: hidden;
+  .search-results {
+    background: white;
+    border-radius: 4px;
+    margin-top: 4px;
+    max-height: 300px;
+    overflow-y: auto;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+
+    .search-result-item {
+      padding: 10px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: #666;
+      border-bottom: 1px solid #eee;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      &:hover {
+        background: #f5f7fa;
+        color: #409eff;
+      }
+
+      .el-icon {
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      span {
+        line-height: 1.4;
+      }
+    }
   }
 }
 
