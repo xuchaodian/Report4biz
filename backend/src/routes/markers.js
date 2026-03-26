@@ -8,22 +8,15 @@ import { authenticate } from '../middleware/auth.js'
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
-// 获取所有门店（管理员看全部，普通用户看自己的+公共门店）
+// 获取所有门店（只看自己的数据）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    let markers
     
-    // 管理员查看所有门店，普通用户查看自己的+公共门店
-    if (req.user.role === 'admin') {
-      markers = db.prepare(`
-        SELECT * FROM markers ORDER BY created_at DESC
-      `).all()
-    } else {
-      markers = db.prepare(`
-        SELECT * FROM markers WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC
-      `).all(req.user.id)
-    }
+    // 每个用户只看自己的门店数据
+    const markers = db.prepare(`
+      SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC
+    `).all(req.user.id)
 
     res.json({ markers })
   } catch (error) {
@@ -32,7 +25,7 @@ router.get('/', authenticate, (req, res) => {
   }
 })
 
-// 获取单个门店（按用户隔离）
+// 获取单个门店（只看自己的）
 router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
@@ -167,13 +160,18 @@ router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
 
-    // 检查门店是否存在且属于当前用户
-    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
+    // 检查门店是否存在
+    const existingMarker = db.prepare('SELECT * FROM markers WHERE id = ?').get(req.params.id)
     if (!existingMarker) {
       return res.status(404).json({ message: '门店不存在' })
     }
 
-    db.prepare('DELETE FROM markers WHERE id = ? AND user_id = ?').run(req.params.id, req.user.id)
+    // 普通用户只能删除自己的门店，管理员可以删除所有门店
+    if (req.user.role !== 'admin' && existingMarker.user_id !== req.user.id) {
+      return res.status(403).json({ message: '无权删除该门店' })
+    }
+
+    db.prepare('DELETE FROM markers WHERE id = ?').run(req.params.id)
 
     res.json({ message: '删除成功' })
   } catch (error) {

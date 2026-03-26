@@ -302,9 +302,8 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="门店区分" prop="store_category">
-              <el-select v-model="markerForm.store_category" placeholder="直营/加盟" style="width: 100%">
-                <el-option label="直营" value="直营" />
-                <el-option label="加盟" value="加盟" />
+              <el-select v-model="markerForm.store_category" placeholder="请选择" style="width: 100%">
+                <el-option v-for="c in markerStore.storeCategories" :key="c" :label="c" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -580,6 +579,7 @@ const loadMarkers = async () => {
         <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
         <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
         <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
+        <p style="margin: 4px 0;"><strong>门店区分:</strong> <span style="color: ${markerData.store_category === '社区店' ? '#909399' : markerData.store_category === '临街店' ? '#67c23a' : markerData.store_category === '商场店' ? '#f56c6c' : markerData.store_category === '写字楼店' ? '#409eff' : markerData.store_category === '交通枢纽店' ? '#e6a23c' : markerData.store_category === '校园店' ? '#9c27b0' : markerData.store_category === '景区店' ? '#ff9800' : markerData.store_category === '专业市场店' ? '#00bcd4' : '#333'}">${markerData.store_category || '-'}</span></p>
         <p style="margin: 4px 0;"><strong>地址:</strong> ${(markerData.city || '') + (markerData.district || '') + (markerData.address || '-')}</p>
         <p style="margin: 4px 0;"><strong>区域经理:</strong> ${markerData.area_manager || '-'} ${markerData.phone1 || ''}</p>
         <p style="margin: 4px 0;"><strong>店长:</strong> ${markerData.store_manager || '-'} ${markerData.phone2 || ''}</p>
@@ -1046,12 +1046,13 @@ onUnmounted(() => {
 .toolbar {
   position: absolute;
   top: 10px;
-  right: 70px;
+  right: 10px;
   background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
   overflow: hidden;
+  border: 2px solid #409eff;
 
   .toolbar-header {
     padding: 8px 12px;
@@ -1059,19 +1060,19 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #f5f7fa;
+    background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
     border-bottom: 1px solid #eee;
 
     .toolbar-title {
       font-size: 13px;
-      font-weight: 500;
-      color: #333;
+      font-weight: 600;
+      color: #fff;
     }
 
     .toolbar-arrow {
       transition: transform 0.3s;
       font-size: 14px;
-      color: #666;
+      color: #fff;
 
       &.expanded {
         transform: rotate(90deg);
@@ -1088,12 +1089,13 @@ onUnmounted(() => {
     .tool-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       padding: 6px 8px;
       border-radius: 4px;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.2s;
       white-space: nowrap;
+      border: 1px solid transparent;
 
       .el-icon {
         font-size: 16px;
@@ -1101,16 +1103,18 @@ onUnmounted(() => {
       }
 
       span {
-        font-size: 13px;
+        font-size: 12px;
         color: #333;
       }
 
       &:hover {
-        background: #f5f7fa;
+        background: #ecf5ff;
+        border-color: #409eff;
       }
 
       &.active {
         background: #ecf5ff;
+        border-color: #409eff;
         span {
           color: #409eff;
         }
@@ -1121,14 +1125,14 @@ onUnmounted(() => {
     }
 
     .el-divider {
-      margin: 6px 0;
+      margin: 4px 0;
     }
   }
 
   .measurement-result {
     background: #ecf5ff;
-    padding: 4px 12px;
-    font-size: 14px;
+    padding: 4px 10px;
+    font-size: 12px;
     color: #409eff;
     font-weight: 500;
     text-align: center;
