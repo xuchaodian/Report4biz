@@ -29,9 +29,24 @@
 6. 左上角地址检索框（Nominatim API）
 7. 个人中心页面（修改邮箱、修改密码）
 8. 地图工具栏（测量、绘制、热力图、聚合）
+9. 门店区分颜色区分（popup 和下拉列表）
+10. IP自动定位功能（ip-api.com，左下角城市名显示）
+11. 测量距离重写（仿高德：多段累计、鼠标预览线、每点距离标注、双击结束）
+
+## Git备份
+- v1.0.0: 2026-03-26，基础功能完成
+- v1.0.1: 2026-03-26（df5deb0），门店区分颜色显示优化
+
+## 常见问题
+- **修改代码后服务器没变化**：必须先 vite build，再用 paramiko SFTP 部署 dist 到服务器（每次修改都要执行这两步）
 
 ## 技术备忘
 - 使用 Python paramiko + SFTP 部署前端到服务器
 - 用户修改个人信息接口: `PUT /api/users/me`
 - **数据隔离**：所有门店查询必须添加 `WHERE user_id = ?` 过滤，否则用户会看到所有数据
 - **Express 路由顺序**：静态路由（如 `/me`）必须放在动态路由（如 `/:id`）之前
+- **vite build**：使用 `/Users/xuchaodian/.workbuddy/binaries/node/versions/22.12.0/bin/node node_modules/vite/bin/vite.js build`
+- **Leaflet双击测量防冲突**：单击用setTimeout 200ms延迟，dblclick时cancel掉单击timer
+- **事件绑定必须在map创建后立即绑定**：`initMap` 是 async 函数（含 await getLocationByIP），map.on('click'/'dblclick') 必须写在 initMap 内部 map 创建之后，不能用 setTimeout 延迟绑定（会产生竞态导致绑定失败）
+- **门店区分列表**：在 marker.js store 的 storeCategories 数组中维护
+- **测量面积面消失bug (2026-03-27)**：双击结束面积测量后，下次测量时之前保存的面会消失。原因是双击结束后 `measureAreaPolygon`/`measureAreaLabel` 没有设为 null，下次 `handleAreaMeasure` 会执行 `map.removeLayer(measureAreaPolygon)` 把已保存的面从 drawnItems 中移除。修复：在双击结束时添加 `measureAreaPolygon = null` 和 `measureAreaLabel = null`

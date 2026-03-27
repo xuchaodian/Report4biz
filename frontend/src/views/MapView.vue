@@ -55,31 +55,11 @@
             <span>测量面积</span>
           </div>
         </el-tooltip>
-        <!-- 绘制折线 -->
-        <el-tooltip content="绘制折线" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'polyline' }" @click="setTool('polyline')">
-            <el-icon><Connection /></el-icon>
-            <span>绘制折线</span>
-          </div>
-        </el-tooltip>
-        <!-- 绘制多边形 -->
-        <el-tooltip content="绘制多边形" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'polygon' }" @click="setTool('polygon')">
-            <el-icon><Coordinate /></el-icon>
-            <span>绘制多边形</span>
-          </div>
-        </el-tooltip>
-        <!-- 绘制矩形 -->
-        <el-tooltip content="绘制矩形" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'rectangle' }" @click="setTool('rectangle')">
-            <el-icon><Crop /></el-icon>
-            <span>绘制矩形</span>
-          </div>
-        </el-tooltip>
+        <el-divider style="margin: 6px 0;" />
         <!-- 绘制圆形 -->
         <el-tooltip content="绘制圆形" placement="left">
           <div class="tool-item" :class="{ active: activeTool === 'circle' }" @click="setTool('circle')">
-            <el-icon><FullScreen /></el-icon>
+            <el-icon><Coordinate /></el-icon>
             <span>绘制圆形</span>
           </div>
         </el-tooltip>
@@ -148,8 +128,12 @@
 
     <!-- 坐标显示 -->
     <div class="coordinate-display">
+      <span v-if="currentCityName" class="city-name">
+        <el-icon><Location /></el-icon>
+        {{ currentCityName }}
+      </span>
       <span v-if="currentCoords">
-        经度: {{ currentCoords.lng.toFixed(6) }}&nbsp;&nbsp;
+        &nbsp;|&nbsp;经度: {{ currentCoords.lng.toFixed(6) }}&nbsp;&nbsp;
         纬度: {{ currentCoords.lat.toFixed(6) }}
       </span>
     </div>
@@ -335,6 +319,37 @@
         <el-button type="primary" @click="saveMarker">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 绘制圆形对话框 -->
+    <el-dialog
+      v-model="circleDialogVisible"
+      title="设置圆形半径"
+      width="400px"
+    >
+      <el-form :model="circleForm" label-width="80px">
+        <el-form-item label="圆心坐标">
+          <el-input v-model="circleForm.centerText" disabled />
+        </el-form-item>
+        <el-form-item label="半径">
+          <el-input-number
+            v-model="circleForm.radius"
+            :min="1"
+            :max="50000"
+            style="width: 100%;"
+          />
+        </el-form-item>
+        <el-form-item label="单位">
+          <el-radio-group v-model="circleForm.unit">
+            <el-radio value="km" checked>公里</el-radio>
+            <el-radio value="m">米</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="circleDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmDrawCircle">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -373,6 +388,15 @@ let drawnItems = null
 let measureLine = null
 let measureArea = null
 let measurePoints = []
+let measureAreaPoints = []      // 测面专用点数组
+let measureAreaPolygon = null   // 测面 polygon
+let measureAreaLabel = null     // 测面面积标签
+
+// 测量工具专用图层
+let measureLayerGroup = null     // 所有测量元素的容器
+let measurePreviewLine = null    // 鼠标移动时的预览线
+let measureDotMarkers = []       // 各点的圆点标记
+let measureLabelMarkers = []     // 各点的距离标签
 
 // 状态变量
 const activeTool = ref('')
@@ -389,6 +413,15 @@ const editingMarker = ref(null)
 const markerFormRef = ref(null)
 const currentMarkerStyle = ref('store') // 当前图标样式
 
+// 绘制圆形相关
+const circleDialogVisible = ref(false)
+const circleForm = reactive({
+  center: null,
+  centerText: '',
+  radius: 1,
+  unit: 'km'
+})
+
 // 图标样式选项
 const markerStyleOptions = [
   { value: 'store', label: '店铺', icon: '🏪' },
@@ -402,6 +435,9 @@ const markerStyleOptions = [
 // 地址搜索
 const searchKeyword = ref('')
 const searchResults = ref([])
+
+// 当前城市名称
+const currentCityName = ref('')
 
 // 点位表单 - 门店管理
 const markerForm = reactive({
@@ -452,12 +488,44 @@ const gaodeTiles = {
   }
 }
 
+// 默认位置（北京）
+const DEFAULT_LAT = 39.9042
+const DEFAULT_LNG = 116.4074
+const DEFAULT_CITY = '北京市'
+
+// 获取IP位置
+const getLocationByIP = async () => {
+  try {
+    const response = await fetch('http://ip-api.com/json/?fields=status,country,city,lat,lon')
+    const data = await response.json()
+    if (data.status === 'success') {
+      return {
+        lat: data.lat,
+        lng: data.lon,
+        city: data.city || data.country || DEFAULT_CITY
+      }
+    }
+  } catch (error) {
+    console.log('IP定位失败，使用默认位置')
+  }
+  return null
+}
+
 // 初始化地图
-const initMap = () => {
+const initMap = async () => {
+  // 先获取IP位置
+  const ipLocation = await getLocationByIP()
+  const centerLat = ipLocation ? ipLocation.lat : DEFAULT_LAT
+  const centerLng = ipLocation ? ipLocation.lng : DEFAULT_LNG
+  const currentCity = ipLocation ? ipLocation.city : DEFAULT_CITY
+
+  // 更新城市显示
+  currentCityName.value = currentCity
+
   // 主地图 - 禁用默认缩放控件
   map = L.map('map', {
-    center: [39.9042, 116.4074],
-    zoom: 10,
+    center: [centerLat, centerLng],
+    zoom: 12,
     zoomControl: false
   })
 
@@ -473,26 +541,40 @@ const initMap = () => {
     currentCoords.value = e.latlng
   })
 
+      // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
+  map.on('click', handleMapClick)
+  // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
+
   // 加载点位数据
   loadMarkers()
 }
 
-// 地址搜索
+// 地址搜索（使用 ArcGIS World Geocoding API）
 const searchAddress = async () => {
   if (!searchKeyword.value.trim()) return
 
   try {
+    const keyword = searchKeyword.value.trim()
+    // 使用 ArcGIS World Geocoding（免费，无需 API Key）
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchKeyword.value)}&limit=5`,
-      {
-        headers: {
-          'Accept-Language': 'zh-CN'
-        }
-      }
+      `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(keyword)}&f=json&maxLocations=5`
     )
     const data = await response.json()
-    searchResults.value = data
+    console.log('搜索结果:', data)
+    if (data.candidates && data.candidates.length > 0) {
+      // 转换 ArcGIS 数据格式
+      searchResults.value = data.candidates.map(item => ({
+        lat: item.location.y,
+        lon: item.location.x,
+        display_name: item.address,
+        name: item.address
+      }))
+    } else {
+      ElMessage.warning('未找到相关地址')
+      searchResults.value = []
+    }
   } catch (error) {
+    console.error('搜索错误:', error)
     ElMessage.error('搜索失败，请重试')
   }
 }
@@ -505,7 +587,7 @@ const goToLocation = (result) => {
     const marker = L.marker([parseFloat(result.lat), parseFloat(result.lon)], {
       icon: L.divIcon({
         className: 'temp-marker',
-        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + searchKeyword.value + '</div>',
+        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + (result.name || searchKeyword.value) + '</div>',
         iconSize: [120, 30]
       })
     }).addTo(map)
@@ -674,12 +756,19 @@ watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
 // 设置工具
 const setTool = (tool) => {
   if (activeTool.value === tool) {
+    // 再次点击同一工具 → 取消当前测量，不清空 drawnItems（保留已完成的结果）
     activeTool.value = ''
     if (map) map.getContainer().style.cursor = ''
+    if (tool === 'measure') stopMeasure()
+    if (tool === 'area') stopAreaMeasure()
     measurePoints = []
     measurementResult.value = ''
     return
   }
+  // 切换工具时清理上一个测量状态
+  if (activeTool.value === 'measure') stopMeasure()
+  if (activeTool.value === 'area') stopAreaMeasure()
+  // 重新选择同一工具时不清空 drawnItems（drawnItems 由 clearDrawings 统一清空）
   activeTool.value = tool
 
   // 设置光标
@@ -688,10 +777,50 @@ const setTool = (tool) => {
   }
 }
 
-// 地图点击处理
+// 地图点击处理（通过两次click间隔自己判断双击，绕过Leaflet的dblclick限制）
+let lastClickTime = 0
 const handleMapClick = (e) => {
   if (!activeTool.value || !map) return
 
+  const now = Date.now()
+  const isDoubleClick = (now - lastClickTime) < 300  // 300ms内连续点击视为双击
+  lastClickTime = now
+
+  console.log('DEBUG click 触发, activeTool=', activeTool.value, 'isDoubleClick=', isDoubleClick)
+
+  if (isDoubleClick && (activeTool.value === 'measure' || activeTool.value === 'area')) {
+    // 双击 → 结束测量
+    if (activeTool.value === 'measure') {
+      finishMeasure()
+    } else if (activeTool.value === 'area') {
+      // 直接把图层从map移到drawnItems，不要调用stopAreaMeasure（它会清null）
+      if (measureAreaPolygon) {
+        map.removeLayer(measureAreaPolygon)
+        drawnItems.addLayer(measureAreaPolygon)
+        measureAreaPolygon = null  // 必须设为null，否则下次测量会错误移除drawnItems中的面
+      }
+      if (measureAreaLabel) {
+        map.removeLayer(measureAreaLabel)
+        drawnItems.addLayer(measureAreaLabel)
+        measureAreaLabel = null  // 必须设为null
+      }
+      measureAreaPoints = []
+      activeTool.value = ''
+      measurementResult.value = ''
+    }
+    return
+  }
+
+  // 单击 → 执行对应工具
+  if (activeTool.value !== 'measure') {
+    executeClick(e)
+  } else {
+    // 测距工具也用延迟防止意外
+    handleMeasure(e.latlng.lat, e.latlng.lng)
+  }
+}
+
+const executeClick = (e) => {
   const { lat, lng } = e.latlng
 
   switch (activeTool.value) {
@@ -727,61 +856,239 @@ const handleMapClick = (e) => {
   }
 }
 
-// 测量距离
-const handleMeasure = (lat, lng) => {
-  measurePoints.push([lat, lng])
+// ============ 测量距离（仿高德地图多段累计测距）============
 
-  if (measurePoints.length === 1) {
-    measurementResult.value = '点击选择终点'
-  } else if (measurePoints.length === 2) {
-    const distance = calculateDistance(
-      measurePoints[0][0], measurePoints[0][1],
-      measurePoints[1][0], measurePoints[1][1]
-    )
-    measurementResult.value = `距离: ${formatDistance(distance)}`
-
-    // 绘制测量线
-    if (measureLine) map.removeLayer(measureLine)
-    measureLine = L.polyline(measurePoints, {
-      color: '#f56c6c',
-      weight: 3,
-      dashArray: '5, 10'
-    }).addTo(map)
-
-    measurePoints = []
-    setTimeout(() => {
-      activeTool.value = ''
-      measurementResult.value = ''
-    }, 2000)
+// 计算累计总距离（米）
+const getTotalDistance = (points) => {
+  let total = 0
+  for (let i = 1; i < points.length; i++) {
+    total += calculateDistance(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1])
   }
+  return total
+}
+
+// 清空测量图层
+const clearMeasureLayers = () => {
+  if (measureLayerGroup) {
+    measureLayerGroup.clearLayers()
+  }
+  if (measurePreviewLine) {
+    map.removeLayer(measurePreviewLine)
+    measurePreviewLine = null
+  }
+  measureDotMarkers = []
+  measureLabelMarkers = []
+}
+
+// 停止测量（取消，不保留结果）
+const stopMeasure = () => {
+  map.off('mousemove', onMeasureMouseMove)
+  if (measureLayerGroup) map.removeLayer(measureLayerGroup)
+  if (measurePreviewLine) { map.removeLayer(measurePreviewLine); measurePreviewLine = null }
+  measurePoints = []
+  measureDotMarkers = []
+  measureLabelMarkers = []
+  measureLayerGroup = null
+  measurementResult.value = ''
+  if (map) map.getContainer().style.cursor = ''
+}
+
+// 停止测面
+const stopAreaMeasure = () => {
+  if (measureAreaPolygon) { map.removeLayer(measureAreaPolygon); measureAreaPolygon = null }
+  if (measureAreaLabel) { map.removeLayer(measureAreaLabel); measureAreaLabel = null }
+  measureAreaPoints = []
+  measurementResult.value = ''
+}
+
+// 鼠标移动预览线
+const onMeasureMouseMove = (e) => {
+  if (measurePoints.length === 0) return
+  const last = measurePoints[measurePoints.length - 1]
+  const cur = [e.latlng.lat, e.latlng.lng]
+
+  if (measurePreviewLine) map.removeLayer(measurePreviewLine)
+  measurePreviewLine = L.polyline([last, cur], {
+    color: '#3388ff',
+    weight: 2,
+    dashArray: '6, 6',
+    opacity: 0.8
+  }).addTo(map)
+
+  // 更新提示
+  const dist = calculateDistance(last[0], last[1], cur[0], cur[1])
+  const total = getTotalDistance(measurePoints) + dist
+  measurementResult.value = `当前段: ${formatDistance(dist)} | 总计: ${formatDistance(total)} | 双击结束`
+}
+
+// 点击添加测量点
+const handleMeasure = (lat, lng) => {
+  // 初始化图层组
+  if (!measureLayerGroup) {
+    measureLayerGroup = L.layerGroup().addTo(map)
+  }
+
+  measurePoints.push([lat, lng])
+  const idx = measurePoints.length - 1
+
+  // 画点（圆点）
+  const dot = L.circleMarker([lat, lng], {
+    radius: idx === 0 ? 6 : 5,
+    color: '#fff',
+    weight: 2,
+    fillColor: idx === 0 ? '#3388ff' : '#ff6b6b',
+    fillOpacity: 1
+  }).addTo(measureLayerGroup)
+  measureDotMarkers.push(dot)
+
+  if (idx === 0) {
+    // 第一个点：仅提示
+    measurementResult.value = '单击添加点，双击结束测量'
+    // 注册鼠标移动预览
+    map.on('mousemove', onMeasureMouseMove)
+
+    // 起点标签
+    const startLabel = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#fff;color:#333;padding:3px 7px;border-radius:3px;font-size:11px;white-space:nowrap;border:1px solid #ccc;box-shadow:0 1px 4px rgba(0,0,0,0.2);display:inline-block;">起点</div>`,
+        iconSize: null,
+        iconAnchor: [-8, 10]
+      }),
+      interactive: false
+    }).addTo(measureLayerGroup)
+    measureLabelMarkers.push(startLabel)
+  } else {
+    // 画线段
+    const segment = L.polyline([measurePoints[idx - 1], measurePoints[idx]], {
+      color: '#3388ff',
+      weight: 3,
+      opacity: 0.9
+    }).addTo(measureLayerGroup)
+
+    // 本段距离 & 累计
+    const segDist = calculateDistance(
+      measurePoints[idx - 1][0], measurePoints[idx - 1][1],
+      lat, lng
+    )
+    const totalDist = getTotalDistance(measurePoints)
+
+    // 节点标签
+    const label = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#fff;color:#333;padding:3px 7px;border-radius:3px;font-size:11px;white-space:nowrap;border:1px solid #ccc;box-shadow:0 1px 4px rgba(0,0,0,0.2);line-height:1.6;display:inline-block;">
+          <div>${formatDistance(segDist)}</div>
+          <div style="color:#555;font-size:10px;">累计 ${formatDistance(totalDist)}</div>
+        </div>`,
+        iconSize: null,
+        iconAnchor: [-8, 10]
+      }),
+      interactive: false
+    }).addTo(measureLayerGroup)
+    measureLabelMarkers.push(label)
+
+    measurementResult.value = `已量 ${formatDistance(totalDist)} | 单击继续添加点 | 双击结束`
+  }
+}
+
+// 双击结束测量
+const finishMeasure = () => {
+  if (measurePoints.length < 2) {
+    stopMeasure()
+    activeTool.value = ''
+    return
+  }
+
+  // 停止预览
+  map.off('mousemove', onMeasureMouseMove)
+  if (measurePreviewLine) { map.removeLayer(measurePreviewLine); measurePreviewLine = null }
+
+  const totalDist = getTotalDistance(measurePoints)
+
+  // 终点标记
+  if (measureLayerGroup) {
+    const last = measurePoints[measurePoints.length - 1]
+    L.circleMarker(last, {
+      radius: 7,
+      color: '#fff',
+      weight: 2,
+      fillColor: '#ff4500',
+      fillOpacity: 1
+    }).addTo(measureLayerGroup)
+
+    L.marker(last, {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);display:inline-block;">
+          总计: ${formatDistance(totalDist)}
+        </div>`,
+        iconSize: null,
+        iconAnchor: [-8, -4]
+      }),
+      interactive: false
+    }).addTo(measureLayerGroup)
+  }
+
+  measurementResult.value = `测量完成，总距离: ${formatDistance(totalDist)}`
+
+  // drawnItems 保留测量结果
+  if (drawnItems && measureLayerGroup) {
+    // 将测量图层移入 drawnItems（清除时统一清）
+    drawnItems.addLayer(measureLayerGroup)
+    measureLayerGroup = null
+  }
+
+  measurePoints = []
+  measureDotMarkers = []
+  measureLabelMarkers = []
+  activeTool.value = ''
+  map.getContainer().style.cursor = ''
+
+  setTimeout(() => { measurementResult.value = '' }, 4000)
 }
 
 // 测量面积
 const handleAreaMeasure = (lat, lng) => {
-  measurePoints.push([lat, lng])
+  console.log('DEBUG handleAreaMeasure clicked, lat=', lat, 'lng=', lng, 'areaPoints=', measureAreaPoints.length)
+  measureAreaPoints.push([lat, lng])
+  const n = measureAreaPoints.length
 
-  if (measurePoints.length < 3) {
-    measurementResult.value = `已选择 ${measurePoints.length} 个点，还需 ${3 - measurePoints.length} 个`
+  if (n < 3) {
+    measurementResult.value = `已选择 ${n} 个点，还需 ${3 - n} 个`
+    return
   }
 
-  if (measurePoints.length >= 3) {
-    if (measureArea) map.removeLayer(measureArea)
+  // 双击结束逻辑在 handleMapClick 内通过300ms间隔判断，不再单独绑定
 
-    measureArea = L.polygon(measurePoints, {
-      color: '#67c23a',
-      fillColor: '#67c23a',
-      fillOpacity: 0.3
-    }).addTo(map)
+  // 计算面积
+  const area = calculateArea(measureAreaPoints.map(p => ({ lat: p[0], lng: p[1] })))
+  const areaStr = formatArea(area)
+  measurementResult.value = `面积: ${areaStr} | 单击继续加点 | 双击结束`
 
-    const area = calculateArea(measurePoints.map(p => ({ lat: p[0], lng: p[1] })))
-    measurementResult.value = `面积: ${formatArea(area)} (双击结束)`
+  // 绘制 polygon
+  if (measureAreaPolygon) map.removeLayer(measureAreaPolygon)
+  measureAreaPolygon = L.polygon(measureAreaPoints, {
+    color: '#409eff',
+    fillColor: '#409eff',
+    fillOpacity: 0.2,
+    weight: 2
+  }).addTo(map)
 
-    map.once('dblclick', () => {
-      measurePoints = []
-      activeTool.value = ''
-      measurementResult.value = ''
-    })
-  }
+  // 在 polygon 中心显示面积标签
+  if (measureAreaLabel) map.removeLayer(measureAreaLabel)
+  const center = measureAreaPolygon.getBounds().getCenter()
+  measureAreaLabel = L.marker(center, {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:#fff;color:#333;padding:5px 12px;border-radius:4px;font-size:13px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 2px 6px rgba(0,0,0,0.2);display:inline-block;">
+        面积: ${areaStr}
+      </div>`,
+      iconSize: null,
+      iconAnchor: [0, 0]
+    }),
+    interactive: false
+  }).addTo(map)
 }
 
 // 绘制折线
@@ -849,15 +1156,44 @@ const handleDrawRectangle = (e) => {
 // 绘制圆形
 const handleDrawCircle = (e) => {
   if (!map) return
-  const circle = L.circle(e.latlng, {
-    radius: 1000,
+  // 记录圆心，打开对话框让用户设置半径
+  circleForm.center = e.latlng
+  circleForm.centerText = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`
+  circleForm.radius = 1
+  circleForm.unit = 'km'
+  circleDialogVisible.value = true
+}
+
+// 确认绘制圆形
+const confirmDrawCircle = () => {
+  if (!circleForm.center) return
+  // 转换半径单位
+  let radius = circleForm.radius
+  if (circleForm.unit === 'km') {
+    radius = radius * 1000  // 公里转米
+  }
+  // 绘制圆形
+  const circle = L.circle(circleForm.center, {
+    radius: radius,
     color: '#409eff',
     fillColor: '#409eff',
     fillOpacity: 0.3
   }).addTo(map)
   drawnItems.addLayer(circle)
+  // 在圆心添加图标
+  const centerIcon = L.marker(circleForm.center, {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:#fff;color:#409eff;width:12px;height:12px;border:2px solid #409eff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    })
+  }).addTo(map)
+  drawnItems.addLayer(centerIcon)
+  circleDialogVisible.value = false
   activeTool.value = ''
   measurementResult.value = ''
+  ElMessage.success(`已绘制圆形，半径 ${circleForm.radius}${circleForm.unit === 'm' ? '米' : '公里'}`)
 }
 
 // 切换热力图
@@ -874,11 +1210,16 @@ const toggleCluster = () => {
 
 // 清除绘制
 const clearDrawings = () => {
-  if (measureLine) map.removeLayer(measureLine)
-  if (measureArea) map.removeLayer(measureArea)
+  if (activeTool.value === 'measure') stopMeasure()
+  if (activeTool.value === 'area') stopAreaMeasure()
+  if (measureLine) { map.removeLayer(measureLine); measureLine = null }
+  if (measureArea) { map.removeLayer(measureArea); measureArea = null }
+  if (measureLayerGroup) { map.removeLayer(measureLayerGroup); measureLayerGroup = null }
   if (drawnItems) drawnItems.clearLayers()
   measurePoints = []
+  measureAreaPoints = []
   measurementResult.value = ''
+  activeTool.value = ''
   ElMessage.success('已清除')
 }
 
@@ -1020,13 +1361,6 @@ onMounted(() => {
       }
     }, 1500)
   })
-
-  // 添加地图点击事件监听
-  setTimeout(() => {
-    if (map) {
-      map.on('click', handleMapClick)
-    }
-  }, 500)
 })
 
 onUnmounted(() => {
@@ -1208,6 +1542,16 @@ onUnmounted(() => {
   font-size: 12px;
   color: #666;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+
+  .city-name {
+    color: #409eff;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
 }
 
 .layer-switcher {
