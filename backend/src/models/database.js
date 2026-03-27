@@ -90,6 +90,43 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // 创建竞品门店表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS competitors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      -- 基础信息
+      store_code TEXT,
+      brand TEXT,
+      name TEXT NOT NULL,
+      store_type TEXT DEFAULT '竞品',
+      -- 地址信息
+      city TEXT,
+      district TEXT,
+      address TEXT,
+      -- 联系信息
+      contact_person TEXT,
+      contact_phone TEXT,
+      description TEXT,
+      -- 系统字段
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      status TEXT DEFAULT '正常',
+      icon_color TEXT DEFAULT '#f56c6c',
+      user_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建竞品门店索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_competitors_user ON competitors(user_id)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_competitors_status ON competitors(status)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
   // 创建默认管理员账户 (密码: admin123)
   const adminCheck = db.exec("SELECT id FROM users WHERE username = 'admin'")
   if (adminCheck.length === 0 || adminCheck[0].values.length === 0) {

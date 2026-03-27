@@ -30,6 +30,11 @@ const routes = [
         component: () => import('@/views/DataView.vue')
       },
       {
+        path: 'competitors',
+        name: 'Competitors',
+        component: () => import('@/views/CompetitorView.vue')
+      },
+      {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/UsersView.vue'),

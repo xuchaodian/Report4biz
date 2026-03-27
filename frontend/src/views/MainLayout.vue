@@ -14,7 +14,11 @@
         </router-link>
         <router-link to="/data" class="nav-item" :class="{ active: $route.path === '/data' }">
           <el-icon><DataAnalysis /></el-icon>
-          <span>数据</span>
+          <span>我的数据</span>
+        </router-link>
+        <router-link to="/competitors" class="nav-item" :class="{ active: $route.path === '/competitors' }">
+          <el-icon><DataLine /></el-icon>
+          <span>外部数据</span>
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>

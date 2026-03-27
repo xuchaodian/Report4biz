@@ -119,7 +119,8 @@ export function createCustomIcon(color = 'default', icon = '📍') {
 }
 
 // 创建带样式的 SVG 图标
-export function createSvgIcon(color, style = 'store') {
+// sizeScale: 缩放比例，默认1，竞品用0.7
+export function createSvgIcon(color, style = 'store', sizeScale = 1) {
   const svgContent = svgMarkerStyles[style] ? svgMarkerStyles[style](color) : svgMarkerStyles.store(color)
   
   const sizeMap = {
@@ -131,14 +132,15 @@ export function createSvgIcon(color, style = 'store') {
     star: [36, 36]
   }
   
-  const size = sizeMap[style] || [36, 44]
+  const baseSize = sizeMap[style] || [36, 44]
+  const size = [baseSize[0] * sizeScale, baseSize[1] * sizeScale]
   
   return L.divIcon({
     className: 'custom-svg-marker',
-    html: `<div class="custom-marker-svg">${svgContent}</div>`,
-    iconSize: size,
-    iconAnchor: [size[0] / 2, size[1]],
-    popupAnchor: [0, -size[1]]
+    html: `<div class="custom-marker-svg" style="transform: scale(${sizeScale})">${svgContent}</div>`,
+    iconSize: baseSize,  // 保持原始大小用于定位
+    iconAnchor: [baseSize[0] / 2, baseSize[1]],
+    popupAnchor: [0, -baseSize[1]]
   })
 }
 

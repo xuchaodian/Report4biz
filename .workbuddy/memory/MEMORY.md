@@ -50,3 +50,11 @@
 - **事件绑定必须在map创建后立即绑定**：`initMap` 是 async 函数（含 await getLocationByIP），map.on('click'/'dblclick') 必须写在 initMap 内部 map 创建之后，不能用 setTimeout 延迟绑定（会产生竞态导致绑定失败）
 - **门店区分列表**：在 marker.js store 的 storeCategories 数组中维护
 - **测量面积面消失bug (2026-03-27)**：双击结束面积测量后，下次测量时之前保存的面会消失。原因是双击结束后 `measureAreaPolygon`/`measureAreaLabel` 没有设为 null，下次 `handleAreaMeasure` 会执行 `map.removeLayer(measureAreaPolygon)` 把已保存的面从 drawnItems 中移除。修复：在双击结束时添加 `measureAreaPolygon = null` 和 `measureAreaLabel = null`
+
+## 竞品门店功能 (2026-03-27)
+- **竞品门店表**：`competitors` 表（独立于 `markers` 表）
+- **竞品门店字段**：store_code, brand, name, store_type, city, district, address, contact_person, contact_phone, description, latitude, longitude, status, icon_color（默认红色 #f56c6c）
+- **竞品门店 API**：`/api/competitors`（GET/POST/PUT/DELETE + import/export）
+- **竞品管理页面**：`/competitors` 路由，CompetitorView.vue
+- **地图显示**：竞品用红色图标，与门店区分显示
+- **竞品图层控制**：右下角开关控制显示/隐藏

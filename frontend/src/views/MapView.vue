@@ -161,6 +161,15 @@
       </div>
     </div>
 
+    <!-- 竞品图层开关 -->
+    <div class="competitor-toggle">
+      <span style="margin-right: 6px; font-size: 12px;">竞品</span>
+      <el-switch
+        v-model="showCompetitorLayer"
+        @change="onCompetitorToggleChange"
+      />
+    </div>
+
     <!-- 缩放控件容器 -->
     <div class="zoom-control-container">
       <div class="zoom-in" @click="zoomIn">+</div>
@@ -368,6 +377,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import 'leaflet.heat'
 import { useMarkerStore } from '@/stores/marker'
+import { useCompetitorStore } from '@/stores/competitor'
 import {
   createCustomIcon, createSvgIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
@@ -376,12 +386,14 @@ import vecMapPreview from '@/assets/vec-map-preview.jpeg?url'
 import imgMapPreview from '@/assets/img-map-preview.jpeg?url'
 
 const markerStore = useMarkerStore()
+const competitorStore = useCompetitorStore()
 const route = useRoute() // 获取路由参数
 
 // 地图实例
 let map = null
 let tileLayer = null
 let businessLayer = null
+let competitorLayer = null  // 竞品门店图层
 let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
@@ -404,6 +416,7 @@ const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
 const showBusinessLayer = ref(true)
+const showCompetitorLayer = ref(true)  // 竞品图层显示控制
 const layerOpacity = ref(1)
 const baseMapType = ref('vec')
 const currentCoords = ref(null)
@@ -547,6 +560,8 @@ const initMap = async () => {
 
   // 加载点位数据
   loadMarkers()
+  // 加载竞品门店
+  loadCompetitors()
 }
 
 // 地址搜索（使用 ArcGIS World Geocoding API）
@@ -723,6 +738,142 @@ const loadMarkers = async () => {
 
   // 根据显示模式添加图层
   updateLayerDisplay()
+  
+  // 确保竞品图层在门店图层下方（如果竞品图层已创建）
+  if (competitorLayer && map.hasLayer(competitorLayer)) {
+    updateCompetitorDisplay()
+  }
+}
+
+// 加载竞品门店
+const loadCompetitors = async () => {
+  await competitorStore.fetchCompetitors()
+  console.log('竞品数据:', competitorStore.competitors)
+  console.log('竞品数量:', competitorStore.competitors?.length || 0)
+
+  // 清除原有竞品图层
+  if (competitorLayer) {
+    map.removeLayer(competitorLayer)
+    competitorLayer = null
+  }
+
+  // 如果没有竞品数据，跳过
+  if (!competitorStore.competitors || competitorStore.competitors.length === 0) {
+    console.log('没有竞品数据')
+    return
+  }
+
+  // 创建竞品图层
+  competitorLayer = L.layerGroup()
+
+  // 竞品品牌颜色映射（避免暗色系，使用鲜艳颜色）
+  const brandColors = {
+    '大米先生': '#e6a23c',   // 橙色
+    '谷田稻香': '#f56c6c',   // 红色
+    '吉野家': '#409eff',     // 蓝色
+    '老乡鸡': '#67c23a',     // 绿色
+    '米村拌饭': '#9c27b0',   // 紫色
+    '其他': '#ff9800'        // 橙色
+  }
+
+  // 根据品牌获取颜色
+  const getBrandColor = (brand) => {
+    if (!brand) return brandColors['其他']
+    // 遍历品牌映射查找匹配
+    for (const key in brandColors) {
+      if (brand.includes(key) || key.includes(brand)) {
+        return brandColors[key]
+      }
+    }
+    return brandColors['其他']
+  }
+
+  competitorStore.competitors.forEach(comp => {
+    console.log('创建竞品标记:', comp.name, comp.latitude, comp.longitude)
+    // 竞品使用小号圆点图标，颜色根据品牌
+    const brandColor = getBrandColor(comp.brand)
+    const icon = createSvgIcon(brandColor, 'dot', 1.2)
+
+    const marker = L.marker([comp.latitude, comp.longitude], {
+      icon,
+      draggable: true
+    })
+
+    marker.bindPopup(`
+      <div style="min-width: 200px; font-size: 13px;">
+        <h4 style="margin: 0 0 8px 0; color: ${brandColor};">🏪 ${comp.brand || ''} ${comp.name}</h4>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${brandColor};">竞品</span></p>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${comp.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>地址:</strong> ${(comp.city || '') + (comp.district || '') + (comp.address || '-')}</p>
+        ${comp.contact_person ? `<p style="margin: 4px 0;"><strong>联系人:</strong> ${comp.contact_person} ${comp.contact_phone || ''}</p>` : ''}
+        ${comp.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${comp.description}</p>` : ''}
+      </div>
+    `)
+
+    // 拖拽结束更新坐标
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      await competitorStore.updateCompetitor(comp.id, {
+        latitude: latlng.lat,
+        longitude: latlng.lng
+      })
+      ElMessage.success('竞品坐标已更新')
+    })
+
+    competitorLayer.addLayer(marker)
+  })
+
+  console.log('竞品图层创建完成, competitorLayer:', !!competitorLayer)
+  // 根据显示模式添加竞品图层
+  updateCompetitorDisplay()
+}
+
+// 竞品开关切换处理
+const onCompetitorToggleChange = (value) => {
+  console.log('竞品开关切换:', value)
+  updateCompetitorDisplay()
+}
+
+// 更新竞品图层显示
+const updateCompetitorDisplay = () => {
+  console.log('updateCompetitorDisplay called, showCompetitorLayer:', showCompetitorLayer.value)
+  
+  if (!map) {
+    console.log('地图未初始化')
+    return
+  }
+  
+  if (!competitorLayer) {
+    console.log('竞品图层未创建，跳过')
+    return
+  }
+
+  if (showCompetitorLayer.value) {
+    // 直接添加图层，不管之前状态如何
+    try {
+      map.addLayer(competitorLayer)
+      console.log('竞品图层已添加')
+      
+      // 确保竞品在门店下方
+      if (businessLayer && map.hasLayer(businessLayer)) {
+        try {
+          competitorLayer.bringToBack()
+        } catch (e) {
+          console.log('bringToBack 失败（非致命）:', e.message)
+        }
+      }
+    } catch (e) {
+      console.log('添加图层失败:', e.message)
+    }
+  } else {
+    // 直接移除图层
+    try {
+      map.removeLayer(competitorLayer)
+      console.log('竞品图层已移除')
+    } catch (e) {
+      console.log('移除图层失败:', e.message)
+    }
+  }
 }
 
 // 更新图层显示
@@ -743,9 +894,14 @@ const updateLayerDisplay = () => {
   } else {
     map.addLayer(businessLayer)
   }
+
+  // 确保门店图层始终显示在竞品图层上方
+  if (map.hasLayer(competitorLayer)) {
+    competitorLayer.bringToBack()
+  }
 }
 
-// 监控图层显示状态
+// 监控图层显示状态（不包括竞品开关，由 @change 事件处理）
 watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
   updateLayerDisplay()
   if (businessLayer) {
@@ -1615,6 +1771,24 @@ onUnmounted(() => {
         padding: 2px 0;
       }
     }
+  }
+}
+
+// 竞品图层开关
+.competitor-toggle {
+  position: absolute;
+  bottom: 205px;
+  right: 10px;
+  background: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  z-index: 1001;
+  font-size: 12px;
+
+  .el-switch {
+    --el-switch-off-color: #f56c6c;
+    font-size: 12px;
   }
 }
 

@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 
 import authRoutes from './routes/auth.js'
 import markerRoutes from './routes/markers.js'
+import competitorRoutes from './routes/competitors.js'
 import userRoutes from './routes/users.js'
 import { initDatabase } from './models/database.js'
 
@@ -28,6 +29,7 @@ async function start() {
     // API路由
     app.use('/api/auth', authRoutes)
     app.use('/api/markers', markerRoutes)
+    app.use('/api/competitors', competitorRoutes)
     app.use('/api/users', userRoutes)
 
     // 健康检查
