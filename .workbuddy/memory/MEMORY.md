@@ -36,6 +36,7 @@
 ## Git备份
 - v1.0.0: 2026-03-26，基础功能完成
 - v1.0.1: 2026-03-26（df5deb0），门店区分颜色显示优化
+- v1.1.0: 2026-03-27（66efe48），竞品门店功能
 
 ## 常见问题
 - **修改代码后服务器没变化**：必须先 vite build，再用 paramiko SFTP 部署 dist 到服务器（每次修改都要执行这两步）
@@ -53,8 +54,16 @@
 
 ## 竞品门店功能 (2026-03-27)
 - **竞品门店表**：`competitors` 表（独立于 `markers` 表）
-- **竞品门店字段**：store_code, brand, name, store_type, city, district, address, contact_person, contact_phone, description, latitude, longitude, status, icon_color（默认红色 #f56c6c）
+- **竞品门店字段**：store_code, brand, name, store_type, city, district, address, contact_person, contact_phone, description, latitude, longitude, status, icon_color
 - **竞品门店 API**：`/api/competitors`（GET/POST/PUT/DELETE + import/export）
 - **竞品管理页面**：`/competitors` 路由，CompetitorView.vue
-- **地图显示**：竞品用红色图标，与门店区分显示
-- **竞品图层控制**：右下角开关控制显示/隐藏
+- **竞品图层控制**：右下角开关控制显示/隐藏，左侧显示"竞品"文字
+- **竞品图标样式**：圆点（dot），大小 1.2 倍
+- **竞品品牌颜色**：
+  - 大米先生：橙色 #e6a23c
+  - 谷田稻香：红色 #f56c6c
+  - 吉野家：蓝色 #409eff
+  - 老乡鸡：绿色 #67c23a
+  - 米村拌饭：紫色 #9c27b0
+  - 其他：橙色 #ff9800
+- **图层优先级**：门店图标显示在竞品图标上方（使用 bringToBack）
