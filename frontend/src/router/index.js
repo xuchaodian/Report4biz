@@ -35,6 +35,16 @@ const routes = [
         component: () => import('@/views/CompetitorView.vue')
       },
       {
+        path: 'brand-stores',
+        name: 'BrandStores',
+        component: () => import('@/views/BrandStoreView.vue')
+      },
+      {
+        path: 'brands',
+        name: 'Brands',
+        component: () => import('@/views/BrandIconView.vue')
+      },
+      {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/UsersView.vue'),

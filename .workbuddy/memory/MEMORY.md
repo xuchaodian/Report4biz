@@ -52,7 +52,22 @@
 - **门店区分列表**：在 marker.js store 的 storeCategories 数组中维护
 - **测量面积面消失bug (2026-03-27)**：双击结束面积测量后，下次测量时之前保存的面会消失。原因是双击结束后 `measureAreaPolygon`/`measureAreaLabel` 没有设为 null，下次 `handleAreaMeasure` 会执行 `map.removeLayer(measureAreaPolygon)` 把已保存的面从 drawnItems 中移除。修复：在双击结束时添加 `measureAreaPolygon = null` 和 `measureAreaLabel = null`
 
-## 竞品门店功能 (2026-03-27)
+## 品牌门店功能 (2026-03-28)
+- **品牌门店表**：`brand_stores` 表（独立于 `markers` 和 `competitors`）
+- **品牌门店字段**：同竞品门店（store_code, brand, name, store_type, city, district, address, contact_person, contact_phone, description, latitude, longitude, status, icon_color）
+- **品牌门店 API**：`/api/brand-stores`（GET/POST/PUT/DELETE + import/export）
+- **品牌门店页面**：`/brand-stores` 路由，BrandStoreView.vue（与竞品门店功能相同的管理界面）
+- **品牌门店图层**：地图右下角独立开关控制，显示菱形图标（diamond样式），支持拖拽更新坐标
+
+## 品牌图标功能 (2026-03-28)
+- **品牌图标表**：`brand_icons` 表（id, user_id, brand, filename, original_name, created_at）
+- **品牌图标 API**：`/api/brand-icons`（GET/POST/DELETE）
+- **品牌图标上传目录**：`/var/www/geomanger/backend/uploads/brand-icons/`
+- **品牌图标管理页面**：`/brands` 路由，BrandIconView.vue（左侧品牌列表，右侧图标上传/预览/删除）
+- **图标渲染**：地图上优先显示品牌自定义图标（32×32px 圆形），无品牌图标则回退到门店类型/竞品颜色 SVG
+- **地图集成**：MapView.vue onMounted 中调用 brandIconStore.fetchBrandIcons()，brandIconMap computed 提供品牌→图标URL映射
+
+## 竞品门店功能 (2026-03-27, 更新 2026-03-28)
 - **竞品门店表**：`competitors` 表（独立于 `markers` 表）
 - **竞品门店字段**：store_code, brand, name, store_type, city, district, address, contact_person, contact_phone, description, latitude, longitude, status, icon_color
 - **竞品门店 API**：`/api/competitors`（GET/POST/PUT/DELETE + import/export）
@@ -66,4 +81,5 @@
   - 老乡鸡：绿色 #67c23a
   - 米村拌饭：紫色 #9c27b0
   - 其他：橙色 #ff9800
+- **竞品管理筛选**：支持关键词/城市/区县/品牌四维筛选，品牌列和筛选下拉均带彩色圆点
 - **图层优先级**：门店图标显示在竞品图标上方（使用 bringToBack）

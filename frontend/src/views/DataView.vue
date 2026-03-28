@@ -47,6 +47,10 @@
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
+      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
+      </el-select>
+
       <span class="统计">共 {{ filteredMarkers.length }} 条数据</span>
     </div>
 
@@ -326,6 +330,7 @@ const filterStoreType = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
 const filterStoreCategory = ref('')
+const filterBrand = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -390,6 +395,12 @@ const categoryList = computed(() => {
   return categories.sort()
 })
 
+// 品牌列表
+const brandList = computed(() => {
+  const brands = [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))]
+  return brands.sort()
+})
+
 // 筛选后的数据
 const filteredMarkers = computed(() => {
   return markerStore.markers.filter(marker => {
@@ -401,7 +412,8 @@ const filteredMarkers = computed(() => {
     const matchCity = !filterCity.value || marker.city === filterCity.value
     const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
     const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
-    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory
+    const matchBrand = !filterBrand.value || marker.brand === filterBrand.value
+    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand
   })
 })
 

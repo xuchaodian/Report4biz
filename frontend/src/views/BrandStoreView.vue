@@ -1,10 +1,10 @@
 <template>
-  <div class="competitor-view">
+  <div class="brand-store-view">
     <div class="data-header">
-      <h2>竞品管理</h2>
+      <h2>品牌门店</h2>
       <div class="header-actions">
         <el-button type="primary" @click="showAddDialog">
-          <el-icon><Plus /></el-icon>添加竞品
+          <el-icon><Plus /></el-icon>添加品牌
         </el-button>
         <el-button @click="handleImport">
           <el-icon><Upload /></el-icon>导入
@@ -15,7 +15,6 @@
       </div>
     </div>
 
-    <!-- 筛选栏 -->
     <div class="filter-bar">
       <el-input
         v-model="searchKeyword"
@@ -40,20 +39,19 @@
       <el-select v-model="filterBrand" placeholder="按品牌" style="width: 140px" clearable @change="handleSearch">
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b">
           <span style="display: flex; align-items: center; gap: 6px;">
-            <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[b] || '#ff9800' }"></span>
+            <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[b] || '#409eff' }"></span>
             {{ b }}
           </span>
         </el-option>
       </el-select>
 
-      <span class="统计">共 {{ filteredCompetitors.length }} 条数据</span>
+      <span class="统计">共 {{ filteredBrandStores.length }} 条数据</span>
     </div>
 
-    <!-- 数据表格 -->
     <div class="data-table">
       <el-table
-        :data="paginatedCompetitors"
-        v-loading="competitorStore.loading"
+        :data="paginatedBrandStores"
+        v-loading="brandStoreStore.loading"
         border
         stripe
         style="width: 100%"
@@ -63,7 +61,7 @@
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
             <span style="display: flex; align-items: center; gap: 5px;">
-              <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[row.brand] || '#ff9800', flexShrink: 0 }"></span>
+              <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[row.brand] || '#409eff', flexShrink: 0 }"></span>
               {{ row.brand }}
             </span>
           </template>
@@ -91,37 +89,30 @@
       </el-table>
     </div>
 
-    <!-- 分页 -->
     <div class="pagination-container">
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        :total="filteredCompetitors.length"
+        :total="filteredBrandStores.length"
         :page-sizes="[10, 20, 50, 100]"
         layout="total, sizes, prev, pager, next, jumper"
       />
     </div>
 
-    <!-- 添加/编辑对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isEdit ? '编辑竞品' : '添加竞品'"
-      width="600px"
-    >
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑品牌门店' : '添加品牌门店'" width="600px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="编号" prop="store_code">
-              <el-input v-model="form.store_code" placeholder="如: COMP001" />
+              <el-input v-model="form.store_code" placeholder="如: BRAND001" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="品牌" prop="brand">
-              <el-input v-model="form.brand" placeholder="竞品品牌名称" />
+              <el-input v-model="form.brand" placeholder="品牌名称" />
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="名称" prop="name">
@@ -131,14 +122,12 @@
           <el-col :span="12">
             <el-form-item label="状态" prop="status">
               <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
-                <el-option v-for="s in competitorStore.statuses" :key="s" :label="s" :value="s" />
+                <el-option v-for="s in statusList" :key="s" :label="s" :value="s" />
               </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-divider content-position="left">地址信息</el-divider>
-
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="城市" prop="city">
@@ -151,11 +140,9 @@
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-form-item label="地址" prop="address">
           <el-input v-model="form.address" placeholder="详细地址" />
         </el-form-item>
-
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="纬度" prop="latitude">
@@ -168,9 +155,7 @@
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-divider content-position="left">联系信息</el-divider>
-
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="联系人" prop="contact_person">
@@ -183,7 +168,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
@@ -194,8 +178,7 @@
       </template>
     </el-dialog>
 
-    <!-- 导入对话框 -->
-    <el-dialog v-model="importDialogVisible" title="导入竞品数据" width="500px">
+    <el-dialog v-model="importDialogVisible" title="导入品牌门店数据" width="500px">
       <div class="import-tips">
         <p>请上传CSV格式文件，支持以下字段：</p>
         <ul>
@@ -213,14 +196,7 @@
         </ul>
         <el-link type="primary" @click="downloadTemplate">下载模板</el-link>
       </div>
-      <el-upload
-        ref="uploadRef"
-        :auto-upload="false"
-        :limit="1"
-        accept=".csv"
-        :on-change="handleFileChange"
-        drag
-      >
+      <el-upload ref="uploadRef" :auto-upload="false" :limit="1" accept=".csv" :on-change="handleFileChange" drag>
         <el-icon class="el-icon--upload"><Upload /></el-icon>
         <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
       </el-upload>
@@ -237,12 +213,13 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location } from '@element-plus/icons-vue'
-import { useCompetitorStore } from '@/stores/competitor'
+import { useBrandStoreStore } from '@/stores/brandStore'
 
 const router = useRouter()
-const competitorStore = useCompetitorStore()
+const brandStoreStore = useBrandStoreStore()
 
-// 筛选和分页
+const statusList = ['正常', '关注', '暂停', '关闭']
+
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
@@ -250,7 +227,6 @@ const filterBrand = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-// 品牌颜色映射
 const brandColorMap = {
   '大米先生': '#e6a23c',
   '谷田稻香': '#f56c6c',
@@ -259,7 +235,6 @@ const brandColorMap = {
   '米村拌饭': '#9c27b0'
 }
 
-// 弹窗状态
 const dialogVisible = ref(false)
 const importDialogVisible = ref(false)
 const isEdit = ref(false)
@@ -269,21 +244,12 @@ const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
 
-// 表单数据
 const formRef = ref(null)
 const form = reactive({
-  store_code: '',
-  brand: '',
-  name: '',
-  status: '正常',
-  city: '',
-  district: '',
-  address: '',
-  contact_person: '',
-  contact_phone: '',
-  description: '',
-  latitude: 39.9042,
-  longitude: 116.4074
+  store_code: '', brand: '', name: '', status: '正常',
+  city: '', district: '', address: '',
+  contact_person: '', contact_phone: '', description: '',
+  latitude: 39.9042, longitude: 116.4074
 })
 
 const rules = {
@@ -292,108 +258,78 @@ const rules = {
   longitude: [{ required: true, message: '请输入经度', trigger: 'blur' }]
 }
 
-// 城市列表
 const cityList = computed(() => {
-  const cities = [...new Set(competitorStore.competitors.map(c => c.city).filter(Boolean))]
+  const cities = [...new Set(brandStoreStore.brandStores.map(s => s.city).filter(Boolean))]
   return cities.sort()
 })
-
-// 区县列表
 const districtList = computed(() => {
-  const districts = [...new Set(competitorStore.competitors.map(c => c.district).filter(Boolean))]
+  const districts = [...new Set(brandStoreStore.brandStores.map(s => s.district).filter(Boolean))]
   return districts.sort()
 })
-
-// 品牌列表
 const brandList = computed(() => {
-  const brands = [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))]
+  const brands = [...new Set(brandStoreStore.brandStores.map(s => s.brand).filter(Boolean))]
   return brands.sort()
 })
 
-// 筛选后的数据
-const filteredCompetitors = computed(() => {
-  return competitorStore.competitors.filter(comp => {
+const filteredBrandStores = computed(() => {
+  return brandStoreStore.brandStores.filter(store => {
     const matchKeyword = !searchKeyword.value ||
-      comp.name.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
-      (comp.address && comp.address.toLowerCase().includes(searchKeyword.value.toLowerCase())) ||
-      (comp.store_code && comp.store_code.toLowerCase().includes(searchKeyword.value.toLowerCase())) ||
-      (comp.brand && comp.brand.toLowerCase().includes(searchKeyword.value.toLowerCase()))
-    const matchCity = !filterCity.value || comp.city === filterCity.value
-    const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
-    const matchBrand = !filterBrand.value || comp.brand === filterBrand.value
+      store.name.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
+      (store.address && store.address.toLowerCase().includes(searchKeyword.value.toLowerCase())) ||
+      (store.store_code && store.store_code.toLowerCase().includes(searchKeyword.value.toLowerCase())) ||
+      (store.brand && store.brand.toLowerCase().includes(searchKeyword.value.toLowerCase()))
+    const matchCity = !filterCity.value || store.city === filterCity.value
+    const matchDistrict = !filterDistrict.value || store.district === filterDistrict.value
+    const matchBrand = !filterBrand.value || store.brand === filterBrand.value
     return matchKeyword && matchCity && matchDistrict && matchBrand
   })
 })
 
-// 分页数据
-const paginatedCompetitors = computed(() => {
+const paginatedBrandStores = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
-  return filteredCompetitors.value.slice(start, end)
+  return filteredBrandStores.value.slice(start, end)
 })
 
-// 搜索
-const handleSearch = () => {
-  currentPage.value = 1
-}
+const handleSearch = () => { currentPage.value = 1 }
 
-// 显示添加弹窗
 const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
   Object.assign(form, {
-    store_code: '',
-    brand: '',
-    name: '',
-    status: '正常',
-    city: '',
-    district: '',
-    address: '',
-    contact_person: '',
-    contact_phone: '',
-    description: '',
-    latitude: 39.9042,
-    longitude: 116.4074
+    store_code: '', brand: '', name: '', status: '正常',
+    city: '', district: '', address: '',
+    contact_person: '', contact_phone: '', description: '',
+    latitude: 39.9042, longitude: 116.4074
   })
   dialogVisible.value = true
 }
 
-// 编辑
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
   Object.assign(form, {
-    store_code: row.store_code || '',
-    brand: row.brand || '',
-    name: row.name,
-    status: row.status || '正常',
-    city: row.city || '',
-    district: row.district || '',
-    address: row.address || '',
-    contact_person: row.contact_person || '',
-    contact_phone: row.contact_phone || '',
-    description: row.description || '',
-    latitude: row.latitude,
-    longitude: row.longitude
+    store_code: row.store_code || '', brand: row.brand || '', name: row.name,
+    status: row.status || '正常', city: row.city || '', district: row.district || '',
+    address: row.address || '', contact_person: row.contact_person || '',
+    contact_phone: row.contact_phone || '', description: row.description || '',
+    latitude: row.latitude, longitude: row.longitude
   })
   dialogVisible.value = true
 }
 
-// 保存
 const handleSave = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
-
   saving.value = true
   try {
     let result
     if (isEdit.value) {
-      result = await competitorStore.updateCompetitor(editingId.value, { ...form })
+      result = await brandStoreStore.updateBrandStore(editingId.value, { ...form })
     } else {
-      result = await competitorStore.addCompetitor({ ...form })
+      result = await brandStoreStore.addBrandStore({ ...form })
     }
-
-    if (result.success) {
+    if (result.success !== false) {
       ElMessage.success(isEdit.value ? '更新成功' : '添加成功')
       dialogVisible.value = false
     } else {
@@ -404,54 +340,37 @@ const handleSave = async () => {
   }
 }
 
-// 删除
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确定要删除「${row.name}」吗？`, '提示', {
-      type: 'warning'
-    })
-    const result = await competitorStore.deleteCompetitor(row.id)
-    if (result.success) {
+    await ElMessageBox.confirm(`确定要删除「${row.name}」吗？`, '提示', { type: 'warning' })
+    const result = await brandStoreStore.deleteBrandStore(row.id)
+    if (result.success !== false) {
       ElMessage.success('删除成功')
     } else {
       ElMessage.error(result.message)
     }
-  } catch {
-    // 用户取消
-  }
+  } catch {}
 }
 
-// 定位
 const handleLocate = (row) => {
-  router.push({ path: '/', query: { lat: row.latitude, lng: row.longitude, id: row.id, type: 'competitor' } })
+  router.push({ path: '/', query: { lat: row.latitude, lng: row.longitude, id: row.id, type: 'brandStore' } })
 }
 
-// 导入
 const handleImport = () => {
   uploadFile.value = null
   importDialogVisible.value = true
 }
+const handleFileChange = (file) => { uploadFile.value = file.raw }
 
-// 文件变化
-const handleFileChange = (file) => {
-  uploadFile.value = file.raw
-}
-
-// 确认导入
 const handleImportConfirm = async () => {
-  if (!uploadFile.value) {
-    ElMessage.warning('请选择文件')
-    return
-  }
-
+  if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
   importing.value = true
   try {
-    const result = await competitorStore.importCompetitors(uploadFile.value)
-    if (result.success) {
-      ElMessage.success(`成功导入 ${result.count} 条数据`)
+    const result = await brandStoreStore.importBrandStores(uploadFile.value)
+    if (result.success !== false) {
+      ElMessage.success(result.message)
       importDialogVisible.value = false
-      // 刷新列表
-      await competitorStore.fetchCompetitors()
+      await brandStoreStore.fetchBrandStores()
     } else {
       ElMessage.error(result.message)
     }
@@ -460,67 +379,51 @@ const handleImportConfirm = async () => {
   }
 }
 
-// 导出
 const handleExport = async () => {
-  const result = await competitorStore.exportCompetitors()
-  if (result.success) {
+  const result = await brandStoreStore.exportBrandStores()
+  if (result.success !== false) {
     const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `competitors_${Date.now()}.json`
+    a.download = `brand_stores_${Date.now()}.json`
     a.click()
     URL.revokeObjectURL(url)
     ElMessage.success('导出成功')
   }
 }
 
-// 下载模板
 const downloadTemplate = () => {
   const template = `store_code,brand,name,city,district,address,contact_person,contact_phone,description,latitude,longitude
-COMP001,瑞幸咖啡,瑞幸咖啡国贸店,北京市,朝阳区,国贸大厦,张总,13800138001,竞品门店,39.9088,116.4610
-COMP002,瑞幸咖啡,瑞幸咖啡中关村店,北京市,海淀区,中关村大街1号,李总,13800138002,写字楼门店,39.9830,116.3120`
+BRAND001,某品牌,某品牌门店,北京市,朝阳区,示例地址,张三,13800138001,关注门店,39.9088,116.4610`
   const blob = new Blob([template], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'competitor_template.csv'
+  a.download = 'brand_store_template.csv'
   a.click()
   URL.revokeObjectURL(url)
 }
 
-onMounted(() => {
-  competitorStore.fetchCompetitors()
-})
+onMounted(() => { brandStoreStore.fetchBrandStores() })
 </script>
 
 <style lang="scss" scoped>
-.competitor-view {
+.brand-store-view {
   height: 100%;
   padding: 20px;
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
 }
-
 .data-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-
-  h2 {
-    margin: 0;
-    font-size: 18px;
-    color: #333;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 10px;
-  }
+  h2 { margin: 0; font-size: 18px; color: #333; }
+  .header-actions { display: flex; gap: 10px; }
 }
-
 .filter-bar {
   background: white;
   padding: 15px;
@@ -529,14 +432,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 15px;
-
-  .统计 {
-    margin-left: auto;
-    color: #666;
-    font-size: 14px;
-  }
+  .统计 { margin-left: auto; color: #666; font-size: 14px; }
 }
-
 .data-table {
   flex: 1;
   background: white;
@@ -544,29 +441,17 @@ onMounted(() => {
   padding: 15px;
   overflow: auto;
 }
-
 .pagination-container {
   margin-top: 15px;
   display: flex;
   justify-content: flex-end;
 }
-
 .import-tips {
   margin-bottom: 20px;
   padding: 15px;
   background: #f5f7fa;
   border-radius: 4px;
-
-  p {
-    margin: 0 0 10px 0;
-    font-weight: bold;
-  }
-
-  ul {
-    margin: 0;
-    padding-left: 20px;
-    font-size: 13px;
-    color: #666;
-  }
+  p { margin: 0 0 10px 0; font-weight: bold; }
+  ul { margin: 0; padding-left: 20px; font-size: 13px; color: #666; }
 }
 </style>

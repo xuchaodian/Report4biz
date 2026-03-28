@@ -7,6 +7,8 @@ import authRoutes from './routes/auth.js'
 import markerRoutes from './routes/markers.js'
 import competitorRoutes from './routes/competitors.js'
 import userRoutes from './routes/users.js'
+import brandIconRoutes from './routes/brand-icons.js'
+import brandStoreRoutes from './routes/brand-stores.js'
 import { initDatabase } from './models/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -20,6 +22,9 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
+// 静态文件服务 - 品牌图标上传目录
+app.use('/uploads/brand-icons', express.static(join(__dirname, '../uploads/brand-icons')))
+
 // 初始化数据库并启动服务器
 async function start() {
   try {
@@ -31,6 +36,8 @@ async function start() {
     app.use('/api/markers', markerRoutes)
     app.use('/api/competitors', competitorRoutes)
     app.use('/api/users', userRoutes)
+    app.use('/api/brand-icons', brandIconRoutes)
+app.use('/api/brand-stores', brandStoreRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

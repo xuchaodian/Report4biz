@@ -161,13 +161,23 @@
       </div>
     </div>
 
-    <!-- 竞品图层开关 -->
-    <div class="competitor-toggle">
-      <span style="margin-right: 6px; font-size: 12px;">竞品</span>
-      <el-switch
-        v-model="showCompetitorLayer"
-        @change="onCompetitorToggleChange"
-      />
+    <!-- 显示门店开关（整合竞品+品牌） -->
+    <div class="store-toggle-panel">
+      <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
+        <span style="font-size: 12px; font-weight: 500;">显示门店</span>
+        <el-switch v-model="showStoreLayers" @click.stop />
+        <span class="toggle-arrow" :class="{ expanded: storeToggleExpanded }">▼</span>
+      </div>
+      <div v-show="storeToggleExpanded" class="store-toggle-body">
+        <div class="toggle-row">
+          <span class="toggle-label">竞品</span>
+          <el-switch v-model="showCompetitorLayer" />
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">品牌</span>
+          <el-switch v-model="showBrandStoreLayer" />
+        </div>
+      </div>
     </div>
 
     <!-- 缩放控件容器 -->
@@ -363,7 +373,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -378,8 +388,10 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import 'leaflet.heat'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
+import { useBrandIconStore } from '@/stores/brandIcon'
+import { useBrandStoreStore } from '@/stores/brandStore'
 import {
-  createCustomIcon, createSvgIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
+  createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 import vecMapPreview from '@/assets/vec-map-preview.jpeg?url'
@@ -387,13 +399,25 @@ import imgMapPreview from '@/assets/img-map-preview.jpeg?url'
 
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
+const brandIconStore = useBrandIconStore()
+const brandStoreStore = useBrandStoreStore()
 const route = useRoute() // 获取路由参数
+
+// 品牌图标映射 brand -> iconUrl
+const brandIconMap = computed(() => {
+  const map = {}
+  brandIconStore.icons.forEach(icon => {
+    map[icon.brand] = `/uploads/brand-icons/${icon.filename}`
+  })
+  return map
+})
 
 // 地图实例
 let map = null
 let tileLayer = null
 let businessLayer = null
 let competitorLayer = null  // 竞品门店图层
+let brandStoreLayer = null  // 品牌门店图层
 let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
@@ -416,7 +440,10 @@ const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
 const showBusinessLayer = ref(true)
+const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(true)  // 竞品图层显示控制
+const showBrandStoreLayer = ref(true)  // 品牌门店图层显示控制
+const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
 const layerOpacity = ref(1)
 const baseMapType = ref('vec')
 const currentCoords = ref(null)
@@ -562,6 +589,8 @@ const initMap = async () => {
   loadMarkers()
   // 加载竞品门店
   loadCompetitors()
+  // 加载品牌门店
+  loadBrandStores()
 }
 
 // 地址搜索（使用 ArcGIS World Geocoding API）
@@ -662,9 +691,11 @@ const loadMarkers = async () => {
 
   markerStore.markers.forEach(markerData => {
     console.log('创建标记:', markerData.name, '坐标:', markerData.latitude, markerData.longitude)
-    // 使用门店类型颜色: 已开业=绿, 重点候选=红, 一般候选=黄
-    const iconColor = getStoreTypeColor(markerData.store_type)
-    const icon = createSvgIcon(iconColor, currentMarkerStyle.value)
+    // 有品牌图标优先用图片图标，否则用门店类型颜色 SVG
+    const brandIconUrl = brandIconMap.value[markerData.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,
@@ -714,8 +745,10 @@ const loadMarkers = async () => {
   })
 
   markerStore.markers.forEach(markerData => {
-    const iconColor = getStoreTypeColor(markerData.store_type)
-    const icon = createSvgIcon(iconColor, currentMarkerStyle.value)
+    const brandIconUrl = brandIconMap.value[markerData.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
     marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
     markerClusterGroup.addLayer(marker)
@@ -790,9 +823,12 @@ const loadCompetitors = async () => {
 
   competitorStore.competitors.forEach(comp => {
     console.log('创建竞品标记:', comp.name, comp.latitude, comp.longitude)
-    // 竞品使用小号圆点图标，颜色根据品牌
+    // 有品牌图标优先用图片图标，否则用颜色圆点
     const brandColor = getBrandColor(comp.brand)
-    const icon = createSvgIcon(brandColor, 'dot', 1.2)
+    const brandIconUrl = brandIconMap.value[comp.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(brandColor, 'dot', 1.2)
 
     const marker = L.marker([comp.latitude, comp.longitude], {
       icon,
@@ -876,7 +912,73 @@ const updateCompetitorDisplay = () => {
   }
 }
 
-// 更新图层显示
+// 加载品牌门店
+const loadBrandStores = async () => {
+  await brandStoreStore.fetchBrandStores()
+  console.log('品牌门店数据:', brandStoreStore.brandStores)
+
+  if (brandStoreLayer) {
+    map.removeLayer(brandStoreLayer)
+    brandStoreLayer = null
+  }
+
+  if (!brandStoreStore.brandStores || brandStoreStore.brandStores.length === 0) {
+    console.log('没有品牌门店数据')
+    return
+  }
+
+  brandStoreLayer = L.layerGroup()
+
+  brandStoreStore.brandStores.forEach(store => {
+    const brandIconUrl = brandIconMap.value[store.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
+
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+
+    marker.bindPopup(`
+      <div style="min-width: 200px; font-size: 13px;">
+        <h4 style="margin: 0 0 8px 0; color: ${store.icon_color || '#409eff'};">🏪 ${store.brand || ''} ${store.name}</h4>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${store.icon_color || '#409eff'};">品牌门店</span></p>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${store.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>
+        ${store.contact_person ? `<p style="margin: 4px 0;"><strong>联系人:</strong> ${store.contact_person} ${store.contact_phone || ''}</p>` : ''}
+        ${store.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${store.description}</p>` : ''}
+      </div>
+    `)
+
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+      ElMessage.success('品牌门店坐标已更新')
+    })
+
+    brandStoreLayer.addLayer(marker)
+  })
+
+  updateBrandStoreDisplay()
+}
+
+// 品牌门店开关切换处理
+const onBrandStoreToggleChange = () => {
+  updateBrandStoreDisplay()
+}
+
+// 更新品牌门店图层显示
+const updateBrandStoreDisplay = () => {
+  if (!map) return
+  if (!brandStoreLayer) return
+
+  if (showBrandStoreLayer.value) {
+    map.addLayer(brandStoreLayer)
+    brandStoreLayer.bringToBack()
+  } else {
+    map.removeLayer(brandStoreLayer)
+  }
+}
+
+
 const updateLayerDisplay = () => {
   if (!map) return
 
@@ -895,11 +997,33 @@ const updateLayerDisplay = () => {
     map.addLayer(businessLayer)
   }
 
-  // 确保门店图层始终显示在竞品图层上方
-  if (map.hasLayer(competitorLayer)) {
-    competitorLayer.bringToBack()
-  }
+  // 确保门店图层始终显示在竞品和品牌门店图层上方
+  if (map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
+  if (map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
 }
+
+// 监控竞品图层开关
+watch(showCompetitorLayer, () => {
+  updateCompetitorDisplay()
+})
+
+// 监控总开关：显示门店
+watch(showStoreLayers, (val) => {
+  if (!val) {
+    // 关闭时同时隐藏竞品和品牌图层
+    showCompetitorLayer.value = false
+    showBrandStoreLayer.value = false
+  } else {
+    // 打开时恢复两者
+    showCompetitorLayer.value = true
+    showBrandStoreLayer.value = true
+  }
+})
+
+// 监控品牌门店图层开关
+watch(showBrandStoreLayer, () => {
+  updateBrandStoreDisplay()
+})
 
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）
 watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
@@ -1502,7 +1626,9 @@ onMounted(() => {
   window.deleteMarkerExternal = deleteMarker
 
   // 等待DOM渲染完成后初始化地图
-  nextTick(() => {
+  nextTick(async () => {
+    // 先加载品牌图标
+    await brandIconStore.fetchBrandIcons()
     initMap()
 
     // 检查是否有门店跳转参数
@@ -1774,21 +1900,68 @@ onUnmounted(() => {
   }
 }
 
-// 竞品图层开关
-.competitor-toggle {
+// 显示门店开关（整合竞品+品牌）
+.store-toggle-panel {
   position: absolute;
   bottom: 205px;
   right: 10px;
   background: white;
-  padding: 6px 10px;
-  border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 1001;
-  font-size: 12px;
+  min-width: 100px;
+  overflow: hidden;
+}
+
+.store-toggle-header {
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
+
+  .toggle-arrow {
+    margin-left: auto;
+    font-size: 10px;
+    color: #909399;
+    transition: transform 0.2s;
+    transform: rotate(-90deg);
+
+    &.expanded {
+      transform: rotate(0deg);
+    }
+  }
 
   .el-switch {
-    --el-switch-off-color: #f56c6c;
+    --el-switch-off-color: #409eff;
     font-size: 12px;
+  }
+}
+
+.store-toggle-body {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+
+    .toggle-label {
+      font-size: 12px;
+      color: #606266;
+    }
+
+    .el-switch {
+      --el-switch-off-color: #c0c4cc;
+      font-size: 12px;
+    }
   }
 }
 

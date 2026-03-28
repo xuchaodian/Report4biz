@@ -147,13 +147,24 @@ export function createSvgIcon(color, style = 'store', sizeScale = 1) {
 // 旧函数保持兼容
 export function createOldIcon(color = 'default', icon = '📍') {
   const bgColor = colors[color] || color
-  
+
   return L.divIcon({
     className: 'custom-div-icon',
     html: `<div class="custom-marker" style="background-color: ${bgColor}">${icon}</div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32]
+  })
+}
+
+// 创建品牌图片图标 (32×32px)
+export function createBrandImageIcon(url) {
+  return L.divIcon({
+    className: 'custom-brand-marker',
+    html: `<img src="${url}" width="32" height="32" style="border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);" />`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16]
   })
 }
 

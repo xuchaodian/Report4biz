@@ -14,11 +14,19 @@
         </router-link>
         <router-link to="/data" class="nav-item" :class="{ active: $route.path === '/data' }">
           <el-icon><DataAnalysis /></el-icon>
-          <span>我的数据</span>
+          <span>我的门店</span>
         </router-link>
         <router-link to="/competitors" class="nav-item" :class="{ active: $route.path === '/competitors' }">
           <el-icon><DataLine /></el-icon>
-          <span>外部数据</span>
+          <span>竞品门店</span>
+        </router-link>
+        <router-link to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }">
+          <el-icon><MapLocation /></el-icon>
+          <span>品牌门店</span>
+        </router-link>
+        <router-link to="/brands" class="nav-item" :class="{ active: $route.path === '/brands' }">
+          <el-icon><MapLocation /></el-icon>
+          <span>品牌图标</span>
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
@@ -57,7 +65,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, User, UserFilled, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 

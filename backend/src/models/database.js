@@ -127,6 +127,59 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // 创建品牌图标表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS brand_icons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      brand TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      original_name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建品牌图标索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_brand_icons_user ON brand_icons(user_id)`)
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_brand_icons_unique ON brand_icons(user_id, brand)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
+  // 创建品牌门店表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS brand_stores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      store_code TEXT,
+      brand TEXT,
+      name TEXT NOT NULL,
+      store_type TEXT DEFAULT '品牌',
+      city TEXT,
+      district TEXT,
+      address TEXT,
+      contact_person TEXT,
+      contact_phone TEXT,
+      description TEXT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      status TEXT DEFAULT '正常',
+      icon_color TEXT DEFAULT '#409eff',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建品牌门店索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_brand_stores_user ON brand_stores(user_id)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
   // 创建默认管理员账户 (密码: admin123)
   const adminCheck = db.exec("SELECT id FROM users WHERE username = 'admin'")
   if (adminCheck.length === 0 || adminCheck[0].values.length === 0) {
