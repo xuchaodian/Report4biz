@@ -68,7 +68,7 @@ router.post('/', authenticate, (req, res) => {
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
-      store_code || '', brand || '', name, store_type || '社区店',
+      store_code || '', brand || '', name, store_type || '已开业',
       city || '', district || '', area_manager || '', phone1 || '', store_manager || '', phone2 || '', address || '',
       open_date || '', business_hours || '', area || null, seats || null, rent || null,
       store_category || '', contact_person || '', contact_phone || '', description || '',
@@ -180,6 +180,31 @@ router.delete('/:id', authenticate, (req, res) => {
   }
 })
 
+// 批量删除门店
+router.post('/batch-delete', authenticate, (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: '请提供要删除的ID列表' })
+    }
+
+    const db = getDb()
+    const placeholders = ids.map(() => '?').join(',')
+
+    // 普通用户只能删除自己的门店数据
+    if (req.user.role !== 'admin') {
+      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders}) AND user_id = ?`).run(...ids, req.user.id)
+    } else {
+      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders})`).run(...ids)
+    }
+
+    res.json({ message: '批量删除成功', count: ids.length })
+  } catch (error) {
+    console.error('批量删除门店错误:', error)
+    res.status(500).json({ message: '批量删除失败' })
+  }
+})
+
 // 导入门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -209,7 +234,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '社区店',
+            row.store_code || '', row.brand || '', row.name, row.store_type || '已开业',
             row.city || '', row.district || '', row.area_manager || '', row.phone1 || '',
             row.store_manager || '', row.phone2 || '', row.address || '',
             row.open_date || '', row.business_hours || '',

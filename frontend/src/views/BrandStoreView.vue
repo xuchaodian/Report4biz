@@ -3,14 +3,21 @@
     <div class="data-header">
       <h2>品牌门店</h2>
       <div class="header-actions">
-        <el-button type="primary" @click="showAddDialog">
+        <el-button v-if="userStore.isAdmin" type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加品牌
         </el-button>
-        <el-button @click="handleImport">
+        <el-button v-if="userStore.isAdmin" @click="handleImport">
           <el-icon><Upload /></el-icon>导入
         </el-button>
-        <el-button @click="handleExport">
+        <el-button v-if="userStore.isAdmin" @click="handleExport">
           <el-icon><Download /></el-icon>导出
+        </el-button>
+        <el-button
+          v-if="userStore.isAdmin && selectedRows.length > 0"
+          type="danger"
+          @click="handleBatchDelete"
+        >
+          <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
         </el-button>
       </div>
     </div>
@@ -45,18 +52,24 @@
         </el-option>
       </el-select>
 
+      <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
+        <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
+      </el-select>
+
       <span class="统计">共 {{ filteredBrandStores.length }} 条数据</span>
     </div>
 
     <div class="data-table">
       <el-table
+        ref="tableRef"
         :data="paginatedBrandStores"
         v-loading="brandStoreStore.loading"
         border
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
-        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column v-if="userStore.isAdmin" type="selection" width="45" reserve-selection />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
@@ -67,20 +80,21 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="store_category" label="门店分类" width="120" />
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
         <el-table-column prop="address" label="地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contact_person" label="联系人" width="100" />
-        <el-table-column prop="contact_phone" label="电话" width="120" />
         <el-table-column prop="description" label="备注" min-width="120" show-overflow-tooltip />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" :width="userStore.isAdmin ? 120 : 60" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
+            <template v-if="userStore.isAdmin">
+              <el-button type="primary" link @click="handleEdit(row)">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button type="danger" link @click="handleDelete(row)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
             <el-button type="success" link @click="handleLocate(row)">
               <el-icon><Location /></el-icon>
             </el-button>
@@ -120,6 +134,15 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="门店分类" prop="store_category">
+              <el-select v-model="form.store_category" placeholder="请选择" style="width: 100%" allow-create filterable>
+                <el-option v-for="c in storeCategoryOptions" :key="c" :label="c" :value="c" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
             <el-form-item label="状态" prop="status">
               <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
                 <el-option v-for="s in statusList" :key="s" :label="s" :value="s" />
@@ -155,19 +178,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-divider content-position="left">联系信息</el-divider>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="联系人" prop="contact_person">
-              <el-input v-model="form.contact_person" placeholder="联系人姓名" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电话" prop="contact_phone">
-              <el-input v-model="form.contact_phone" placeholder="联系电话" />
-            </el-form-item>
-          </el-col>
-        </el-row>
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
@@ -185,11 +195,10 @@
           <li>store_code - 门店编号</li>
           <li>brand - 品牌</li>
           <li>name - 门店名称（必填）</li>
+          <li>store_category - 门店分类</li>
           <li>city - 城市</li>
           <li>district - 区县</li>
           <li>address - 地址</li>
-          <li>contact_person - 联系人</li>
-          <li>contact_phone - 电话</li>
           <li>description - 备注</li>
           <li>latitude - 纬度（必填）</li>
           <li>longitude - 经度（必填）</li>
@@ -214,16 +223,20 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location } from '@element-plus/icons-vue'
 import { useBrandStoreStore } from '@/stores/brandStore'
+import { useUserStore } from '@/stores/user'
 
-const router = useRouter()
+const userStore = useUserStore()
 const brandStoreStore = useBrandStoreStore()
+const router = useRouter()
 
+const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店']
 const statusList = ['正常', '关注', '暂停', '关闭']
 
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
 const filterBrand = ref('')
+const filterCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -243,12 +256,13 @@ const importing = ref(false)
 const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
+const tableRef = ref(null)
+const selectedRows = ref([])
 
 const formRef = ref(null)
 const form = reactive({
-  store_code: '', brand: '', name: '', status: '正常',
-  city: '', district: '', address: '',
-  contact_person: '', contact_phone: '', description: '',
+  store_code: '', brand: '', name: '', store_category: '', status: '正常',
+  city: '', district: '', address: '', description: '',
   latitude: 39.9042, longitude: 116.4074
 })
 
@@ -259,16 +273,16 @@ const rules = {
 }
 
 const cityList = computed(() => {
-  const cities = [...new Set(brandStoreStore.brandStores.map(s => s.city).filter(Boolean))]
-  return cities.sort()
+  return [...new Set(brandStoreStore.brandStores.map(s => s.city).filter(Boolean))].sort()
 })
 const districtList = computed(() => {
-  const districts = [...new Set(brandStoreStore.brandStores.map(s => s.district).filter(Boolean))]
-  return districts.sort()
+  return [...new Set(brandStoreStore.brandStores.map(s => s.district).filter(Boolean))].sort()
 })
 const brandList = computed(() => {
-  const brands = [...new Set(brandStoreStore.brandStores.map(s => s.brand).filter(Boolean))]
-  return brands.sort()
+  return [...new Set(brandStoreStore.brandStores.map(s => s.brand).filter(Boolean))].sort()
+})
+const categoryList = computed(() => {
+  return [...new Set(brandStoreStore.brandStores.map(s => s.store_category).filter(Boolean))].sort()
 })
 
 const filteredBrandStores = computed(() => {
@@ -281,7 +295,8 @@ const filteredBrandStores = computed(() => {
     const matchCity = !filterCity.value || store.city === filterCity.value
     const matchDistrict = !filterDistrict.value || store.district === filterDistrict.value
     const matchBrand = !filterBrand.value || store.brand === filterBrand.value
-    return matchKeyword && matchCity && matchDistrict && matchBrand
+    const matchCategory = !filterCategory.value || store.store_category === filterCategory.value
+    return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory
   })
 })
 
@@ -297,9 +312,8 @@ const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
   Object.assign(form, {
-    store_code: '', brand: '', name: '', status: '正常',
-    city: '', district: '', address: '',
-    contact_person: '', contact_phone: '', description: '',
+    store_code: '', brand: '', name: '', store_category: '', status: '正常',
+    city: '', district: '', address: '', description: '',
     latitude: 39.9042, longitude: 116.4074
   })
   dialogVisible.value = true
@@ -310,9 +324,9 @@ const handleEdit = (row) => {
   editingId.value = row.id
   Object.assign(form, {
     store_code: row.store_code || '', brand: row.brand || '', name: row.name,
+    store_category: row.store_category || '',
     status: row.status || '正常', city: row.city || '', district: row.district || '',
-    address: row.address || '', contact_person: row.contact_person || '',
-    contact_phone: row.contact_phone || '', description: row.description || '',
+    address: row.address || '', description: row.description || '',
     latitude: row.latitude, longitude: row.longitude
   })
   dialogVisible.value = true
@@ -346,6 +360,24 @@ const handleDelete = async (row) => {
     const result = await brandStoreStore.deleteBrandStore(row.id)
     if (result.success !== false) {
       ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch {}
+}
+
+const handleSelectionChange = (selection) => { selectedRows.value = selection }
+
+const handleBatchDelete = async () => {
+  if (selectedRows.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(`确定要删除选中的 ${selectedRows.value.length} 条品牌门店数据吗？`, '提示', { type: 'warning' })
+    const ids = selectedRows.value.map(row => row.id)
+    const result = await brandStoreStore.batchDeleteBrandStores(ids)
+    if (result.success) {
+      ElMessage.success(`成功删除 ${result.count} 条数据`)
+      tableRef.value?.clearSelection()
+      selectedRows.value = []
     } else {
       ElMessage.error(result.message)
     }
@@ -394,8 +426,8 @@ const handleExport = async () => {
 }
 
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,city,district,address,contact_person,contact_phone,description,latitude,longitude
-BRAND001,某品牌,某品牌门店,北京市,朝阳区,示例地址,张三,13800138001,关注门店,39.9088,116.4610`
+  const template = `store_code,brand,name,store_category,city,district,address,description,latitude,longitude
+BRAND001,某品牌,某品牌门店,商场店,北京市,朝阳区,示例地址,关注门店,39.9088,116.4610`
   const blob = new Blob([template], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -432,6 +464,7 @@ onMounted(() => { brandStoreStore.fetchBrandStores() })
   display: flex;
   align-items: center;
   gap: 15px;
+  flex-wrap: wrap;
   .统计 { margin-left: auto; color: #666; font-size: 14px; }
 }
 .data-table {

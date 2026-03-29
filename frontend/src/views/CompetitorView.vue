@@ -12,6 +12,13 @@
         <el-button @click="handleExport">
           <el-icon><Download /></el-icon>导出
         </el-button>
+        <el-button
+          v-if="selectedRows.length > 0"
+          type="danger"
+          @click="handleBatchDelete"
+        >
+          <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
+        </el-button>
       </div>
     </div>
 
@@ -46,19 +53,25 @@
         </el-option>
       </el-select>
 
+      <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
+        <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
+      </el-select>
+
       <span class="统计">共 {{ filteredCompetitors.length }} 条数据</span>
     </div>
 
     <!-- 数据表格 -->
     <div class="data-table">
       <el-table
+        ref="tableRef"
         :data="paginatedCompetitors"
         v-loading="competitorStore.loading"
         border
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
-        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column type="selection" width="45" reserve-selection />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
@@ -69,11 +82,10 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="store_category" label="门店分类" width="120" />
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
         <el-table-column prop="address" label="地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="contact_person" label="联系人" width="100" />
-        <el-table-column prop="contact_phone" label="电话" width="120" />
         <el-table-column prop="description" label="备注" min-width="120" show-overflow-tooltip />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
@@ -129,6 +141,16 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="门店分类" prop="store_category">
+              <el-select v-model="form.store_category" placeholder="请选择" style="width: 100%" allow-create filterable>
+                <el-option v-for="c in storeCategoryOptions" :key="c" :label="c" :value="c" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
             <el-form-item label="状态" prop="status">
               <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
                 <el-option v-for="s in competitorStore.statuses" :key="s" :label="s" :value="s" />
@@ -169,21 +191,6 @@
           </el-col>
         </el-row>
 
-        <el-divider content-position="left">联系信息</el-divider>
-
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="联系人" prop="contact_person">
-              <el-input v-model="form.contact_person" placeholder="联系人姓名" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电话" prop="contact_phone">
-              <el-input v-model="form.contact_phone" placeholder="联系电话" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
@@ -202,11 +209,10 @@
           <li>store_code - 门店编号</li>
           <li>brand - 品牌</li>
           <li>name - 门店名称（必填）</li>
+          <li>store_category - 门店分类</li>
           <li>city - 城市</li>
           <li>district - 区县</li>
           <li>address - 地址</li>
-          <li>contact_person - 联系人</li>
-          <li>contact_phone - 电话</li>
           <li>description - 备注</li>
           <li>latitude - 纬度（必填）</li>
           <li>longitude - 经度（必填）</li>
@@ -242,11 +248,15 @@ import { useCompetitorStore } from '@/stores/competitor'
 const router = useRouter()
 const competitorStore = useCompetitorStore()
 
+// 门店分类选项
+const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店']
+
 // 筛选和分页
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
 const filterBrand = ref('')
+const filterCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -268,6 +278,8 @@ const importing = ref(false)
 const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
+const tableRef = ref(null)
+const selectedRows = ref([])
 
 // 表单数据
 const formRef = ref(null)
@@ -275,12 +287,11 @@ const form = reactive({
   store_code: '',
   brand: '',
   name: '',
+  store_category: '',
   status: '正常',
   city: '',
   district: '',
   address: '',
-  contact_person: '',
-  contact_phone: '',
   description: '',
   latitude: 39.9042,
   longitude: 116.4074
@@ -294,20 +305,22 @@ const rules = {
 
 // 城市列表
 const cityList = computed(() => {
-  const cities = [...new Set(competitorStore.competitors.map(c => c.city).filter(Boolean))]
-  return cities.sort()
+  return [...new Set(competitorStore.competitors.map(c => c.city).filter(Boolean))].sort()
 })
 
 // 区县列表
 const districtList = computed(() => {
-  const districts = [...new Set(competitorStore.competitors.map(c => c.district).filter(Boolean))]
-  return districts.sort()
+  return [...new Set(competitorStore.competitors.map(c => c.district).filter(Boolean))].sort()
 })
 
 // 品牌列表
 const brandList = computed(() => {
-  const brands = [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))]
-  return brands.sort()
+  return [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))].sort()
+})
+
+// 分类列表
+const categoryList = computed(() => {
+  return [...new Set(competitorStore.competitors.map(c => c.store_category).filter(Boolean))].sort()
 })
 
 // 筛选后的数据
@@ -321,7 +334,8 @@ const filteredCompetitors = computed(() => {
     const matchCity = !filterCity.value || comp.city === filterCity.value
     const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
     const matchBrand = !filterBrand.value || comp.brand === filterBrand.value
-    return matchKeyword && matchCity && matchDistrict && matchBrand
+    const matchCategory = !filterCategory.value || comp.store_category === filterCategory.value
+    return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory
   })
 })
 
@@ -332,33 +346,19 @@ const paginatedCompetitors = computed(() => {
   return filteredCompetitors.value.slice(start, end)
 })
 
-// 搜索
-const handleSearch = () => {
-  currentPage.value = 1
-}
+const handleSearch = () => { currentPage.value = 1 }
 
-// 显示添加弹窗
 const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
   Object.assign(form, {
-    store_code: '',
-    brand: '',
-    name: '',
-    status: '正常',
-    city: '',
-    district: '',
-    address: '',
-    contact_person: '',
-    contact_phone: '',
-    description: '',
-    latitude: 39.9042,
-    longitude: 116.4074
+    store_code: '', brand: '', name: '', store_category: '',
+    status: '正常', city: '', district: '', address: '',
+    description: '', latitude: 39.9042, longitude: 116.4074
   })
   dialogVisible.value = true
 }
 
-// 编辑
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
@@ -366,12 +366,11 @@ const handleEdit = (row) => {
     store_code: row.store_code || '',
     brand: row.brand || '',
     name: row.name,
+    store_category: row.store_category || '',
     status: row.status || '正常',
     city: row.city || '',
     district: row.district || '',
     address: row.address || '',
-    contact_person: row.contact_person || '',
-    contact_phone: row.contact_phone || '',
     description: row.description || '',
     latitude: row.latitude,
     longitude: row.longitude
@@ -379,11 +378,9 @@ const handleEdit = (row) => {
   dialogVisible.value = true
 }
 
-// 保存
 const handleSave = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
-
   saving.value = true
   try {
     let result
@@ -392,7 +389,6 @@ const handleSave = async () => {
     } else {
       result = await competitorStore.addCompetitor({ ...form })
     }
-
     if (result.success) {
       ElMessage.success(isEdit.value ? '更新成功' : '添加成功')
       dialogVisible.value = false
@@ -404,53 +400,55 @@ const handleSave = async () => {
   }
 }
 
-// 删除
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确定要删除「${row.name}」吗？`, '提示', {
-      type: 'warning'
-    })
+    await ElMessageBox.confirm(`确定要删除「${row.name}」吗？`, '提示', { type: 'warning' })
     const result = await competitorStore.deleteCompetitor(row.id)
     if (result.success) {
       ElMessage.success('删除成功')
     } else {
       ElMessage.error(result.message)
     }
-  } catch {
-    // 用户取消
-  }
+  } catch {}
 }
 
-// 定位
+const handleSelectionChange = (selection) => { selectedRows.value = selection }
+
+const handleBatchDelete = async () => {
+  if (selectedRows.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(`确定要删除选中的 ${selectedRows.value.length} 条竞品数据吗？`, '提示', { type: 'warning' })
+    const ids = selectedRows.value.map(row => row.id)
+    const result = await competitorStore.batchDeleteCompetitors(ids)
+    if (result.success) {
+      ElMessage.success(`成功删除 ${result.count} 条数据`)
+      tableRef.value?.clearSelection()
+      selectedRows.value = []
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch {}
+}
+
 const handleLocate = (row) => {
   router.push({ path: '/', query: { lat: row.latitude, lng: row.longitude, id: row.id, type: 'competitor' } })
 }
 
-// 导入
 const handleImport = () => {
   uploadFile.value = null
   importDialogVisible.value = true
 }
 
-// 文件变化
-const handleFileChange = (file) => {
-  uploadFile.value = file.raw
-}
+const handleFileChange = (file) => { uploadFile.value = file.raw }
 
-// 确认导入
 const handleImportConfirm = async () => {
-  if (!uploadFile.value) {
-    ElMessage.warning('请选择文件')
-    return
-  }
-
+  if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
   importing.value = true
   try {
     const result = await competitorStore.importCompetitors(uploadFile.value)
     if (result.success) {
       ElMessage.success(`成功导入 ${result.count} 条数据`)
       importDialogVisible.value = false
-      // 刷新列表
       await competitorStore.fetchCompetitors()
     } else {
       ElMessage.error(result.message)
@@ -460,7 +458,6 @@ const handleImportConfirm = async () => {
   }
 }
 
-// 导出
 const handleExport = async () => {
   const result = await competitorStore.exportCompetitors()
   if (result.success) {
@@ -475,11 +472,10 @@ const handleExport = async () => {
   }
 }
 
-// 下载模板
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,city,district,address,contact_person,contact_phone,description,latitude,longitude
-COMP001,瑞幸咖啡,瑞幸咖啡国贸店,北京市,朝阳区,国贸大厦,张总,13800138001,竞品门店,39.9088,116.4610
-COMP002,瑞幸咖啡,瑞幸咖啡中关村店,北京市,海淀区,中关村大街1号,李总,13800138002,写字楼门店,39.9830,116.3120`
+  const template = `store_code,brand,name,store_category,city,district,address,description,latitude,longitude
+COMP001,瑞幸咖啡,瑞幸咖啡国贸店,写字楼店,北京市,朝阳区,国贸大厦,竞品门店,39.9088,116.4610
+COMP002,瑞幸咖啡,瑞幸咖啡中关村店,商场店,北京市,海淀区,中关村大街1号,写字楼门店,39.9830,116.3120`
   const blob = new Blob([template], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -489,9 +485,7 @@ COMP002,瑞幸咖啡,瑞幸咖啡中关村店,北京市,海淀区,中关村大�
   URL.revokeObjectURL(url)
 }
 
-onMounted(() => {
-  competitorStore.fetchCompetitors()
-})
+onMounted(() => { competitorStore.fetchCompetitors() })
 </script>
 
 <style lang="scss" scoped>
@@ -502,25 +496,14 @@ onMounted(() => {
   flex-direction: column;
   background: #f5f7fa;
 }
-
 .data-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-
-  h2 {
-    margin: 0;
-    font-size: 18px;
-    color: #333;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 10px;
-  }
+  h2 { margin: 0; font-size: 18px; color: #333; }
+  .header-actions { display: flex; gap: 10px; }
 }
-
 .filter-bar {
   background: white;
   padding: 15px;
@@ -529,14 +512,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 15px;
-
-  .统计 {
-    margin-left: auto;
-    color: #666;
-    font-size: 14px;
-  }
+  flex-wrap: wrap;
+  .统计 { margin-left: auto; color: #666; font-size: 14px; }
 }
-
 .data-table {
   flex: 1;
   background: white;
@@ -544,29 +522,17 @@ onMounted(() => {
   padding: 15px;
   overflow: auto;
 }
-
 .pagination-container {
   margin-top: 15px;
   display: flex;
   justify-content: flex-end;
 }
-
 .import-tips {
   margin-bottom: 20px;
   padding: 15px;
   background: #f5f7fa;
   border-radius: 4px;
-
-  p {
-    margin: 0 0 10px 0;
-    font-weight: bold;
-  }
-
-  ul {
-    margin: 0;
-    padding-left: 20px;
-    font-size: 13px;
-    color: #666;
-  }
+  p { margin: 0 0 10px 0; font-weight: bold; }
+  ul { margin: 0; padding-left: 20px; font-size: 13px; color: #666; }
 }
 </style>

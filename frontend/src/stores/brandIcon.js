@@ -5,13 +5,15 @@ const API_URL = '/api'
 
 export const useBrandIconStore = defineStore('brandIcon', {
   state: () => ({
-    icons: [],         // [{id, user_id, brand, filename, original_name, created_at}]
+    icons: [],         // [{id, brand, filename, original_name, created_at, user_id}]
     loading: false
   }),
 
-  // 根据品牌名快速查找图标
-  getIconByBrand: (brand) => {
-    return (state) => state.icons.find(icon => icon.brand === brand)
+  getters: {
+    // 根据品牌名快速查找图标
+    getIconByBrand: (state) => (brand) => {
+      return state.icons.find(icon => icon.brand === brand)
+    }
   },
 
   actions: {
@@ -29,26 +31,36 @@ export const useBrandIconStore = defineStore('brandIcon', {
     },
 
     async uploadBrandIcon(brand, file) {
-      const formData = new FormData()
-      formData.append('brand', brand)
-      formData.append('icon', file)
+      try {
+        const formData = new FormData()
+        formData.append('brand', brand)
+        formData.append('icon', file)
 
-      const { data } = await axios.post(`${API_URL}/brand-icons`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
+        // 不设置 Content-Type，让 axios 自动处理 multipart/form-data 的 boundary
+        const { data } = await axios.post(`${API_URL}/brand-icons`, formData)
 
-      if (data.success) {
-        // 更新本地数据
-        const idx = this.icons.findIndex(i => i.brand === brand)
-        if (idx >= 0) {
-          this.icons[idx] = data.icon
-        } else {
-          this.icons.push(data.icon)
+        // 更新本地数据（使用 splice 触发响应式更新）
+        if (data.success && data.icon) {
+          const idx = this.icons.findIndex(i => i.brand === brand)
+          if (idx >= 0) {
+            // 使用 splice 替换元素，确保响应式更新
+            this.icons.splice(idx, 1, data.icon)
+          } else {
+            this.icons.push(data.icon)
+          }
+          // 排序
+          this.icons.sort((a, b) => a.brand.localeCompare(b.brand))
         }
-        this.icons.sort((a, b) => a.brand.localeCompare(b.brand))
-      }
 
-      return data
+        return data
+      } catch (error) {
+        console.error('上传品牌图标失败:', error)
+        // 返回统一格式的错误信息
+        return {
+          success: false,
+          message: error.response?.data?.message || error.message || '上传失败，请重试'
+        }
+      }
     },
 
     async deleteBrandIcon(id) {

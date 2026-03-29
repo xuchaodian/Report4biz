@@ -46,9 +46,9 @@ router.get('/:id', authenticate, (req, res) => {
 router.post('/', authenticate, (req, res) => {
   try {
     const {
-      store_code, brand, name, store_type,
+      store_code, brand, name, store_type, store_category,
       city, district, address,
-      contact_person, contact_phone, description,
+      description,
       latitude, longitude, status, icon_color
     } = req.body
 
@@ -59,16 +59,16 @@ router.post('/', authenticate, (req, res) => {
     const db = getDb()
     const result = db.prepare(`
       INSERT INTO competitors (
-        store_code, brand, name, store_type,
+        store_code, brand, name, store_type, store_category,
         city, district, address,
-        contact_person, contact_phone, description,
+        description,
         latitude, longitude, status, icon_color, user_id,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
-      store_code || '', brand || '', name, store_type || '竞品',
+      store_code || '', brand || '', name, store_type || '竞品', store_category || '',
       city || '', district || '', address || '',
-      contact_person || '', contact_phone || '', description || '',
+      description || '',
       latitude, longitude, status || '正常', icon_color || '#f56c6c', req.user.id
     )
 
@@ -88,9 +88,9 @@ router.post('/', authenticate, (req, res) => {
 router.put('/:id', authenticate, (req, res) => {
   try {
     const {
-      store_code, brand, name, store_type,
+      store_code, brand, name, store_type, store_category,
       city, district, address,
-      contact_person, contact_phone, description,
+      description,
       latitude, longitude, status, icon_color
     } = req.body
 
@@ -104,9 +104,9 @@ router.put('/:id', authenticate, (req, res) => {
 
     db.prepare(`
       UPDATE competitors SET
-        store_code = ?, brand = ?, name = ?, store_type = ?,
+        store_code = ?, brand = ?, name = ?, store_type = ?, store_category = ?,
         city = ?, district = ?, address = ?,
-        contact_person = ?, contact_phone = ?, description = ?,
+        description = ?,
         latitude = ?, longitude = ?, status = ?, icon_color = ?,
         updated_at = datetime('now')
       WHERE id = ?
@@ -115,11 +115,10 @@ router.put('/:id', authenticate, (req, res) => {
       brand ?? existingCompetitor.brand,
       name ?? existingCompetitor.name,
       store_type ?? existingCompetitor.store_type,
+      store_category ?? existingCompetitor.store_category,
       city ?? existingCompetitor.city,
       district ?? existingCompetitor.district,
       address ?? existingCompetitor.address,
-      contact_person ?? existingCompetitor.contact_person,
-      contact_phone ?? existingCompetitor.contact_phone,
       description ?? existingCompetitor.description,
       latitude ?? existingCompetitor.latitude,
       longitude ?? existingCompetitor.longitude,
@@ -165,6 +164,31 @@ router.delete('/:id', authenticate, (req, res) => {
   }
 })
 
+// 批量删除竞品门店
+router.post('/batch-delete', authenticate, (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: '请提供要删除的ID列表' })
+    }
+
+    const db = getDb()
+    const placeholders = ids.map(() => '?').join(',')
+
+    // 普通用户只能删除自己的竞品门店数据
+    if (req.user.role !== 'admin') {
+      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders}) AND user_id = ?`).run(...ids, req.user.id)
+    } else {
+      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders})`).run(...ids)
+    }
+
+    res.json({ message: '批量删除成功', count: ids.length })
+  } catch (error) {
+    console.error('批量删除竞品错误:', error)
+    res.status(500).json({ message: '批量删除失败' })
+  }
+})
+
 // 导入竞品门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -186,16 +210,16 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
           const result = db.prepare(`
             INSERT INTO competitors (
-              store_code, brand, name, store_type,
+              store_code, brand, name, store_type, store_category,
               city, district, address,
-              contact_person, contact_phone, description,
+              description,
               latitude, longitude, status, icon_color, user_id,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '竞品',
+            row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
             row.city || '', row.district || '', row.address || '',
-            row.contact_person || '', row.contact_phone || '', row.description || '',
+            row.description || '',
             parseFloat(row.latitude), parseFloat(row.longitude),
             row.status || '正常',
             row.icon_color || '#f56c6c',

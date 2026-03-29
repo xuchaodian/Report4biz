@@ -60,6 +60,16 @@ export const useCompetitorStore = defineStore('competitor', {
         return { success: false, message: error.response?.data?.message || '删除失败' }
       }
     },
+
+    async batchDeleteCompetitors(ids) {
+      try {
+        await axios.post(`${API_URL}/competitors/batch-delete`, { ids })
+        this.competitors = this.competitors.filter(c => !ids.includes(c.id))
+        return { success: true, count: ids.length }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '批量删除失败' }
+      }
+    },
     
     async importCompetitors(file) {
       try {

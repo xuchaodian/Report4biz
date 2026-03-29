@@ -418,6 +418,7 @@ let tileLayer = null
 let businessLayer = null
 let competitorLayer = null  // 竞品门店图层
 let brandStoreLayer = null  // 品牌门店图层
+let brandMarkerMap = {}     // 品牌门店ID到marker的映射
 let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
@@ -928,6 +929,7 @@ const loadBrandStores = async () => {
   }
 
   brandStoreLayer = L.layerGroup()
+  brandMarkerMap = {}  // 清空映射表
 
   brandStoreStore.brandStores.forEach(store => {
     const brandIconUrl = brandIconMap.value[store.brand]
@@ -955,6 +957,7 @@ const loadBrandStores = async () => {
     })
 
     brandStoreLayer.addLayer(marker)
+    brandMarkerMap[store.id] = marker  // 保存到映射表
   })
 
   updateBrandStoreDisplay()
@@ -1632,7 +1635,7 @@ onMounted(() => {
     initMap()
 
     // 检查是否有门店跳转参数
-    const { lat, lng } = route.query
+    const { lat, lng, id, type } = route.query
 
     // 延迟处理，等待点位数据加载
     setTimeout(() => {
@@ -1640,6 +1643,11 @@ onMounted(() => {
         // 跳转到指定位置
         map.setView([parseFloat(lat), parseFloat(lng)], 16)
         ElMessage.success('已跳转到门店位置')
+
+        // 如果是品牌门店，打开 popup
+        if (type === 'brandStore' && id && brandMarkerMap[id]) {
+          brandMarkerMap[id].openPopup()
+        }
       }
     }, 1500)
   })

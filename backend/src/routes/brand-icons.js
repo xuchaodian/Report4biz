@@ -48,16 +48,30 @@ const upload = multer({
 
 const router = express.Router()
 
-// 获取当前用户所有品牌图标
+// 获取品牌图标（用户自己的 + 管理员上传的共享图标）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const icons = db.prepare(`
-      SELECT id, user_id, brand, filename, original_name, created_at
-      FROM brand_icons
-      WHERE user_id = ?
-      ORDER BY brand ASC
-    `).all(req.userId)
+    const userId = req.user.id
+    const isAdmin = req.user.role === 'admin'
+
+    let icons
+    if (isAdmin) {
+      // 管理员：看到所有图标
+      icons = db.prepare(`
+        SELECT id, brand, filename, original_name, created_at, user_id
+        FROM brand_icons
+        ORDER BY brand ASC
+      `).all()
+    } else {
+      // 普通用户：看到自己上传的 + 所有管理员上传的
+      icons = db.prepare(`
+        SELECT id, brand, filename, original_name, created_at, user_id
+        FROM brand_icons
+        WHERE user_id = ? OR user_id IN (SELECT id FROM users WHERE role = 'admin')
+        ORDER BY brand ASC
+      `).all(userId)
+    }
 
     res.json({ success: true, icons })
   } catch (error) {
@@ -67,6 +81,7 @@ router.get('/', authenticate, (req, res) => {
 })
 
 // 上传品牌图标（brand + 图片一起传）
+// 普通用户只能上传自己门店和竞品门店的品牌，管理员可以上传所有品牌
 router.post('/', authenticate, (req, res) => {
   upload.single('icon')(req, res, (err) => {
     if (err) {
@@ -86,13 +101,41 @@ router.post('/', authenticate, (req, res) => {
 
     try {
       const db = getDb()
+      const userId = req.user.id
+      const isAdmin = req.user.role === 'admin'
 
-      // 检查是否已存在该品牌的图标，存在则替换
+      // 普通用户只能上传自己门店、竞品门店或品牌门店的品牌
+      if (!isAdmin) {
+        const markerBrands = db.prepare(`
+          SELECT DISTINCT brand FROM markers WHERE user_id = ? AND brand = ?
+        `).get(userId, brand.trim())
+        // 竞品门店是共享数据
+        const competitorBrands = db.prepare(`
+          SELECT DISTINCT brand FROM competitors WHERE brand = ?
+        `).get(brand.trim())
+        // 品牌门店也是共享数据
+        const brandStoreBrands = db.prepare(`
+          SELECT DISTINCT brand FROM brand_stores WHERE brand = ?
+        `).get(brand.trim())
+
+        if (!markerBrands && !competitorBrands && !brandStoreBrands) {
+          fs.unlinkSync(req.file.path)
+          return res.status(403).json({ success: false, message: '只能上传自己门店、竞品门店或品牌门店的品牌图标' })
+        }
+      }
+
+      // 检查是否已存在该品牌且是当前用户上传的图标，存在则替换
       const existing = db.prepare(`
-        SELECT id, filename FROM brand_icons WHERE user_id = ? AND brand = ?
-      `).get(req.userId, brand.trim())
+        SELECT id, filename, user_id FROM brand_icons WHERE brand = ?
+      `).get(brand.trim())
 
       if (existing) {
+        // 如果已存在的图标不是当前用户上传的，普通用户不能替换
+        if (!isAdmin && existing.user_id !== userId) {
+          fs.unlinkSync(req.file.path)
+          return res.status(403).json({ success: false, message: '该品牌图标由管理员设置，您无法替换' })
+        }
+        
         // 删除旧文件
         const oldPath = path.join(uploadDir, existing.filename)
         if (fs.existsSync(oldPath)) {
@@ -101,9 +144,9 @@ router.post('/', authenticate, (req, res) => {
         // 更新记录
         db.prepare(`
           UPDATE brand_icons
-          SET filename = ?, original_name = ?, created_at = CURRENT_TIMESTAMP
+          SET filename = ?, original_name = ?, user_id = ?, created_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).run(req.file.filename, req.file.originalname, existing.id)
+        `).run(req.file.filename, req.file.originalname, userId, existing.id)
 
         const icon = db.prepare(`SELECT * FROM brand_icons WHERE id = ?`).get(existing.id)
         return res.json({ success: true, message: '图标已更新', icon })
@@ -111,9 +154,9 @@ router.post('/', authenticate, (req, res) => {
 
       // 插入新记录
       const result = db.prepare(`
-        INSERT INTO brand_icons (user_id, brand, filename, original_name)
+        INSERT INTO brand_icons (brand, filename, original_name, user_id)
         VALUES (?, ?, ?, ?)
-      `).run(req.userId, brand.trim(), req.file.filename, req.file.originalname)
+      `).run(brand.trim(), req.file.filename, req.file.originalname, userId)
 
       const icon = db.prepare(`SELECT * FROM brand_icons WHERE id = ?`).get(result.lastInsertRowid)
       res.json({ success: true, message: '图标上传成功', icon })
@@ -128,16 +171,24 @@ router.post('/', authenticate, (req, res) => {
   })
 })
 
-// 删除品牌图标
+// 删除品牌图标（普通用户只能删除自己上传的，管理员可以删除所有）
 router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
+    const userId = req.user.id
+    const isAdmin = req.user.role === 'admin'
+
     const icon = db.prepare(`
-      SELECT * FROM brand_icons WHERE id = ? AND user_id = ?
-    `).get(req.params.id, req.userId)
+      SELECT * FROM brand_icons WHERE id = ?
+    `).get(req.params.id)
 
     if (!icon) {
       return res.status(404).json({ success: false, message: '图标不存在' })
+    }
+
+    // 权限检查：普通用户只能删除自己上传的
+    if (!isAdmin && icon.user_id !== userId) {
+      return res.status(403).json({ success: false, message: '只能删除自己上传的图标' })
     }
 
     // 删除文件

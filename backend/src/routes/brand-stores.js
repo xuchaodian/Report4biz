@@ -8,13 +8,13 @@ import { authenticate } from '../middleware/auth.js'
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
-// 获取所有品牌门店
+// 获取所有品牌门店（共享数据，所有用户可见）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const brandStores = db.prepare(`
-      SELECT * FROM brand_stores WHERE user_id = ? ORDER BY created_at DESC
-    `).all(req.user.id)
+      SELECT * FROM brand_stores ORDER BY created_at DESC
+    `).all()
 
     res.json({ brandStores })
   } catch (error) {
@@ -23,11 +23,11 @@ router.get('/', authenticate, (req, res) => {
   }
 })
 
-// 获取单个品牌门店
+// 获取单个品牌门店（共享数据）
 router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
+    const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(req.params.id)
 
     if (!brandStore) {
       return res.status(404).json({ message: '品牌门店不存在' })
@@ -40,13 +40,17 @@ router.get('/:id', authenticate, (req, res) => {
   }
 })
 
-// 创建品牌门店
+// 创建品牌门店（仅管理员可操作，共享数据）
 router.post('/', authenticate, (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可添加品牌门店' })
+    }
+
     const {
-      store_code, brand, name, store_type,
+      store_code, brand, name, store_type, store_category,
       city, district, address,
-      contact_person, contact_phone, description,
+      description,
       latitude, longitude, status, icon_color
     } = req.body
 
@@ -57,17 +61,17 @@ router.post('/', authenticate, (req, res) => {
     const db = getDb()
     const result = db.prepare(`
       INSERT INTO brand_stores (
-        store_code, brand, name, store_type,
+        user_id, store_code, brand, name, store_type, store_category,
         city, district, address,
-        contact_person, contact_phone, description,
-        latitude, longitude, status, icon_color, user_id,
+        description,
+        latitude, longitude, status, icon_color,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
-      store_code || '', brand || '', name, store_type || '品牌',
+      req.user.id, store_code || '', brand || '', name, store_type || '品牌', store_category || '',
       city || '', district || '', address || '',
-      contact_person || '', contact_phone || '', description || '',
-      latitude, longitude, status || '正常', icon_color || '#409eff', req.user.id
+      description || '',
+      latitude, longitude, status || '正常', icon_color || '#409eff'
     )
 
     const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(result.lastInsertRowid)
@@ -83,28 +87,32 @@ router.post('/', authenticate, (req, res) => {
   }
 })
 
-// 更新品牌门店
+// 更新品牌门店（仅管理员可操作）
 router.put('/:id', authenticate, (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可编辑品牌门店' })
+    }
+
     const {
-      store_code, brand, name, store_type,
+      store_code, brand, name, store_type, store_category,
       city, district, address,
-      contact_person, contact_phone, description,
+      description,
       latitude, longitude, status, icon_color
     } = req.body
 
     const db = getDb()
 
-    const existing = db.prepare('SELECT * FROM brand_stores WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
+    const existing = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(req.params.id)
     if (!existing) {
       return res.status(404).json({ success: false, message: '品牌门店不存在' })
     }
 
     db.prepare(`
       UPDATE brand_stores SET
-        store_code = ?, brand = ?, name = ?, store_type = ?,
+        store_code = ?, brand = ?, name = ?, store_type = ?, store_category = ?,
         city = ?, district = ?, address = ?,
-        contact_person = ?, contact_phone = ?, description = ?,
+        description = ?,
         latitude = ?, longitude = ?, status = ?, icon_color = ?,
         updated_at = datetime('now')
       WHERE id = ?
@@ -113,11 +121,10 @@ router.put('/:id', authenticate, (req, res) => {
       brand ?? existing.brand,
       name ?? existing.name,
       store_type ?? existing.store_type,
+      store_category ?? existing.store_category,
       city ?? existing.city,
       district ?? existing.district,
       address ?? existing.address,
-      contact_person ?? existing.contact_person,
-      contact_phone ?? existing.contact_phone,
       description ?? existing.description,
       latitude ?? existing.latitude,
       longitude ?? existing.longitude,
@@ -139,18 +146,18 @@ router.put('/:id', authenticate, (req, res) => {
   }
 })
 
-// 删除品牌门店
+// 删除品牌门店（仅管理员可操作）
 router.delete('/:id', authenticate, (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可删除品牌门店' })
+    }
+
     const db = getDb()
 
     const existing = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(req.params.id)
     if (!existing) {
       return res.status(404).json({ success: false, message: '品牌门店不存在' })
-    }
-
-    if (req.user.role !== 'admin' && existing.user_id !== req.user.id) {
-      return res.status(403).json({ success: false, message: '无权删除' })
     }
 
     db.prepare('DELETE FROM brand_stores WHERE id = ?').run(req.params.id)
@@ -162,9 +169,37 @@ router.delete('/:id', authenticate, (req, res) => {
   }
 })
 
-// 导入品牌门店
+// 批量删除品牌门店（仅管理员可操作）
+router.post('/batch-delete', authenticate, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可批量删除品牌门店' })
+    }
+
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请提供要删除的ID列表' })
+    }
+
+    const db = getDb()
+    const placeholders = ids.map(() => '?').join(',')
+
+    db.prepare(`DELETE FROM brand_stores WHERE id IN (${placeholders})`).run(...ids)
+
+    res.json({ success: true, message: '批量删除成功', count: ids.length })
+  } catch (error) {
+    console.error('批量删除品牌门店错误:', error)
+    res.status(500).json({ message: '批量删除失败' })
+  }
+})
+
+// 导入品牌门店（仅管理员可操作，共享数据）
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可导入品牌门店' })
+    }
+
     if (!req.file) {
       return res.status(400).json({ message: '请上传文件' })
     }
@@ -183,20 +218,19 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
           const result = db.prepare(`
             INSERT INTO brand_stores (
-              store_code, brand, name, store_type,
+              user_id, store_code, brand, name, store_type, store_category,
               city, district, address,
-              contact_person, contact_phone, description,
-              latitude, longitude, status, icon_color, user_id,
+              description,
+              latitude, longitude, status, icon_color,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '品牌',
+            req.user.id, row.store_code || '', row.brand || '', row.name, row.store_type || '品牌', row.store_category || '',
             row.city || '', row.district || '', row.address || '',
-            row.contact_person || '', row.contact_phone || '', row.description || '',
+            row.description || '',
             parseFloat(row.latitude), parseFloat(row.longitude),
             row.status || '正常',
-            row.icon_color || '#409eff',
-            req.user.id
+            row.icon_color || '#409eff'
           )
 
           const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(result.lastInsertRowid)
@@ -219,11 +253,15 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
   }
 })
 
-// 导出品牌门店
+// 导出品牌门店（仅管理员可操作，导出所有共享数据）
 router.get('/export', authenticate, (req, res) => {
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可导出品牌门店' })
+    }
+
     const db = getDb()
-    const brandStores = db.prepare('SELECT * FROM brand_stores WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
+    const brandStores = db.prepare('SELECT * FROM brand_stores ORDER BY created_at DESC').all()
 
     res.json({ success: true, data: brandStores })
   } catch (error) {

@@ -58,6 +58,16 @@ export const useMarkerStore = defineStore('marker', {
         return { success: false, message: error.response?.data?.message || '删除失败' }
       }
     },
+
+    async batchDeleteMarkers(ids) {
+      try {
+        await axios.post(`${API_URL}/markers/batch-delete`, { ids })
+        this.markers = this.markers.filter(m => !ids.includes(m.id))
+        return { success: true, count: ids.length }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '批量删除失败' }
+      }
+    },
     
     async importMarkers(file) {
       try {

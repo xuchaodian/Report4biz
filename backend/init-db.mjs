@@ -52,6 +52,16 @@ const hashedPassword = bcrypt.hashSync('admin123', 10);
 db.run('INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)',
   ['admin', 'admin@geomanger.local', hashedPassword, 'admin']);
 
+// 创建品牌图标表
+db.run(`CREATE TABLE brand_icons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  brand TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  original_name TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  user_id INTEGER DEFAULT 1
+)`);
+
 // 插入示例数据 - 使用带字段名的INSERT语句
 const stores = [
   `INSERT INTO markers (store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,area,seats,rent,store_category,contact_person,contact_phone,description,latitude,longitude,status,icon_color,created_at,updated_at) VALUES ('BJ001','星巴克','星巴克国贸店','已开业','北京市','朝阳区','李明','13800138001','王芳','13800138002','国贸大厦一层','2023-01-15','07:00-22:00',200,80,50000,'直营','张总','13900139001','CBD核心区门店，业绩良好',39.9088,116.4610,'正常','#67c23a',datetime('now'),datetime('now'))`,

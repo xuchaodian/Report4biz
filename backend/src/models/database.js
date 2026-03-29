@@ -99,13 +99,12 @@ export async function initDatabase() {
       brand TEXT,
       name TEXT NOT NULL,
       store_type TEXT DEFAULT '竞品',
+      store_category TEXT,
       -- 地址信息
       city TEXT,
       district TEXT,
       address TEXT,
-      -- 联系信息
-      contact_person TEXT,
-      contact_phone TEXT,
+      -- 备注
       description TEXT,
       -- 系统字段
       latitude REAL NOT NULL,
@@ -118,6 +117,12 @@ export async function initDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `)
+
+  // 迁移：给已存在的 competitors 表添加 store_category 列（如果不存在）
+  try {
+    db.run(`ALTER TABLE competitors ADD COLUMN store_category TEXT`)
+  } catch (e) { /* 列已存在，忽略 */ }
+  // 迁移：移除旧列（SQLite 不支持 DROP COLUMN，只忽略即可，不影响功能）
 
   // 创建竞品门店索引
   try {
@@ -157,11 +162,10 @@ export async function initDatabase() {
       brand TEXT,
       name TEXT NOT NULL,
       store_type TEXT DEFAULT '品牌',
+      store_category TEXT,
       city TEXT,
       district TEXT,
       address TEXT,
-      contact_person TEXT,
-      contact_phone TEXT,
       description TEXT,
       latitude REAL NOT NULL,
       longitude REAL NOT NULL,
@@ -172,6 +176,11 @@ export async function initDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `)
+
+  // 迁移：给已存在的 brand_stores 表添加 store_category 列（如果不存在）
+  try {
+    db.run(`ALTER TABLE brand_stores ADD COLUMN store_category TEXT`)
+  } catch (e) { /* 列已存在，忽略 */ }
 
   // 创建品牌门店索引
   try {

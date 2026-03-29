@@ -12,6 +12,13 @@
         <el-button @click="handleExport">
           <el-icon><Download /></el-icon>导出
         </el-button>
+        <el-button
+          v-if="selectedRows.length > 0"
+          type="danger"
+          @click="handleBatchDelete"
+        >
+          <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
+        </el-button>
       </div>
     </div>
 
@@ -57,13 +64,15 @@
     <!-- 数据表格 -->
     <div class="data-table">
       <el-table
+        ref="tableRef"
         :data="paginatedMarkers"
         v-loading="markerStore.loading"
         border
         stripe
         style="width: 100%"
+        @selection-change="handleSelectionChange"
       >
-        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column type="selection" width="45" reserve-selection />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="100" />
         <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
@@ -343,6 +352,8 @@ const importing = ref(false)
 const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
+const tableRef = ref(null)
+const selectedRows = ref([])
 
 // 表单数据
 const formRef = ref(null)
@@ -535,6 +546,32 @@ const handleDelete = async (row) => {
     const result = await markerStore.deleteMarker(row.id)
     if (result.success) {
       ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// 表格选择变化
+const handleSelectionChange = (selection) => {
+  selectedRows.value = selection
+}
+
+// 批量删除
+const handleBatchDelete = async () => {
+  if (selectedRows.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(`确定要删除选中的 ${selectedRows.value.length} 条门店数据吗？`, '提示', {
+      type: 'warning'
+    })
+    const ids = selectedRows.value.map(row => row.id)
+    const result = await markerStore.batchDeleteMarkers(ids)
+    if (result.success) {
+      ElMessage.success(`成功删除 ${result.count} 条数据`)
+      tableRef.value?.clearSelection()
+      selectedRows.value = []
     } else {
       ElMessage.error(result.message)
     }

@@ -59,13 +59,23 @@
 - **品牌门店页面**：`/brand-stores` 路由，BrandStoreView.vue（与竞品门店功能相同的管理界面）
 - **品牌门店图层**：地图右下角独立开关控制，显示菱形图标（diamond样式），支持拖拽更新坐标
 
-## 品牌图标功能 (2026-03-28)
-- **品牌图标表**：`brand_icons` 表（id, user_id, brand, filename, original_name, created_at）
+## 品牌图标功能 (2026-03-28，更新)
+- **品牌图标表**：`brand_icons` 表（id, brand, filename, original_name, created_at, user_id）
 - **品牌图标 API**：`/api/brand-icons`（GET/POST/DELETE）
 - **品牌图标上传目录**：`/var/www/geomanger/backend/uploads/brand-icons/`
 - **品牌图标管理页面**：`/brands` 路由，BrandIconView.vue（左侧品牌列表，右侧图标上传/预览/删除）
 - **图标渲染**：地图上优先显示品牌自定义图标（32×32px 圆形），无品牌图标则回退到门店类型/竞品颜色 SVG
 - **地图集成**：MapView.vue onMounted 中调用 brandIconStore.fetchBrandIcons()，brandIconMap computed 提供品牌→图标URL映射
+- **用户隔离模式 (2026-03-28)**：
+  - **GET API**：返回用户自己上传的 + 所有管理员上传的图标（通过子查询）
+  - **POST API**：普通用户只能上传"我的门店"和"竞品门店"的品牌；同一品牌如果已存在管理员上传的图标，普通用户无法替换
+  - **DELETE API**：普通用户只能删除自己上传的图标
+- **前端显示**：
+  - 图标标签显示"我的"（绿色）或"共享"（灰色）区分来源
+  - 普通用户可以上传/更换/删除自己上传的图标
+  - 管理员可以操作所有品牌的图标
+- **数据库初始化**：init-db.mjs 中定义 brand_icons 表结构（带 user_id 列）
+- **注意**：后端使用 sql.js 内存数据库，每次 PM2 重启会重新初始化，需要确保 init-db.mjs 中包含所有表结构
 
 ## 竞品门店功能 (2026-03-27, 更新 2026-03-28)
 - **竞品门店表**：`competitors` 表（独立于 `markers` 表）
@@ -83,3 +93,15 @@
   - 其他：橙色 #ff9800
 - **竞品管理筛选**：支持关键词/城市/区县/品牌四维筛选，品牌列和筛选下拉均带彩色圆点
 - **图层优先级**：门店图标显示在竞品图标上方（使用 bringToBack）
+
+## 品牌门店权限控制 (2026-03-28)
+- **权限判断**：使用 `userStore.isAdmin` 判断是否为管理员
+- **普通用户**：仅能浏览品牌门店数据，无导入、导出、添加、删除权限
+- **管理员**：拥有全部操作权限
+- **隐藏功能**：批量选择列、添加/导入/导出/批量删除按钮、编辑/删除操作按钮
+- **数据库**：brand_stores 表包含 user_id 字段，INSERT 语句需要包含此字段
+- **Bug修复 (2026-03-28)**：brand-stores.js 的 INSERT 语句缺少 user_id 字段，导致导入/添加失败
+
+## 测试账号
+- 管理员：admin / admin123
+- 普通用户：xucd / 123456

@@ -10,7 +10,7 @@
     <!-- 说明 -->
     <div class="tip-box">
       <el-icon><InfoFilled /></el-icon>
-      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标（32×32px）。支持 JPG、PNG、GIF、WebP、SVG 格式。</span>
+      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标（32×32px）。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。</span>
     </div>
 
     <!-- 品牌列表 -->
@@ -38,7 +38,9 @@
               :alt="brand"
               class="preview-img"
             />
-            <span class="icon-label">已设置</span>
+            <span class="icon-label" :class="{ 'my-icon': isMyIcon(brand) }">
+              {{ isMyIcon(brand) ? '我的' : '共享' }}
+            </span>
           </div>
           <!-- 未设置：显示上传按钮 -->
           <div v-else class="no-icon">
@@ -47,7 +49,7 @@
         </div>
 
         <div class="brand-actions">
-          <!-- 上传/更换图标 -->
+          <!-- 上传/更换图标（只能操作自己门店和竞品门店的品牌） -->
           <el-upload
             ref="uploadRefs"
             :show-file-list="false"
@@ -57,13 +59,13 @@
           >
             <el-button size="small" :type="hasIcon(brand) ? 'default' : 'primary'">
               <el-icon><Upload /></el-icon>
-              {{ hasIcon(brand) ? '更换' : '上传图标' }}
+              {{ hasIcon(brand) ? (isMyIcon(brand) ? '更换' : '覆盖') : '上传图标' }}
             </el-button>
           </el-upload>
 
-          <!-- 删除图标（已设置时才显示） -->
+          <!-- 删除图标（只能删除自己上传的） -->
           <el-button
-            v-if="hasIcon(brand)"
+            v-if="hasIcon(brand) && isMyIcon(brand)"
             size="small"
             type="danger"
             @click="handleDelete(brand)"
@@ -88,7 +90,9 @@ import { useBrandIconStore } from '@/stores/brandIcon'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useBrandStoreStore } from '@/stores/brandStore'
+import { useUserStore } from '@/stores/user'
 
+const userStore = useUserStore()
 const brandIconStore = useBrandIconStore()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
@@ -103,13 +107,14 @@ const brandColorMap = {
   '米村拌饭': '#9c27b0'
 }
 
-// 合并所有品牌（门店 + 竞品 + 品牌门店）
+// 合并所有品牌（显示我的门店、竞品门店和品牌门店的品牌）
 const allBrands = computed(() => {
   const markerBrands = (markerStore.markers || []).map(m => m.brand).filter(Boolean)
   const competitorBrands = (competitorStore.competitors || []).map(c => c.brand).filter(Boolean)
   const brandStoreBrands = (brandStoreStore.brandStores || []).map(b => b.brand).filter(Boolean)
-  const all = [...new Set([...markerBrands, ...competitorBrands, ...brandStoreBrands])]
-  return all.sort()
+  
+  // 合并所有品牌
+  return [...new Set([...markerBrands, ...competitorBrands, ...brandStoreBrands])].sort()
 })
 
 // 已设置图标的品牌数量
@@ -122,11 +127,16 @@ const hasIcon = (brand) => {
   return !!brandIconStore.icons.find(i => i.brand === brand)
 }
 
+// 判断图标是否是当前用户上传的
+const isMyIcon = (brand) => {
+  const icon = brandIconStore.icons.find(i => i.brand === brand)
+  return icon ? icon.user_id === userStore.user?.id : false
+}
+
 // 获取图标 URL
 const getIconUrl = (brand) => {
   const icon = brandIconStore.icons.find(i => i.brand === brand)
-  if (!icon) return ''
-  return `/uploads/brand-icons/${icon.filename}`
+  return icon ? `/uploads/brand-icons/${icon.filename}` : ''
 }
 
 // 上传前校验
@@ -305,7 +315,11 @@ onMounted(async () => {
 
     .icon-label {
       font-size: 11px;
-      color: #67c23a;
+      color: #909399;
+      
+      &.my-icon {
+        color: #67c23a;
+      }
     }
   }
 

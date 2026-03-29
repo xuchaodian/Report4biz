@@ -48,6 +48,16 @@ export const useBrandStoreStore = defineStore('brandStore', {
       return data
     },
 
+    async batchDeleteBrandStores(ids) {
+      try {
+        await axios.post(`${API_URL}/brand-stores/batch-delete`, { ids })
+        this.brandStores = this.brandStores.filter(s => !ids.includes(s.id))
+        return { success: true, count: ids.length }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '批量删除失败' }
+      }
+    },
+
     async importBrandStores(file) {
       const formData = new FormData()
       formData.append('file', file)
