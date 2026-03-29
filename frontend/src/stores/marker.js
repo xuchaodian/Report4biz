@@ -10,7 +10,18 @@ export const useMarkerStore = defineStore('marker', {
     categories: ['门店', '设备', '人员', '仓库', '站点'],
     statuses: ['正常', '告警', '维护', '停用'],
     storeTypes: ['已开业', '重点候选', '一般候选'],
-    storeCategories: ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店']
+    storeCategories: ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店'],
+    // visibleIds: null = 显示全部；数组 = 仅显示这些ID（用于地图联动筛选）
+    visibleIds: null,
+    // 筛选条件（持久化，切换页面后保留）
+    filters: {
+      searchKeyword: '',
+      filterStoreType: '',
+      filterCity: '',
+      filterDistrict: '',
+      filterStoreCategory: '',
+      filterBrand: ''
+    }
   }),
   
   actions: {
@@ -68,6 +79,16 @@ export const useMarkerStore = defineStore('marker', {
         return { success: false, message: error.response?.data?.message || '批量删除失败' }
       }
     },
+
+    async clearAllMarkers() {
+      try {
+        const { data } = await axios.delete(`${API_URL}/markers/clear-all`)
+        this.markers = []
+        return { success: true, count: data.count }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '清空失败' }
+      }
+    },
     
     async importMarkers(file) {
       try {
@@ -90,6 +111,29 @@ export const useMarkerStore = defineStore('marker', {
       } catch (error) {
         return { success: false, message: '导出失败' }
       }
+    },
+
+    // 设置地图可见ID列表（null=全部，数组=仅这些ID）
+    setVisibleIds(ids) {
+      this.visibleIds = ids
+    },
+
+    // 设置筛选条件
+    setFilters(filters) {
+      this.filters = { ...this.filters, ...filters }
+    },
+
+    // 清除所有筛选条件
+    clearFilters() {
+      this.filters = {
+        searchKeyword: '',
+        filterStoreType: '',
+        filterCity: '',
+        filterDistrict: '',
+        filterStoreCategory: '',
+        filterBrand: ''
+      }
+      this.visibleIds = null
     }
   }
 })

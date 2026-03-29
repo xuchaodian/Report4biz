@@ -19,6 +19,9 @@
         >
           <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
         </el-button>
+        <el-button type="danger" plain @click="handleClearAll">
+          <el-icon><Delete /></el-icon>全清除
+        </el-button>
       </div>
     </div>
 
@@ -59,6 +62,9 @@
       </el-select>
 
       <span class="统计">共 {{ filteredMarkers.length }} 条数据</span>
+      <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
+        <el-icon><Close /></el-icon>清除筛选
+      </el-button>
     </div>
 
     <!-- 数据表格 -->
@@ -324,16 +330,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useMarkerStore } from '@/stores/marker'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
 
-// 筛选和分页
+// 筛选和分页 - 使用 store 中的筛选条件（持久化）
+// 使用 ref 包装 store 中的 filters，确保响应式
 const searchKeyword = ref('')
 const filterStoreType = ref('')
 const filterCity = ref('')
@@ -342,6 +349,33 @@ const filterStoreCategory = ref('')
 const filterBrand = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
+
+// 监听 store 中 filters 的外部变化
+watch(() => markerStore.filters, (newFilters) => {
+  searchKeyword.value = newFilters.searchKeyword
+  filterStoreType.value = newFilters.filterStoreType
+  filterCity.value = newFilters.filterCity
+  filterDistrict.value = newFilters.filterDistrict
+  filterStoreCategory.value = newFilters.filterStoreCategory
+  filterBrand.value = newFilters.filterBrand
+}, { deep: true })
+
+// 同步筛选条件到 store（持久化）
+const syncFiltersToStore = () => {
+  markerStore.setFilters({
+    searchKeyword: searchKeyword.value,
+    filterStoreType: filterStoreType.value,
+    filterCity: filterCity.value,
+    filterDistrict: filterDistrict.value,
+    filterStoreCategory: filterStoreCategory.value,
+    filterBrand: filterBrand.value
+  })
+}
+
+// 是否有激活的筛选条件
+const hasActiveFilters = computed(() => {
+  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value
+})
 
 // 弹窗状态
 const dialogVisible = ref(false)
@@ -445,8 +479,36 @@ const getStoreTypeTag = (type) => {
   return typeMap[type] || ''
 }
 
-// 搜索
+// 搜索（同步筛选结果到地图）
 const handleSearch = () => {
+  currentPage.value = 1
+  // 同步筛选条件到 store（持久化）
+  syncFiltersToStore()
+  // 计算可见ID
+  syncVisibleIds()
+}
+
+// 同步可见ID到地图
+const syncVisibleIds = () => {
+  const hasFilter = searchKeyword.value || filterStoreType.value || filterCity.value ||
+    filterDistrict.value || filterStoreCategory.value || filterBrand.value
+  if (!hasFilter) {
+    markerStore.setVisibleIds(null)  // 无筛选 → 显示全部
+  } else {
+    const ids = filteredMarkers.value.map(m => m.id)
+    markerStore.setVisibleIds(ids)
+  }
+}
+
+// 清除筛选条件
+const handleClearFilters = () => {
+  searchKeyword.value = ''
+  filterStoreType.value = ''
+  filterCity.value = ''
+  filterDistrict.value = ''
+  filterStoreCategory.value = ''
+  filterBrand.value = ''
+  markerStore.clearFilters()
   currentPage.value = 1
 }
 
@@ -572,12 +634,35 @@ const handleBatchDelete = async () => {
       ElMessage.success(`成功删除 ${result.count} 条数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
+      // 重置筛选条件
+      markerStore.clearFilters()
     } else {
       ElMessage.error(result.message)
     }
   } catch {
     // 用户取消
   }
+}
+
+// 全清除
+const handleClearAll = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '此操作将清空您所有的门店数据，不可恢复！确定继续吗？',
+      '危险操作',
+      { type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    )
+    const result = await markerStore.clearAllMarkers()
+    if (result.success) {
+      ElMessage.success(`已清空 ${result.count} 条门店数据`)
+      tableRef.value?.clearSelection()
+      selectedRows.value = []
+      // 重置筛选条件
+      markerStore.clearFilters()
+    } else {
+      ElMessage.error(result.message)
+    }
+  } catch {}
 }
 
 // 定位
@@ -648,6 +733,13 @@ BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13
 
 onMounted(() => {
   markerStore.fetchMarkers()
+  // 从 store 恢复筛选条件
+  searchKeyword.value = markerStore.filters.searchKeyword
+  filterStoreType.value = markerStore.filters.filterStoreType
+  filterCity.value = markerStore.filters.filterCity
+  filterDistrict.value = markerStore.filters.filterDistrict
+  filterStoreCategory.value = markerStore.filters.filterStoreCategory
+  filterBrand.value = markerStore.filters.filterBrand
 })
 </script>
 

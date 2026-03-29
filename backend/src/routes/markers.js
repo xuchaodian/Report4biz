@@ -205,6 +205,18 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
+// 清空所有门店（仅清除当前用户自己的数据）
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const result = db.prepare('DELETE FROM markers WHERE user_id = ?').run(req.user.id)
+    res.json({ message: `已清空 ${result.changes} 条门店数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空门店错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 导入门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {

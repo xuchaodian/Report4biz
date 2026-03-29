@@ -37,6 +37,7 @@
 - v1.0.0: 2026-03-26，基础功能完成
 - v1.0.1: 2026-03-26（df5deb0），门店区分颜色显示优化
 - v1.1.0: 2026-03-27（66efe48），竞品门店功能
+- v1.1.1: 2026-03-29（98e3fc8），品牌图标+品牌门店+分类字段+store_type默认值修复
 
 ## 常见问题
 - **修改代码后服务器没变化**：必须先 vite build，再用 paramiko SFTP 部署 dist 到服务器（每次修改都要执行这两步）
@@ -51,6 +52,12 @@
 - **事件绑定必须在map创建后立即绑定**：`initMap` 是 async 函数（含 await getLocationByIP），map.on('click'/'dblclick') 必须写在 initMap 内部 map 创建之后，不能用 setTimeout 延迟绑定（会产生竞态导致绑定失败）
 - **门店区分列表**：在 marker.js store 的 storeCategories 数组中维护
 - **测量面积面消失bug (2026-03-27)**：双击结束面积测量后，下次测量时之前保存的面会消失。原因是双击结束后 `measureAreaPolygon`/`measureAreaLabel` 没有设为 null，下次 `handleAreaMeasure` 会执行 `map.removeLayer(measureAreaPolygon)` 把已保存的面从 drawnItems 中移除。修复：在双击结束时添加 `measureAreaPolygon = null` 和 `measureAreaLabel = null`
+
+## 地图筛选联动 (2026-03-29)
+- **筛选条件持久化**：筛选条件存储在 Pinia store 的 `filters` 对象中，切换页面后保留
+- **清除筛选按钮**：筛选栏右侧显示"清除筛选"按钮（仅在有筛选条件时显示），点击后恢复全部显示
+- **Store 新增方法**：`setFilters()` 设置筛选条件，`clearFilters()` 清除所有筛选并重置 visibleIds
+- **三个 store 均已修改**：marker.js, competitor.js, brandStore.js
 
 ## 品牌门店功能 (2026-03-28)
 - **品牌门店表**：`brand_stores` 表（独立于 `markers` 和 `competitors`）

@@ -193,6 +193,21 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
+// 清空所有品牌门店（仅管理员）
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可清空品牌门店' })
+    }
+    const db = getDb()
+    const result = db.prepare('DELETE FROM brand_stores').run()
+    res.json({ success: true, message: `已清空 ${result.changes} 条品牌门店数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空品牌门店错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 导入品牌门店（仅管理员可操作，共享数据）
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {

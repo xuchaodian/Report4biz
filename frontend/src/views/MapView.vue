@@ -685,12 +685,18 @@ const loadMarkers = async () => {
     map.removeLayer(heatmapLayer)
   }
 
+  // 根据 visibleIds 过滤可见数据
+  const visibleIds = markerStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? markerStore.markers
+    : markerStore.markers.filter(m => visibleIds.includes(m.id))
+
   // 创建点位图层
   businessLayer = L.layerGroup()
 
-  console.log('开始创建标记点, 数量:', markerStore.markers.length)
+  console.log('开始创建标记点, 数量:', dataToShow.length)
 
-  markerStore.markers.forEach(markerData => {
+  dataToShow.forEach(markerData => {
     console.log('创建标记:', markerData.name, '坐标:', markerData.latitude, markerData.longitude)
     // 有品牌图标优先用图片图标，否则用门店类型颜色 SVG
     const brandIconUrl = brandIconMap.value[markerData.brand]
@@ -738,14 +744,14 @@ const loadMarkers = async () => {
     businessLayer.addLayer(marker)
   })
 
-  // 聚合模式
+  // 聚合模式（同样应用可见性过滤）
   markerClusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
     spiderfyOnMaxZoom: true,
     showCoverageOnHover: false
   })
 
-  markerStore.markers.forEach(markerData => {
+  dataToShow.forEach(markerData => {
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl)
@@ -755,8 +761,8 @@ const loadMarkers = async () => {
     markerClusterGroup.addLayer(marker)
   })
 
-  // 热力图
-  const heatmapData = markerStore.markers.map(m => [m.latitude, m.longitude, 1])
+  // 热力图（同样应用可见性过滤）
+  const heatmapData = dataToShow.map(m => [m.latitude, m.longitude, 1])
   heatmapLayer = L.heatLayer(heatmapData, {
     radius: 25,
     blur: 15,
@@ -772,11 +778,54 @@ const loadMarkers = async () => {
 
   // 根据显示模式添加图层
   updateLayerDisplay()
-  
+
   // 确保竞品图层在门店图层下方（如果竞品图层已创建）
   if (competitorLayer && map.hasLayer(competitorLayer)) {
     updateCompetitorDisplay()
   }
+}
+
+// 重载门店图层（供 watcher 调用）
+const reloadBusinessLayer = () => {
+  if (!map || !businessLayer) return
+  const wasOnMap = map.hasLayer(businessLayer)
+  map.removeLayer(businessLayer)
+  // 重新构建图层（从 store 取最新数据+过滤）
+  const visibleIds = markerStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? markerStore.markers
+    : markerStore.markers.filter(m => visibleIds.includes(m.id))
+
+  businessLayer = L.layerGroup()
+  dataToShow.forEach(markerData => {
+    const brandIconUrl = brandIconMap.value[markerData.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
+    const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
+    marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      await markerStore.updateMarker(markerData.id, { latitude: latlng.lat, longitude: latlng.lng })
+      ElMessage.success('坐标已更新')
+    })
+    businessLayer.addLayer(marker)
+  })
+
+  // 热力图
+  if (heatmapLayer) { map.removeLayer(heatmapLayer) }
+  heatmapLayer = L.heatLayer(dataToShow.map(m => [m.latitude, m.longitude, 1]), {
+    radius: 25, blur: 15, maxZoom: 17,
+    gradient: { 0.2: 'blue', 0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red' }
+  })
+  if (wasOnMap) {
+    if (showHeatmap.value) {
+      map.addLayer(heatmapLayer)
+    } else {
+      map.addLayer(businessLayer)
+    }
+  }
+  updateLayerDisplay()
 }
 
 // 加载竞品门店
@@ -796,6 +845,12 @@ const loadCompetitors = async () => {
     console.log('没有竞品数据')
     return
   }
+
+  // 根据 visibleIds 过滤
+  const visibleIds = competitorStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? competitorStore.competitors
+    : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
 
   // 创建竞品图层
   competitorLayer = L.layerGroup()
@@ -822,7 +877,7 @@ const loadCompetitors = async () => {
     return brandColors['其他']
   }
 
-  competitorStore.competitors.forEach(comp => {
+  dataToShow.forEach(comp => {
     console.log('创建竞品标记:', comp.name, comp.latitude, comp.longitude)
     // 有品牌图标优先用图片图标，否则用颜色圆点
     const brandColor = getBrandColor(comp.brand)
@@ -863,6 +918,52 @@ const loadCompetitors = async () => {
   console.log('竞品图层创建完成, competitorLayer:', !!competitorLayer)
   // 根据显示模式添加竞品图层
   updateCompetitorDisplay()
+}
+
+// 重载竞品图层（供 watcher 调用）
+const reloadCompetitorLayer = () => {
+  if (!map || !competitorStore.competitors || competitorStore.competitors.length === 0) return
+  const visibleIds = competitorStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? competitorStore.competitors
+    : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
+
+  const wasOnMap = map.hasLayer(competitorLayer)
+  if (competitorLayer) map.removeLayer(competitorLayer)
+
+  competitorLayer = L.layerGroup()
+  const brandColors = {
+    '大米先生': '#e6a23c', '谷田稻香': '#f56c6c', '吉野家': '#409eff',
+    '老乡鸡': '#67c23a', '米村拌饭': '#9c27b0', '其他': '#ff9800'
+  }
+  const getBrandColor = (brand) => {
+    if (!brand) return brandColors['其他']
+    for (const key in brandColors) {
+      if (brand.includes(key) || key.includes(brand)) return brandColors[key]
+    }
+    return brandColors['其他']
+  }
+
+  dataToShow.forEach(comp => {
+    const brandColor = getBrandColor(comp.brand)
+    const brandIconUrl = brandIconMap.value[comp.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(brandColor, 'dot', 1.2)
+    const marker = L.marker([comp.latitude, comp.longitude], { icon, draggable: true })
+    marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${brandColor};">🏪 ${comp.brand || ''} ${comp.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${brandColor};">竞品</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(comp.city || '') + (comp.district || '') + (comp.address || '-')}</p></div>`)
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      await competitorStore.updateCompetitor(comp.id, { latitude: latlng.lat, longitude: latlng.lng })
+      ElMessage.success('竞品坐标已更新')
+    })
+    competitorLayer.addLayer(marker)
+  })
+
+  if (wasOnMap && showCompetitorLayer.value) {
+    map.addLayer(competitorLayer)
+    competitorLayer.bringToBack()
+  }
 }
 
 // 竞品开关切换处理
@@ -928,10 +1029,16 @@ const loadBrandStores = async () => {
     return
   }
 
+  // 根据 visibleIds 过滤
+  const visibleIds = brandStoreStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? brandStoreStore.brandStores
+    : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+
   brandStoreLayer = L.layerGroup()
   brandMarkerMap = {}  // 清空映射表
 
-  brandStoreStore.brandStores.forEach(store => {
+  dataToShow.forEach(store => {
     const brandIconUrl = brandIconMap.value[store.brand]
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl)
@@ -961,6 +1068,42 @@ const loadBrandStores = async () => {
   })
 
   updateBrandStoreDisplay()
+}
+
+// 重载品牌门店图层（供 watcher 调用）
+const reloadBrandStoreLayer = () => {
+  if (!map || !brandStoreStore.brandStores || brandStoreStore.brandStores.length === 0) return
+  const visibleIds = brandStoreStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? brandStoreStore.brandStores
+    : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+
+  const wasOnMap = map.hasLayer(brandStoreLayer)
+  if (brandStoreLayer) map.removeLayer(brandStoreLayer)
+
+  brandStoreLayer = L.layerGroup()
+  brandMarkerMap = {}
+
+  dataToShow.forEach(store => {
+    const brandIconUrl = brandIconMap.value[store.brand]
+    const icon = brandIconUrl
+      ? createBrandImageIcon(brandIconUrl)
+      : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#409eff'};">🏪 ${store.brand || ''} ${store.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${store.icon_color || '#409eff'};">品牌门店</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p></div>`)
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+      ElMessage.success('品牌门店坐标已更新')
+    })
+    brandStoreLayer.addLayer(marker)
+    brandMarkerMap[store.id] = marker
+  })
+
+  if (wasOnMap && showBrandStoreLayer.value) {
+    map.addLayer(brandStoreLayer)
+    brandStoreLayer.bringToBack()
+  }
 }
 
 // 品牌门店开关切换处理
@@ -1026,6 +1169,17 @@ watch(showStoreLayers, (val) => {
 // 监控品牌门店图层开关
 watch(showBrandStoreLayer, () => {
   updateBrandStoreDisplay()
+})
+
+// 监听各 store 的 visibleIds 变化，联动地图筛选显示
+watch(() => markerStore.visibleIds, () => {
+  if (map) reloadBusinessLayer()
+})
+watch(() => competitorStore.visibleIds, () => {
+  if (map) reloadCompetitorLayer()
+})
+watch(() => brandStoreStore.visibleIds, () => {
+  if (map) reloadBrandStoreLayer()
 })
 
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）

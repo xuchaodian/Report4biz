@@ -8,7 +8,17 @@ export const useCompetitorStore = defineStore('competitor', {
     competitors: [],
     loading: false,
     statuses: ['正常', '关闭', '装修中', '未知'],
-    storeTypes: ['竞品', '其他']
+    storeTypes: ['竞品', '其他'],
+    // visibleIds: null = 显示全部；数组 = 仅显示这些ID
+    visibleIds: null,
+    // 筛选条件（持久化，切换页面后保留）
+    filters: {
+      searchKeyword: '',
+      filterCity: '',
+      filterDistrict: '',
+      filterBrand: '',
+      filterCategory: ''
+    }
   }),
   
   actions: {
@@ -70,6 +80,16 @@ export const useCompetitorStore = defineStore('competitor', {
         return { success: false, message: error.response?.data?.message || '批量删除失败' }
       }
     },
+
+    async clearAllCompetitors() {
+      try {
+        const { data } = await axios.delete(`${API_URL}/competitors/clear-all`)
+        this.competitors = []
+        return { success: true, count: data.count }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '清空失败' }
+      }
+    },
     
     async importCompetitors(file) {
       try {
@@ -92,6 +112,28 @@ export const useCompetitorStore = defineStore('competitor', {
       } catch (error) {
         return { success: false, message: '导出失败' }
       }
+    },
+
+    // 设置地图可见ID列表
+    setVisibleIds(ids) {
+      this.visibleIds = ids
+    },
+
+    // 设置筛选条件
+    setFilters(filters) {
+      this.filters = { ...this.filters, ...filters }
+    },
+
+    // 清除所有筛选条件
+    clearFilters() {
+      this.filters = {
+        searchKeyword: '',
+        filterCity: '',
+        filterDistrict: '',
+        filterBrand: '',
+        filterCategory: ''
+      }
+      this.visibleIds = null
     }
   }
 })

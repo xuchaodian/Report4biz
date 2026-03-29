@@ -189,6 +189,23 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
+// 清空所有竞品门店（普通用户清除自己的，管理员清除所有）
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    let result
+    if (req.user.role === 'admin') {
+      result = db.prepare('DELETE FROM competitors').run()
+    } else {
+      result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
+    }
+    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空竞品错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 导入竞品门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {

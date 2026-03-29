@@ -6,7 +6,17 @@ const API_URL = '/api'
 export const useBrandStoreStore = defineStore('brandStore', {
   state: () => ({
     brandStores: [],
-    loading: false
+    loading: false,
+    // visibleIds: null = 显示全部；数组 = 仅显示这些ID
+    visibleIds: null,
+    // 筛选条件（持久化，切换页面后保留）
+    filters: {
+      searchKeyword: '',
+      filterCity: '',
+      filterDistrict: '',
+      filterBrand: '',
+      filterCategory: ''
+    }
   }),
 
   actions: {
@@ -58,6 +68,16 @@ export const useBrandStoreStore = defineStore('brandStore', {
       }
     },
 
+    async clearAllBrandStores() {
+      try {
+        const { data } = await axios.delete(`${API_URL}/brand-stores/clear-all`)
+        this.brandStores = []
+        return { success: true, count: data.count }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '清空失败' }
+      }
+    },
+
     async importBrandStores(file) {
       const formData = new FormData()
       formData.append('file', file)
@@ -70,6 +90,28 @@ export const useBrandStoreStore = defineStore('brandStore', {
     async exportBrandStores() {
       const { data } = await axios.get(`${API_URL}/brand-stores/export`)
       return data
+    },
+
+    // 设置地图可见ID列表
+    setVisibleIds(ids) {
+      this.visibleIds = ids
+    },
+
+    // 设置筛选条件
+    setFilters(filters) {
+      this.filters = { ...this.filters, ...filters }
+    },
+
+    // 清除所有筛选条件
+    clearFilters() {
+      this.filters = {
+        searchKeyword: '',
+        filterCity: '',
+        filterDistrict: '',
+        filterBrand: '',
+        filterCategory: ''
+      }
+      this.visibleIds = null
     }
   }
 })
