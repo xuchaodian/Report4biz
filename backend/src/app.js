@@ -9,6 +9,7 @@ import competitorRoutes from './routes/competitors.js'
 import userRoutes from './routes/users.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
+import shapefileRoutes from './routes/shapefiles.js'
 import { initDatabase } from './models/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -37,7 +38,8 @@ async function start() {
     app.use('/api/competitors', competitorRoutes)
     app.use('/api/users', userRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
-app.use('/api/brand-stores', brandStoreRoutes)
+    app.use('/api/brand-stores', brandStoreRoutes)
+    app.use('/api/shapefiles', shapefileRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

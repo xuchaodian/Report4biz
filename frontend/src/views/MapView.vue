@@ -500,6 +500,8 @@ let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
 let analysisCircleLayer = null  // 圆形分析专用图层
+let shapefileLayer = null  // Shapefile 图层
+let displayedShapefiles = ref([])  // 当前显示的 Shapefile 列表
 let measureLine = null
 let measureArea = null
 let measurePoints = []
@@ -1930,6 +1932,12 @@ const clearDrawings = () => {
     map.removeLayer(analysisCircleLayer)
     analysisCircleLayer = null
   }
+  // 清除 Shapefile 图层
+  if (shapefileLayer) {
+    map.removeLayer(shapefileLayer)
+    shapefileLayer = null
+    displayedShapefiles.value = []
+  }
   measurePoints = []
   measureAreaPoints = []
   measurementResult.value = ''
@@ -2081,13 +2089,143 @@ onMounted(() => {
         }
       }
     }, 1500)
+
+    // 监听 Shapefile 显示事件
+    window.addEventListener('displayShapefile', handleDisplayShapefile)
   })
 })
+
+// 处理 Shapefile 显示事件
+const handleDisplayShapefile = (event) => {
+  const { id, name, geojson } = event.detail
+
+  if (!map) return
+
+  // 初始化 shapefile 图层（如果不存在）
+  if (!shapefileLayer) {
+    shapefileLayer = L.layerGroup().addTo(map)
+  }
+
+  // 检查是否已经显示该文件
+  const existingIndex = displayedShapefiles.value.findIndex(s => s.id === id)
+  if (existingIndex >= 0) {
+    // 已存在，移除后再添加（刷新）
+    removeShapefileLayer(id)
+  }
+
+  // 添加到显示列表
+  displayedShapefiles.value.push({ id, name, geojson })
+
+  // 解析 GeoJSON 并添加到地图
+  const features = geojson.features || []
+  features.forEach((feature, index) => {
+    const geometry = feature.geometry
+    const properties = feature.properties || {}
+
+    let layer = null
+    const style = {
+      color: '#9c27b0',  // 紫色边框
+      fillColor: '#9c27b0',
+      fillOpacity: 0.2,
+      weight: 2
+    }
+
+    if (geometry.type === 'Polygon') {
+      layer = L.geoJSON(feature, {
+        style,
+        onEachFeature: (feature, layer) => {
+          // 构建 popup 内容
+          let popupContent = `<div style="font-size:12px;"><b>${name}</b><br>要素 ${index + 1}`
+          for (const [key, value] of Object.entries(properties)) {
+            if (value !== null && value !== undefined && value !== '') {
+              popupContent += `<br>${key}: ${value}`
+            }
+          }
+          popupContent += '</div>'
+          layer.bindPopup(popupContent)
+        }
+      })
+    } else if (geometry.type === 'MultiPolygon') {
+      layer = L.geoJSON(feature, {
+        style,
+        onEachFeature: (feature, layer) => {
+          let popupContent = `<div style="font-size:12px;"><b>${name}</b><br>要素 ${index + 1}`
+          for (const [key, value] of Object.entries(properties)) {
+            if (value !== null && value !== undefined && value !== '') {
+              popupContent += `<br>${key}: ${value}`
+            }
+          }
+          popupContent += '</div>'
+          layer.bindPopup(popupContent)
+        }
+      })
+    }
+
+    if (layer) {
+      shapefileLayer.addLayer(layer)
+    }
+  })
+
+  // 调整视图以包含所有要素
+  if (shapefileLayer.getLayers().length > 0) {
+    const bounds = shapefileLayer.getBounds()
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [50, 50] })
+    }
+  }
+
+  ElMessage.success(`已显示 "${name}"，共 ${features.length} 个要素`)
+}
+
+// 移除单个 Shapefile 图层
+const removeShapefileLayer = (id) => {
+  if (!shapefileLayer) return
+
+  const index = displayedShapefiles.value.findIndex(s => s.id === id)
+  if (index < 0) return
+
+  // 重新构建图层（Leaflet 不支持直接移除单个子图层）
+  const currentLayers = [...displayedShapefiles.value]
+  currentLayers.splice(index, 1)
+
+  shapefileLayer.clearLayers()
+
+  // 重新添加保留的图层
+  currentLayers.forEach(sf => {
+    const features = sf.geojson.features || []
+    features.forEach((feature, idx) => {
+      const style = {
+        color: '#9c27b0',
+        fillColor: '#9c27b0',
+        fillOpacity: 0.2,
+        weight: 2
+      }
+      const layer = L.geoJSON(feature, {
+        style,
+        onEachFeature: (feature, layer) => {
+          let popupContent = `<div style="font-size:12px;"><b>${sf.name}</b><br>要素 ${idx + 1}`
+          const props = feature.properties || {}
+          for (const [key, value] of Object.entries(props)) {
+            if (value !== null && value !== undefined && value !== '') {
+              popupContent += `<br>${key}: ${value}`
+            }
+          }
+          popupContent += '</div>'
+          layer.bindPopup(popupContent)
+        }
+      })
+      shapefileLayer.addLayer(layer)
+    })
+  })
+
+  displayedShapefiles.value = currentLayers
+}
 
 onUnmounted(() => {
   if (map) map.remove()
   delete window.editMarkerExternal
   delete window.deleteMarkerExternal
+  window.removeEventListener('displayShapefile', handleDisplayShapefile)
 })
 </script>
 

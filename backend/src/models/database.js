@@ -189,6 +189,27 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // 创建 Shapefile 数据表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS shapefiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      geojson TEXT NOT NULL,
+      field_names TEXT,
+      feature_count INTEGER DEFAULT 0,
+      user_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建 Shapefile 索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_shapefiles_user ON shapefiles(user_id)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
   // 创建默认管理员账户 (密码: admin123)
   const adminCheck = db.exec("SELECT id FROM users WHERE username = 'admin'")
   if (adminCheck.length === 0 || adminCheck[0].values.length === 0) {

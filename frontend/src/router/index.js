@@ -54,6 +54,11 @@ const routes = [
         path: 'account',
         name: 'Account',
         component: () => import('@/views/MyAccountView.vue')
+      },
+      {
+        path: 'shapefiles',
+        name: 'Shapefiles',
+        component: () => import('@/views/ShapefileView.vue')
       }
     ]
   }

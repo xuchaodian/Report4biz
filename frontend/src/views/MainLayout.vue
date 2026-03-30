@@ -24,6 +24,10 @@
           <el-icon><MapLocation /></el-icon>
           <span>品牌门店</span>
         </router-link>
+        <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }">
+          <el-icon><Document /></el-icon>
+          <span>Shp文件</span>
+        </router-link>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
           <span>用户</span>
@@ -64,7 +68,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 
