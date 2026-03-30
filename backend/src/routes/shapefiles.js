@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { execSync } from 'child_process'
+import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -40,11 +40,37 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     const filePath = req.file.path
-    const originalName = req.file.originalname
+    // 处理文件名编码问题
+    // HTTP multipart 头的文件名可能在传输中被编码，我们尝试恢复正确的 UTF-8
+    let originalName = req.file.originalname
+    
+    // 检测是否有编码问题（检查是否包含 Latin-1 被误解为 UTF-8 的情况）
+    // 常见特征：中文变成乱码如 "ä½ " 等
+    const hasEncodingIssue = /[Ã¤Ã©Ã¨Ã¼Ã¶Ã¼Â°Ã§Â·Â¢]/.test(originalName)
+    if (hasEncodingIssue) {
+      // 将字符串当作 Latin-1 重新编码为 Buffer，再解码为 UTF-8
+      originalName = Buffer.from(originalName, 'latin1').toString('utf8')
+    }
+    
+    // 另一种情况：文件名本身就是正常的 UTF-8，直接使用即可
 
-    // 调用 Python 脚本解析 shapefile
+    // 调用 Python 脚本解析 shapefile (使用 exec 代替 execSync，避免缓冲区溢出)
     const pythonScript = path.join(__dirname, '../utils/shapefile_parser.py')
-    const pythonResult = execSync(`python3 "${pythonScript}" "${filePath}"`, { encoding: 'utf-8' })
+
+    // 使用 Promise 包装 exec
+    const pythonResult = await new Promise((resolve, reject) => {
+      exec(`python3 "${pythonScript}" "${filePath}"`, { 
+        encoding: 'utf-8',
+        maxBuffer: 100 * 1024 * 1024  // 100MB 缓冲区
+      }, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message))
+        } else {
+          resolve(stdout)
+        }
+      })
+    })
+
     const parseResult = JSON.parse(pythonResult)
 
     // 删除临时上传文件
@@ -160,6 +186,160 @@ router.delete('/:id', (req, res) => {
 
   } catch (error) {
     console.error('删除 Shapefile 失败:', error)
+    res.status(500).json({ message: '服务器错误' })
+  }
+})
+
+// 检索 Shapefile 数据（支持多条件查询）
+router.post('/:id/query', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const userId = req.headers['x-user-id'] || 1
+    const { conditions } = req.body
+
+    // 获取 Shapefile 数据
+    const row = db.prepare(
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND user_id = ?`
+    ).get(id, userId)
+
+    if (!row) {
+      return res.status(404).json({ message: '未找到该文件' })
+    }
+
+    const geojson = JSON.parse(row.geojson)
+    const features = geojson.features || []
+
+    // 如果没有条件，返回所有数据
+    if (!conditions || conditions.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          id: row.id,
+          name: row.name,
+          features: features,
+          total: features.length,
+          matched: features.length
+        }
+      })
+    }
+
+    // 执行多条件筛选
+    const matchedFeatures = features.filter(feature => {
+      const props = feature.properties || {}
+      
+      // 所有条件都必须满足（AND 逻辑）
+      return conditions.every(condition => {
+        const { field, operator, value } = condition
+        
+        // 如果字段不存在，跳过此条件
+        if (!(field in props)) return true
+        
+        const fieldValue = props[field]
+        
+        // 如果字段值不是数字，尝试转换
+        const numValue = parseFloat(fieldValue)
+        const targetValue = parseFloat(value)
+        
+        if (isNaN(numValue) || isNaN(targetValue)) {
+          return false
+        }
+        
+        switch (operator) {
+          case '>':
+            return numValue > targetValue
+          case '>=':
+            return numValue >= targetValue
+          case '<':
+            return numValue < targetValue
+          case '<=':
+            return numValue <= targetValue
+          case '=':
+          case '==':
+            return numValue === targetValue
+          case '!=':
+            return numValue !== targetValue
+          default:
+            return true
+        }
+      })
+    })
+
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        name: row.name,
+        features: matchedFeatures,
+        total: features.length,
+        matched: matchedFeatures.length
+      }
+    })
+
+  } catch (error) {
+    console.error('检索 Shapefile 失败:', error)
+    res.status(500).json({ message: '服务器错误: ' + error.message })
+  }
+})
+
+// 获取 Shapefile 的数值字段列表
+router.get('/:id/fields', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const userId = req.headers['x-user-id'] || 1
+
+    const row = db.prepare(
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND user_id = ?`
+    ).get(id, userId)
+
+    if (!row) {
+      return res.status(404).json({ message: '未找到该文件' })
+    }
+
+    const fieldNames = JSON.parse(row.field_names || '[]')
+    
+    // 分析每个字段，识别数值字段
+    const geojson = JSON.parse(row.geojson)
+    const features = geojson.features || []
+    
+    // 采样前10个要素来判断字段类型
+    const sampleSize = Math.min(10, features.length)
+    const numericFields = []
+    
+    for (const fieldName of fieldNames) {
+      let numericCount = 0
+      let totalCount = 0
+      
+      for (let i = 0; i < sampleSize; i++) {
+        const value = features[i].properties?.[fieldName]
+        if (value !== null && value !== undefined && value !== '') {
+          totalCount++
+          const num = parseFloat(value)
+          if (!isNaN(num)) {
+            numericCount++
+          }
+        }
+      }
+      
+      // 如果采样中超过80%的值是数字，认为是数值字段
+      if (totalCount > 0 && numericCount / totalCount >= 0.8) {
+        numericFields.push(fieldName)
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        name: row.name,
+        allFields: fieldNames,
+        numericFields: numericFields
+      }
+    })
+
+  } catch (error) {
+    console.error('获取字段列表失败:', error)
     res.status(500).json({ message: '服务器错误' })
   }
 })

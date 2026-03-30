@@ -72,6 +72,7 @@
         v-loading="brandStoreStore.loading"
         border
         stripe
+        row-key="id"
         style="width: 100%"
         @selection-change="handleSelectionChange"
       >

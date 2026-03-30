@@ -74,6 +74,7 @@
         v-loading="competitorStore.loading"
         border
         stripe
+        row-key="id"
         style="width: 100%"
         @selection-change="handleSelectionChange"
       >

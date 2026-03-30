@@ -30,22 +30,19 @@
     <!-- 文件列表 -->
     <div class="file-list" v-if="fileList.length > 0">
       <h3>已上传的文件</h3>
-      <el-table :data="fileList" style="width: 100%">
-        <el-table-column prop="name" label="文件名" min-width="200" />
-        <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
-        <el-table-column prop="field_names" label="字段" min-width="150">
+      <el-table :data="fileList" style="width: 100%" row-key="id">
+        <el-table-column prop="name" label="文件名" min-width="200">
           <template #default="{ row }">
-            <el-tag v-for="field in (row.field_names || [])" :key="field" size="small" class="field-tag">
-              {{ field }}
-            </el-tag>
+            {{ row.name }}
           </template>
         </el-table-column>
+        <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
         <el-table-column prop="created_at" label="上传时间" width="160" />
         <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="loadAndDisplay(row)">
-              <el-icon><MapLocation /></el-icon>
-              显示
+            <el-button type="primary" size="small" @click="openQueryDialog(row)">
+              <el-icon><Search /></el-icon>
+              检索
             </el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
@@ -57,15 +54,124 @@
 
     <!-- 空状态 -->
     <el-empty v-else description="暂无上传的文件" />
+
+    <!-- 检索对话框 -->
+    <el-dialog
+      v-model="queryDialogVisible"
+      title="数据检索"
+      width="700px"
+      :close-on-click-modal="false"
+    >
+      <div class="query-dialog-content">
+        <div class="file-info" v-if="currentFile">
+          <span class="file-name">{{ currentFile.name }}</span>
+          <span class="feature-count">共 {{ currentFile.feature_count }} 个要素</span>
+        </div>
+
+        <!-- 检索条件列表 -->
+        <div class="conditions-section">
+          <div class="section-header">
+            <span class="section-title">检索条件</span>
+            <el-button type="primary" size="small" link @click="addCondition">
+              <el-icon><Plus /></el-icon>
+              添加条件
+            </el-button>
+          </div>
+
+          <div v-if="conditions.length === 0" class="no-conditions">
+            暂无检索条件，点击"添加条件"开始
+          </div>
+
+          <div v-else class="condition-list">
+            <div v-for="(condition, index) in conditions" :key="index" class="condition-item">
+              <el-select
+                v-model="condition.field"
+                placeholder="选择字段"
+                style="width: 180px"
+                @change="onFieldChange(index)"
+              >
+                <el-option
+                  v-for="field in numericFields"
+                  :key="field"
+                  :label="field"
+                  :value="field"
+                />
+              </el-select>
+
+              <el-select v-model="condition.operator" placeholder="运算符" style="width: 100px">
+                <el-option label=">" value=">" />
+                <el-option label=">=" value=">=" />
+                <el-option label="<" value="<" />
+                <el-option label="<=" value="<=" />
+                <el-option label="=" value="=" />
+                <el-option label="!=" value="!=" />
+              </el-select>
+
+              <el-input-number
+                v-model="condition.value"
+                placeholder="数值"
+                :precision="0"
+                :controls="false"
+                style="width: 140px"
+              />
+
+              <el-button type="danger" size="small" @click="removeCondition(index)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 逻辑关系说明 -->
+        <div class="logic-note">
+          <el-icon><InfoFilled /></el-icon>
+          <span>多个条件之间为 AND 关系（同时满足）</span>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="queryDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="executeQuery" :loading="queryLoading">
+            执行检索
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 检索结果对话框 -->
+    <el-dialog
+      v-model="resultDialogVisible"
+      title="检索结果"
+      width="600px"
+    >
+      <div class="result-content">
+        <div class="result-summary">
+          <el-tag type="success" size="large">
+            匹配 {{ queryResult.matched || 0 }} / {{ queryResult.total || 0 }} 个要素
+          </el-tag>
+        </div>
+
+        <div class="result-actions">
+          <el-button type="primary" @click="showOnMap">
+            <el-icon><MapLocation /></el-icon>
+            在地图上显示
+          </el-button>
+          <el-button @click="resultDialogVisible = false">关闭</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, MapLocation, Delete } from '@element-plus/icons-vue'
+import { UploadFilled, Delete, Search, Plus, InfoFilled, MapLocation } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
+const router = useRouter()
 const baseURL = import.meta.env.VITE_API_BASE_URL || ''
 const userStore = useUserStore()
 
@@ -73,6 +179,15 @@ const fileList = ref([])
 const uploadHeaders = {
   'x-user-id': userStore.user?.id || 1
 }
+
+// 检索相关
+const queryDialogVisible = ref(false)
+const resultDialogVisible = ref(false)
+const currentFile = ref(null)
+const numericFields = ref([])
+const conditions = ref([])
+const queryLoading = ref(false)
+const queryResult = ref({ total: 0, matched: 0, features: [] })
 
 // 上传前检查
 const beforeUpload = (file) => {
@@ -120,29 +235,6 @@ const loadFileList = async () => {
   }
 }
 
-// 加载并显示
-const loadAndDisplay = async (row) => {
-  try {
-    const response = await fetch(`${baseURL}/api/shapefiles/${row.id}`, {
-      headers: uploadHeaders
-    })
-    const result = await response.json()
-    if (result.data) {
-      // 通过事件将 GeoJSON 发送到地图
-      window.dispatchEvent(new CustomEvent('displayShapefile', {
-        detail: {
-          id: row.id,
-          name: row.name,
-          geojson: result.data.geojson
-        }
-      }))
-      ElMessage.success(`已加载 "${row.name}"，请到地图查看显示效果`)
-    }
-  } catch (error) {
-    ElMessage.error('加载失败: ' + error.message)
-  }
-}
-
 // 删除
 const handleDelete = async (row) => {
   try {
@@ -164,6 +256,138 @@ const handleDelete = async (row) => {
       ElMessage.error('删除失败')
     }
   }
+}
+
+// 打开检索对话框
+const openQueryDialog = async (row) => {
+  currentFile.value = row
+  conditions.value = []
+  queryResult.value = { total: 0, matched: 0, features: [] }
+  queryDialogVisible.value = true
+
+  // 获取数值字段列表
+  try {
+    const response = await fetch(`${baseURL}/api/shapefiles/${row.id}/fields`, {
+      headers: uploadHeaders
+    })
+    const result = await response.json()
+    if (result.success && result.data) {
+      numericFields.value = result.data.numericFields || []
+      if (numericFields.value.length === 0) {
+        ElMessage.warning('该文件中未检测到数值字段')
+      }
+    }
+  } catch (error) {
+    console.error('获取字段列表失败:', error)
+    ElMessage.error('获取字段信息失败')
+  }
+}
+
+// 字段变化时重置运算符和值
+const onFieldChange = (index) => {
+  conditions.value[index].operator = '>'
+  conditions.value[index].value = null
+}
+
+// 添加条件
+const addCondition = () => {
+  if (numericFields.value.length === 0) {
+    ElMessage.warning('该文件没有可用的数值字段')
+    return
+  }
+  conditions.value.push({
+    field: numericFields.value[0],
+    operator: '>',
+    value: null
+  })
+}
+
+// 移除条件
+const removeCondition = (index) => {
+  conditions.value.splice(index, 1)
+}
+
+// 执行检索
+const executeQuery = async () => {
+  if (!currentFile.value) return
+
+  // 验证条件
+  const validConditions = conditions.value.filter(c => 
+    c.field && c.operator && c.value !== null && c.value !== undefined
+  )
+
+  if (validConditions.length === 0) {
+    ElMessage.warning('请至少添加一个有效的检索条件')
+    return
+  }
+
+  queryLoading.value = true
+  try {
+    const response = await fetch(`${baseURL}/api/shapefiles/${currentFile.value.id}/query`, {
+      method: 'POST',
+      headers: {
+        ...uploadHeaders,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ conditions: validConditions })
+    })
+    const result = await response.json()
+    
+    if (result.success) {
+      queryResult.value = result.data
+      resultDialogVisible.value = true
+      queryDialogVisible.value = false
+      
+      if (result.data.matched === 0) {
+        ElMessage.info('没有匹配的数据')
+      } else {
+        ElMessage.success(`找到 ${result.data.matched} 个匹配要素`)
+      }
+    } else {
+      ElMessage.error(result.message || '检索失败')
+    }
+  } catch (error) {
+    console.error('检索失败:', error)
+    ElMessage.error('检索失败: ' + error.message)
+  } finally {
+    queryLoading.value = false
+  }
+}
+
+// 在地图上显示
+const showOnMap = () => {
+  if (!currentFile.value || !queryResult.value.features || queryResult.value.features.length === 0) {
+    ElMessage.warning('没有可显示的数据')
+    return
+  }
+
+  // 提取检索条件中的字段名（用于地图上显示标签）
+  const displayFields = conditions.value
+    .filter(c => c.field && c.value !== null && c.value !== undefined && c.value !== '')
+    .map(c => c.field)
+
+  // 将检索结果传递给地图页面
+  const geojson = {
+    type: 'FeatureCollection',
+    features: queryResult.value.features
+  }
+
+  // 直接在全局存储检索结果
+  window.shapefileQueryResult = {
+    id: currentFile.value.id,
+    name: currentFile.value.name,
+    geojson: geojson,
+    matched: queryResult.value.matched,
+    displayFields: displayFields  // 只显示这些字段的值
+  }
+
+  // 先跳转到地图页面
+  router.push('/')
+
+  // 延迟关闭对话框，避免干扰页面跳转
+  setTimeout(() => {
+    resultDialogVisible.value = false
+  }, 100)
 }
 
 onMounted(() => {
@@ -260,5 +484,103 @@ onMounted(() => {
 .field-tag {
   margin-right: 4px;
   margin-bottom: 4px;
+}
+
+/* 检索对话框样式 */
+.query-dialog-content {
+  padding: 10px 0;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.file-info .file-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.file-info .feature-count {
+  color: #909399;
+  font-size: 14px;
+}
+
+.conditions-section {
+  margin-bottom: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-weight: 500;
+  color: #303133;
+}
+
+.no-conditions {
+  padding: 24px;
+  text-align: center;
+  color: #909399;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px dashed #dcdfe6;
+}
+
+.condition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.condition-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+}
+
+.logic-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fdf6ec;
+  border-radius: 6px;
+  color: #e6a23c;
+  font-size: 14px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* 结果对话框样式 */
+.result-content {
+  padding: 20px 0;
+}
+
+.result-summary {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.result-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
 }
 </style>

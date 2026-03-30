@@ -33,11 +33,22 @@
 10. IP自动定位功能（ip-api.com，左下角城市名显示）
 11. 测量距离重写（仿高德：多段累计、鼠标预览线、每点距离标注、双击结束）
 
+## Shapefile 功能 (2026-03-30)
+- **Shapefile上传表**：`shapefiles` 表（id, name, geojson, field_names, feature_count, user_id, created_at）
+- **Shapefile API**：`/api/shapefiles`（POST upload/GET/GET/:id/DELETE/:id）
+- **Shapefile管理页面**：`/shapefiles` 路由，ShapefileView.vue
+- **坐标转换**：上传时自动将 WGS84 转换为 GCJ-02（高德坐标）
+- **Python解析脚本**：`backend/src/utils/shapefile_parser.py`（使用 pyshp 库）
+- **上传目录**：`/var/www/geomanger/backend/uploads/shapefiles/`
+- **地图显示**：紫色 Polygon 面图层，支持点击查看属性
+- **服务器依赖**：需要 `pip3 install pyshp`
+
 ## Git备份
 - v1.0.0: 2026-03-26，基础功能完成
 - v1.0.1: 2026-03-26（df5deb0），门店区分颜色显示优化
 - v1.1.0: 2026-03-27（66efe48），竞品门店功能
 - v1.1.1: 2026-03-29（98e3fc8），品牌图标+品牌门店+分类字段+store_type默认值修复
+- v1.2.0: 2026-03-30（5a08369），Shapefile上传与展示功能
 
 ## 常见问题
 - **修改代码后服务器没变化**：必须先 vite build，再用 paramiko SFTP 部署 dist 到服务器（每次修改都要执行这两步）
@@ -109,11 +120,57 @@
 - **数据库**：brand_stores 表包含 user_id 字段，INSERT 语句需要包含此字段
 - **Bug修复 (2026-03-28)**：brand-stores.js 的 INSERT 语句缺少 user_id 字段，导致导入/添加失败
 
-## 测试账号
-- 管理员：admin / admin123
-- 普通用户：xucd / 123456
-
 ## 默认显示设置 (2026-03-29)
 - 地图默认只显示"我的门店"图层
 - 竞品门店和品牌门店图层默认隐藏
 - 用户需手动在地图右下角开启
+
+## 测试账号
+- 管理员：admin / admin123
+- 普通用户：xucd / 123456
+
+## Bug修复记录 (2026-03-30)
+- **品牌门店 API 401 问题 (2026-03-30 晚)**：
+  - **问题**：品牌门店列表获取失败：401 Unauthorized
+  - **根本原因**：brandStore.js 使用原始 axios 实例，没有配置 token 拦截器
+  - **修复**：修改 brandStore.js 使用 utils/api.js 中的 axios 实例（已配置请求拦截器）
+- **ElTable row-key 缺失 (2026-03-30 晚)**：
+  - **问题**：Element Plus 表格报错：prop row-key is required
+  - **修复**：给 DataView.vue、BrandStoreView.vue、CompetitorView.vue、ShapefileView.vue 添加 row-key="id"
+- **Shapefile上传失败问题**：
+  - **原因**：ShapefileView.vue 中 API 地址使用 `http://localhost:3000`（绝对路径），导致生产环境请求无法到达服务器
+  - **修复**：改为空字符串（相对路径），通过 nginx 代理转发到后端
+  - **部署**：前端修改后必须重新 vite build 并用 SFTP 部署到服务器
+- **sql.js API 修复**：使用 `db.prepare().run()` / `.all()` / `.get()` 代替 `db.run()` / `db.exec()`
+- **变量名冲突**：将 `result` 重命名为 `pythonResult` 和 `insertResult`
+- **Shapefile 显示白屏问题 (2026-03-30)**：
+  - **问题**：上传 Shapefile 后点击显示，浏览器白屏死机
+  - **根本原因**：Python 脚本 shapefile_parser.py 中 Polygon 坐标解析逻辑错误，每个 part 从起始索引遍历到 `len(shape.points)` 导致坐标嵌套错误
+  - **修复**：正确使用 `parts[i + 1]` 作为每个 part 的结束索引
+  - **前端**：MapView.vue 添加 GeoJSON 格式验证和 try-catch 错误处理
+  - **分批渲染**：新增 `renderGeoJSONInBatches` 函数，每批30个要素，避免浏览器卡死
+  - **优化阈值**：要素数>50 或 GeoJSON大小>500KB 时启用分批渲染
+  - **部署**：前端需重新 vite build 并 SFTP 部署到服务器
+
+## Shapefile 功能简化 (2026-03-30)
+- **移除显示功能**：用户反馈浏览器白屏问题，移除地图上显示 Shapefile 的功能
+- **列表简化**：ShapefileView.vue 移除"显示"按钮和"字段"列，只保留文件信息、要素数量、上传时间和删除操作
+- **清理代码**：移除 MapView.vue 中的 Shapefile 图层加载、显示、事件监听相关代码
+- **API 保留**：后端 API 仍支持上传、查询、删除操作，仅前端移除地图显示功能
+
+## Shapefile 数据检索功能 (2026-03-30)
+- **检索按钮**：ShapefileView.vue 列表中每行添加"检索"按钮
+- **检索对话框**：
+  - 自动识别数值字段
+  - 支持多条件组合（AND 关系）
+  - 支持运算符：>、>=、<、<=、=、!=
+- **后端API**：
+  - `POST /api/shapefiles/:id/query` - 执行条件检索
+  - `GET /api/shapefiles/:id/fields` - 获取数值字段列表
+- **地图高亮**：
+  - 橙色边框（weight: 5，加粗显示）+ 黄色半透明填充高亮显示匹配要素
+  - 在 Polygon 中心位置显示数值标签（最多3个数值字段，保留2位小数）
+  - 点击高亮区域显示属性信息
+  - 自动调整视图到高亮区域
+  - 清除绘制时同步清除高亮图层
+- **分批渲染**：handleShapefileQuery 函数使用 L.canvas() 渲染器，100+要素只渲染边界线不渲染填充面，避免浏览器卡死

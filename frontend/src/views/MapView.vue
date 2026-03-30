@@ -452,7 +452,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
   Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection
@@ -500,8 +500,7 @@ let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
 let analysisCircleLayer = null  // 圆形分析专用图层
-let shapefileLayer = null  // Shapefile 图层
-let displayedShapefiles = ref([])  // 当前显示的 Shapefile 列表
+let shapefileQueryLayer = null  // Shapefile检索高亮图层
 let measureLine = null
 let measureArea = null
 let measurePoints = []
@@ -818,6 +817,7 @@ const DEFAULT_CITY = '北京市'
 // 获取IP位置
 const getLocationByIP = async () => {
   try {
+    // 使用 http:// 协议（ip-api.com 服务器端不支持 https）
     const response = await fetch('http://ip-api.com/json/?fields=status,country,city,lat,lon')
     const data = await response.json()
     if (data.status === 'success') {
@@ -934,16 +934,21 @@ const zoomOut = () => {
 
 // 加载底图
 const loadBaseMap = () => {
-  if (tileLayer) {
-    map.removeLayer(tileLayer)
+  if (!map) return
+  try {
+    if (tileLayer) {
+      map.removeLayer(tileLayer)
+    }
+    const config = gaodeTiles[baseMapType.value]
+    tileLayer = L.tileLayer(config.url, {
+      subdomains: config.subdomains,
+      maxZoom: 18,
+      minZoom: 3
+    })
+    map.addLayer(tileLayer)
+  } catch (e) {
+    console.error('[loadBaseMap] 加载底图失败:', e)
   }
-  const config = gaodeTiles[baseMapType.value]
-  tileLayer = L.tileLayer(config.url, {
-    subdomains: config.subdomains,
-    maxZoom: 18,
-    minZoom: 3
-  })
-  map.addLayer(tileLayer)
 }
 
 // 监控底图切换
@@ -951,19 +956,25 @@ watch(baseMapType, loadBaseMap)
 
 // 加载点位
 const loadMarkers = async () => {
+  // 确保地图已初始化
+  if (!map) {
+    console.log('[loadMarkers] 地图未初始化，跳过')
+    return
+  }
+  
   console.log('=== loadMarkers 开始 ===')
   await markerStore.fetchMarkers()
   console.log('门店数据:', markerStore.markers)
 
   // 清除原有图层
   if (businessLayer) {
-    map.removeLayer(businessLayer)
+    try { map.removeLayer(businessLayer) } catch(e) {}
   }
   if (markerClusterGroup) {
-    map.removeLayer(markerClusterGroup)
+    try { map.removeLayer(markerClusterGroup) } catch(e) {}
   }
   if (heatmapLayer) {
-    map.removeLayer(heatmapLayer)
+    try { map.removeLayer(heatmapLayer) } catch(e) {}
   }
 
   // 根据 visibleIds 过滤可见数据
@@ -1012,14 +1023,44 @@ const loadMarkers = async () => {
       </div>
     `)
 
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      // 停止事件传播，防止触发地图拖动
+      L.DomEvent.stopPropagation(e)
+    })
+
     // 拖拽结束更新坐标
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await markerStore.updateMarker(markerData.id, {
-        latitude: latlng.lat,
-        longitude: latlng.lng
-      })
-      ElMessage.success('坐标已更新')
+      // 检查位置是否真的变化了（阈值约11米）
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - markerData.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - markerData.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        // 位置有变化，询问用户确认
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动 "${markerData.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await markerStore.updateMarker(markerData.id, {
+            latitude: latlng.lat,
+            longitude: latlng.lng
+          })
+          ElMessage.success('坐标已更新')
+        } else {
+          // 用户取消，恢复原位置
+          marker.setLatLng([markerData.latitude, markerData.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
 
     businessLayer.addLayer(marker)
@@ -1057,9 +1098,13 @@ const loadMarkers = async () => {
 
 // 重载门店图层（供 watcher 调用）
 const reloadBusinessLayer = () => {
-  if (!map || !businessLayer) return
+  if (!map) {
+    console.log('[reloadBusinessLayer] 地图未初始化，跳过')
+    return
+  }
+  if (!businessLayer) return
   const wasOnMap = map.hasLayer(businessLayer)
-  map.removeLayer(businessLayer)
+  try { map.removeLayer(businessLayer) } catch(e) {}
   // 重新构建图层（从 store 取最新数据+过滤）
   const visibleIds = markerStore.visibleIds
   const dataToShow = (visibleIds === null || visibleIds === undefined)
@@ -1074,16 +1119,41 @@ const reloadBusinessLayer = () => {
       : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
     marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await markerStore.updateMarker(markerData.id, { latitude: latlng.lat, longitude: latlng.lng })
-      ElMessage.success('坐标已更新')
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - markerData.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - markerData.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动 "${markerData.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await markerStore.updateMarker(markerData.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('坐标已更新')
+        } else {
+          marker.setLatLng([markerData.latitude, markerData.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
     businessLayer.addLayer(marker)
   })
 
   // 热力图
-  if (heatmapLayer) { map.removeLayer(heatmapLayer) }
+  if (heatmapLayer) { try { map.removeLayer(heatmapLayer) } catch(e) {} }
   const hmData = dataToShow.map(m => [m.latitude, m.longitude, 1])
   heatmapLayer = L.heatLayer(hmData, getCurrentHeatmapOptions())
   if (wasOnMap) {
@@ -1098,6 +1168,12 @@ const reloadBusinessLayer = () => {
 
 // 加载竞品门店
 const loadCompetitors = async () => {
+  // 确保地图已初始化
+  if (!map) {
+    console.log('[loadCompetitors] 地图未初始化，跳过')
+    return
+  }
+  
   await competitorStore.fetchCompetitors()
   console.log('竞品数据:', competitorStore.competitors)
   console.log('竞品数量:', competitorStore.competitors?.length || 0)
@@ -1170,14 +1246,40 @@ const loadCompetitors = async () => {
       </div>
     `)
 
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
+
     // 拖拽结束更新坐标
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await competitorStore.updateCompetitor(comp.id, {
-        latitude: latlng.lat,
-        longitude: latlng.lng
-      })
-      ElMessage.success('竞品坐标已更新')
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - comp.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - comp.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动竞品 "${comp.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await competitorStore.updateCompetitor(comp.id, {
+            latitude: latlng.lat,
+            longitude: latlng.lng
+          })
+          ElMessage.success('竞品坐标已更新')
+        } else {
+          marker.setLatLng([comp.latitude, comp.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
 
     competitorLayer.addLayer(marker)
@@ -1197,7 +1299,7 @@ const reloadCompetitorLayer = () => {
     : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
 
   const wasOnMap = map.hasLayer(competitorLayer)
-  if (competitorLayer) map.removeLayer(competitorLayer)
+  if (competitorLayer) { try { map.removeLayer(competitorLayer) } catch(e) {} }
 
   competitorLayer = L.layerGroup()
   const brandColors = {
@@ -1220,10 +1322,35 @@ const reloadCompetitorLayer = () => {
       : createSvgIcon(brandColor, 'dot', 1.2)
     const marker = L.marker([comp.latitude, comp.longitude], { icon, draggable: true })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${brandColor};">🏪 ${comp.brand || ''} ${comp.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${brandColor};">竞品</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(comp.city || '') + (comp.district || '') + (comp.address || '-')}</p></div>`)
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await competitorStore.updateCompetitor(comp.id, { latitude: latlng.lat, longitude: latlng.lng })
-      ElMessage.success('竞品坐标已更新')
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - comp.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - comp.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动竞品 "${comp.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await competitorStore.updateCompetitor(comp.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('竞品坐标已更新')
+        } else {
+          marker.setLatLng([comp.latitude, comp.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
     competitorLayer.addLayer(marker)
   })
@@ -1284,6 +1411,12 @@ const updateCompetitorDisplay = () => {
 
 // 加载品牌门店
 const loadBrandStores = async () => {
+  // 确保地图已初始化
+  if (!map) {
+    console.log('[loadBrandStores] 地图未初始化，跳过')
+    return
+  }
+  
   await brandStoreStore.fetchBrandStores()
   console.log('品牌门店数据:', brandStoreStore.brandStores)
 
@@ -1325,10 +1458,36 @@ const loadBrandStores = async () => {
       </div>
     `)
 
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
+
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
-      ElMessage.success('品牌门店坐标已更新')
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - store.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动品牌门店 "${store.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('品牌门店坐标已更新')
+        } else {
+          marker.setLatLng([store.latitude, store.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
 
     brandStoreLayer.addLayer(marker)
@@ -1347,7 +1506,7 @@ const reloadBrandStoreLayer = () => {
     : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
 
   const wasOnMap = map.hasLayer(brandStoreLayer)
-  if (brandStoreLayer) map.removeLayer(brandStoreLayer)
+  if (brandStoreLayer) { try { map.removeLayer(brandStoreLayer) } catch(e) {} }
 
   brandStoreLayer = L.layerGroup()
   brandMarkerMap = {}
@@ -1359,10 +1518,35 @@ const reloadBrandStoreLayer = () => {
       : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
     const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#409eff'};">🏪 ${store.brand || ''} ${store.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${store.icon_color || '#409eff'};">品牌门店</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p></div>`)
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
     marker.on('dragend', async (e) => {
       const latlng = e.target.getLatLng()
-      await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
-      ElMessage.success('品牌门店坐标已更新')
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - store.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动品牌门店 "${store.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await brandStoreStore.updateBrandStore(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('品牌门店坐标已更新')
+        } else {
+          marker.setLatLng([store.latitude, store.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
     })
     brandStoreLayer.addLayer(marker)
     brandMarkerMap[store.id] = marker
@@ -1385,10 +1569,10 @@ const updateBrandStoreDisplay = () => {
   if (!brandStoreLayer) return
 
   if (showBrandStoreLayer.value) {
-    map.addLayer(brandStoreLayer)
-    brandStoreLayer.bringToBack()
+    try { map.addLayer(brandStoreLayer) } catch(e) {}
+    try { brandStoreLayer.bringToBack() } catch(e) {}
   } else {
-    map.removeLayer(brandStoreLayer)
+    try { map.removeLayer(brandStoreLayer) } catch(e) {}
   }
 }
 
@@ -1397,23 +1581,27 @@ const updateLayerDisplay = () => {
   if (!map) return
 
   // 移除所有业务图层
-  if (map.hasLayer(businessLayer)) map.removeLayer(businessLayer)
-  if (map.hasLayer(markerClusterGroup)) map.removeLayer(markerClusterGroup)
-  if (map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
+  try {
+    if (businessLayer && map.hasLayer(businessLayer)) map.removeLayer(businessLayer)
+    if (markerClusterGroup && map.hasLayer(markerClusterGroup)) map.removeLayer(markerClusterGroup)
+    if (heatmapLayer && map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
+  } catch(e) {}
 
   if (!showBusinessLayer.value) return
 
-  if (showHeatmap.value) {
-    map.addLayer(heatmapLayer)
-  } else if (showCluster.value) {
-    map.addLayer(markerClusterGroup)
-  } else {
-    map.addLayer(businessLayer)
+  if (showHeatmap.value && heatmapLayer) {
+    try { map.addLayer(heatmapLayer) } catch(e) {}
+  } else if (showCluster.value && markerClusterGroup) {
+    try { map.addLayer(markerClusterGroup) } catch(e) {}
+  } else if (businessLayer) {
+    try { map.addLayer(businessLayer) } catch(e) {}
   }
 
   // 确保门店图层始终显示在竞品和品牌门店图层上方
-  if (map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
-  if (map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
+  try {
+    if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
+    if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
+  } catch(e) {}
 }
 
 // 监控竞品图层开关
@@ -1890,19 +2078,24 @@ const confirmDrawCircle = () => {
 
 // 切换热力图
 const toggleHeatmap = () => {
+  if (!map) return
   showHeatmap.value = !showHeatmap.value
   if (showHeatmap.value) showCluster.value = false
   heatmapMenuVisible.value = false
   if (showHeatmap.value) {
-    map.addLayer(heatmapLayer)
-    if (businessLayer && map.hasLayer(businessLayer)) {
-      heatmapLayer.bringToBack()
-    }
+    try { map.addLayer(heatmapLayer) } catch(e) {}
+    try {
+      if (businessLayer && map.hasLayer(businessLayer)) {
+        heatmapLayer.bringToBack()
+      }
+    } catch(e) {}
   } else {
-    if (map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
-    if (businessLayer && !map.hasLayer(businessLayer)) {
-      map.addLayer(businessLayer)
-    }
+    try {
+      if (map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
+      if (businessLayer && !map.hasLayer(businessLayer)) {
+        map.addLayer(businessLayer)
+      }
+    } catch(e) {}
   }
 }
 
@@ -1921,22 +2114,29 @@ const toggleCluster = () => {
 
 // 清除绘制
 const clearDrawings = () => {
+  if (!map) {
+    console.log('[clearDrawings] 地图未初始化')
+    return
+  }
   if (activeTool.value === 'measure') stopMeasure()
   if (activeTool.value === 'area') stopAreaMeasure()
-  if (measureLine) { map.removeLayer(measureLine); measureLine = null }
-  if (measureArea) { map.removeLayer(measureArea); measureArea = null }
-  if (measureLayerGroup) { map.removeLayer(measureLayerGroup); measureLayerGroup = null }
-  if (drawnItems) drawnItems.clearLayers()
-  // 清除分析圆形图层
-  if (analysisCircleLayer) {
-    map.removeLayer(analysisCircleLayer)
-    analysisCircleLayer = null
-  }
-  // 清除 Shapefile 图层
-  if (shapefileLayer) {
-    map.removeLayer(shapefileLayer)
-    shapefileLayer = null
-    displayedShapefiles.value = []
+  try {
+    if (measureLine) { map.removeLayer(measureLine); measureLine = null }
+    if (measureArea) { map.removeLayer(measureArea); measureArea = null }
+    if (measureLayerGroup) { map.removeLayer(measureLayerGroup); measureLayerGroup = null }
+    if (drawnItems) drawnItems.clearLayers()
+    // 清除分析圆形图层
+    if (analysisCircleLayer) {
+      map.removeLayer(analysisCircleLayer)
+      analysisCircleLayer = null
+    }
+    // 清除Shapefile检索高亮图层
+    if (shapefileQueryLayer) {
+      map.removeLayer(shapefileQueryLayer)
+      shapefileQueryLayer = null
+    }
+  } catch (e) {
+    console.error('[clearDrawings] 清除图层失败:', e)
   }
   measurePoints = []
   measureAreaPoints = []
@@ -1950,6 +2150,255 @@ const changeMarkerStyle = (style) => {
   currentMarkerStyle.value = style
   loadMarkers() // 重新加载标记以应用新样式
   ElMessage.success(`已切换为${markerStyleOptions.find(s => s.value === style)?.label}样式`)
+}
+
+// 处理Shapefile检索结果高亮显示（稳定版）
+let shapefileProcessing = false  // 防止重复处理
+
+const handleShapefileQuery = (event) => {
+  try {
+    const { id, name, geojson, matched, displayFields } = event.detail
+
+    console.log('[Shapefile Query] 收到请求:', { name, matched, displayFields, mapReady: !!map })
+
+    // 首先检查 map 是否存在
+    if (!map) {
+      console.log('[Shapefile Query] 地图未初始化，等待...')
+      setTimeout(() => {
+        if (map) {
+          handleShapefileQuery(event)
+        } else {
+          ElMessage.warning('地图初始化失败，请刷新页面')
+        }
+      }, 2000)
+      return
+    }
+
+    // 防止重复处理
+    if (shapefileProcessing) {
+      console.log('[Shapefile Query] 正在处理中，跳过')
+      return
+    }
+
+    // 检查数据
+    if (!geojson || typeof geojson !== 'object') {
+      ElMessage.error('Shapefile 数据格式错误')
+      return
+    }
+
+    const features = geojson.features || []
+    if (features.length === 0) {
+      ElMessage.warning('没有匹配的要素')
+      return
+    }
+
+    // 清除之前的高亮图层
+    if (shapefileQueryLayer) {
+      try {
+        map.removeLayer(shapefileQueryLayer)
+      } catch (e) {
+        console.error('[Shapefile Query] 清除旧图层失败:', e)
+      }
+      shapefileQueryLayer = null
+    }
+
+    console.log('[Shapefile Query] 开始处理，共', features.length, '个要素')
+
+    // 标记开始处理
+    shapefileProcessing = true
+    ElMessage.info(`正在加载 ${features.length} 个要素...`)
+
+    // 创建图层组
+    shapefileQueryLayer = L.layerGroup()
+
+    // 使用递归分批处理，每批10个，避免阻塞
+    const BATCH_SIZE = 10
+    let currentIndex = 0
+
+    const processBatch = () => {
+      // 确保 map 仍然存在
+      if (!map) {
+        console.log('[Shapefile Query] 地图已失效，停止处理')
+        shapefileProcessing = false
+        return
+      }
+
+      if (currentIndex >= features.length) {
+        // 全部处理完成，调整视图
+        console.log('[Shapefile Query] 处理完成')
+        shapefileProcessing = false
+
+        // 确保图层已添加到地图
+        try {
+          if (!map.hasLayer(shapefileQueryLayer)) {
+            shapefileQueryLayer.addTo(map)
+          }
+        } catch (e) {
+          console.error('[Shapefile Query] 添加图层失败:', e)
+        }
+
+        // 调整视图
+        setTimeout(() => {
+          try {
+            if (map && shapefileQueryLayer && shapefileQueryLayer.getLayers().length > 0) {
+              const bounds = shapefileQueryLayer.getBounds()
+              if (bounds && bounds.isValid && bounds.isValid()) {
+                map.fitBounds(bounds, { padding: [50, 50] })
+              }
+            }
+          } catch (e) {
+            console.error('[Shapefile Query] 调整视图失败:', e)
+          }
+        }, 100)
+
+        ElMessage.success(`已高亮显示 "${name}" 中的 ${matched} 个匹配要素（橙色边界线）`)
+        return
+      }
+
+      // 处理当前批次
+      const endIndex = Math.min(currentIndex + BATCH_SIZE, features.length)
+      console.log(`[Shapefile Query] 处理批次 ${currentIndex + 1}-${endIndex}/${features.length}`)
+
+      for (let i = currentIndex; i < endIndex; i++) {
+        const feature = features[i]
+        const geometry = feature.geometry
+        if (!geometry) continue
+
+        try {
+          const coords = geometry.coordinates
+          const geomType = geometry.type
+          const props = feature.properties || {}
+
+          // 构建属性显示文本
+          const propsText = Object.entries(props)
+            .filter(([_, v]) => v !== null && v !== undefined && v !== '')
+            .slice(0, 8)
+            .map(([k, v]) => `<b>${k}</b>: ${v}`)
+            .join('<br>')
+
+          const addPolygon = (ring, featureProps) => {
+            try {
+              const latlngs = ring.map(coord => L.latLng(coord[1], coord[0]))
+              if (latlngs.length < 3) return
+
+              // 加粗边界线：weight 从 2 改为 5
+              const polyline = L.polyline(latlngs, {
+                color: '#ff6600',
+                weight: 5,
+                opacity: 0.9
+              })
+
+              polyline.bindPopup(`
+                <div style="font-size:12px; max-width: 280px;">
+                  <b style="color:#e6a23c;">${name}</b><br>
+                  <hr style="margin: 6px 0;">
+                  ${propsText}
+                </div>
+              `)
+
+              shapefileQueryLayer.addLayer(polyline)
+
+              // 在 Polygon 中心位置显示数值
+              const polygon = L.polygon(latlngs)
+              const center = polygon.getBounds().getCenter()
+
+              // 只显示检索条件中指定的字段（displayFields）
+              let displayValues = []
+
+              if (displayFields && displayFields.length > 0) {
+                // 用户指定了显示字段，只显示这些字段
+                displayValues = displayFields
+                  .filter(field => field in (featureProps || {}))
+                  .map(field => {
+                    const v = featureProps[field]
+                    if (v === null || v === undefined || v === '') return null
+                    // 支持数字和字符串数字
+                    const num = typeof v === 'number' ? v : Number(v)
+                    if (isNaN(num)) return null
+                    // 显示整数
+                    return `${field}: ${Math.round(num)}`
+                  })
+                  .filter(v => v !== null)
+              } else {
+                // 没有指定字段，回退到显示所有数值字段
+                displayValues = Object.entries(featureProps || {})
+                  .filter(([_, v]) => {
+                    if (v === null || v === undefined || v === '') return false
+                    if (typeof v === 'number' && !isNaN(v)) return true
+                    if (typeof v === 'string') {
+                      const num = Number(v)
+                      return !isNaN(num) && v.trim() !== ''
+                    }
+                    return false
+                  })
+                  .slice(0, 3)
+                  .map(([k, v]) => {
+                    const num = typeof v === 'number' ? v : Number(v)
+                    return `${k}: ${Math.round(num)}`
+                  })
+              }
+
+              if (displayValues.length > 0) {
+                const numericValue = displayValues.join('<br>')
+                const labelIcon = L.divIcon({
+                  className: 'shapefile-query-label',
+                  html: `<div style="
+                    background: rgba(255, 102, 0, 0.85);
+                    color: white;
+                    padding: 6px 10px;
+                    border-radius: 4px;
+                    font-size: 13px;
+                    font-weight: bold;
+                    text-align: center;
+                    white-space: nowrap;
+                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                    line-height: 1.5;
+                    min-width: 80px;
+                  ">${numericValue}</div>`,
+                  iconSize: [140, 50],
+                  iconAnchor: [70, 25]
+                })
+                const labelMarker = L.marker(center, { icon: labelIcon })
+                shapefileQueryLayer.addLayer(labelMarker)
+              }
+            } catch (e) {
+              console.error('[Shapefile Query] 添加多边形失败:', e)
+            }
+          }
+
+          if (geomType === 'Polygon') {
+            coords.forEach(ring => addPolygon(ring, props))
+          } else if (geomType === 'MultiPolygon') {
+            coords.forEach(polygon => polygon.forEach(ring => addPolygon(ring, props)))
+          }
+        } catch (e) {
+          console.error('[Shapefile Query] 处理 feature 失败:', e)
+        }
+      }
+
+      currentIndex = endIndex
+
+      // 使用 requestAnimationFrame 让浏览器喘口气，然后继续下一批
+      if (currentIndex < features.length) {
+        requestAnimationFrame(() => {
+          setTimeout(processBatch, 50)
+        })
+      } else {
+        // 最后一帧
+        requestAnimationFrame(() => {
+          processBatch()
+        })
+      }
+    }
+
+    // 延迟开始处理，确保地图已准备好
+    setTimeout(processBatch, 500)
+
+  } catch (error) {
+    shapefileProcessing = false
+    console.error('[Shapefile Query] 显示失败:', error)
+    ElMessage.error('显示失败: ' + error.message)
+  }
 }
 
 // 定位数据范围
@@ -2067,165 +2516,71 @@ onMounted(() => {
   window.editMarkerExternal = editMarker
   window.deleteMarkerExternal = deleteMarker
 
+  // 暴露Shapefile检索结果显示函数
+  window.handleShapefileQueryFromGlobal = () => {
+    if (window.shapefileQueryResult) {
+      handleShapefileQuery({ detail: window.shapefileQueryResult })
+      delete window.shapefileQueryResult
+    }
+  }
+
   // 等待DOM渲染完成后初始化地图
   nextTick(async () => {
     // 先加载品牌图标
     await brandIconStore.fetchBrandIcons()
-    initMap()
+
+    // 确保 initMap 完成（使用 await）
+    await initMap()
+
+    console.log('[MapView] 地图初始化完成')
 
     // 检查是否有门店跳转参数
     const { lat, lng, id, type } = route.query
 
     // 延迟处理，等待点位数据加载
     setTimeout(() => {
+      if (!map) {
+        console.error('[MapView] 地图未初始化')
+        return
+      }
+      
       if (lat && lng) {
         // 跳转到指定位置
-        map.setView([parseFloat(lat), parseFloat(lng)], 16)
-        ElMessage.success('已跳转到门店位置')
+        try {
+          map.setView([parseFloat(lat), parseFloat(lng)], 16)
+          ElMessage.success('已跳转到门店位置')
 
-        // 如果是品牌门店，打开 popup
-        if (type === 'brandStore' && id && brandMarkerMap[id]) {
-          brandMarkerMap[id].openPopup()
+          // 如果是品牌门店，打开 popup
+          if (type === 'brandStore' && id && brandMarkerMap[id]) {
+            brandMarkerMap[id].openPopup()
+          }
+        } catch (e) {
+          console.error('[MapView] 跳转位置失败:', e)
         }
       }
-    }, 1500)
 
-    // 监听 Shapefile 显示事件
-    window.addEventListener('displayShapefile', handleDisplayShapefile)
+      // 检查是否有Shapefile检索结果需要显示
+      // 只有在地图完全准备好后才处理
+      if (window.shapefileQueryResult && map) {
+        console.log('[MapView] 检测到Shapefile检索结果，开始处理')
+        try {
+          handleShapefileQuery({ detail: window.shapefileQueryResult })
+        } catch (e) {
+          console.error('[MapView] 处理Shapefile结果失败:', e)
+          ElMessage.error('显示检索结果失败')
+        }
+        // 清除全局变量避免重复显示
+        delete window.shapefileQueryResult
+      }
+    }, 500)  // 减少等待时间，因为 initMap 已经 await 了
   })
 })
-
-// 处理 Shapefile 显示事件
-const handleDisplayShapefile = (event) => {
-  const { id, name, geojson } = event.detail
-
-  if (!map) return
-
-  // 初始化 shapefile 图层（如果不存在）
-  if (!shapefileLayer) {
-    shapefileLayer = L.layerGroup().addTo(map)
-  }
-
-  // 检查是否已经显示该文件
-  const existingIndex = displayedShapefiles.value.findIndex(s => s.id === id)
-  if (existingIndex >= 0) {
-    // 已存在，移除后再添加（刷新）
-    removeShapefileLayer(id)
-  }
-
-  // 添加到显示列表
-  displayedShapefiles.value.push({ id, name, geojson })
-
-  // 解析 GeoJSON 并添加到地图
-  const features = geojson.features || []
-  features.forEach((feature, index) => {
-    const geometry = feature.geometry
-    const properties = feature.properties || {}
-
-    let layer = null
-    const style = {
-      color: '#9c27b0',  // 紫色边框
-      fillColor: '#9c27b0',
-      fillOpacity: 0.2,
-      weight: 2
-    }
-
-    if (geometry.type === 'Polygon') {
-      layer = L.geoJSON(feature, {
-        style,
-        onEachFeature: (feature, layer) => {
-          // 构建 popup 内容
-          let popupContent = `<div style="font-size:12px;"><b>${name}</b><br>要素 ${index + 1}`
-          for (const [key, value] of Object.entries(properties)) {
-            if (value !== null && value !== undefined && value !== '') {
-              popupContent += `<br>${key}: ${value}`
-            }
-          }
-          popupContent += '</div>'
-          layer.bindPopup(popupContent)
-        }
-      })
-    } else if (geometry.type === 'MultiPolygon') {
-      layer = L.geoJSON(feature, {
-        style,
-        onEachFeature: (feature, layer) => {
-          let popupContent = `<div style="font-size:12px;"><b>${name}</b><br>要素 ${index + 1}`
-          for (const [key, value] of Object.entries(properties)) {
-            if (value !== null && value !== undefined && value !== '') {
-              popupContent += `<br>${key}: ${value}`
-            }
-          }
-          popupContent += '</div>'
-          layer.bindPopup(popupContent)
-        }
-      })
-    }
-
-    if (layer) {
-      shapefileLayer.addLayer(layer)
-    }
-  })
-
-  // 调整视图以包含所有要素
-  if (shapefileLayer.getLayers().length > 0) {
-    const bounds = shapefileLayer.getBounds()
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [50, 50] })
-    }
-  }
-
-  ElMessage.success(`已显示 "${name}"，共 ${features.length} 个要素`)
-}
-
-// 移除单个 Shapefile 图层
-const removeShapefileLayer = (id) => {
-  if (!shapefileLayer) return
-
-  const index = displayedShapefiles.value.findIndex(s => s.id === id)
-  if (index < 0) return
-
-  // 重新构建图层（Leaflet 不支持直接移除单个子图层）
-  const currentLayers = [...displayedShapefiles.value]
-  currentLayers.splice(index, 1)
-
-  shapefileLayer.clearLayers()
-
-  // 重新添加保留的图层
-  currentLayers.forEach(sf => {
-    const features = sf.geojson.features || []
-    features.forEach((feature, idx) => {
-      const style = {
-        color: '#9c27b0',
-        fillColor: '#9c27b0',
-        fillOpacity: 0.2,
-        weight: 2
-      }
-      const layer = L.geoJSON(feature, {
-        style,
-        onEachFeature: (feature, layer) => {
-          let popupContent = `<div style="font-size:12px;"><b>${sf.name}</b><br>要素 ${idx + 1}`
-          const props = feature.properties || {}
-          for (const [key, value] of Object.entries(props)) {
-            if (value !== null && value !== undefined && value !== '') {
-              popupContent += `<br>${key}: ${value}`
-            }
-          }
-          popupContent += '</div>'
-          layer.bindPopup(popupContent)
-        }
-      })
-      shapefileLayer.addLayer(layer)
-    })
-  })
-
-  displayedShapefiles.value = currentLayers
-}
 
 onUnmounted(() => {
   if (map) map.remove()
   delete window.editMarkerExternal
   delete window.deleteMarkerExternal
-  window.removeEventListener('displayShapefile', handleDisplayShapefile)
+  delete window.handleShapefileQueryFromGlobal
 })
 </script>
 
@@ -2717,5 +3072,11 @@ onUnmounted(() => {
 :deep(.custom-div-icon) {
   background: transparent;
   border: none;
+}
+
+// Shapefile 检索结果数值标签
+:global(.shapefile-query-label) {
+  background: transparent !important;
+  border: none !important;
 }
 </style>

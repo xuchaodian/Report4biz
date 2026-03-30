@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import api from '../utils/api.js'
 
 const API_URL = '/api'
 
@@ -23,7 +23,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
     async fetchBrandStores() {
       this.loading = true
       try {
-        const { data } = await axios.get(`${API_URL}/brand-stores`)
+        const data = await api.get('/brand-stores')
         this.brandStores = data.brandStores || []
       } catch (error) {
         console.error('获取品牌门店列表失败:', error)
@@ -34,7 +34,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
     },
 
     async addBrandStore(store) {
-      const { data } = await axios.post(`${API_URL}/brand-stores`, store)
+      const data = await api.post('/brand-stores', store)
       if (data.success !== false) {
         this.brandStores.unshift(data.brandStore)
       }
@@ -42,7 +42,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
     },
 
     async updateBrandStore(id, store) {
-      const { data } = await axios.put(`${API_URL}/brand-stores/${id}`, store)
+      const data = await api.put(`/brand-stores/${id}`, store)
       if (data.success !== false) {
         const idx = this.brandStores.findIndex(s => s.id === id)
         if (idx >= 0) this.brandStores[idx] = data.brandStore
@@ -51,7 +51,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
     },
 
     async deleteBrandStore(id) {
-      const { data } = await axios.delete(`${API_URL}/brand-stores/${id}`)
+      const data = await api.delete(`/brand-stores/${id}`)
       if (data.success !== false) {
         this.brandStores = this.brandStores.filter(s => s.id !== id)
       }
@@ -60,7 +60,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
 
     async batchDeleteBrandStores(ids) {
       try {
-        await axios.post(`${API_URL}/brand-stores/batch-delete`, { ids })
+        await api.post('/brand-stores/batch-delete', { ids })
         this.brandStores = this.brandStores.filter(s => !ids.includes(s.id))
         return { success: true, count: ids.length }
       } catch (error) {
@@ -70,7 +70,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
 
     async clearAllBrandStores() {
       try {
-        const { data } = await axios.delete(`${API_URL}/brand-stores/clear-all`)
+        const data = await api.delete('/brand-stores/clear-all')
         this.brandStores = []
         return { success: true, count: data.count }
       } catch (error) {
@@ -81,14 +81,14 @@ export const useBrandStoreStore = defineStore('brandStore', {
     async importBrandStores(file) {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await axios.post(`${API_URL}/brand-stores/import`, formData, {
+      const data = await api.post('/brand-stores/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
       return data
     },
 
     async exportBrandStores() {
-      const { data } = await axios.get(`${API_URL}/brand-stores/export`)
+      const data = await api.get('/brand-stores/export')
       return data
     },
 

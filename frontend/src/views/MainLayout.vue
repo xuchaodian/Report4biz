@@ -26,7 +26,7 @@
         </router-link>
         <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }">
           <el-icon><Document /></el-icon>
-          <span>Shp文件</span>
+          <span>统计数据</span>
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
