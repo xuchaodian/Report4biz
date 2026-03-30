@@ -44,8 +44,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     // 调用 Python 脚本解析 shapefile
     const pythonScript = path.join(__dirname, '../utils/shapefile_parser.py')
-    const result = execSync(`python3 "${pythonScript}" "${filePath}"`, { encoding: 'utf-8' })
-    const parseResult = JSON.parse(result)
+    const pythonResult = execSync(`python3 "${pythonScript}" "${filePath}"`, { encoding: 'utf-8' })
+    const parseResult = JSON.parse(pythonResult)
 
     // 删除临时上传文件
     fs.unlinkSync(filePath)
@@ -62,13 +62,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const geojsonData = JSON.stringify(parseResult.data)
 
     // 插入数据
-    db.run(
+    const insertResult = db.prepare(
       `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, created_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))`,
-      [originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId]
-    )
+       VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))`
+    ).run(originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId)
 
-    const insertId = db.exec("SELECT last_insert_rowid() as id")[0].values[0][0]
+    const insertId = insertResult.lastInsertRowid
 
     res.json({
       success: true,
@@ -93,22 +92,12 @@ router.get('/', (req, res) => {
     const db = getDb()
     const userId = req.headers['x-user-id'] || 1
 
-    const result = db.exec(
-      `SELECT id, name, field_names, feature_count, created_at FROM shapefiles WHERE user_id = ? ORDER BY created_at DESC`,
-      [userId]
-    )
+    const rows = db.prepare(
+      `SELECT id, name, field_names, feature_count, created_at FROM shapefiles WHERE user_id = ? ORDER BY created_at DESC`
+    ).all(userId)
 
-    if (result.length === 0) {
-      return res.json({ data: [] })
-    }
-
-    const columns = result[0].columns
-    const rows = result[0].values.map(row => {
-      const obj = {}
-      columns.forEach((col, i) => {
-        obj[col] = row[i]
-      })
-      // 解析 field_names
+    // 解析 field_names
+    const data = rows.map(obj => {
       if (obj.field_names) {
         try {
           obj.field_names = JSON.parse(obj.field_names)
@@ -117,7 +106,7 @@ router.get('/', (req, res) => {
       return obj
     })
 
-    res.json({ data: rows })
+    res.json({ data })
 
   } catch (error) {
     console.error('获取 Shapefile 列表失败:', error)
@@ -132,25 +121,23 @@ router.get('/:id', (req, res) => {
     const id = req.params.id
     const userId = req.headers['x-user-id'] || 1
 
-    const result = db.exec(
-      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND user_id = ?`,
-      [id, userId]
-    )
+    const row = db.prepare(
+      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND user_id = ?`
+    ).get(id, userId)
 
-    if (result.length === 0 || result[0].values.length === 0) {
+    if (!row) {
       return res.status(404).json({ message: '未找到' })
     }
 
-    const row = result[0].values[0]
-    const geojson = JSON.parse(row[2])
+    const geojson = JSON.parse(row.geojson)
 
     res.json({
       data: {
-        id: row[0],
-        name: row[1],
+        id: row.id,
+        name: row.name,
         geojson: geojson,
-        field_names: JSON.parse(row[3]),
-        feature_count: row[4]
+        field_names: JSON.parse(row.field_names),
+        feature_count: row.feature_count
       }
     })
 
@@ -167,7 +154,7 @@ router.delete('/:id', (req, res) => {
     const id = req.params.id
     const userId = req.headers['x-user-id'] || 1
 
-    db.run(`DELETE FROM shapefiles WHERE id = ? AND user_id = ?`, [id, userId])
+    db.prepare(`DELETE FROM shapefiles WHERE id = ? AND user_id = ?`).run(id, userId)
 
     res.json({ success: true, message: '删除成功' })
 
