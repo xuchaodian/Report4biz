@@ -24,16 +24,12 @@
           <el-icon><MapLocation /></el-icon>
           <span>品牌门店</span>
         </router-link>
-        <router-link to="/brands" class="nav-item" :class="{ active: $route.path === '/brands' }">
-          <el-icon><MapLocation /></el-icon>
-          <span>品牌图标</span>
-        </router-link>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
           <span>用户</span>
         </router-link>
       </nav>
-      
+
       <div class="header-right">
         <el-dropdown @command="handleCommand">
           <span class="user-info">
@@ -45,6 +41,9 @@
             <el-dropdown-menu>
               <el-dropdown-item command="profile">
                 <el-icon><User /></el-icon>个人中心
+              </el-dropdown-item>
+              <el-dropdown-item command="brands">
+                <el-icon><Setting /></el-icon>设置图标
               </el-dropdown-item>
               <el-dropdown-item command="logout" divided>
                 <el-icon><SwitchButton /></el-icon>退出登录
@@ -65,7 +64,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 
@@ -79,6 +78,8 @@ onMounted(() => {
 const handleCommand = async (command) => {
   if (command === 'profile') {
     router.push('/account')
+  } else if (command === 'brands') {
+    router.push('/brands')
   } else if (command === 'logout') {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
       type: 'warning'

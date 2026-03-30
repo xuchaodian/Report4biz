@@ -25,6 +25,28 @@
       </div>
     </div>
 
+    <!-- 显示门店开关 - 工具栏左侧 -->
+    <div class="store-toggle-panel">
+      <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
+        <span class="toggle-title">显示门店</span>
+        <span class="toggle-arrow" :class="{ expanded: storeToggleExpanded }">▼</span>
+      </div>
+      <div v-show="storeToggleExpanded" class="store-toggle-body">
+        <div class="toggle-row">
+          <span class="toggle-label">我的门店</span>
+          <el-switch v-model="showBusinessLayer" />
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">竞品门店</span>
+          <el-switch v-model="showCompetitorLayer" />
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">品牌门店</span>
+          <el-switch v-model="showBrandStoreLayer" />
+        </div>
+      </div>
+    </div>
+
     <!-- 工具栏 - 右上角收起/展开 -->
     <div class="toolbar">
       <div class="toolbar-header" @click="toolbarExpanded = !toolbarExpanded">
@@ -65,12 +87,38 @@
         </el-tooltip>
         <el-divider style="margin: 6px 0;" />
         <!-- 热力图 -->
-        <el-tooltip content="热力图" placement="left">
-          <div class="tool-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
-            <el-icon><DataLine /></el-icon>
-            <span>热力图</span>
+        <div class="tool-item" :class="{ active: showHeatmap }" @click="heatmapMenuVisible = !heatmapMenuVisible">
+          <el-icon><DataLine /></el-icon>
+          <span>热力图</span>
+          <el-icon style="margin-left: auto; font-size: 10px;"><ArrowLeft /></el-icon>
+        </div>
+        <!-- 热力图样式菜单（内嵌展开） -->
+        <div v-if="heatmapMenuVisible" class="heatmap-style-panel">
+          <div class="panel-section-title">热力图样式</div>
+          <div 
+            v-for="s in heatmapStyles" 
+            :key="s.name"
+            class="heatmap-style-item"
+            :class="{ active: heatmapStyle === s.name }"
+            @click="selectHeatmapStyle(s.name)"
+          >
+            <div class="style-preview">
+              <span v-for="(color, idx) in s.preview" :key="idx" 
+                :style="{ backgroundColor: color, flex: 1, height: '8px' }"></span>
+            </div>
+            <span class="style-label">{{ s.label }}</span>
           </div>
-        </el-tooltip>
+          <div style="padding: 4px 0;">
+            <el-button 
+              :type="showHeatmap ? 'danger' : 'primary'" 
+              size="small" 
+              @click="toggleHeatmap" 
+              style="width: 100%; font-size: 11px;"
+            >
+              {{ showHeatmap ? '关闭热力图' : '开启热力图' }}
+            </el-button>
+          </div>
+        </div>
         <!-- 聚合显示 -->
         <el-tooltip content="聚合显示" placement="left">
           <div class="tool-item" :class="{ active: showCluster }" @click="toggleCluster">
@@ -157,25 +205,6 @@
         >
           <img :src="imgMapPreview" alt="影像" />
           <span>影像</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 显示门店开关（整合竞品+品牌） -->
-    <div class="store-toggle-panel">
-      <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
-        <span style="font-size: 12px; font-weight: 500;">显示门店</span>
-        <el-switch v-model="showStoreLayers" @click.stop />
-        <span class="toggle-arrow" :class="{ expanded: storeToggleExpanded }">▼</span>
-      </div>
-      <div v-show="storeToggleExpanded" class="store-toggle-body">
-        <div class="toggle-row">
-          <span class="toggle-label">竞品</span>
-          <el-switch v-model="showCompetitorLayer" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">品牌</span>
-          <el-switch v-model="showBrandStoreLayer" />
         </div>
       </div>
     </div>
@@ -366,7 +395,55 @@
       </el-form>
       <template #footer>
         <el-button @click="circleDialogVisible = false">取消</el-button>
+        <el-button type="warning" @click="analyzeCircleStores">分析</el-button>
         <el-button type="primary" @click="confirmDrawCircle">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 圆形内门店分析结果对话框 -->
+    <el-dialog
+      v-model="circleAnalysisVisible"
+      :title="circleAnalysisTitle"
+      width="600px"
+    >
+      <div v-if="circleAnalysisData.myStores.length === 0 && circleAnalysisData.competitorStores.length === 0" class="analysis-empty">
+        <el-empty description="圆形范围内没有门店" />
+      </div>
+      <div v-else class="analysis-content">
+        <div v-if="circleAnalysisData.myStores.length > 0" class="analysis-section">
+          <div class="analysis-section-title">
+            <el-icon><Location /></el-icon>
+            我的门店 ({{ circleAnalysisData.myStores.length }}家)
+          </div>
+          <el-table :data="circleAnalysisData.myStores" size="small" max-height="200">
+            <el-table-column prop="name" label="门店名称" />
+            <el-table-column prop="brand" label="品牌" />
+            <el-table-column prop="distance" label="到圆心距离" width="120">
+              <template #default="{ row }">
+                {{ row.distance < 1000 ? `${row.distance.toFixed(0)}米` : `${(row.distance / 1000).toFixed(2)}公里` }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div v-if="circleAnalysisData.competitorStores.length > 0" class="analysis-section">
+          <div class="analysis-section-title">
+            <el-icon><DataLine /></el-icon>
+            竞品门店 ({{ circleAnalysisData.competitorStores.length }}家)
+          </div>
+          <el-table :data="circleAnalysisData.competitorStores" size="small" max-height="200">
+            <el-table-column prop="name" label="门店名称" />
+            <el-table-column prop="brand" label="品牌" />
+            <el-table-column prop="distance" label="到圆心距离" width="120">
+              <template #default="{ row }">
+                {{ row.distance < 1000 ? `${row.distance.toFixed(0)}米` : `${(row.distance / 1000).toFixed(2)}公里` }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="closeAnalysisDialog">关闭</el-button>
+        <el-button type="primary" @click="showCircleOnMap">显示地图</el-button>
       </template>
     </el-dialog>
   </div>
@@ -378,7 +455,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, Collection
+  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -422,6 +499,7 @@ let brandMarkerMap = {}     // 品牌门店ID到marker的映射
 let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
+let analysisCircleLayer = null  // 圆形分析专用图层
 let measureLine = null
 let measureArea = null
 let measurePoints = []
@@ -440,10 +518,39 @@ const activeTool = ref('')
 const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
+const heatmapMenuVisible = ref(false)
+const heatmapStyle = ref('classic')
+
+// 热力图预设样式
+const heatmapStyles = [
+  {
+    name: 'classic',
+    label: '经典（蓝→红）',
+    preview: ['#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff0000'],
+    options: { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } }
+  },
+  {
+    name: 'density',
+    label: '密度（绿→红）',
+    preview: ['#00ff00', '#7fff00', '#ffff00', '#ff7f00', '#ff0000'],
+    options: { radius: 38, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.1: '#22cc22', 0.4: '#88ee00', 0.6: '#ffcc00', 0.8: '#ff6600', 1.0: '#dd1100' } }
+  },
+  {
+    name: 'cool',
+    label: '冷色（深蓝→青）',
+    preview: ['#000033', '#003366', '#0066cc', '#0099ff', '#00ccff'],
+    options: { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.1: '#001144', 0.3: '#0044aa', 0.6: '#0088dd', 0.8: '#22bbff', 1.0: '#66ccdd' } }
+  }
+]
+
+const getCurrentHeatmapOptions = () => {
+  const s = heatmapStyles.find(s => s.name === heatmapStyle.value) || heatmapStyles[0]
+  return s.options
+}
 const showBusinessLayer = ref(true)
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
-const showCompetitorLayer = ref(true)  // 竞品图层显示控制
-const showBrandStoreLayer = ref(true)  // 品牌门店图层显示控制
+const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
+const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
 const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
 const layerOpacity = ref(1)
 const baseMapType = ref('vec')
@@ -462,6 +569,178 @@ const circleForm = reactive({
   radius: 1,
   unit: 'km'
 })
+
+// 圆形内门店分析相关
+const circleAnalysisVisible = ref(false)
+const circleAnalysisData = reactive({
+  myStores: [],
+  competitorStores: [],
+  myStoresFull: [],  // 完整数据（含经纬度）
+  competitorStoresFull: []
+})
+const circleAnalysisTitle = ref('圆形内门店分析')
+const circleAnalysisParams = reactive({
+  center: null,
+  radius: 0
+})
+
+// 分析圆形内的门店
+const analyzeCircleStores = () => {
+  if (!circleForm.center) return
+  // 转换半径为米
+  let radiusInMeters = circleForm.radius
+  if (circleForm.unit === 'km') {
+    radiusInMeters = radiusInMeters * 1000
+  }
+
+  const centerLat = circleForm.center.lat
+  const centerLng = circleForm.center.lng
+
+  // 获取可见的我的门店数据
+  let myStoresData = markerStore.markers
+  if (markerStore.visibleIds !== null && markerStore.visibleIds !== undefined) {
+    myStoresData = markerStore.markers.filter(m => markerStore.visibleIds.includes(m.id))
+  }
+
+  // 分析我的门店
+  const filteredMyStores = myStoresData
+    .filter(store => {
+      const distance = calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
+      return distance <= radiusInMeters
+    })
+  circleAnalysisData.myStoresFull = filteredMyStores
+  circleAnalysisData.myStores = filteredMyStores
+    .map(store => ({
+      name: store.name,
+      brand: store.brand || '-',
+      distance: calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
+    }))
+    .sort((a, b) => a.distance - b.distance)
+
+  // 获取可见的竞品门店数据
+  let competitorData = competitorStore.competitors
+  if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
+    competitorData = competitorStore.competitors.filter(c => competitorStore.visibleIds.includes(c.id))
+  }
+
+  // 分析竞品门店
+  const filteredCompetitorStores = competitorData
+    .filter(store => {
+      const distance = calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
+      return distance <= radiusInMeters
+    })
+  circleAnalysisData.competitorStoresFull = filteredCompetitorStores
+  circleAnalysisData.competitorStores = filteredCompetitorStores
+    .map(store => ({
+      name: store.name,
+      brand: store.brand || '-',
+      distance: calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
+    }))
+    .sort((a, b) => a.distance - b.distance)
+
+  // 设置分析结果对话框标题
+  const radiusText = circleForm.unit === 'km' ? `${circleForm.radius}公里` : `${circleForm.radius}米`
+  circleAnalysisTitle.value = `半径${radiusText}圆形内门店分析`
+
+  // 保存分析参数
+  circleAnalysisParams.center = { lat: centerLat, lng: centerLng }
+  circleAnalysisParams.radius = radiusInMeters
+
+  circleAnalysisVisible.value = true
+}
+
+// 关闭分析对话框（同时关闭圆形设置对话框）
+const closeAnalysisDialog = () => {
+  circleAnalysisVisible.value = false
+  circleDialogVisible.value = false
+}
+
+// 在地图上显示分析圆形和门店
+const showCircleOnMap = () => {
+  if (!map || !circleAnalysisParams.center || !circleAnalysisParams.radius) return
+
+  // 关闭对话框
+  circleAnalysisVisible.value = false
+
+  // 清除之前的分析图层
+  if (analysisCircleLayer) {
+    map.removeLayer(analysisCircleLayer)
+  }
+  analysisCircleLayer = new L.LayerGroup()
+  analysisCircleLayer.addTo(map)
+
+  // 绘制圆形
+  const circle = L.circle([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], {
+    radius: circleAnalysisParams.radius,
+    color: '#f56c6c',
+    fillColor: '#f56c6c',
+    fillOpacity: 0.2,
+    weight: 2
+  })
+  analysisCircleLayer.addLayer(circle)
+
+  // 绘制圆心标记
+  const centerMarker = L.marker([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:#fff;color:#f56c6c;width:14px;height:14px;border:2px solid #f56c6c;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    })
+  })
+  analysisCircleLayer.addLayer(centerMarker)
+
+  // 添加圆形内的我的门店标记
+  circleAnalysisData.myStoresFull.forEach((store, index) => {
+    const marker = L.marker([store.latitude, store.longitude], {
+      icon: createCustomIcon(getStatusColor(store.store_type), currentMarkerStyle.value)
+    })
+    marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
+    analysisCircleLayer.addLayer(marker)
+  })
+
+  // 添加圆形内的竞品门店标记
+  const competitorBrandColors = {
+    '大米先生': '#e6a23c',
+    '谷田稻香': '#f56c6c',
+    '吉野家': '#409eff',
+    '老乡鸡': '#67c23a',
+    '米村拌饭': '#9c27b0',
+    '其他': '#ff9800'
+  }
+  const getCompBrandColor = (brand) => {
+    if (!brand) return competitorBrandColors['其他']
+    for (const key in competitorBrandColors) {
+      if (brand.includes(key) || key.includes(brand)) {
+        return competitorBrandColors[key]
+      }
+    }
+    return competitorBrandColors['其他']
+  }
+
+  circleAnalysisData.competitorStoresFull.forEach((store) => {
+    const brandColor = getCompBrandColor(store.brand)
+    const marker = L.marker([store.latitude, store.longitude], {
+      icon: createCustomIcon(brandColor, 'dot')
+    })
+    marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
+    analysisCircleLayer.addLayer(marker)
+  })
+
+  // 调整视图以包含所有元素
+  const allPoints = [
+    [circleAnalysisParams.center.lat, circleAnalysisParams.center.lng],
+    ...circleAnalysisData.myStoresFull.map(s => [s.latitude, s.longitude]),
+    ...circleAnalysisData.competitorStoresFull.map(s => [s.latitude, s.longitude])
+  ]
+  if (allPoints.length > 1) {
+    map.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] })
+  } else {
+    map.setView([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], 14)
+  }
+
+  ElMessage.success('已在地图上显示分析结果')
+}
 
 // 图标样式选项
 const markerStyleOptions = [
@@ -744,7 +1023,7 @@ const loadMarkers = async () => {
     businessLayer.addLayer(marker)
   })
 
-  // 聚合模式（同样应用可见性过滤）
+  // 聚合模式
   markerClusterGroup = L.markerClusterGroup({
     chunkedLoading: true,
     spiderfyOnMaxZoom: true,
@@ -761,20 +1040,9 @@ const loadMarkers = async () => {
     markerClusterGroup.addLayer(marker)
   })
 
-  // 热力图（同样应用可见性过滤）
+  // 热力图
   const heatmapData = dataToShow.map(m => [m.latitude, m.longitude, 1])
-  heatmapLayer = L.heatLayer(heatmapData, {
-    radius: 25,
-    blur: 15,
-    maxZoom: 17,
-    gradient: {
-      0.2: 'blue',
-      0.4: 'cyan',
-      0.6: 'lime',
-      0.8: 'yellow',
-      1.0: 'red'
-    }
-  })
+  heatmapLayer = L.heatLayer(heatmapData, getCurrentHeatmapOptions())
 
   // 根据显示模式添加图层
   updateLayerDisplay()
@@ -814,10 +1082,8 @@ const reloadBusinessLayer = () => {
 
   // 热力图
   if (heatmapLayer) { map.removeLayer(heatmapLayer) }
-  heatmapLayer = L.heatLayer(dataToShow.map(m => [m.latitude, m.longitude, 1]), {
-    radius: 25, blur: 15, maxZoom: 17,
-    gradient: { 0.2: 'blue', 0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red' }
-  })
+  const hmData = dataToShow.map(m => [m.latitude, m.longitude, 1])
+  heatmapLayer = L.heatLayer(hmData, getCurrentHeatmapOptions())
   if (wasOnMap) {
     if (showHeatmap.value) {
       map.addLayer(heatmapLayer)
@@ -1151,19 +1417,6 @@ const updateLayerDisplay = () => {
 // 监控竞品图层开关
 watch(showCompetitorLayer, () => {
   updateCompetitorDisplay()
-})
-
-// 监控总开关：显示门店
-watch(showStoreLayers, (val) => {
-  if (!val) {
-    // 关闭时同时隐藏竞品和品牌图层
-    showCompetitorLayer.value = false
-    showBrandStoreLayer.value = false
-  } else {
-    // 打开时恢复两者
-    showCompetitorLayer.value = true
-    showBrandStoreLayer.value = true
-  }
 })
 
 // 监控品牌门店图层开关
@@ -1637,6 +1890,25 @@ const confirmDrawCircle = () => {
 const toggleHeatmap = () => {
   showHeatmap.value = !showHeatmap.value
   if (showHeatmap.value) showCluster.value = false
+  heatmapMenuVisible.value = false
+  if (showHeatmap.value) {
+    map.addLayer(heatmapLayer)
+    if (businessLayer && map.hasLayer(businessLayer)) {
+      heatmapLayer.bringToBack()
+    }
+  } else {
+    if (map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
+    if (businessLayer && !map.hasLayer(businessLayer)) {
+      map.addLayer(businessLayer)
+    }
+  }
+}
+
+// 选择热力图样式
+const selectHeatmapStyle = (styleName) => {
+  heatmapStyle.value = styleName
+  // 重新加载热力图
+  reloadBusinessLayer()
 }
 
 // 切换聚合
@@ -1653,6 +1925,11 @@ const clearDrawings = () => {
   if (measureArea) { map.removeLayer(measureArea); measureArea = null }
   if (measureLayerGroup) { map.removeLayer(measureLayerGroup); measureLayerGroup = null }
   if (drawnItems) drawnItems.clearLayers()
+  // 清除分析圆形图层
+  if (analysisCircleLayer) {
+    map.removeLayer(analysisCircleLayer)
+    analysisCircleLayer = null
+  }
   measurePoints = []
   measureAreaPoints = []
   measurementResult.value = ''
@@ -1863,6 +2140,7 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    position: relative;
 
     .tool-item {
       display: flex;
@@ -1905,6 +2183,63 @@ onUnmounted(() => {
     .el-divider {
       margin: 4px 0;
     }
+
+    .heatmap-style-panel {
+      background: #f8f9fa;
+      border: 1px solid #e4e7ed;
+      border-radius: 6px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 150px;
+
+      .panel-section-title {
+        font-size: 11px;
+        font-weight: 600;
+        color: #666;
+        padding: 2px 4px;
+        margin-bottom: 2px;
+      }
+
+      .heatmap-style-item {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 5px 6px;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.2s;
+
+        .style-preview {
+          display: flex;
+          border-radius: 3px;
+          overflow: hidden;
+          height: 8px;
+          width: 100%;
+        }
+
+        .style-label {
+          font-size: 11px;
+          color: #555;
+        }
+
+        &:hover {
+          background: #ecf5ff;
+          border-color: #c6e2ff;
+        }
+
+        &.active {
+          background: #ecf5ff;
+          border-color: #409eff;
+          .style-label {
+            color: #409eff;
+            font-weight: 600;
+          }
+        }
+      }
+    }
   }
 
   .measurement-result {
@@ -1915,6 +2250,33 @@ onUnmounted(() => {
     font-weight: 500;
     text-align: center;
     border-top: 1px solid #eee;
+  }
+}
+
+// 圆形内门店分析
+.analysis-empty {
+  padding: 20px 0;
+}
+
+.analysis-content {
+  .analysis-section {
+    margin-bottom: 16px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    .analysis-section-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #409eff;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
   }
 }
 
@@ -2062,33 +2424,40 @@ onUnmounted(() => {
   }
 }
 
-// 显示门店开关（整合竞品+品牌）
+// 显示门店开关 - 样式参考地图工具箱
 .store-toggle-panel {
   position: absolute;
-  bottom: 205px;
-  right: 10px;
+  top: 10px;
+  right: 160px;
   background: white;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   z-index: 1001;
   min-width: 100px;
   overflow: hidden;
+  border: 2px solid #409eff;
 }
 
 .store-toggle-header {
-  padding: 7px 12px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  background: #f5f7fa;
-  border-bottom: 1px solid #ebeef5;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  border-bottom: 1px solid #eee;
+
+  .toggle-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+  }
 
   .toggle-arrow {
     margin-left: auto;
     font-size: 10px;
-    color: #909399;
+    color: #fff;
     transition: transform 0.2s;
     transform: rotate(-90deg);
 
@@ -2096,18 +2465,13 @@ onUnmounted(() => {
       transform: rotate(0deg);
     }
   }
-
-  .el-switch {
-    --el-switch-off-color: #409eff;
-    font-size: 12px;
-  }
 }
 
 .store-toggle-body {
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 
   .toggle-row {
     display: flex;
