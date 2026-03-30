@@ -66,7 +66,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, MapLocation, Delete } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+const baseURL = import.meta.env.VITE_API_BASE_URL || ''
 const userStore = useUserStore()
 
 const fileList = ref([])
