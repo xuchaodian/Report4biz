@@ -189,6 +189,37 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // 创建购物中心表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS shopping_centers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      store_code TEXT,
+      name TEXT NOT NULL,
+      store_category TEXT,
+      city TEXT,
+      district TEXT,
+      address TEXT,
+      rank_info TEXT,
+      comments INTEGER DEFAULT 0,
+      stars REAL DEFAULT 0,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      status TEXT DEFAULT '正常',
+      icon_color TEXT DEFAULT '#67c23a',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建购物中心索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_shopping_centers_user ON shopping_centers(user_id)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
   // 创建 Shapefile 数据表
   db.run(`
     CREATE TABLE IF NOT EXISTS shapefiles (

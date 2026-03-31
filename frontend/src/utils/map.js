@@ -226,35 +226,37 @@ export function formatDistance(meters) {
   return `${(meters / 1000).toFixed(2)} 公里`
 }
 
-// 计算面积 (平方米)
+// 计算面积 (平方米) - 使用球面多边形面积公式（更精确）
 export function calculateArea(points) {
   if (points.length < 3) return 0
-  
-  let area = 0
+
+  const R = 6371000 // 地球半径（米）
+  const toRad = deg => deg * Math.PI / 180
   const n = points.length
-  
+  let area = 0
+
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n
-    area += points[i].lng * points[j].lat
-    area -= points[j].lng * points[i].lat
+    const lat1 = toRad(points[i].lat)
+    const lat2 = toRad(points[j].lat)
+    const dLng = toRad(points[j].lng - points[i].lng)
+    area += dLng * (2 + Math.sin(lat1) + Math.sin(lat2))
   }
-  
-  area = Math.abs(area) / 2
-  
-  // 简化的经纬度到平方米的转换
-  const avgLat = points.reduce((sum, p) => sum + p.lat, 0) / n
-  const metersPerDegreeLat = 111320
-  const metersPerDegreeLng = 111320 * Math.cos(avgLat * Math.PI / 180)
-  
-  return area * metersPerDegreeLat * metersPerDegreeLng
+
+  area = Math.abs(area * R * R / 2)
+  return area
 }
 
 // 格式化面积
 export function formatArea(sqm) {
-  if (sqm < 10000) {
-    return `${Math.round(sqm)} 平方米`
+  if (sqm < 1000000) {
+    // 小于 1 平方公里，显示平方米或公顷
+    if (sqm < 10000) {
+      return `${Math.round(sqm).toLocaleString()} 平方米`
+    }
+    return `${(sqm / 10000).toFixed(2)} 公顷`
   }
-  return `${(sqm / 10000).toFixed(2)} 平方公里`
+  return `${(sqm / 1000000).toFixed(4)} 平方公里`
 }
 
 // 判断点是否在多边形内

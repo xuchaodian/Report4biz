@@ -40,6 +40,11 @@ const routes = [
         component: () => import('@/views/BrandStoreView.vue')
       },
       {
+        path: 'shopping-centers',
+        name: 'ShoppingCenters',
+        component: () => import('@/views/ShoppingCenterView.vue')
+      },
+      {
         path: 'brands',
         name: 'Brands',
         component: () => import('@/views/BrandIconView.vue')

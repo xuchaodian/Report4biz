@@ -44,6 +44,10 @@
           <span class="toggle-label">品牌门店</span>
           <el-switch v-model="showBrandStoreLayer" />
         </div>
+        <div class="toggle-row">
+          <span class="toggle-label">购物中心</span>
+          <el-switch v-model="showShoppingCenterLayer" />
+        </div>
       </div>
     </div>
 
@@ -126,29 +130,7 @@
             <span>聚合显示</span>
           </div>
         </el-tooltip>
-        <!-- 图标样式 -->
-        <el-tooltip content="图标样式" placement="left">
-          <el-popover placement="left" :width="200" trigger="click">
-            <template #reference>
-              <div class="tool-item">
-                <el-icon><Collection /></el-icon>
-                <span>图标样式</span>
-              </div>
-            </template>
-            <div class="marker-style-selector">
-              <div 
-                v-for="style in markerStyleOptions" 
-                :key="style.value"
-                class="style-option"
-                :class="{ active: currentMarkerStyle === style.value }"
-                @click="changeMarkerStyle(style.value)"
-              >
-                <span class="style-icon">{{ style.icon }}</span>
-                <span>{{ style.label }}</span>
-              </div>
-            </div>
-          </el-popover>
-        </el-tooltip>
+        <!-- 图标样式（已隐藏） -->
         <el-divider style="margin: 6px 0;" />
         <!-- 清除绘制 -->
         <el-tooltip content="清除绘制" placement="left">
@@ -467,6 +449,7 @@ import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useBrandIconStore } from '@/stores/brandIcon'
 import { useBrandStoreStore } from '@/stores/brandStore'
+import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
@@ -478,6 +461,7 @@ const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
 const brandIconStore = useBrandIconStore()
 const brandStoreStore = useBrandStoreStore()
+const shoppingCenterStore = useShoppingCenterStore()
 const route = useRoute() // 获取路由参数
 
 // 品牌图标映射 brand -> iconUrl
@@ -496,6 +480,8 @@ let businessLayer = null
 let competitorLayer = null  // 竞品门店图层
 let brandStoreLayer = null  // 品牌门店图层
 let brandMarkerMap = {}     // 品牌门店ID到marker的映射
+let shoppingCenterLayer = null  // 购物中心图层
+let shoppingCenterMarkerMap = {}  // 购物中心ID到marker的映射
 let markerClusterGroup = null
 let heatmapLayer = null
 let drawnItems = null
@@ -552,6 +538,7 @@ const showBusinessLayer = ref(true)
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
 const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
+const showShoppingCenterLayer = ref(false)  // 购物中心图层显示控制（默认隐藏）
 const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
 const layerOpacity = ref(1)
 const baseMapType = ref('vec')
@@ -873,6 +860,8 @@ const initMap = async () => {
   loadCompetitors()
   // 加载品牌门店
   loadBrandStores()
+  // 加载购物中心
+  loadShoppingCenters()
 }
 
 // 地址搜索（使用 ArcGIS World Geocoding API）
@@ -1576,6 +1565,151 @@ const updateBrandStoreDisplay = () => {
   }
 }
 
+// 加载购物中心
+const loadShoppingCenters = async () => {
+  if (!map) {
+    console.log('[loadShoppingCenters] 地图未初始化，跳过')
+    return
+  }
+
+  await shoppingCenterStore.fetchShoppingCenters()
+  console.log('购物中心数据:', shoppingCenterStore.shoppingCenters)
+
+  if (shoppingCenterLayer) {
+    map.removeLayer(shoppingCenterLayer)
+    shoppingCenterLayer = null
+  }
+
+  if (!shoppingCenterStore.shoppingCenters || shoppingCenterStore.shoppingCenters.length === 0) {
+    console.log('没有购物中心数据')
+    return
+  }
+
+  const visibleIds = shoppingCenterStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? shoppingCenterStore.shoppingCenters
+    : shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
+
+  shoppingCenterLayer = L.layerGroup()
+  shoppingCenterMarkerMap = {}
+
+  dataToShow.forEach(store => {
+    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.3)
+
+    const popupContent = `
+      <div style="min-width: 200px; font-size: 13px;">
+        <h4 style="margin: 0 0 8px 0; color: ${store.icon_color || '#e6a23c'};">🏬 ${store.name}</h4>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${store.icon_color || '#e6a23c'};">购物中心</span></p>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${store.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>分类:</strong> ${store.store_category || '-'}</p>
+        <p style="margin: 4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>
+        ${store.stars ? `<p style="margin: 4px 0;"><strong>星级:</strong> ⭐ ${store.stars}</p>` : ''}
+        ${store.comments ? `<p style="margin: 4px 0;"><strong>评论数:</strong> ${store.comments.toLocaleString()}</p>` : ''}
+        ${store.rank_info ? `<p style="margin: 4px 0;"><strong>榜单:</strong> ${store.rank_info}</p>` : ''}
+      </div>
+    `
+
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    marker.bindPopup(popupContent)
+
+    // 拖拽开始 - 阻止地图拖动
+    marker.on('mousedown', (e) => {
+      L.DomEvent.stopPropagation(e)
+    })
+
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - store.longitude) > threshold
+
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动购物中心 "${store.name}" 到新位置吗？`,
+          '确认移动',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => true).catch(() => false)
+
+        if (confirmed) {
+          await shoppingCenterStore.updateShoppingCenter(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('购物中心坐标已更新')
+        } else {
+          marker.setLatLng([store.latitude, store.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
+    })
+
+    shoppingCenterLayer.addLayer(marker)
+    shoppingCenterMarkerMap[store.id] = marker
+  })
+
+  updateShoppingCenterDisplay()
+}
+
+// 重载购物中心图层
+const reloadShoppingCenterLayer = () => {
+  if (!map || !shoppingCenterStore.shoppingCenters || shoppingCenterStore.shoppingCenters.length === 0) return
+  const visibleIds = shoppingCenterStore.visibleIds
+  const dataToShow = (visibleIds === null || visibleIds === undefined)
+    ? shoppingCenterStore.shoppingCenters
+    : shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
+
+  const wasOnMap = map.hasLayer(shoppingCenterLayer)
+  if (shoppingCenterLayer) { try { map.removeLayer(shoppingCenterLayer) } catch(e) {} }
+
+  shoppingCenterLayer = L.layerGroup()
+  shoppingCenterMarkerMap = {}
+
+  dataToShow.forEach(store => {
+    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.3)
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#e6a23c'};">🏬 ${store.name}</h4><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>${store.stars ? `<p style="margin:4px 0;"><strong>星级:</strong> ⭐ ${store.stars}</p>` : ''}${store.comments ? `<p style="margin:4px 0;"><strong>评论数:</strong> ${store.comments.toLocaleString()}</p>` : ''}</div>`)
+    marker.on('mousedown', (e) => { L.DomEvent.stopPropagation(e) })
+    marker.on('dragend', async (e) => {
+      const latlng = e.target.getLatLng()
+      const threshold = 0.0001
+      const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
+      const lngChanged = Math.abs(latlng.lng - store.longitude) > threshold
+      if (latChanged || lngChanged) {
+        const confirmed = await ElMessageBox.confirm(
+          `确定要移动购物中心 "${store.name}" 到新位置吗？`,
+          '确认移动', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+        ).then(() => true).catch(() => false)
+        if (confirmed) {
+          await shoppingCenterStore.updateShoppingCenter(store.id, { latitude: latlng.lat, longitude: latlng.lng })
+          ElMessage.success('购物中心坐标已更新')
+        } else {
+          marker.setLatLng([store.latitude, store.longitude])
+          ElMessage.info('已取消移动')
+        }
+      }
+    })
+    shoppingCenterLayer.addLayer(marker)
+    shoppingCenterMarkerMap[store.id] = marker
+  })
+
+  if (wasOnMap && showShoppingCenterLayer.value) {
+    map.addLayer(shoppingCenterLayer)
+    shoppingCenterLayer.bringToBack()
+  }
+}
+
+// 更新购物中心图层显示
+const updateShoppingCenterDisplay = () => {
+  if (!map || !shoppingCenterLayer) return
+
+  if (showShoppingCenterLayer.value) {
+    try { map.addLayer(shoppingCenterLayer) } catch(e) {}
+    try { shoppingCenterLayer.bringToBack() } catch(e) {}
+  } else {
+    try { map.removeLayer(shoppingCenterLayer) } catch(e) {}
+  }
+}
 
 const updateLayerDisplay = () => {
   if (!map) return
@@ -1601,6 +1735,7 @@ const updateLayerDisplay = () => {
   try {
     if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
     if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
+    if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) shoppingCenterLayer.bringToBack()
   } catch(e) {}
 }
 
@@ -1614,6 +1749,11 @@ watch(showBrandStoreLayer, () => {
   updateBrandStoreDisplay()
 })
 
+// 监控购物中心图层开关
+watch(showShoppingCenterLayer, () => {
+  updateShoppingCenterDisplay()
+})
+
 // 监听各 store 的 visibleIds 变化，联动地图筛选显示
 watch(() => markerStore.visibleIds, () => {
   if (map) reloadBusinessLayer()
@@ -1623,6 +1763,9 @@ watch(() => competitorStore.visibleIds, () => {
 })
 watch(() => brandStoreStore.visibleIds, () => {
   if (map) reloadBrandStoreLayer()
+})
+watch(() => shoppingCenterStore.visibleIds, () => {
+  if (map) reloadShoppingCenterLayer()
 })
 
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）

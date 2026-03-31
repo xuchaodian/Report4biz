@@ -10,6 +10,7 @@ import userRoutes from './routes/users.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
+import shoppingCenterRoutes from './routes/shopping-centers.js'
 import { initDatabase } from './models/database.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -40,6 +41,7 @@ async function start() {
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)
+    app.use('/api/shopping-centers', shoppingCenterRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

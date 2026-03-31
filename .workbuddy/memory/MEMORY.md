@@ -32,6 +32,7 @@
 9. 门店区分颜色区分（popup 和下拉列表）
 10. IP自动定位功能（ip-api.com，左下角城市名显示）
 11. 测量距离重写（仿高德：多段累计、鼠标预览线、每点距离标注、双击结束）
+12. 购物中心页面（独立表 shopping_centers，含星级/评论数/榜单字段）
 
 ## Shapefile 功能 (2026-03-30)
 - **Shapefile上传表**：`shapefiles` 表（id, name, geojson, field_names, feature_count, user_id, created_at）

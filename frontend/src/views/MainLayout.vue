@@ -24,6 +24,10 @@
           <el-icon><MapLocation /></el-icon>
           <span>品牌门店</span>
         </router-link>
+        <router-link to="/shopping-centers" class="nav-item" :class="{ active: $route.path === '/shopping-centers' }">
+          <el-icon><Shop /></el-icon>
+          <span>购物中心</span>
+        </router-link>
         <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }">
           <el-icon><Document /></el-icon>
           <span>统计数据</span>
