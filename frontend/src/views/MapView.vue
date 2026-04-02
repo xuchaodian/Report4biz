@@ -2,16 +2,20 @@
   <div class="map-view">
     <!-- 左上角地址检索框 -->
     <div class="search-panel">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="输入地址搜索定位..."
-        size="default"
-        @keyup.enter="searchAddress"
-      >
-        <template #append>
-          <el-button :icon="Search" @click="searchAddress" />
-        </template>
-      </el-input>
+      <div class="search-box">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="输入地址搜索定位"
+          size="large"
+          clearable
+          @input="searchAddress"
+          @keyup.enter="handleEnterSearch"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+      </div>
       <div v-if="searchResults.length > 0" class="search-results">
         <div
           v-for="(result, index) in searchResults"
@@ -19,8 +23,13 @@
           class="search-result-item"
           @click="goToLocation(result)"
         >
-          <el-icon><Location /></el-icon>
-          <span>{{ result.display_name }}</span>
+          <div class="result-icon">
+            <el-icon><LocationFilled /></el-icon>
+          </div>
+          <div class="result-info">
+            <div class="result-name">{{ result.name || result.display_name }}</div>
+            <div class="result-address">{{ result.address || result.district }}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -177,22 +186,23 @@
           :class="{ active: baseMapType === 'vec' }"
           @click="baseMapType = 'vec'"
         >
-          <img :src="vecMapPreview" alt="矢量" />
-          <span>标准</span>
+          <img src="/高德地图.jpeg" alt="高德" />
+          <span>高德</span>
         </div>
         <div
           class="layer-option"
           :class="{ active: baseMapType === 'tencent' }"
           @click="baseMapType = 'tencent'"
         >
-          <img :src="tencentMapPreview" alt="腾讯" />
+          <img src="/腾讯地图.jpeg" alt="腾讯" />
           <span>腾讯</span>
-        </div>        <div
+        </div>
+        <div
           class="layer-option"
           :class="{ active: baseMapType === 'img' }"
           @click="baseMapType = 'img'"
         >
-          <img :src="imgMapPreview" alt="影像" />
+          <img src="/影像地图.jpeg" alt="影像" />
           <span>影像</span>
         </div>
       </div>
@@ -444,7 +454,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection
+  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -461,9 +471,7 @@ import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
-import vecMapPreview from '@/assets/vec-map-preview.jpeg?url'
-import imgMapPreview from '@/assets/img-map-preview.jpeg?url'
-import tencentMapPreview from '@/assets/tencent-map-preview.jpeg?url'
+// 注意：public目录的中文名图片会被Vite直接复制到dist根目录
 
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
@@ -896,33 +904,41 @@ const initMap = async () => {
   loadShoppingCenters()
 }
 
-// 地址搜索（使用 ArcGIS World Geocoding API）
+// 地址搜索（使用高德地图API，支持模糊检索）
+let searchTimer = null
 const searchAddress = async () => {
-  if (!searchKeyword.value.trim()) return
+  if (!searchKeyword.value.trim()) {
+    searchResults.value = []
+    return
+  }
 
-  try {
-    const keyword = searchKeyword.value.trim()
-    // 使用 ArcGIS World Geocoding（免费，无需 API Key）
-    const response = await fetch(
-      `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(keyword)}&f=json&maxLocations=5`
-    )
-    const data = await response.json()
-    console.log('搜索结果:', data)
-    if (data.candidates && data.candidates.length > 0) {
-      // 转换 ArcGIS 数据格式
-      searchResults.value = data.candidates.map(item => ({
-        lat: item.location.y,
-        lon: item.location.x,
-        display_name: item.address,
-        name: item.address
-      }))
-    } else {
-      ElMessage.warning('未找到相关地址')
+  // 清除之前的定时器，实现防抖
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+
+  searchTimer = setTimeout(async () => {
+    try {
+      const keyword = searchKeyword.value.trim()
+      // 使用后端高德搜索建议API
+      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(keyword)}`)
+      const data = await response.json()
+      if (data.success && data.results && data.results.length > 0) {
+        searchResults.value = data.results
+      } else {
+        searchResults.value = []
+      }
+    } catch (error) {
+      console.error('搜索错误:', error)
       searchResults.value = []
     }
-  } catch (error) {
-    console.error('搜索错误:', error)
-    ElMessage.error('搜索失败，请重试')
+  }, 300) // 300ms 防抖
+}
+
+// 回车键直接跳转到第一个结果
+const handleEnterSearch = () => {
+  if (searchResults.value.length > 0) {
+    goToLocation(searchResults.value[0])
   }
 }
 
@@ -3212,43 +3228,112 @@ onUnmounted(() => {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 320px;
+  width: 360px;
   z-index: 1000;
+
+  .search-box {
+    position: relative;
+    
+    ::deep(.el-input__wrapper) {
+      padding: 6px 12px;
+      border-radius: 8px;
+      box-shadow: 0 0 0 2px #1677ff33, 0 2px 8px rgba(0, 0, 0, 0.15);
+      border: none;
+      transition: all 0.2s;
+      
+      &:hover {
+        box-shadow: 0 0 0 2px #1677ff55, 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+      
+      &.is-focus {
+        box-shadow: 0 0 0 2px #1677ff, 0 2px 8px rgba(0, 0, 0, 0.25);
+      }
+    }
+    
+    ::deep(.el-input__inner) {
+      font-size: 14px;
+      height: 28px;
+      
+      &::placeholder {
+        color: #999;
+      }
+    }
+    
+    ::deep(.el-input__prefix) {
+      color: #1677ff;
+    }
+    
+    ::deep(.el-input__clear) {
+      color: #999;
+      
+      &:hover {
+        color: #666;
+      }
+    }
+  }
 
   .search-results {
     background: white;
-    border-radius: 4px;
-    margin-top: 4px;
-    max-height: 300px;
+    border-radius: 8px;
+    margin-top: 6px;
+    max-height: 360px;
     overflow-y: auto;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    border: 1px solid #e8e8e8;
 
     .search-result-item {
-      padding: 10px 12px;
+      padding: 10px 14px;
       cursor: pointer;
       display: flex;
-      align-items: flex-start;
-      gap: 8px;
+      align-items: center;
+      gap: 10px;
       font-size: 13px;
-      color: #666;
-      border-bottom: 1px solid #eee;
+      color: #333;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background 0.15s;
 
       &:last-child {
         border-bottom: none;
       }
 
       &:hover {
-        background: #f5f7fa;
-        color: #409eff;
+        background: #e6f4ff;
       }
 
-      .el-icon {
+      .result-icon {
         flex-shrink: 0;
-        margin-top: 2px;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f5f5f5;
+        border-radius: 50%;
+        color: #1677ff;
+        font-size: 14px;
       }
 
-      span {
-        line-height: 1.4;
+      .result-info {
+        flex: 1;
+        min-width: 0;
+
+        .result-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: #333;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .result-address {
+          font-size: 12px;
+          color: #999;
+          margin-top: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
       }
     }
   }
