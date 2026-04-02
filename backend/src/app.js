@@ -12,6 +12,7 @@ import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
 import shoppingCenterRoutes from './routes/shopping-centers.js'
 import { initDatabase } from './models/database.js'
+import geocodeRoutes from './routes/geocode.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -42,6 +43,7 @@ async function start() {
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)
     app.use('/api/shopping-centers', shoppingCenterRoutes)
+    app.use('/api/geocode', geocodeRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

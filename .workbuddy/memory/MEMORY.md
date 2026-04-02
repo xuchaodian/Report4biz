@@ -44,12 +44,20 @@
 - **地图显示**：紫色 Polygon 面图层，支持点击查看属性
 - **服务器依赖**：需要 `pip3 install pyshp`
 
+## 域名与HTTPS配置 (2026-04-01)
+- 域名：mka-online.cn（DNS 在阿里云管理）
+- SSL证书：Let's Encrypt，有效期至 2026-06-30，certbot 自动续期（每天2次检查）
+- 证书路径：/etc/letsencrypt/live/mka-online.cn/（包含 mka-online.cn 和 www.mka-online.cn）
+- Nginx 已配置 HTTP→HTTPS 301 跳转
+- 安全组需开放 443 端口（入方向 443/443 0.0.0.0/0）
+
 ## Git备份
 - v1.0.0: 2026-03-26，基础功能完成
 - v1.0.1: 2026-03-26（df5deb0），门店区分颜色显示优化
 - v1.1.0: 2026-03-27（66efe48），竞品门店功能
 - v1.1.1: 2026-03-29（98e3fc8），品牌图标+品牌门店+分类字段+store_type默认值修复
 - v1.2.0: 2026-03-30（5a08369），Shapefile上传与展示功能
+- v1.2.1: 2026-03-31，购物中心功能完善（筛选联动+图钉图标+星级/评论数筛选）
 
 ## 常见问题
 - **修改代码后服务器没变化**：必须先 vite build，再用 paramiko SFTP 部署 dist 到服务器（每次修改都要执行这两步）
@@ -175,3 +183,44 @@
   - 自动调整视图到高亮区域
   - 清除绘制时同步清除高亮图层
 - **分批渲染**：handleShapefileQuery 函数使用 L.canvas() 渲染器，100+要素只渲染边界线不渲染填充面，避免浏览器卡死
+
+## 地图样式优化 (2026-04-01)
+- **底图**：使用高德地图瓦片（style=7，矢量地图，有路网、注记、图标）
+- **搜索框重设计**：
+  - 尺寸增大：宽度360px，高度44px
+  - 样式参考高德地图：圆角8px，蓝色边框，阴影效果
+  - 搜索按钮使用渐变蓝色背景
+  - 搜索结果项显示名称和地址两行
+  - 清除按钮和图标优化
+  - 定位标记使用蓝色圆角样式
+- **高德瓦片样式说明**：
+  - style=6: 卫星影像（无路网、无注记）
+  - style=7: 矢量地图（有路网、有注记、有图标）- 推荐标准地图
+  - style=8: 透明底图（只有标注，无底图）
+  - style=10: 标准地图（有路网、有注记、路名标注）
+
+## 底图切换功能 (2026-04-02更新)
+- **底图类型**：街道（高德）、腾讯、影像（高德卫星）三种
+- **腾讯地图 Key**：PL5BZ-HGV6J-MC2FC-DXNCT-EF6W3-EWFKU
+- **腾讯瓦片 URL**：`https://rt{s}.map.gtimg.com/realtimerender?z={z}&x={x}&y={y}&type=vector&style=0&key=KEY`
+  - subdomains: ['0','1','2','3']
+  - **TMS Y轴翻转**：腾讯使用 TMS 坐标系，y 需要翻转：`y = Math.pow(2, z) - 1 - leaflet_y`
+  - 实现方式：创建 tileLayer 后直接重写其 `getTileUrl` 方法（不用 L.TileLayer.extend，避免 Vue SFC 编译问题）
+- **gaodeTiles 配置**：在 config 上加 `tms: true` 标识腾讯地图，loadBaseMap 检测到后重写 getTileUrl
+- **Vue SFC 限制**：不要在 `<script setup>` 中用 `L.TileLayer.extend()` 或包含 `<<` 运算符，可能导致 Vue SFC 解析器报 "Unexpected token" 错误
+- **坐标系说明**：系统数据均为 GCJ-02，只能用国内地图服务底图
+- **腾讯地图图标**：使用内联 SVG data URI（蓝色背景+地图pin图形），不依赖外部请求
+- **图层控制面板预览图**：街道/影像用本地 jpeg 图片，腾讯用 data URI SVG
+
+## IP定位功能 (2026-04-02修复记录)
+- **问题1**：`req.headers['x-forwarded-for']?.split(',')[0]` → optional chaining在undefined时不保护`[0]`索引访问，导致TypeError
+- **问题2**：高德API返回 `rectangle: []`（空数组）而非空字符串，导致`.split()`失败
+- **问题3**：fetch缺少 `response.ok` 检查
+- **修复**：改用显式条件判断IP；加 `typeof rectangle === 'string'` 判断；加 `response.ok` 检查
+- **Nginx配置**：`X-Real-IP` 和 `X-Forwarded-For` 头已配置
+
+## 腾讯地图图标 (2026-04-02)
+- **最终方案**：使用 `encodeURIComponent()` + 纯ASCII SVG，格式 `data:image/svg+xml;charset=utf-8,...`
+- **踩坑1**：SVG中有 `%23` 等已编码字符，再经 `encodeURIComponent()` 变成 `%2523` → 双重编码导致图片失效
+- **踩坑2**：`btoa()` 无法处理中文字符（`腾讯地图`）→ 运行时抛异常 → 整个页面白屏
+- **正确做法**：SVG中只用ASCII字符（英文/数字），然后用 `encodeURIComponent()` 编码整个SVG字符串

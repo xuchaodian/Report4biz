@@ -182,6 +182,13 @@
         </div>
         <div
           class="layer-option"
+          :class="{ active: baseMapType === 'tencent' }"
+          @click="baseMapType = 'tencent'"
+        >
+          <img :src="tencentMapPreview" alt="腾讯" />
+          <span>腾讯</span>
+        </div>        <div
+          class="layer-option"
           :class="{ active: baseMapType === 'img' }"
           @click="baseMapType = 'img'"
         >
@@ -456,6 +463,7 @@ import {
 } from '@/utils/map'
 import vecMapPreview from '@/assets/vec-map-preview.jpeg?url'
 import imgMapPreview from '@/assets/img-map-preview.jpeg?url'
+import tencentMapPreview from '@/assets/tencent-map-preview.jpeg?url'
 
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
@@ -784,16 +792,40 @@ const markerRules = {
   store_type: [{ required: true, message: '请选择门店类型', trigger: 'change' }]
 }
 
-// 高德地图瓦片配置
-const gaodeTiles = {
+// 底图瓦片配置
+const baseMapTiles = {
   vec: {
-    url: 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+    url: 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}',
     subdomains: [1, 2, 3, 4]
   },
   img: {
     url: 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',
     subdomains: [1, 2, 3, 4]
+  },
+  tencent: {
+    url: 'https://rt{s}.map.gtimg.com/realtimerender?z={z}&x={x}&y={y}&type=vector&style=0',
+    subdomains: ['0', '1', '2', '3']
   }
+}
+
+// 腾讯地图专用TileLayer（处理Y轴转换：TMS坐标系 y = 2^z - 1 - leaflet_y）
+L.TencentTileLayer = L.TileLayer.extend({
+  getTileUrl: function(tilePoint) {
+    const z = tilePoint.z
+    const x = tilePoint.x
+    const y = Math.pow(2, z) - 1 - tilePoint.y
+    const s = this._getSubdomain(tilePoint)
+    const url = this._url
+      .replace('{s}', s)
+      .replace('{z}', z)
+      .replace('{x}', x)
+      .replace('{y}', y)
+    return url
+  }
+})
+
+L.tencentTileLayer = function(url, options) {
+  return new L.TencentTileLayer(url, options)
 }
 
 // 默认位置（北京）
@@ -804,14 +836,14 @@ const DEFAULT_CITY = '北京市'
 // 获取IP位置
 const getLocationByIP = async () => {
   try {
-    // 使用 http:// 协议（ip-api.com 服务器端不支持 https）
-    const response = await fetch('http://ip-api.com/json/?fields=status,country,city,lat,lon')
+    // 使用后端API进行IP定位
+    const response = await fetch('/api/geocode/ip-location')
     const data = await response.json()
-    if (data.status === 'success') {
+    if (data.success) {
       return {
         lat: data.lat,
-        lng: data.lon,
-        city: data.city || data.country || DEFAULT_CITY
+        lng: data.lng,
+        city: data.city || DEFAULT_CITY
       }
     }
   } catch (error) {
@@ -928,12 +960,22 @@ const loadBaseMap = () => {
     if (tileLayer) {
       map.removeLayer(tileLayer)
     }
-    const config = gaodeTiles[baseMapType.value]
-    tileLayer = L.tileLayer(config.url, {
-      subdomains: config.subdomains,
-      maxZoom: 18,
-      minZoom: 3
-    })
+    const config = baseMapTiles[baseMapType.value]
+    
+    // 腾讯地图使用自定义TileLayer处理Y轴转换
+    if (baseMapType.value === 'tencent') {
+      tileLayer = L.tencentTileLayer(config.url, {
+        subdomains: config.subdomains,
+        maxZoom: 18,
+        minZoom: 3
+      })
+    } else {
+      tileLayer = L.tileLayer(config.url, {
+        subdomains: config.subdomains,
+        maxZoom: 18,
+        minZoom: 3
+      })
+    }
     map.addLayer(tileLayer)
   } catch (e) {
     console.error('[loadBaseMap] 加载底图失败:', e)
