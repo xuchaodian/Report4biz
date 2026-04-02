@@ -2,11 +2,11 @@
   <div class="map-view">
     <!-- 左上角地址检索框 -->
     <div class="search-panel">
-      <div class="search-box">
+      <div class="search-body">
         <el-input
           v-model="searchKeyword"
           placeholder="输入地址搜索定位"
-          size="large"
+          size="default"
           clearable
           @input="searchAddress"
           @keyup.enter="handleEnterSearch"
@@ -979,17 +979,21 @@ const loadBaseMap = () => {
     const config = baseMapTiles[baseMapType.value]
     
     // 腾讯地图使用自定义TileLayer处理Y轴转换
+    // 高德地图添加className用于CSS灰度处理
+    const tileClassName = baseMapType.value === 'vec' ? 'gaode-gray-tiles' : ''
     if (baseMapType.value === 'tencent') {
       tileLayer = L.tencentTileLayer(config.url, {
         subdomains: config.subdomains,
         maxZoom: 18,
-        minZoom: 3
+        minZoom: 3,
+        className: tileClassName
       })
     } else {
       tileLayer = L.tileLayer(config.url, {
         subdomains: config.subdomains,
         maxZoom: 18,
-        minZoom: 3
+        minZoom: 3,
+        className: tileClassName
       })
     }
     map.addLayer(tileLayer)
@@ -2804,13 +2808,12 @@ onUnmounted(() => {
   border: 2px solid #409eff;
 
   .toolbar-header {
-    padding: 8px 12px;
+    padding: 10px 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: space-between;
     background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-    border-bottom: 1px solid #eee;
 
     .toolbar-title {
       font-size: 13px;
@@ -3133,14 +3136,13 @@ onUnmounted(() => {
 }
 
 .store-toggle-header {
-  padding: 8px 12px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   user-select: none;
   background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-  border-bottom: 1px solid #eee;
 
   .toggle-title {
     font-size: 13px;
@@ -3162,10 +3164,10 @@ onUnmounted(() => {
 }
 
 .store-toggle-body {
-  padding: 8px 12px;
+  padding: 6px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 
   .toggle-row {
     display: flex;
@@ -3228,61 +3230,61 @@ onUnmounted(() => {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 360px;
-  z-index: 1000;
+  width: 320px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  overflow: hidden;
+  border: 2px solid #409eff;
 
-  .search-box {
-    position: relative;
-    
+  .search-body {
+    padding: 8px 12px;
+
     ::deep(.el-input__wrapper) {
-      padding: 6px 12px;
-      border-radius: 8px;
-      box-shadow: 0 0 0 2px #1677ff33, 0 2px 8px rgba(0, 0, 0, 0.15);
-      border: none;
+      border-radius: 6px;
+      box-shadow: none;
+      border: 1px solid #dcdfe6;
       transition: all 0.2s;
-      
+
       &:hover {
-        box-shadow: 0 0 0 2px #1677ff55, 0 2px 8px rgba(0, 0, 0, 0.2);
+        border-color: #409eff;
       }
-      
+
       &.is-focus {
-        box-shadow: 0 0 0 2px #1677ff, 0 2px 8px rgba(0, 0, 0, 0.25);
+        border-color: #409eff;
+        box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
       }
     }
-    
+
     ::deep(.el-input__inner) {
-      font-size: 14px;
-      height: 28px;
-      
+      font-size: 13px;
+
       &::placeholder {
         color: #999;
       }
     }
-    
+
     ::deep(.el-input__prefix) {
-      color: #1677ff;
+      color: #409eff;
     }
-    
+
     ::deep(.el-input__clear) {
       color: #999;
-      
+
       &:hover {
-        color: #666;
+        color: #409eff;
       }
     }
   }
 
   .search-results {
-    background: white;
-    border-radius: 8px;
-    margin-top: 6px;
-    max-height: 360px;
+    max-height: 300px;
     overflow-y: auto;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    border: 1px solid #e8e8e8;
+    border-top: 1px solid #eee;
 
     .search-result-item {
-      padding: 10px 14px;
+      padding: 10px 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -3309,7 +3311,7 @@ onUnmounted(() => {
         justify-content: center;
         background: #f5f5f5;
         border-radius: 50%;
-        color: #1677ff;
+        color: #409eff;
         font-size: 14px;
       }
 
@@ -3318,7 +3320,7 @@ onUnmounted(() => {
         min-width: 0;
 
         .result-name {
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 500;
           color: #333;
           white-space: nowrap;
@@ -3348,5 +3350,12 @@ onUnmounted(() => {
 :global(.shapefile-query-label) {
   background: transparent !important;
   border: none !important;
+}
+
+// 地图瓦片灰度效果（只针对高德地图，保留marker图标）
+:deep(.gaode-gray-tiles) {
+  img {
+    filter: grayscale(100%) brightness(1.05);
+  }
 }
 </style>
