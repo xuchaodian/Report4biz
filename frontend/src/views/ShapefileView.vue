@@ -33,7 +33,28 @@
       <el-table :data="fileList" style="width: 100%" row-key="id">
         <el-table-column prop="name" label="文件名" min-width="200">
           <template #default="{ row }">
-            {{ row.name }}
+            <div v-if="renamingId === row.id" class="rename-inline">
+              <el-input
+                ref="renameInputRef"
+                v-model="renameValue"
+                size="small"
+                style="width: 100%"
+                @keyup.enter="confirmRename(row)"
+                @keyup.esc="cancelRename"
+              />
+              <el-button type="primary" size="small" link @click="confirmRename(row)">
+                <el-icon><Check /></el-icon>
+              </el-button>
+              <el-button type="info" size="small" link @click="cancelRename">
+                <el-icon><Close /></el-icon>
+              </el-button>
+            </div>
+            <div v-else class="filename-cell" @dblclick="startRename(row)">
+              <span class="filename-text">{{ row.name }}</span>
+              <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)">
+                <el-icon><EditPen /></el-icon>
+              </el-button>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
@@ -165,10 +186,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { UploadFilled, Delete, Search, Plus, InfoFilled, MapLocation } from '@element-plus/icons-vue'
+import { UploadFilled, Delete, Search, Plus, InfoFilled, MapLocation, EditPen, Check, Close } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -179,6 +200,11 @@ const fileList = ref([])
 const uploadHeaders = {
   'x-user-id': userStore.user?.id || 1
 }
+
+// 重命名相关
+const renamingId = ref(null)
+const renameValue = ref('')
+const renameInputRef = ref(null)
 
 // 检索相关
 const queryDialogVisible = ref(false)
@@ -233,6 +259,50 @@ const loadFileList = async () => {
   } catch (error) {
     console.error('加载文件列表失败:', error)
   }
+}
+
+// 开始重命名
+const startRename = async (row) => {
+  renamingId.value = row.id
+  renameValue.value = row.name
+  await nextTick()
+  renameInputRef.value?.focus()
+}
+
+// 确认重命名
+const confirmRename = async (row) => {
+  const newName = renameValue.value.trim()
+  if (!newName) {
+    ElMessage.warning('文件名不能为空')
+    return
+  }
+  if (newName === row.name) {
+    renamingId.value = null
+    return
+  }
+  try {
+    const response = await fetch(`${baseURL}/api/shapefiles/${row.id}/rename`, {
+      method: 'PUT',
+      headers: { ...uploadHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName })
+    })
+    const result = await response.json()
+    if (result.success) {
+      row.name = newName
+      ElMessage.success('重命名成功')
+    } else {
+      ElMessage.error(result.message || '重命名失败')
+    }
+  } catch (error) {
+    ElMessage.error('重命名失败')
+  } finally {
+    renamingId.value = null
+  }
+}
+
+// 取消重命名
+const cancelRename = () => {
+  renamingId.value = null
 }
 
 // 删除
@@ -582,5 +652,35 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   gap: 12px;
+}
+.filename-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+
+  .filename-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rename-btn {
+    opacity: 0;
+    transition: opacity 0.2s;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  &:hover .rename-btn {
+    opacity: 1;
+  }
+}
+
+.rename-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

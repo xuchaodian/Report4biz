@@ -208,6 +208,13 @@
       </div>
     </div>
 
+    <!-- AI 助手 -->
+    <AiAssistant
+      ref="aiAssistantRef"
+      :context="aiContext"
+      @execute="handleAiExecute"
+    />
+
     <!-- 缩放控件容器 -->
     <div class="zoom-control-container">
       <div class="zoom-in" @click="zoomIn">+</div>
@@ -467,6 +474,9 @@ import { useCompetitorStore } from '@/stores/competitor'
 import { useBrandIconStore } from '@/stores/brandIcon'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
+import { useUserStore } from '@/stores/user'
+import AiAssistant from '@/components/AiAssistant.vue'
+import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
   calculateDistance, formatDistance, calculateArea, formatArea
@@ -478,7 +488,17 @@ const competitorStore = useCompetitorStore()
 const brandIconStore = useBrandIconStore()
 const brandStoreStore = useBrandStoreStore()
 const shoppingCenterStore = useShoppingCenterStore()
-const route = useRoute() // 获取路由参数
+const userStore = useUserStore()
+const route = useRoute()
+
+// AI 助手
+const aiAssistantRef = ref(null)
+const aiContext = computed(() => ({
+  markers_count: markerStore.markers.length,
+  competitors_count: competitorStore.competitors.length,
+  cities: [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].slice(0, 10),
+  brands: [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].slice(0, 10)
+}))
 
 // 品牌图标映射 brand -> iconUrl
 const brandIconMap = computed(() => {
@@ -2617,6 +2637,25 @@ const fitBounds = () => {
     markerStore.markers.map(m => [m.latitude, m.longitude])
   )
   map.fitBounds(bounds, { padding: [50, 50] })
+}
+
+// ===== AI 助手 Function Calling 执行器（委托给 aiExecutor.js） =====
+const handleAiExecute = async (toolCall) => {
+  try {
+    const result = await executeTool(toolCall.name, toolCall.args, {
+      map,
+      markerStore, competitorStore, brandStoreStore, shoppingCenterStore,
+      showCompetitorLayer, showBrandStoreLayer, showShoppingCenterLayer, showBusinessLayer,
+      showHeatmap, showCluster,
+      toggleHeatmap, toggleCluster, clearDrawings, setTool
+    })
+    if (result?.message) {
+      ElMessage.success(result.message)
+    }
+  } catch (err) {
+    console.error('[AI Execute]', err)
+    ElMessage.error('操作执行失败')
+  }
 }
 
 // 保存点位

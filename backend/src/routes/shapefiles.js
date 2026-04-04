@@ -173,6 +173,32 @@ router.get('/:id', (req, res) => {
   }
 })
 
+// 重命名 Shapefile
+router.put('/:id/rename', (req, res) => {
+  try {
+    const db = getDb()
+    const id = req.params.id
+    const userId = req.headers['x-user-id'] || 1
+    const { name } = req.body
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: '文件名不能为空' })
+    }
+
+    const row = db.prepare(`SELECT id FROM shapefiles WHERE id = ? AND user_id = ?`).get(id, userId)
+    if (!row) {
+      return res.status(404).json({ message: '未找到该文件' })
+    }
+
+    db.prepare(`UPDATE shapefiles SET name = ? WHERE id = ? AND user_id = ?`).run(name.trim(), id, userId)
+
+    res.json({ success: true, message: '重命名成功' })
+  } catch (error) {
+    console.error('重命名 Shapefile 失败:', error)
+    res.status(500).json({ message: '服务器错误' })
+  }
+})
+
 // 删除 Shapefile
 router.delete('/:id', (req, res) => {
   try {
