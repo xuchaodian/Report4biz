@@ -626,6 +626,10 @@ const circleAnalysisTitle = ref('圆形内门店分析')
 const poiResultVisible = ref(false)
 const poiResults = ref([])
 const poiMarkers = ref([])
+let poiCenterMarker = null    // POI中心点标记
+let poiRadiusCircle = null   // POI搜索半径圆
+let poiCenterPoint = null     // POI中心点坐标
+let poiSearchRadius = 2000    // POI搜索半径（米）
 
 // POI位置选择模式（用户需点击地图）
 const poiPickLocationMode = ref(false)
@@ -919,11 +923,15 @@ const initMap = async () => {
   // 更新城市显示
   currentCityName.value = currentCity
 
-  // 主地图 - 禁用默认缩放控件
+  // 主地图 - 使用简化的投影（适合国内地图）
+  // 高德/腾讯/影像地图都使用GCJ-02坐标系
   map = L.map('map', {
     center: [centerLat, centerLng],
     zoom: 12,
-    zoomControl: false
+    zoomControl: false,
+    // 关键：设置适合中国地图的坐标系统
+    zoomSnap: 0.5,
+    worldCopyJump: false
   })
 
   // 加载底图
@@ -941,6 +949,11 @@ const initMap = async () => {
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
   // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
+
+  // 地图加载完成后修正尺寸（解决容器隐藏后显示的定位问题）
+  setTimeout(() => {
+    if (map) map.invalidateSize({ pan: false })
+  }, 100)
 
   // 加载点位数据
   loadMarkers()
@@ -1045,6 +1058,11 @@ const loadBaseMap = () => {
       })
     }
     map.addLayer(tileLayer)
+    
+    // 底图切换后修正地图尺寸
+    setTimeout(() => {
+      if (map) map.invalidateSize({ pan: false })
+    }, 100)
   } catch (e) {
     console.error('[loadBaseMap] 加载底图失败:', e)
   }
@@ -2718,7 +2736,7 @@ const handleAiExecute = async (toolCall) => {
     if (result?.type === 'poi') {
       poiResults.value = result.pois || []
       poiResultVisible.value = true
-      showPoiOnMap(result.pois)
+      showPoiOnMap(result.pois, result.centerLat, result.centerLng, result.radius)
     }
   } catch (err) {
     console.error('[AI Execute]', err)
@@ -2727,14 +2745,64 @@ const handleAiExecute = async (toolCall) => {
 }
 
 // 在地图上显示POI标记
-const showPoiOnMap = (pois) => {
+const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
+  console.log('[showPoiOnMap] 调用参数:', { pois: pois?.length, centerLat, centerLng, radius })
+  
   // 清除之前的POI标记
   poiMarkers.value.forEach(m => map.removeLayer(m))
   poiMarkers.value = []
   
-  if (!pois || pois.length === 0) return
+  // 清除之前的中心点标记和半径圆
+  if (poiCenterMarker) {
+    map.removeLayer(poiCenterMarker)
+    poiCenterMarker = null
+  }
+  if (poiRadiusCircle) {
+    map.removeLayer(poiRadiusCircle)
+    poiRadiusCircle = null
+  }
+  
+  if (!pois || pois.length === 0) {
+    console.log('[showPoiOnMap] 没有POI数据')
+    return
+  }
   
   const bounds = []
+  
+  // 如果提供了中心点，绘制中心点标记和半径圆
+  console.log('[showPoiOnMap] 检查中心点条件:', { centerLat, centerLng, condition: !!(centerLat && centerLng) })
+  if (centerLat && centerLng) {
+    poiCenterPoint = { lat: centerLat, lng: centerLng }
+    poiSearchRadius = radius || 2000
+    console.log('[showPoiOnMap] 绘制红色图钉和半径圆')
+    
+    // 绘制搜索半径圆
+    poiRadiusCircle = L.circle([centerLat, centerLng], {
+      radius: poiSearchRadius,
+      color: '#6366f1',
+      fillColor: '#6366f1',
+      fillOpacity: 0.1,
+      weight: 2,
+      dashArray: '5, 5'
+    }).addTo(map)
+    
+    // 绘制中心点标记（红色图钉）
+    poiCenterMarker = L.marker([centerLat, centerLng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="position:relative;width:32px;height:40px;">
+          <svg width="32" height="40" viewBox="0 0 32 40" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
+            <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#ef4444" stroke="#fff" stroke-width="2"/>
+            <circle cx="16" cy="16" r="6" fill="#fff"/>
+          </svg>
+        </div>`,
+        iconSize: [32, 40],
+        iconAnchor: [16, 40]
+      })
+    }).addTo(map)
+    
+    bounds.push([centerLat, centerLng])
+  }
   
   pois.forEach((poi, index) => {
     if (!poi.location) return
@@ -2756,6 +2824,7 @@ const showPoiOnMap = (pois) => {
         <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${poi.name}</div>
         <div style="color:#666;font-size:12px;margin-bottom:2px;">${poi.address || ''}</div>
         <div style="color:#999;font-size:11px;">${poi.city}${poi.district}</div>
+        ${poi.distance ? `<div style="color:#f56c6c;font-size:11px;margin-top:4px;">距中心: ${poi.distance}米</div>` : ''}
         ${poi.tel ? `<div style="color:#409eff;font-size:11px;margin-top:2px;">电话：${poi.tel}</div>` : ''}
       </div>
     `)
@@ -2763,7 +2832,7 @@ const showPoiOnMap = (pois) => {
     poiMarkers.value.push(marker)
   })
   
-  // 调整视野
+  // 调整视野（包含中心点和所有POI）
   if (bounds.length > 0) {
     if (bounds.length === 1) {
       map.setView(bounds[0], 15)
@@ -2779,6 +2848,16 @@ const closePoiResults = () => {
   // 清除地图上的POI标记
   poiMarkers.value.forEach(m => map.removeLayer(m))
   poiMarkers.value = []
+  // 清除中心点标记和半径圆
+  if (poiCenterMarker) {
+    map.removeLayer(poiCenterMarker)
+    poiCenterMarker = null
+  }
+  if (poiRadiusCircle) {
+    map.removeLayer(poiRadiusCircle)
+    poiRadiusCircle = null
+  }
+  poiCenterPoint = null
   poiResults.value = []
 }
 
@@ -2807,7 +2886,7 @@ const executePoiSearchAtLocation = async (lat, lng) => {
     
     poiResults.value = result.pois || []
     poiResultVisible.value = true
-    showPoiOnMap(result.pois)
+    showPoiOnMap(result.pois, lat, lng, pending.radius || 2000)
     ElMessage.success(`在指定位置周边找到 ${result.count} 个POI`)
   } catch (err) {
     console.error('[POI Search]', err)

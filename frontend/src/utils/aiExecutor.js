@@ -243,22 +243,26 @@ export async function executeTool(name, args, ctx) {
       }
       
       console.log('[POI] 执行周边搜索:', finalParsed, args.radius, args.keywords)
+      const searchRadius = args.radius || 2000
       const result = await callPoiApi('around', {
         lng: finalParsed.lng,
         lat: finalParsed.lat,
-        radius: args.radius || 2000,
+        radius: searchRadius,
         keywords: args.keywords
       })
       if (result.error) {
         return { success: false, message: result.error }
       }
-      // 返回POI结果给前端处理
+      // 返回POI结果给前端处理（包含中心点坐标和半径）
       return {
         success: true,
         type: 'poi',
         subtype: 'around',
         pois: result.pois,
         count: result.count,
+        centerLat: finalParsed.lat,
+        centerLng: finalParsed.lng,
+        radius: searchRadius,
         message: `在指定位置周边找到 ${result.count} 个POI`
       }
     }
