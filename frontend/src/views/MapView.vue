@@ -50,11 +50,11 @@
           />
         </div>
         <div class="poi-search-modes">
-          <el-button type="primary" plain size="small" @click="startCircleSearch">
+          <el-button size="small" class="poi-mode-btn" @click="startCircleSearch">
             <el-icon><Location /></el-icon>
             半径圆检索
           </el-button>
-          <el-button type="success" plain size="small" @click="startPolygonSearch">
+          <el-button size="small" class="poi-mode-btn" @click="startPolygonSearch">
             <el-icon><Edit /></el-icon>
             多边形检索
           </el-button>
@@ -673,6 +673,23 @@ let tempPolygonLayer = null
 let tempPolygonPoints = []
 let tempPolygonMarker = null
 let poiSearchRadius = 2000    // POI搜索半径（米）
+let updateMarkers = null      // 标记更新函数
+
+// 多边形点击处理函数（全局定义，以便在 finishPolygonSearch 中正确移除监听）
+const addPolygonPoint = (e) => {
+  tempPolygonPoints.push(e.latlng)
+  tempPolygonLayer.setLatLngs(tempPolygonPoints)
+  if (updateMarkers) updateMarkers()
+  // 每次点击后更新按钮位置
+  if (completeBtnElement) {
+    const bounds = L.latLngBounds(tempPolygonPoints)
+    const center = bounds.getCenter()
+    const point = map.latLngToContainerPoint(center)
+    completeBtnElement.style.top = `${Math.max(80, point.y - 100)}px`
+    completeBtnElement.style.left = `${Math.min(point.x - 50, window.innerWidth - 150)}px`
+    completeBtnElement.style.right = 'auto'
+  }
+}
 
 // POI位置选择模式（用户需点击地图）
 const poiPickLocationMode = ref(false)
@@ -3067,7 +3084,7 @@ const startPolygonSearch = () => {
   }).addTo(map)
   
   // 临时标记点
-  const updateMarkers = () => {
+  updateMarkers = () => {
     if (tempPolygonMarker) {
       map.removeLayer(tempPolygonMarker)
     }
@@ -3084,43 +3101,71 @@ const startPolygonSearch = () => {
   // 监听地图点击
   map.on('click', addPolygonPoint)
   
-  function addPolygonPoint(e) {
-    tempPolygonPoints.push(e.latlng)
-    tempPolygonLayer.setLatLngs(tempPolygonPoints)
-    updateMarkers()
-  }
-  
   // 显示完成按钮
   showPolygonCompleteButton()
 }
 
 let completeBtn = null
+let completeBtnElement = null
 const showPolygonCompleteButton = () => {
-  // 创建完成按钮
-  completeBtn = L.control({ position: 'topright' })
-  completeBtn.onAdd = () => {
-    const div = L.DomUtil.create('div', 'polygon-complete-btn')
-    div.innerHTML = `
-      <button id="polygon-complete" style="
-        background: #10b981;
-        color: white;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      ">完成绘制</button>
-    `
-    div.style.zIndex = '1002'
-    div.onclick = (e) => {
-      L.DomEvent.stopPropagation(e)
-      L.DomEvent.preventDefault(e)
-      finishPolygonSearch()
-    }
-    return div
+  console.log('[Polygon Search] 显示完成按钮')
+  // 先移除旧的按钮
+  if (completeBtn) {
+    map.removeControl(completeBtn)
+    completeBtn = null
   }
-  completeBtn.addTo(map)
+  if (completeBtnElement && completeBtnElement.parentNode) {
+    completeBtnElement.parentNode.removeChild(completeBtnElement)
+    completeBtnElement = null
+  }
+  
+  // 创建按钮
+  completeBtnElement = document.createElement('button')
+  completeBtnElement.id = 'polygon-complete-btn'
+  completeBtnElement.textContent = '完成绘制'
+  completeBtnElement.style.cssText = `
+    position: fixed !important;
+    background: #10b981 !important;
+    color: white !important;
+    border: none !important;
+    padding: 12px 24px !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    font-size: 15px !important;
+    font-weight: bold !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5) !important;
+    z-index: 999999 !important;
+  `
+  
+  // 使用 addEventListener 确保点击有效
+  completeBtnElement.addEventListener('click', (e) => {
+    console.log('[Polygon Search] 按钮被点击')
+    e.stopPropagation()
+    e.preventDefault()
+    finishPolygonSearch()
+  })
+  
+  document.body.appendChild(completeBtnElement)
+  
+  // 计算多边形中心，动态定位按钮
+  if (tempPolygonPoints.length >= 2) {
+    // 计算多边形边界
+    const bounds = L.latLngBounds(tempPolygonPoints)
+    const center = bounds.getCenter()
+    // 将地图中心坐标转换为屏幕像素位置
+    const point = map.latLngToContainerPoint(center)
+    // 按钮放在中心点偏上，避免遮挡多边形
+    completeBtnElement.style.top = `${Math.max(80, point.y - 100)}px`
+    completeBtnElement.style.left = `${Math.min(point.x - 50, window.innerWidth - 150)}px`
+    completeBtnElement.style.right = 'auto'
+  } else {
+    // 默认位置
+    completeBtnElement.style.top = '80px'
+    completeBtnElement.style.right = '20px'
+    completeBtnElement.style.left = 'auto'
+  }
+  
+  console.log('[Polygon Search] 按钮已添加到body')
 }
 
 const finishPolygonSearch = async () => {
@@ -3131,6 +3176,10 @@ const finishPolygonSearch = async () => {
   if (completeBtn) {
     map.removeControl(completeBtn)
     completeBtn = null
+  }
+  if (completeBtnElement) {
+    document.body.removeChild(completeBtnElement)
+    completeBtnElement = null
   }
   
   if (tempPolygonPoints.length < 3) {
@@ -3148,12 +3197,13 @@ const finishPolygonSearch = async () => {
     tempPolygonMarker = null
   }
   
-  // 转换为多边形坐标字符串 (lng,lat;lng,lat;...)
-  const polygonCoords = tempPolygonPoints.map(p => `${p.lng},${p.lat}`).join(';')
+  // 构建多边形坐标数组（后端期望 [{lng, lat}, ...] 格式）
+  const polygonCoords = tempPolygonPoints.map(p => ({ lng: p.lng, lat: p.lat }))
   
   // 执行多边形搜索
+  let loadingMsg = null
   try {
-    ElMessage.loading({ message: '搜索中...', duration: 0 })
+    loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
     const response = await fetch('/api/poi/polygon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3163,7 +3213,7 @@ const finishPolygonSearch = async () => {
       })
     })
     const result = await response.json()
-    ElMessage.loadingClose()
+    loadingMsg.close()
     
     if (result.error) {
       ElMessage.error(result.error)
@@ -3176,7 +3226,7 @@ const finishPolygonSearch = async () => {
     showPoiOnMap(result.pois, null, null, null)
     ElMessage.success(`找到 ${result.count} 个结果`)
   } catch (err) {
-    ElMessage.loadingClose()
+    if (loadingMsg) loadingMsg.close()
     console.error('[Polygon Search]', err)
     ElMessage.error('搜索失败')
   }
@@ -3761,9 +3811,9 @@ onUnmounted(() => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   z-index: 1001;
-  min-width: 140px;
+  min-width: 110px;
   overflow: hidden;
-  border: 2px solid #f59e0b;
+  border: 2px solid #409eff;
 
   .poi-search-header {
     padding: 10px 14px;
@@ -3772,7 +3822,7 @@ onUnmounted(() => {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
 
     .poi-search-title {
       font-size: 13px;
@@ -3801,7 +3851,7 @@ onUnmounted(() => {
 
     .poi-search-input {
       .el-input__inner {
-        border-color: #f59e0b;
+        border-color: #409eff;
       }
     }
 
@@ -3810,9 +3860,28 @@ onUnmounted(() => {
       flex-direction: column;
       gap: 6px;
 
-      .el-button {
+      .poi-mode-btn {
         width: 100%;
-        justify-content: flex-start;
+        padding: 8px 12px !important;
+        border: 1px solid #dcdfe6 !important;
+        background: #fff !important;
+        color: #606266 !important;
+        
+        &:hover {
+          background: #ecf5ff !important;
+          border-color: #409eff !important;
+          color: #409eff !important;
+        }
+        
+        // Element Plus按钮内部结构
+        .el-icon {
+          margin-right: 6px;
+          vertical-align: middle;
+        }
+        
+        span {
+          vertical-align: middle;
+        }
       }
     }
   }
@@ -3822,7 +3891,7 @@ onUnmounted(() => {
 .store-toggle-panel {
   position: absolute;
   top: 10px;
-  right: 160px;
+  right: 150px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
