@@ -34,6 +34,34 @@
       </div>
     </div>
 
+    <!-- 周边检索面板 -->
+    <div class="poi-search-panel">
+      <div class="poi-search-header" @click="poiSearchExpanded = !poiSearchExpanded">
+        <span class="poi-search-title">周边检索</span>
+        <span class="poi-search-arrow" :class="{ expanded: poiSearchExpanded }">▼</span>
+      </div>
+      <div v-show="poiSearchExpanded" class="poi-search-body">
+        <div class="poi-search-input">
+          <el-input
+            v-model="poiKeywords"
+            placeholder="输入关键词（如：咖啡厅、餐厅）"
+            size="small"
+            clearable
+          />
+        </div>
+        <div class="poi-search-modes">
+          <el-button type="primary" plain size="small" @click="startCircleSearch">
+            <el-icon><Location /></el-icon>
+            半径圆检索
+          </el-button>
+          <el-button type="success" plain size="small" @click="startPolygonSearch">
+            <el-icon><Edit /></el-icon>
+            多边形检索
+          </el-button>
+        </div>
+      </div>
+    </div>
+
     <!-- 显示门店开关 - 工具栏左侧 -->
     <div class="store-toggle-panel">
       <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
@@ -478,7 +506,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled
+  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -547,6 +575,7 @@ let measurePoints = []
 let measureAreaPoints = []      // 测面专用点数组
 let measureAreaPolygon = null   // 测面 polygon
 let measureAreaLabel = null     // 测面面积标签
+let circleSearchActive = false  // 防止重复触发半径搜索
 
 // 测量工具专用图层
 let measureLayerGroup = null     // 所有测量元素的容器
@@ -629,6 +658,20 @@ const poiMarkers = ref([])
 let poiCenterMarker = null    // POI中心点标记
 let poiRadiusCircle = null   // POI搜索半径圆
 let poiCenterPoint = null     // POI中心点坐标
+
+// 周边检索面板
+const poiSearchExpanded = ref(false)
+const poiKeywords = ref('')
+
+// 半径圆搜索状态
+const pendingCircleSearch = ref(null) // { lat, lng }
+let tempCircleMarker = null
+
+// 多边形搜索状态
+const pendingPolygonSearch = ref(false)
+let tempPolygonLayer = null
+let tempPolygonPoints = []
+let tempPolygonMarker = null
 let poiSearchRadius = 2000    // POI搜索半径（米）
 
 // POI位置选择模式（用户需点击地图）
@@ -2770,13 +2813,13 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
   const bounds = []
   
   // 如果提供了中心点，绘制中心点标记和半径圆
-  console.log('[showPoiOnMap] 检查中心点条件:', { centerLat, centerLng, condition: !!(centerLat && centerLng) })
+  console.log('[showPoiOnMap v3] 检查中心点条件:', { centerLat, centerLng, condition: !!(centerLat && centerLng) })
   if (centerLat && centerLng) {
     poiCenterPoint = { lat: centerLat, lng: centerLng }
     poiSearchRadius = radius || 2000
-    console.log('[showPoiOnMap] 绘制红色图钉和半径圆')
+    console.log('[showPoiOnMap v3] 绘制紫色虚线大圆，半径:', poiSearchRadius, '米')
     
-    // 绘制搜索半径圆
+    // 绘制搜索半径圆（紫色虚线大圆）
     poiRadiusCircle = L.circle([centerLat, centerLng], {
       radius: poiSearchRadius,
       color: '#6366f1',
@@ -2832,13 +2875,310 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
     poiMarkers.value.push(marker)
   })
   
-  // 调整视野（包含中心点和所有POI）
+  // 调整视野（包含中心点和所有POI，同时确保显示完整的圆）
   if (bounds.length > 0) {
-    if (bounds.length === 1) {
+    let targetBounds
+    
+    // 如果有圆心，创建包含圆范围的边界框
+    if (centerLat && centerLng && radius) {
+      const circleBounds = L.circle([centerLat, centerLng], { radius }).getBounds()
+      if (bounds.length === 1) {
+        // 只有圆心一个点，直接使用圆的范围
+        map.fitBounds(circleBounds, { padding: [50, 50] })
+        return
+      } else {
+        // 合并 POI 边界和圆的边界
+        const poiBounds = L.latLngBounds(bounds)
+        targetBounds = circleBounds.extend(poiBounds)
+      }
+    } else {
+      targetBounds = L.latLngBounds(bounds)
+    }
+    
+    if (bounds.length === 1 && !radius) {
       map.setView(bounds[0], 15)
     } else {
-      map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50] })
+      map.fitBounds(targetBounds, { padding: [50, 50] })
     }
+  }
+}
+
+// 开始半径圆搜索
+const startCircleSearch = () => {
+  if (circleSearchActive) {
+    ElMessage.warning('搜索正在进行中，请稍候')
+    return
+  }
+  if (!poiKeywords.value.trim()) {
+    ElMessage.warning('请输入搜索关键词')
+    return
+  }
+  circleSearchActive = true
+  
+  // 关闭面板
+  poiSearchExpanded.value = false
+  
+  // 提示用户点击地图
+  ElMessage.info('请在地图上点击选择圆心位置')
+  
+  // 清除之前的临时标记
+  if (tempCircleMarker) {
+    map.removeLayer(tempCircleMarker)
+    tempCircleMarker = null
+  }
+  
+  // =============================================
+  // 半径圆搜索功能 - 2026-04-04 FIX v3
+  // =============================================
+  // 监听地图点击
+  map.once('click', async (e) => {
+    const { lat, lng } = e.latlng
+    console.log('[Circle Search v3] 点击地图, 坐标:', lat, lng)
+    
+    // 临时标记圆心
+    tempCircleMarker = L.circle([lat, lng], {
+      radius: 50,
+      color: '#f59e0b',
+      fillColor: '#fbbf24',
+      fillOpacity: 0.3,
+      weight: 2
+    }).addTo(map)
+    
+    // 弹出半径输入框
+    let radiusKm = null
+    try {
+      const { value } = await ElMessageBox.prompt('请输入搜索半径（公里）', '设置半径', {
+        confirmButtonText: '搜索',
+        cancelButtonText: '取消',
+        inputValue: '2',
+        inputPattern: /^\d+(\.\d+)?$/,
+        inputErrorMessage: '请输入有效的数字'
+      })
+      console.log('[Circle Search] ElMessageBox 确认, value:', value)
+      radiusKm = parseFloat(value) || 2
+    } catch (err) {
+      console.log('[Circle Search] ElMessageBox 取消或错误:', err)
+      radiusKm = null
+    }
+    
+    // 清除临时标记
+    if (tempCircleMarker) {
+      map.removeLayer(tempCircleMarker)
+      tempCircleMarker = null
+    }
+    
+    if (radiusKm === null) {
+      circleSearchActive = false
+      return
+    }
+    
+    const radiusM = Math.round(radiusKm * 1000)
+    console.log('[Circle Search v2] 用户输入半径:', radiusKm, '公里 =', radiusM, '米')
+    
+    // 清除临时圆
+    if (tempCircleMarker) {
+      map.removeLayer(tempCircleMarker)
+      tempCircleMarker = null
+    }
+    
+    // 立即绘制正确的搜索范围圆（紫色虚线），使用全局变量
+    if (poiRadiusCircle) {
+      map.removeLayer(poiRadiusCircle)
+    }
+    poiRadiusCircle = L.circle([lat, lng], {
+      radius: radiusM,
+      color: '#6366f1',
+      fillColor: '#6366f1',
+      fillOpacity: 0.1,
+      weight: 2,
+      dashArray: '5, 5'
+    }).addTo(map)
+    console.log('[Circle Search] 已绘制搜索圆，半径:', radiusM, '米')
+    
+    // 执行周边搜索
+    try {
+      console.log('[Circle Search] 开始请求 API, 关键词:', poiKeywords.value.trim())
+      const loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
+      const response = await fetch('/api/poi/around', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lng,
+          lat,
+          radius: radiusM,
+          keywords: poiKeywords.value.trim()
+        })
+      })
+      const result = await response.json()
+      loadingMsg.close()
+      
+      if (result.error) {
+        ElMessage.error(result.error)
+        circleSearchActive = false
+        return
+      }
+      
+      poiResults.value = result.pois || []
+      poiResultVisible.value = true
+      // 显示结果，包含中心点和半径
+      showPoiOnMap(result.pois, lat, lng, radiusM)
+      ElMessage.success(`找到 ${result.count} 个结果`)
+      circleSearchActive = false
+    } catch (err) {
+      loadingMsg.close()
+      console.error('[Circle Search]', err)
+      ElMessage.error('搜索失败')
+      circleSearchActive = false
+    }
+  })
+}
+
+// 开始多边形搜索
+const startPolygonSearch = () => {
+  if (!poiKeywords.value.trim()) {
+    ElMessage.warning('请输入搜索关键词')
+    return
+  }
+  
+  // 关闭面板
+  poiSearchExpanded.value = false
+  
+  // 清除之前的临时元素
+  if (tempPolygonLayer) {
+    map.removeLayer(tempPolygonLayer)
+    tempPolygonLayer = null
+  }
+  if (tempPolygonMarker) {
+    map.removeLayer(tempPolygonMarker)
+    tempPolygonMarker = null
+  }
+  tempPolygonPoints = []
+  
+  // 提示用户
+  ElMessage.info('请在地图上点击绘制多边形（至少3个点），完成后点击确定')
+  
+  // 创建临时多边形层
+  tempPolygonLayer = L.polygon([], {
+    color: '#10b981',
+    fillColor: '#34d399',
+    fillOpacity: 0.2,
+    weight: 2,
+    dashArray: '5, 5'
+  }).addTo(map)
+  
+  // 临时标记点
+  const updateMarkers = () => {
+    if (tempPolygonMarker) {
+      map.removeLayer(tempPolygonMarker)
+    }
+    if (tempPolygonPoints.length > 0) {
+      const markers = tempPolygonPoints.map((p, i) => 
+        L.circleMarker(p, { radius: 6, color: '#10b981', fillColor: '#fff', fillOpacity: 1 })
+          .bindPopup(`点${i + 1}`)
+          .addTo(map)
+      )
+      tempPolygonMarker = L.layerGroup(markers)
+    }
+  }
+  
+  // 监听地图点击
+  map.on('click', addPolygonPoint)
+  
+  function addPolygonPoint(e) {
+    tempPolygonPoints.push(e.latlng)
+    tempPolygonLayer.setLatLngs(tempPolygonPoints)
+    updateMarkers()
+  }
+  
+  // 显示完成按钮
+  showPolygonCompleteButton()
+}
+
+let completeBtn = null
+const showPolygonCompleteButton = () => {
+  // 创建完成按钮
+  completeBtn = L.control({ position: 'topright' })
+  completeBtn.onAdd = () => {
+    const div = L.DomUtil.create('div', 'polygon-complete-btn')
+    div.innerHTML = `
+      <button id="polygon-complete" style="
+        background: #10b981;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      ">完成绘制</button>
+    `
+    div.style.zIndex = '1002'
+    div.onclick = (e) => {
+      L.DomEvent.stopPropagation(e)
+      L.DomEvent.preventDefault(e)
+      finishPolygonSearch()
+    }
+    return div
+  }
+  completeBtn.addTo(map)
+}
+
+const finishPolygonSearch = async () => {
+  // 移除点击监听
+  map.off('click', addPolygonPoint)
+  
+  // 移除完成按钮
+  if (completeBtn) {
+    map.removeControl(completeBtn)
+    completeBtn = null
+  }
+  
+  if (tempPolygonPoints.length < 3) {
+    ElMessage.warning('多边形至少需要3个点')
+    // 清除临时元素
+    if (tempPolygonLayer) { map.removeLayer(tempPolygonLayer); tempPolygonLayer = null }
+    if (tempPolygonMarker) { map.removeLayer(tempPolygonMarker); tempPolygonMarker = null }
+    tempPolygonPoints = []
+    return
+  }
+  
+  // 清除临时标记
+  if (tempPolygonMarker) {
+    map.removeLayer(tempPolygonMarker)
+    tempPolygonMarker = null
+  }
+  
+  // 转换为多边形坐标字符串 (lng,lat;lng,lat;...)
+  const polygonCoords = tempPolygonPoints.map(p => `${p.lng},${p.lat}`).join(';')
+  
+  // 执行多边形搜索
+  try {
+    ElMessage.loading({ message: '搜索中...', duration: 0 })
+    const response = await fetch('/api/poi/polygon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        coordinates: polygonCoords,
+        keywords: poiKeywords.value.trim()
+      })
+    })
+    const result = await response.json()
+    ElMessage.loadingClose()
+    
+    if (result.error) {
+      ElMessage.error(result.error)
+      return
+    }
+    
+    poiResults.value = result.pois || []
+    poiResultVisible.value = true
+    // 多边形搜索不在地图上显示中心点和半径圆
+    showPoiOnMap(result.pois, null, null, null)
+    ElMessage.success(`找到 ${result.count} 个结果`)
+  } catch (err) {
+    ElMessage.loadingClose()
+    console.error('[Polygon Search]', err)
+    ElMessage.error('搜索失败')
   }
 }
 
@@ -3002,6 +3342,12 @@ const deleteMarker = async (id) => {
 }
 
 // 暴露给window供弹窗调用
+// 强制引用POI搜索函数，确保打包时不被移除
+window.__poiSearchDebug = { startCircleSearch, startPolygonSearch, poiSearchExpanded, poiKeywords }
+
+// 导出POI搜索函数供模板使用
+const _poiFunctions = { startCircleSearch, startPolygonSearch }
+
 onMounted(() => {
   window.editMarkerExternal = editMarker
   window.deleteMarkerExternal = deleteMarker
@@ -3401,6 +3747,72 @@ onUnmounted(() => {
         font-size: 10px;
         text-align: center;
         padding: 2px 0;
+      }
+    }
+  }
+}
+
+// 周边检索面板样式
+.poi-search-panel {
+  position: absolute;
+  top: 10px;
+  right: 280px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  min-width: 140px;
+  overflow: hidden;
+  border: 2px solid #f59e0b;
+
+  .poi-search-header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+
+    .poi-search-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .poi-search-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: #fff;
+      transition: transform 0.2s;
+      transform: rotate(-90deg);
+
+      &.expanded {
+        transform: rotate(0deg);
+      }
+    }
+  }
+
+  .poi-search-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .poi-search-input {
+      .el-input__inner {
+        border-color: #f59e0b;
+      }
+    }
+
+    .poi-search-modes {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+
+      .el-button {
+        width: 100%;
+        justify-content: flex-start;
       }
     }
   }
