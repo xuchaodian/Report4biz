@@ -14,6 +14,7 @@ import shoppingCenterRoutes from './routes/shopping-centers.js'
 import { initDatabase } from './models/database.js'
 import geocodeRoutes from './routes/geocode.js'
 import aiRoutes from './routes/ai.js'
+import poiRoutes from './routes/poi.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -46,6 +47,7 @@ async function start() {
     app.use('/api/shopping-centers', shoppingCenterRoutes)
     app.use('/api/geocode', geocodeRoutes)
     app.use('/api/ai', aiRoutes)
+    app.use('/api/poi', poiRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

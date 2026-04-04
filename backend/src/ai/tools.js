@@ -139,6 +139,65 @@ const activateTool = {
   }
 }
 
+// ===== POI搜索类工具 =====
+
+const poiAroundSearch = {
+  type: 'function',
+  function: {
+    name: 'poi_around_search',
+    description: '【必须使用】周边搜索POI。当用户提到"周边"、"附近"、"周围"时必须调用此工具。搜索指定位置周围的餐厅、商店等地点',
+    parameters: {
+      type: 'object',
+      required: ['keywords'],
+      properties: {
+        location: { type: 'string', description: '中心点坐标，格式"lng,lat"（如"121.48,31.23"）。如果用户提供了地址名称，系统会自动解析为坐标。如果无法解析，工具会提示用户在地图上点击选择位置' },
+        radius: { type: 'number', description: '搜索半径（米），默认2000米，最大5000米。如用户说"2公里"则设置为2000' },
+        keywords: { type: 'string', description: '搜索关键词，如"咖啡厅"、"餐厅"、"超市"、"银行"等。可以是单个词或多个词' }
+      }
+    }
+  }
+}
+
+const poiPolygonSearch = {
+  type: 'function',
+  function: {
+    name: 'poi_polygon_search',
+    description: '多边形搜索POI，在用户框选的区域范围内搜索',
+    parameters: {
+      type: 'object',
+      required: ['coordinates', 'keywords'],
+      properties: {
+        coordinates: {
+          type: 'array',
+          description: '多边形顶点坐标数组，每个坐标格式为[lng, lat]',
+          items: {
+            type: 'array',
+            items: { type: 'number' },
+            minItems: 3
+          }
+        },
+        keywords: { type: 'string', description: '搜索关键词，如"餐厅"、"银行"等' }
+      }
+    }
+  }
+}
+
+const poiTextSearch = {
+  type: 'function',
+  function: {
+    name: 'poi_text_search',
+    description: '关键词搜索POI，在全国或指定城市内搜索关键词相关的地点',
+    parameters: {
+      type: 'object',
+      required: ['keywords'],
+      properties: {
+        city: { type: 'string', description: '城市名称，不填则全国搜索，如"北京"、"上海"' },
+        keywords: { type: 'string', description: '搜索关键词，如"火锅"、"咖啡"、"银行"等' }
+      }
+    }
+  }
+}
+
 // ===== 统计查询类工具 =====
 
 const queryStats = {
@@ -181,7 +240,10 @@ export const tools = [
   toggleLayer,
   clearFilters,
   activateTool,
-  queryStats
+  queryStats,
+  poiAroundSearch,
+  poiPolygonSearch,
+  poiTextSearch
 ]
 
 /**

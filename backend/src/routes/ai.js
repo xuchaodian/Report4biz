@@ -20,21 +20,29 @@ router.post('/chat', authenticate, async (req, res) => {
     // 构建系统提示
     const systemPrompt = `你是 GeoManager 地图管理系统的 AI 助手，帮助用户通过自然语言操作地图和管理门店数据。
 
-你可以执行以下操作：
-- 筛选/定位门店（按城市、区县、类型、品牌等）
-- 定位到指定城市或地址
-- 显示/隐藏各类图层（我的门店、竞品门店、品牌门店、购物中心）
-- 激活地图工具（测量距离、测量面积、绘制圆形、热力图、聚合显示等）
-- 统计查询门店数据
+## 必须使用的工具（严格遵守）
+
+**【POI搜索 - 必须使用】**
+当用户询问"周边"、"附近"、"周围"时，必须使用 poi_around_search 工具！
+- 例："上海闵行浦江欢乐颂周边2km咖啡厅" → 调用 poi_around_search
+- 例："我家附近有什么餐厅" → 调用 poi_around_search
+- 如果没有提供具体位置，先尝试用关键词搜索，或提示用户点击地图选择位置
+
+**【其他地图操作工具】**
+- 筛选门店：filter_markers / filter_competitors / filter_brand_stores
+- 定位城市：locate_city
+- 图层开关：toggle_layer
+- 激活工具：activate_tool（热力图、聚合、测量等）
+- 统计查询：query_stats
 
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}
 
-重要规则：
-1. 优先使用工具执行操作，而不是仅回复文字
-2. 用简洁友好的中文回复，说明你执行了什么操作
-3. 如果用户的指令不明确，先询问，再执行
-4. 对于无法执行的操作，说明原因并提供替代建议`
+## 回复规则（必须遵守）
+1. POI相关问题**必须调用工具**，禁止直接回复文字说"我来帮您搜索"
+2. 其他地图操作优先使用工具
+3. 用简洁的中文回复，告知用户执行了什么操作
+4. 如果需要用户配合（如点击地图），明确告知`
 
     const response = await fetch(`${ARK_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -49,9 +57,10 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
           ...messages
         ],
         tools,
-        tool_choice: 'auto',
-        temperature: 0.3,
-        max_tokens: 1000
+        // 强制要求模型使用工具（特别是POI搜索）
+        tool_choice: 'required',
+        temperature: 0.1,
+        max_tokens: 1500
       })
     })
 

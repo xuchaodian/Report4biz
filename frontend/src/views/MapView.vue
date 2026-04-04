@@ -215,6 +215,23 @@
       @execute="handleAiExecute"
     />
 
+    <!-- POI搜索结果 -->
+    <PoiResultPanel
+      :visible="poiResultVisible"
+      :pois="poiResults"
+      :map="map"
+      @close="closePoiResults"
+    />
+
+    <!-- POI位置选择提示 -->
+    <div v-if="poiPickLocationMode" class="poi-pick-location-overlay">
+      <div class="poi-pick-location-hint">
+        <el-icon><LocationFilled /></el-icon>
+        <span>请在地图上点击选择搜索中心点</span>
+        <el-button size="small" text @click="cancelPoiPickLocation">取消</el-button>
+      </div>
+    </div>
+
     <!-- 缩放控件容器 -->
     <div class="zoom-control-container">
       <div class="zoom-in" @click="zoomIn">+</div>
@@ -476,6 +493,7 @@ import { useBrandStoreStore } from '@/stores/brandStore'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import AiAssistant from '@/components/AiAssistant.vue'
+import PoiResultPanel from '@/components/PoiResultPanel.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
@@ -603,6 +621,16 @@ const circleAnalysisData = reactive({
   competitorStoresFull: []
 })
 const circleAnalysisTitle = ref('圆形内门店分析')
+
+// POI搜索结果
+const poiResultVisible = ref(false)
+const poiResults = ref([])
+const poiMarkers = ref([])
+
+// POI位置选择模式（用户需点击地图）
+const poiPickLocationMode = ref(false)
+const poiPendingSearch = ref(null) // 待执行的搜索参数
+
 const circleAnalysisParams = reactive({
   center: null,
   radius: 0
@@ -1885,6 +1913,13 @@ const setTool = (tool) => {
 // 地图点击处理（通过两次click间隔自己判断双击，绕过Leaflet的dblclick限制）
 let lastClickTime = 0
 const handleMapClick = (e) => {
+  // POI位置选择模式
+  if (poiPickLocationMode.value && poiPendingSearch.value) {
+    cancelPoiPickLocation()
+    executePoiSearchAtLocation(e.latlng.lat, e.latlng.lng)
+    return
+  }
+  
   if (!activeTool.value || !map) return
 
   const now = Date.now()
@@ -2649,13 +2684,145 @@ const handleAiExecute = async (toolCall) => {
       showHeatmap, showCluster,
       toggleHeatmap, toggleCluster, clearDrawings, setTool
     })
+    
+    // 需要用户选择位置
+    if (result?.require_user_location) {
+      poiPendingSearch.value = {
+        keywords: result.keywords,
+        radius: result.radius
+      }
+      poiPickLocationMode.value = true
+      
+      // 在AI对话框中显示提示
+      if (aiAssistantRef.value) {
+        const hintMsg = result.location_hint 
+          ? `无法定位"${result.location_hint}"，请在地图上点击选择搜索中心点`
+          : '请在地图上点击选择搜索中心点'
+        aiAssistantRef.value.addFeedback(hintMsg)
+      }
+      
+      // 显示提示消息
+      if (result.location_hint) {
+        ElMessage.warning(`无法定位"${result.location_hint}"，请在地图上点击选择搜索中心点`)
+      } else {
+        ElMessage.info('请在地图上点击选择搜索中心点')
+      }
+      return
+    }
+    
     if (result?.message) {
       ElMessage.success(result.message)
+    }
+    
+    // 处理POI搜索结果
+    if (result?.type === 'poi') {
+      poiResults.value = result.pois || []
+      poiResultVisible.value = true
+      showPoiOnMap(result.pois)
     }
   } catch (err) {
     console.error('[AI Execute]', err)
     ElMessage.error('操作执行失败')
   }
+}
+
+// 在地图上显示POI标记
+const showPoiOnMap = (pois) => {
+  // 清除之前的POI标记
+  poiMarkers.value.forEach(m => map.removeLayer(m))
+  poiMarkers.value = []
+  
+  if (!pois || pois.length === 0) return
+  
+  const bounds = []
+  
+  pois.forEach((poi, index) => {
+    if (!poi.location) return
+    const [lng, lat] = poi.location.split(',').map(Number)
+    if (isNaN(lat) || isNaN(lng)) return
+    
+    bounds.push([lat, lng])
+    
+    const icon = L.divIcon({
+      html: `<div style="background:#6366f1;color:#fff;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,0.2);white-space:nowrap;">${index + 1}</div>`,
+      className: 'poi-marker',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    })
+    
+    const marker = L.marker([lat, lng], { icon }).addTo(map)
+    marker.bindPopup(`
+      <div style="min-width:180px;">
+        <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${poi.name}</div>
+        <div style="color:#666;font-size:12px;margin-bottom:2px;">${poi.address || ''}</div>
+        <div style="color:#999;font-size:11px;">${poi.city}${poi.district}</div>
+        ${poi.tel ? `<div style="color:#409eff;font-size:11px;margin-top:2px;">电话：${poi.tel}</div>` : ''}
+      </div>
+    `)
+    
+    poiMarkers.value.push(marker)
+  })
+  
+  // 调整视野
+  if (bounds.length > 0) {
+    if (bounds.length === 1) {
+      map.setView(bounds[0], 15)
+    } else {
+      map.fitBounds(L.latLngBounds(bounds), { padding: [50, 50] })
+    }
+  }
+}
+
+// 关闭POI结果面板
+const closePoiResults = () => {
+  poiResultVisible.value = false
+  // 清除地图上的POI标记
+  poiMarkers.value.forEach(m => map.removeLayer(m))
+  poiMarkers.value = []
+  poiResults.value = []
+}
+
+// POI位置选择模式：在地图上选点后执行搜索
+const executePoiSearchAtLocation = async (lat, lng) => {
+  const pending = poiPendingSearch.value
+  if (!pending) return
+  
+  try {
+    const response = await fetch('/api/poi/around', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lng,
+        lat,
+        radius: pending.radius || 2000,
+        keywords: pending.keywords
+      })
+    })
+    const result = await response.json()
+    
+    if (result.error) {
+      ElMessage.error(result.error)
+      return
+    }
+    
+    poiResults.value = result.pois || []
+    poiResultVisible.value = true
+    showPoiOnMap(result.pois)
+    ElMessage.success(`在指定位置周边找到 ${result.count} 个POI`)
+  } catch (err) {
+    console.error('[POI Search]', err)
+    ElMessage.error('POI搜索失败')
+  } finally {
+    poiPendingSearch.value = null
+    poiPickLocationMode.value = false
+  }
+}
+
+// 取消POI位置选择模式
+const cancelPoiPickLocation = () => {
+  poiPickLocationMode.value = false
+  poiPendingSearch.value = null
+  if (map) map.getContainer().style.cursor = ''
 }
 
 // 保存点位
@@ -3398,3 +3565,49 @@ onUnmounted(() => {
   }
 }
 </style>
+
+// POI位置选择提示
+.poi-pick-location-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1002;
+  pointer-events: none;
+}
+
+.poi-pick-location-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(64, 158, 255, 0.95);
+  color: white;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+
+  .el-icon {
+    font-size: 18px;
+    animation: poi-pulse 1.5s ease-in-out infinite;
+  }
+
+  span {
+    flex: 1;
+  }
+
+  .el-button {
+    color: white;
+    padding: 2px 8px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  }
+}
+
+@keyframes poi-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}

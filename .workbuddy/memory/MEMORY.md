@@ -29,14 +29,33 @@
 14. 底图切换（高德/腾讯/影像）
 15. Shapefile文件名重命名（内联编辑）
 16. **AI 助手（豆包 1.5 Pro，自然语言操作地图）**
+17. **POI搜索（高德地图 Around/Polygon/Text 三种方式）**
 
 ## AI 助手功能 (2026-04-04)
 - **模型**：豆包 Seed 2.0 Pro（火山引擎，doubao-seed-2-0-pro）
 - **API Key**：f92f55af-7642-49d8-94f5-d1492b7b4e19（已写入 ecosystem.config.cjs）
 - **后端**：`/api/ai/chat` 接口，支持 Function Calling（backend/src/routes/ai.js）
 - **前端**：AiAssistant.vue（悬浮紫色按钮 + 对话气泡），挂载在 MapView.vue
-- **支持操作**：筛选门店/竞品、定位城市、图层开关、激活工具、清除筛选、统计查询
+- **支持操作**：筛选门店/竞品、定位城市、图层开关、激活工具、清除筛选、统计查询、POI搜索
 - **执行链路**：前端 → 后端调用豆包 → 返回 tool_calls → 前端 handleAiExecute 执行
+- **强制工具调用**：tool_choice: 'required'，确保AI必须使用工具（特别是POI搜索）
+- **系统提示强化**：强调POI搜索必须使用工具，禁止直接回复文字
+
+## POI搜索功能 (2026-04-04)
+- **高德API Key**：8e22ba2cec83bc554753a47842383949
+- **后端接口**：
+  - POST /api/poi/around - 周边搜索
+  - POST /api/poi/polygon - 多边形搜索
+  - POST /api/poi/text - 关键词搜索
+  - POST /api/poi/geocode - 地理编码（地址→坐标）
+- **核心文件**：
+  - backend/src/routes/poi.js - 路由
+  - backend/src/utils/amapPoi.js - 高德API封装
+- **前端组件**：PoiResultPanel.vue（右侧结果面板）
+- **地图标记**：紫色数字圆点（1, 2, 3...），点击显示详情弹窗
+- **交互**：点击结果项可定位，关闭按钮清除地图标记
+- **地址解析**：前端 aiExecutor.js 调用后端 /api/poi/geocode 使用高德API解析地址
+- **位置选择模式**：当地址无法解析时，提示用户点击地图选择中心点
 
 ## Git备份
 - v1.0.0: 2026-03-26，基础功能

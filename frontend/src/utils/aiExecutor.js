@@ -1,3 +1,50 @@
+// POI搜索接口（后端代理）
+async function callPoiApi(endpoint, params) {
+  const response = await fetch(`/api/poi/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  })
+  return response.json()
+}
+
+// 地理编码：将地址转换为坐标（使用高德API）
+async function geocodeAddress(address) {
+  try {
+    const result = await callPoiApi('geocode', { address })
+    if (result.success) {
+      return {
+        lng: result.lng,
+        lat: result.lat,
+        formatted_address: result.formatted_address
+      }
+    }
+    return null
+  } catch (e) {
+    console.error('[Geocode] Error:', e)
+    return null
+  }
+}
+
+// 解析location参数：支持坐标格式 "lng,lat" 或 地址字符串
+// 返回 { lng, lat } 或 null（需要用户点击地图）
+function parseLocation(loc) {
+  if (!loc) return null
+  
+  // 检查是否是坐标格式 "lng,lat"
+  if (typeof loc === 'string' && loc.includes(',')) {
+    const parts = loc.split(',')
+    const lng = parseFloat(parts[0])
+    const lat = parseFloat(parts[1])
+    if (!isNaN(lng) && !isNaN(lat) && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90) {
+      return { lng, lat }
+    }
+  }
+  
+  // 如果不是有效坐标格式，返回 null 表示需要用户选择
+  return null
+}
+
 /**
  * GeoManager AI 执行器中心
  *
@@ -160,6 +207,98 @@ export async function executeTool(name, args, ctx) {
       return { success: true, message: `已激活工具：${tool}` }
     }
 
+    // ===== POI搜索 =====
+    case 'poi_around_search': {
+      let locationStr = args.location
+      
+      // 如果 location 不是有效坐标格式，尝试地理编码
+      const parsed = parseLocation(locationStr)
+      if (!parsed) {
+        // location 是地址或为空，尝试地理编码
+        const addressToGeocode = locationStr || args.keywords
+        if (addressToGeocode) {
+          console.log('[POI] 尝试地理编码:', addressToGeocode)
+          const geo = await geocodeAddress(addressToGeocode)
+          if (geo) {
+            locationStr = `${geo.lng},${geo.lat}`
+            console.log('[POI] 地理编码成功:', locationStr, geo.formatted_address)
+          } else {
+            console.log('[POI] 地理编码失败')
+          }
+        }
+      }
+      
+      // 再次解析坐标
+      const finalParsed = parseLocation(locationStr)
+      if (!finalParsed) {
+        // 无法解析坐标，需要用户点击地图选择
+        return {
+          success: false,
+          require_user_location: true,
+          location_hint: args.location || args.keywords,
+          keywords: args.keywords,
+          radius: args.radius || 2000,
+          message: `无法定位"${args.location || args.keywords}"，请在地图上点击选择搜索中心点`
+        }
+      }
+      
+      console.log('[POI] 执行周边搜索:', finalParsed, args.radius, args.keywords)
+      const result = await callPoiApi('around', {
+        lng: finalParsed.lng,
+        lat: finalParsed.lat,
+        radius: args.radius || 2000,
+        keywords: args.keywords
+      })
+      if (result.error) {
+        return { success: false, message: result.error }
+      }
+      // 返回POI结果给前端处理
+      return {
+        success: true,
+        type: 'poi',
+        subtype: 'around',
+        pois: result.pois,
+        count: result.count,
+        message: `在指定位置周边找到 ${result.count} 个POI`
+      }
+    }
+
+    case 'poi_text_search': {
+      const result = await callPoiApi('text', {
+        city: args.city,
+        keywords: args.keywords
+      })
+      if (result.error) {
+        return { success: false, message: result.error }
+      }
+      return {
+        success: true,
+        type: 'poi',
+        subtype: 'text',
+        pois: result.pois,
+        count: result.count,
+        message: `在${args.city || '全国'}找到 ${result.count} 个POI`
+      }
+    }
+
+    case 'poi_polygon_search': {
+      const result = await callPoiApi('polygon', {
+        coordinates: args.coordinates,
+        keywords: args.keywords
+      })
+      if (result.error) {
+        return { success: false, message: result.error }
+      }
+      return {
+        success: true,
+        type: 'poi',
+        subtype: 'polygon',
+        pois: result.pois,
+        count: result.count,
+        message: `在多边形区域内找到 ${result.count} 个POI`
+      }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -230,6 +369,12 @@ export function getActionDescription(name, args) {
     }
     case 'query_stats':
       return `统计查询：按${args.group_by || '城市'}分组`
+    case 'poi_around_search':
+      return `周边搜索：${args.keywords}（${args.radius || 1000}米内）`
+    case 'poi_text_search':
+      return `关键词搜索：${args.keywords}${args.city ? '（' + args.city + '）' : ''}`
+    case 'poi_polygon_search':
+      return `多边形搜索：${args.keywords}`
     default:
       return name
   }
