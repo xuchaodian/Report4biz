@@ -222,6 +222,8 @@ export async function executeTool(name, args, ctx) {
           if (geo) {
             locationStr = `${geo.lng},${geo.lat}`
             console.log('[POI] 地理编码成功:', locationStr, geo.formatted_address)
+            // 保存地址名，用于前端定位提示
+            args._geocodedAddress = geo.formatted_address || addressToGeocode
           } else {
             console.log('[POI] 地理编码失败')
           }
@@ -263,6 +265,7 @@ export async function executeTool(name, args, ctx) {
         centerLat: finalParsed.lat,
         centerLng: finalParsed.lng,
         radius: searchRadius,
+        geocodedAddress: args._geocodedAddress || args.location || null,
         message: `在指定位置周边找到 ${result.count} 个POI`
       }
     }

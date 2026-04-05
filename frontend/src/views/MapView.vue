@@ -2796,11 +2796,21 @@ const handleAiExecute = async (toolCall) => {
     if (result?.type === 'poi') {
       poiResults.value = result.pois || []
       poiResultVisible.value = true
-      showPoiOnMap(result.pois, result.centerLat, result.centerLng, result.radius)
+      
+      // 如果有搜索中心点，先 flyTo 过去让用户感知到"已定位到目标地点"
+      if (result.centerLat && result.centerLng) {
+        map.flyTo([result.centerLat, result.centerLng], 15, { animate: true, duration: 1.2 })
+        // 短暂延迟后再展示完整范围（含所有POI结果）
+        setTimeout(() => {
+          showPoiOnMap(result.pois, result.centerLat, result.centerLng, result.radius)
+        }, 1300)
+      } else {
+        showPoiOnMap(result.pois, result.centerLat, result.centerLng, result.radius)
+      }
     }
   } catch (err) {
     console.error('[AI Execute]', err)
-    ElMessage.error('操作执行失败')
+    // 静默失败：只打印日志，不弹出 toast，避免与成功的工具调用产生混乱提示
   }
 }
 
