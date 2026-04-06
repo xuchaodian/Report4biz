@@ -537,6 +537,7 @@ let brandMarkerMap = {}     // 品牌门店ID到marker的映射
 let shoppingCenterLayer = null  // 购物中心图层
 let shoppingCenterMarkerMap = {}  // 购物中心ID到marker的映射
 let markerClusterGroup = null
+let allStoreClusterGroup = null  // 所有门店统一聚合图层
 let heatmapLayer = null
 let drawnItems = null
 let analysisCircleLayer = null  // 圆形分析专用图层
@@ -1217,6 +1218,109 @@ const loadMarkers = async () => {
   }
 }
 
+// 构建所有门店统一聚合图层
+const buildAllStoreCluster = () => {
+  console.log('[聚合] buildAllStoreCluster 开始')
+  if (!map) return
+  
+  if (allStoreClusterGroup) {
+    try { map.removeLayer(allStoreClusterGroup) } catch(e) {}
+  }
+  
+  allStoreClusterGroup = L.markerClusterGroup({
+    chunkedLoading: true,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false
+  })
+  
+  let totalCount = 0
+  
+  // 1. 我的门店
+  if (markerStore.markers && markerStore.markers.length > 0) {
+    const visibleIds = markerStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? markerStore.markers.filter(m => visibleIds.includes(m.id))
+      : markerStore.markers
+    console.log('[聚合] 我的门店:', data.length)
+    data.forEach(m => {
+      if (m.latitude && m.longitude) {
+        const brandIconUrl = brandIconMap.value[m.brand]
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(getStoreTypeColor(m.store_type), 'dot', 1.2)
+        const marker = L.marker([m.latitude, m.longitude], { icon })
+        marker.bindPopup(`<b>我的门店</b><br/>${m.brand || ''} ${m.name}<br/>${(m.city || '') + (m.district || '') + (m.address || '-')}`)
+        allStoreClusterGroup.addLayer(marker)
+        totalCount++
+      }
+    })
+  }
+  
+  // 2. 竞品门店
+  if (competitorStore.competitors && competitorStore.competitors.length > 0) {
+    const brandColors = { '大米先生': '#e6a23c', '谷田稻香': '#f56c6c', '吉野家': '#409eff', '老乡鸡': '#67c23a', '米村拌饭': '#9c27b0', '其他': '#ff9800' }
+    const getBrandColor = (brand) => {
+      if (!brand) return brandColors['其他']
+      for (const key in brandColors) { if (brand.includes(key) || key.includes(brand)) return brandColors[key] }
+      return brandColors['其他']
+    }
+    const visibleIds = competitorStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? competitorStore.competitors.filter(c => visibleIds.includes(c.id))
+      : competitorStore.competitors
+    console.log('[聚合] 竞品门店:', data.length)
+    data.forEach(c => {
+      if (c.latitude && c.longitude) {
+        const brandIconUrl = brandIconMap.value[c.brand]
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(getBrandColor(c.brand), 'dot', 1.2)
+        const marker = L.marker([c.latitude, c.longitude], { icon })
+        marker.bindPopup(`<div style="color:${getBrandColor(c.brand)}"><b>竞品</b><br/>${c.brand || ''} ${c.name}<br/>${(c.city || '') + (c.district || '') + (c.address || '-')}</div>`)
+        allStoreClusterGroup.addLayer(marker)
+        totalCount++
+      }
+    })
+  }
+  
+  // 3. 品牌门店
+  console.log('[聚合] 品牌门店原始:', brandStoreStore.brandStores?.length || 0)
+  if (brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
+    const visibleIds = brandStoreStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+      : brandStoreStore.brandStores
+    console.log('[聚合] 品牌门店:', data.length)
+    data.forEach(s => {
+      if (s.latitude && s.longitude) {
+        const brandColor = s.icon_color || '#888888'
+        const brandIconUrl = brandIconMap.value[s.brand]
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(brandColor, 'dot', 1.2)
+        const marker = L.marker([s.latitude, s.longitude], { icon })
+        marker.bindPopup(`<div style="color:${brandColor}"><b>品牌门店</b><br/>${s.brand || ''} ${s.name}<br/>${(s.city || '') + (s.district || '') + (s.address || '-')}</div>`)
+        allStoreClusterGroup.addLayer(marker)
+        totalCount++
+      }
+    })
+  }
+  
+  // 4. 购物中心
+  if (shoppingCenterStore.shoppingCenters && shoppingCenterStore.shoppingCenters.length > 0) {
+    const visibleIds = shoppingCenterStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
+      : shoppingCenterStore.shoppingCenters
+    console.log('[聚合] 购物中心:', data.length)
+    data.forEach(s => {
+      if (s.latitude && s.longitude) {
+        const icon = createSvgIcon('#9370db', 'star', 1.5)
+        const marker = L.marker([s.latitude, s.longitude], { icon })
+        marker.bindPopup(`<div style="color:#9370db"><b>购物中心</b><br/>${s.name}<br/>${s.grade || ''} ${s.address || ''}</div>`)
+        allStoreClusterGroup.addLayer(marker)
+        totalCount++
+      }
+    })
+  }
+  
+  console.log('[聚合] 总计:', totalCount)
+}
+
 // 重载门店图层（供 watcher 调用）
 const reloadBusinessLayer = () => {
   if (!map) {
@@ -1528,6 +1632,9 @@ const updateCompetitorDisplay = () => {
       console.log('移除图层失败:', e.message)
     }
   }
+  
+  // 聚合模式下同步更新聚合图层
+  if (showCluster.value) buildAllStoreCluster()
 }
 
 // 加载品牌门店
@@ -1695,6 +1802,9 @@ const updateBrandStoreDisplay = () => {
   } else {
     try { map.removeLayer(brandStoreLayer) } catch(e) {}
   }
+  
+  // 聚合模式下同步更新聚合图层
+  if (showCluster.value) buildAllStoreCluster()
 }
 
 // 加载购物中心
@@ -1841,6 +1951,9 @@ const updateShoppingCenterDisplay = () => {
   } else {
     try { map.removeLayer(shoppingCenterLayer) } catch(e) {}
   }
+  
+  // 聚合模式下同步更新聚合图层
+  if (showCluster.value) buildAllStoreCluster()
 }
 
 const updateLayerDisplay = () => {
@@ -1850,25 +1963,35 @@ const updateLayerDisplay = () => {
   try {
     if (businessLayer && map.hasLayer(businessLayer)) map.removeLayer(businessLayer)
     if (markerClusterGroup && map.hasLayer(markerClusterGroup)) map.removeLayer(markerClusterGroup)
+    if (allStoreClusterGroup && map.hasLayer(allStoreClusterGroup)) map.removeLayer(allStoreClusterGroup)
     if (heatmapLayer && map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
+    // 聚合模式下隐藏其他门店图层
+    if (showCluster.value) {
+      if (competitorLayer && map.hasLayer(competitorLayer)) map.removeLayer(competitorLayer)
+      if (brandStoreLayer && map.hasLayer(brandStoreLayer)) map.removeLayer(brandStoreLayer)
+      if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) map.removeLayer(shoppingCenterLayer)
+    }
   } catch(e) {}
 
   if (!showBusinessLayer.value) return
 
   if (showHeatmap.value && heatmapLayer) {
     try { map.addLayer(heatmapLayer) } catch(e) {}
-  } else if (showCluster.value && markerClusterGroup) {
-    try { map.addLayer(markerClusterGroup) } catch(e) {}
+  } else if (showCluster.value && allStoreClusterGroup) {
+    // 聚合模式：显示统一聚合图层
+    try { map.addLayer(allStoreClusterGroup) } catch(e) {}
   } else if (businessLayer) {
     try { map.addLayer(businessLayer) } catch(e) {}
   }
 
-  // 确保门店图层始终显示在竞品和品牌门店图层上方
-  try {
-    if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
-    if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
-    if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) shoppingCenterLayer.bringToBack()
-  } catch(e) {}
+  // 确保门店图层始终显示在竞品和品牌门店图层上方（非聚合模式）
+  if (!showCluster.value) {
+    try {
+      if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
+      if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
+      if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) shoppingCenterLayer.bringToBack()
+    } catch(e) {}
+  }
 }
 
 // 监控竞品图层开关
@@ -1892,16 +2015,20 @@ watch(() => markerStore.visibleIds, () => {
 })
 watch(() => competitorStore.visibleIds, () => {
   if (map) reloadCompetitorLayer()
+  if (showCluster.value) buildAllStoreCluster()
 })
 watch(() => brandStoreStore.visibleIds, () => {
   if (map) reloadBrandStoreLayer()
+  if (showCluster.value) buildAllStoreCluster()
 })
 watch(() => shoppingCenterStore.visibleIds, () => {
   if (map) reloadShoppingCenterLayer()
+  if (showCluster.value) buildAllStoreCluster()
 })
 
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）
 watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
+  if (showCluster.value) buildAllStoreCluster()
   updateLayerDisplay()
   if (businessLayer) {
     businessLayer.setStyle({ opacity: layerOpacity.value, fillOpacity: layerOpacity.value * 0.3 })
@@ -2383,7 +2510,10 @@ const toggleHeatmap = () => {
 // 切换聚合
 const toggleCluster = () => {
   showCluster.value = !showCluster.value
-  if (showCluster.value) showHeatmap.value = false
+  if (showCluster.value) {
+    showHeatmap.value = false
+    buildAllStoreCluster()
+  }
 }
 
 // 清除绘制

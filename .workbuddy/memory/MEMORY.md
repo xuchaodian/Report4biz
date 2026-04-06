@@ -31,6 +31,7 @@
 16. **AI 助手（豆包 1.5 Pro，自然语言操作地图）**
 17. **POI搜索（高德地图 Around/Polygon/Text 三种方式）**
 18. **热力图简化（v1.3.6）**：去掉样式选择面板，点击直接切换开/关，固定经典蓝红样式
+19. **热力图数据源扩展**：支持所有四类门店（我的门店/竞品/品牌门店/购物中心），并修复品牌门店加载后热力图不更新的问题
 
 ## AI 助手功能 (2026-04-04)
 - **模型**：豆包 Seed 2.0 Pro（火山引擎，doubao-seed-2-0-pro）
@@ -69,6 +70,7 @@
 - v1.3.6: 2026-04-06，热力图简化（点击切换，经典蓝红样式）
 
 ## 技术规则
+- **热力图数据同步**：新增 `refreshHeatmap()` 函数，在所有数据加载函数（loadBrandStores/loadCompetitors/loadShoppingCenters/reload*Layer）末尾调用，确保热力图数据与门店数据同步
 - **数据隔离**：所有门店查询必须 `WHERE user_id = ?`
 - **路由顺序**：静态路由（`/me`）放在动态路由（`/:id`）之前
 - **vite build 命令**：`/Users/xuchaodian/.workbuddy/binaries/node/versions/22.12.0/bin/node node_modules/vite/bin/vite.js build`
