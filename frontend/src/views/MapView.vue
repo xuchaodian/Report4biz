@@ -62,6 +62,24 @@
       </div>
     </div>
 
+    <!-- 商圈工具面板 -->
+    <div class="business-circle-panel">
+      <div class="business-circle-header" @click="businessCircleExpanded = !businessCircleExpanded">
+        <span class="business-circle-title">商圈工具</span>
+        <span class="business-circle-arrow" :class="{ expanded: businessCircleExpanded }">▼</span>
+      </div>
+      <div v-show="businessCircleExpanded" class="business-circle-body">
+        <el-button size="small" class="business-circle-btn" @click="setTool('circle')">
+          <el-icon><Coordinate /></el-icon>
+          商圈内点位
+        </el-button>
+        <el-button size="small" class="business-circle-btn" @click="analyzeExistingCircles">
+          <el-icon><DataAnalysis /></el-icon>
+          分析已有圆形
+        </el-button>
+      </div>
+    </div>
+
     <!-- 显示门店开关 - 工具栏左侧 -->
     <div class="store-toggle-panel">
       <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
@@ -116,14 +134,6 @@
           <div class="tool-item" :class="{ active: activeTool === 'area' }" @click="setTool('area')">
             <el-icon><Aim /></el-icon>
             <span>测量面积</span>
-          </div>
-        </el-tooltip>
-        <el-divider style="margin: 6px 0;" />
-        <!-- 绘制圆形 -->
-        <el-tooltip content="绘制圆形" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'circle' }" @click="setTool('circle')">
-            <el-icon><Coordinate /></el-icon>
-            <span>绘制圆形</span>
           </div>
         </el-tooltip>
         <el-divider style="margin: 6px 0;" />
@@ -418,8 +428,7 @@
       </el-form>
       <template #footer>
         <el-button @click="circleDialogVisible = false">取消</el-button>
-        <el-button type="warning" @click="analyzeCircleStores">分析</el-button>
-        <el-button type="primary" @click="confirmDrawCircle">确定</el-button>
+        <el-button type="primary" @click="analyzeCircleStores">确定</el-button>
       </template>
     </el-dialog>
 
@@ -608,6 +617,9 @@ let poiCenterPoint = null     // POI中心点坐标
 const poiSearchExpanded = ref(false)
 const poiKeywords = ref('')
 
+// 商圈工具面板
+const businessCircleExpanded = ref(false)
+
 // 半径圆搜索状态
 const pendingCircleSearch = ref(null) // { lat, lng }
 let tempCircleMarker = null
@@ -710,6 +722,41 @@ const analyzeCircleStores = () => {
   circleAnalysisVisible.value = true
 }
 
+// 分析已有圆形（从地图上已绘制的圆形中分析）
+const analyzeExistingCircles = () => {
+  if (!map) return
+  
+  // 获取drawnItems中的所有圆形图层
+  const circles = []
+  drawnItems.eachLayer(layer => {
+    if (layer instanceof L.Circle) {
+      circles.push(layer)
+    }
+  })
+  
+  if (circles.length === 0) {
+    ElMessage.warning('地图上还没有绘制圆形，请先绘制圆形')
+    return
+  }
+  
+  // 只分析第一个圆形（如果有多个，可以扩展为选择）
+  const circle = circles[0]
+  const center = circle.getLatLng()
+  const radius = circle.getRadius()
+  
+  // 设置分析参数
+  circleForm.center = center
+  circleForm.centerText = `${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}`
+  circleForm.radius = radius >= 1000 ? (radius / 1000).toFixed(1) : radius
+  circleForm.unit = radius >= 1000 ? 'km' : 'm'
+  
+  // 调用分析函数
+  analyzeCircleStores()
+  
+  // 关闭商圈工具面板
+  businessCircleExpanded.value = false
+}
+
 // 关闭分析对话框（同时关闭圆形设置对话框）
 const closeAnalysisDialog = () => {
   circleAnalysisVisible.value = false
@@ -751,14 +798,22 @@ const showCircleOnMap = () => {
   })
   analysisCircleLayer.addLayer(centerMarker)
 
-  // 添加圆形内的我的门店标记
-  circleAnalysisData.myStoresFull.forEach((store, index) => {
-    const marker = L.marker([store.latitude, store.longitude], {
-      icon: createCustomIcon(getStatusColor(store.store_type), currentMarkerStyle.value)
+  // 如果"我的门店"图层已开启，则不重复显示（避免标记重叠）
+  const showMyStores = !showBusinessLayer.value
+  
+  // 添加圆形内的我的门店标记（如果图层未开启则显示）
+  if (showMyStores) {
+    circleAnalysisData.myStoresFull.forEach((store, index) => {
+      // 优先使用品牌图标，否则使用当前图标样式
+      const brandIconUrl = brandIconMap.value[store.brand]
+      const icon = brandIconUrl 
+        ? createBrandImageIcon(brandIconUrl) 
+        : createCustomIcon(getStatusColor(store.store_type), currentMarkerStyle.value)
+      const marker = L.marker([store.latitude, store.longitude], { icon })
+      marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
+      analysisCircleLayer.addLayer(marker)
     })
-    marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
-    analysisCircleLayer.addLayer(marker)
-  })
+  }
 
   // 添加圆形内的竞品门店标记
   const competitorBrandColors = {
@@ -781,17 +836,21 @@ const showCircleOnMap = () => {
 
   circleAnalysisData.competitorStoresFull.forEach((store) => {
     const brandColor = getCompBrandColor(store.brand)
-    const marker = L.marker([store.latitude, store.longitude], {
-      icon: createCustomIcon(brandColor, 'dot')
-    })
+    // 优先使用品牌图标，否则使用颜色圆点图标
+    const brandIconUrl = brandIconMap.value[store.brand]
+    const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(brandColor, 'dot', 1.2)
+    const marker = L.marker([store.latitude, store.longitude], { icon })
     marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
     analysisCircleLayer.addLayer(marker)
   })
 
-  // 调整视图以包含所有元素
+  // 调整视图以包含所有元素（根据是否显示我的门店来决定）
+  const myStorePoints = showMyStores 
+    ? circleAnalysisData.myStoresFull.map(s => [s.latitude, s.longitude])
+    : []
   const allPoints = [
     [circleAnalysisParams.center.lat, circleAnalysisParams.center.lng],
-    ...circleAnalysisData.myStoresFull.map(s => [s.latitude, s.longitude]),
+    ...myStorePoints,
     ...circleAnalysisData.competitorStoresFull.map(s => [s.latitude, s.longitude])
   ]
   if (allPoints.length > 1) {
@@ -4034,6 +4093,78 @@ onUnmounted(() => {
         span {
           vertical-align: middle;
         }
+      }
+    }
+  }
+}
+
+// 商圈工具面板样式
+.business-circle-panel {
+  position: absolute;
+  top: 10px;
+  right: 420px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  min-width: 110px;
+  overflow: hidden;
+  border: 2px solid #ff8800;
+
+  .business-circle-header {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    background: linear-gradient(135deg, #ff8800 0%, #cc6600 100%);
+
+    .business-circle-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .business-circle-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: #fff;
+      transition: transform 0.2s;
+      transform: rotate(-90deg);
+
+      &.expanded {
+        transform: rotate(0deg);
+      }
+    }
+  }
+
+  .business-circle-body {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .business-circle-btn {
+      width: 100%;
+      padding: 8px 12px !important;
+      border: 1px solid #dcdfe6 !important;
+      background: #fff !important;
+      color: #606266 !important;
+
+      &:hover {
+        background: #fff4e6 !important;
+        border-color: #ff8800 !important;
+        color: #ff8800 !important;
+      }
+
+      .el-icon {
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+
+      span {
+        vertical-align: middle;
       }
     }
   }
