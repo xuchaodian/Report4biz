@@ -1383,12 +1383,13 @@ const reloadBusinessLayer = () => {
     businessLayer.addLayer(marker)
   })
 
-  // 热力图
-  if (heatmapLayer) { try { map.removeLayer(heatmapLayer) } catch(e) {} }
-  const hmData = dataToShow.map(m => [m.latitude, m.longitude, 1])
-  heatmapLayer = L.heatLayer(hmData, { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } })
+  // 热力图模式下重新构建（统一由buildAllStoreHeatmap处理）
+  if (showHeatmap.value) {
+    buildAllStoreHeatmap()
+  }
+  
   if (wasOnMap) {
-    if (showHeatmap.value) {
+    if (showHeatmap.value && heatmapLayer) {
       map.addLayer(heatmapLayer)
     } else {
       map.addLayer(businessLayer)
@@ -1965,7 +1966,7 @@ const updateShoppingCenterDisplay = () => {
 const updateLayerDisplay = () => {
   if (!map) return
 
-  console.log('[updateLayerDisplay] showCluster:', showCluster.value, 'allStoreClusterGroup:', !!allStoreClusterGroup)
+  console.log('[updateLayerDisplay] showCluster:', showCluster.value, 'showHeatmap:', showHeatmap.value)
 
   // 移除所有业务图层
   try {
@@ -1973,27 +1974,29 @@ const updateLayerDisplay = () => {
     if (markerClusterGroup && map.hasLayer(markerClusterGroup)) map.removeLayer(markerClusterGroup)
     if (allStoreClusterGroup && map.hasLayer(allStoreClusterGroup)) map.removeLayer(allStoreClusterGroup)
     if (heatmapLayer && map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
-    // 聚合模式下隐藏其他门店图层
-    if (showCluster.value) {
+    // 聚合或热力图模式下隐藏其他门店图层
+    if (showCluster.value || showHeatmap.value) {
       if (competitorLayer && map.hasLayer(competitorLayer)) map.removeLayer(competitorLayer)
       if (brandStoreLayer && map.hasLayer(brandStoreLayer)) map.removeLayer(brandStoreLayer)
       if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) map.removeLayer(shoppingCenterLayer)
     }
   } catch(e) {}
 
-  // 聚合模式优先显示聚合图层（不受showBusinessLayer控制）
+  // 聚合模式优先显示聚合图层
   if (showCluster.value && allStoreClusterGroup) {
-    console.log('[updateLayerDisplay] 显示聚合图层, allStoreClusterGroup:', !!allStoreClusterGroup)
-    try { 
-      map.addLayer(allStoreClusterGroup)
-      console.log('[updateLayerDisplay] 聚合图层已添加到地图')
-    } catch(e) {
-      console.error('[updateLayerDisplay] 添加聚合图层失败:', e)
-    }
+    console.log('[updateLayerDisplay] 显示聚合图层')
+    try { map.addLayer(allStoreClusterGroup) } catch(e) {}
     return
   }
 
-  // 关闭聚合模式后，重新添加独立图层
+  // 热力图模式显示热力图
+  if (showHeatmap.value && heatmapLayer) {
+    console.log('[updateLayerDisplay] 显示热力图')
+    try { map.addLayer(heatmapLayer) } catch(e) {}
+    return
+  }
+
+  // 关闭聚合/热力图模式后，重新添加独立图层
   if (showCompetitorLayer.value && competitorLayer) {
     try { map.addLayer(competitorLayer) } catch(e) {}
   }
@@ -2009,22 +2012,17 @@ const updateLayerDisplay = () => {
     return
   }
 
-  if (showHeatmap.value && heatmapLayer) {
-    console.log('[updateLayerDisplay] 显示热力图')
-    try { map.addLayer(heatmapLayer) } catch(e) {}
-  } else if (businessLayer) {
+  if (businessLayer) {
     console.log('[updateLayerDisplay] 显示普通门店图层')
     try { map.addLayer(businessLayer) } catch(e) {}
   }
 
-  // 确保门店图层始终显示在竞品和品牌门店图层上方（非聚合模式）
-  if (!showCluster.value) {
-    try {
-      if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
-      if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
-      if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) shoppingCenterLayer.bringToBack()
-    } catch(e) {}
-  }
+  // 确保图层顺序正确
+  try {
+    if (competitorLayer && map.hasLayer(competitorLayer)) competitorLayer.bringToBack()
+    if (brandStoreLayer && map.hasLayer(brandStoreLayer)) brandStoreLayer.bringToBack()
+    if (shoppingCenterLayer && map.hasLayer(shoppingCenterLayer)) shoppingCenterLayer.bringToBack()
+  } catch(e) {}
 }
 
 // 监控竞品图层开关
@@ -2059,10 +2057,13 @@ watch(() => shoppingCenterStore.visibleIds, () => {
   if (showCluster.value) buildAllStoreCluster()
 })
 
-// 监听门店开关变化，聚合模式下重新构建
+// 监听门店开关变化，聚合/热力图模式下重新构建
 watch([showBusinessLayer, showCompetitorLayer, showBrandStoreLayer, showShoppingCenterLayer], () => {
   if (showCluster.value) {
     buildAllStoreCluster()
+    updateLayerDisplay()
+  } else if (showHeatmap.value) {
+    buildAllStoreHeatmap()
     updateLayerDisplay()
   }
 })
@@ -2070,6 +2071,7 @@ watch([showBusinessLayer, showCompetitorLayer, showBrandStoreLayer, showShopping
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）
 watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
   if (showCluster.value) buildAllStoreCluster()
+  else if (showHeatmap.value) buildAllStoreHeatmap()
   updateLayerDisplay()
   // 只在非聚合模式下对 businessLayer 调用 setStyle（markerClusterGroup 不支持此方法）
   if (businessLayer && !showCluster.value && businessLayer.setStyle) {
@@ -2527,13 +2529,96 @@ const confirmDrawCircle = () => {
   ElMessage.success(`已绘制圆形，半径 ${circleForm.radius}${circleForm.unit === 'm' ? '米' : '公里'}`)
 }
 
+// 构建所有门店热力图
+const buildAllStoreHeatmap = () => {
+  console.log('[热力图] buildAllStoreHeatmap 开始')
+  console.log('[热力图] 当前选择: 我的门店=', showBusinessLayer.value, '竞品=', showCompetitorLayer.value, '品牌门店=', showBrandStoreLayer.value, '购物中心=', showShoppingCenterLayer.value)
+  
+  if (!map) return
+  
+  // 移除旧热力图
+  if (heatmapLayer) {
+    try { map.removeLayer(heatmapLayer) } catch(e) {}
+  }
+  
+  const hmData = []
+  
+  // 1. 我的门店（只有开关开启时才包含）
+  if (showBusinessLayer.value && markerStore.markers && markerStore.markers.length > 0) {
+    const visibleIds = markerStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? markerStore.markers.filter(m => visibleIds.includes(m.id))
+      : markerStore.markers
+    data.forEach(m => {
+      if (m.latitude && m.longitude) {
+        hmData.push([m.latitude, m.longitude, 1])
+      }
+    })
+    console.log('[热力图] 我的门店:', data.length)
+  }
+  
+  // 2. 竞品门店（只有开关开启时才包含）
+  if (showCompetitorLayer.value && competitorStore.competitors && competitorStore.competitors.length > 0) {
+    const visibleIds = competitorStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? competitorStore.competitors.filter(c => visibleIds.includes(c.id))
+      : competitorStore.competitors
+    data.forEach(c => {
+      if (c.latitude && c.longitude) {
+        hmData.push([c.latitude, c.longitude, 1])
+      }
+    })
+    console.log('[热力图] 竞品门店:', data.length)
+  }
+  
+  // 3. 品牌门店（只有开关开启时才包含）
+  if (showBrandStoreLayer.value && brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
+    const visibleIds = brandStoreStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+      : brandStoreStore.brandStores
+    data.forEach(s => {
+      if (s.latitude && s.longitude) {
+        hmData.push([s.latitude, s.longitude, 1])
+      }
+    })
+    console.log('[热力图] 品牌门店:', data.length)
+  }
+  
+  // 4. 购物中心（只有开关开启时才包含）
+  if (showShoppingCenterLayer.value && shoppingCenterStore.shoppingCenters && shoppingCenterStore.shoppingCenters.length > 0) {
+    const visibleIds = shoppingCenterStore.visibleIds
+    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
+      ? shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
+      : shoppingCenterStore.shoppingCenters
+    data.forEach(s => {
+      if (s.latitude && s.longitude) {
+        hmData.push([s.latitude, s.longitude, 1])
+      }
+    })
+    console.log('[热力图] 购物中心:', data.length)
+  }
+  
+  console.log('[热力图] 总计:', hmData.length)
+  
+  if (hmData.length > 0) {
+    heatmapLayer = L.heatLayer(hmData, { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } })
+  }
+}
+
 // 切换热力图
 const toggleHeatmap = () => {
   if (!map) return
   showHeatmap.value = !showHeatmap.value
-  if (showHeatmap.value) showCluster.value = false
+  console.log('[toggleHeatmap] showHeatmap:', showHeatmap.value)
+  
   if (showHeatmap.value) {
-    try { map.addLayer(heatmapLayer) } catch(e) {}
+    showCluster.value = false
+    console.log('[toggleHeatmap] 构建热力图')
+    buildAllStoreHeatmap()
+    if (heatmapLayer) {
+      try { map.addLayer(heatmapLayer) } catch(e) {}
+    }
     try {
       if (businessLayer && map.hasLayer(businessLayer)) {
         heatmapLayer.bringToBack()
@@ -2541,12 +2626,12 @@ const toggleHeatmap = () => {
     } catch(e) {}
   } else {
     try {
-      if (map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
-      if (businessLayer && !map.hasLayer(businessLayer)) {
-        map.addLayer(businessLayer)
-      }
+      if (heatmapLayer && map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
     } catch(e) {}
   }
+  
+  // 更新图层显示
+  updateLayerDisplay()
 }
 
 // 切换聚合
