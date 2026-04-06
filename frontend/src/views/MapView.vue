@@ -961,13 +961,18 @@ const initMap = async () => {
   }, 100)
 
   // 加载点位数据
-  loadMarkers()
+  await loadMarkers()
   // 加载竞品门店
-  loadCompetitors()
+  await loadCompetitors()
   // 加载品牌门店
-  loadBrandStores()
+  await loadBrandStores()
   // 加载购物中心
-  loadShoppingCenters()
+  await loadShoppingCenters()
+  
+  // 如果初始状态是聚合模式，需要构建聚合图层
+  if (showCluster.value) {
+    buildAllStoreCluster()
+  }
 }
 
 // 地址搜索（使用高德地图API，支持模糊检索）
@@ -1221,6 +1226,7 @@ const loadMarkers = async () => {
 // 构建所有门店统一聚合图层
 const buildAllStoreCluster = () => {
   console.log('[聚合] buildAllStoreCluster 开始')
+  console.log('[聚合] 当前选择: 我的门店=', showBusinessLayer.value, '竞品=', showCompetitorLayer.value, '品牌门店=', showBrandStoreLayer.value, '购物中心=', showShoppingCenterLayer.value)
   if (!map) return
   
   if (allStoreClusterGroup) {
@@ -1235,8 +1241,8 @@ const buildAllStoreCluster = () => {
   
   let totalCount = 0
   
-  // 1. 我的门店
-  if (markerStore.markers && markerStore.markers.length > 0) {
+  // 1. 我的门店（只有开关开启时才聚合）
+  if (showBusinessLayer.value && markerStore.markers && markerStore.markers.length > 0) {
     const visibleIds = markerStore.visibleIds
     const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
       ? markerStore.markers.filter(m => visibleIds.includes(m.id))
@@ -1254,8 +1260,8 @@ const buildAllStoreCluster = () => {
     })
   }
   
-  // 2. 竞品门店
-  if (competitorStore.competitors && competitorStore.competitors.length > 0) {
+  // 2. 竞品门店（只有开关开启时才聚合）
+  if (showCompetitorLayer.value && competitorStore.competitors && competitorStore.competitors.length > 0) {
     const brandColors = { '大米先生': '#e6a23c', '谷田稻香': '#f56c6c', '吉野家': '#409eff', '老乡鸡': '#67c23a', '米村拌饭': '#9c27b0', '其他': '#ff9800' }
     const getBrandColor = (brand) => {
       if (!brand) return brandColors['其他']
@@ -1279,9 +1285,9 @@ const buildAllStoreCluster = () => {
     })
   }
   
-  // 3. 品牌门店
-  console.log('[聚合] 品牌门店原始:', brandStoreStore.brandStores?.length || 0)
-  if (brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
+  // 3. 品牌门店（只有开关开启时才聚合）
+  if (showBrandStoreLayer.value && brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
+    console.log('[聚合] 品牌门店原始:', brandStoreStore.brandStores?.length || 0)
     const visibleIds = brandStoreStore.visibleIds
     const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
       ? brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
@@ -1300,8 +1306,8 @@ const buildAllStoreCluster = () => {
     })
   }
   
-  // 4. 购物中心
-  if (shoppingCenterStore.shoppingCenters && shoppingCenterStore.shoppingCenters.length > 0) {
+  // 4. 购物中心（只有开关开启时才聚合）
+  if (showShoppingCenterLayer.value && shoppingCenterStore.shoppingCenters && shoppingCenterStore.shoppingCenters.length > 0) {
     const visibleIds = shoppingCenterStore.visibleIds
     const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
       ? shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
@@ -1959,6 +1965,8 @@ const updateShoppingCenterDisplay = () => {
 const updateLayerDisplay = () => {
   if (!map) return
 
+  console.log('[updateLayerDisplay] showCluster:', showCluster.value, 'allStoreClusterGroup:', !!allStoreClusterGroup)
+
   // 移除所有业务图层
   try {
     if (businessLayer && map.hasLayer(businessLayer)) map.removeLayer(businessLayer)
@@ -1973,14 +1981,39 @@ const updateLayerDisplay = () => {
     }
   } catch(e) {}
 
-  if (!showBusinessLayer.value) return
+  // 聚合模式优先显示聚合图层（不受showBusinessLayer控制）
+  if (showCluster.value && allStoreClusterGroup) {
+    console.log('[updateLayerDisplay] 显示聚合图层, allStoreClusterGroup:', !!allStoreClusterGroup)
+    try { 
+      map.addLayer(allStoreClusterGroup)
+      console.log('[updateLayerDisplay] 聚合图层已添加到地图')
+    } catch(e) {
+      console.error('[updateLayerDisplay] 添加聚合图层失败:', e)
+    }
+    return
+  }
+
+  // 关闭聚合模式后，重新添加独立图层
+  if (showCompetitorLayer.value && competitorLayer) {
+    try { map.addLayer(competitorLayer) } catch(e) {}
+  }
+  if (showBrandStoreLayer.value && brandStoreLayer) {
+    try { map.addLayer(brandStoreLayer) } catch(e) {}
+  }
+  if (showShoppingCenterLayer.value && shoppingCenterLayer) {
+    try { map.addLayer(shoppingCenterLayer) } catch(e) {}
+  }
+
+  if (!showBusinessLayer.value) {
+    console.log('[updateLayerDisplay] showBusinessLayer为false，直接返回')
+    return
+  }
 
   if (showHeatmap.value && heatmapLayer) {
+    console.log('[updateLayerDisplay] 显示热力图')
     try { map.addLayer(heatmapLayer) } catch(e) {}
-  } else if (showCluster.value && allStoreClusterGroup) {
-    // 聚合模式：显示统一聚合图层
-    try { map.addLayer(allStoreClusterGroup) } catch(e) {}
   } else if (businessLayer) {
+    console.log('[updateLayerDisplay] 显示普通门店图层')
     try { map.addLayer(businessLayer) } catch(e) {}
   }
 
@@ -2026,11 +2059,20 @@ watch(() => shoppingCenterStore.visibleIds, () => {
   if (showCluster.value) buildAllStoreCluster()
 })
 
+// 监听门店开关变化，聚合模式下重新构建
+watch([showBusinessLayer, showCompetitorLayer, showBrandStoreLayer, showShoppingCenterLayer], () => {
+  if (showCluster.value) {
+    buildAllStoreCluster()
+    updateLayerDisplay()
+  }
+})
+
 // 监控图层显示状态（不包括竞品开关，由 @change 事件处理）
 watch([showBusinessLayer, showHeatmap, showCluster, layerOpacity], () => {
   if (showCluster.value) buildAllStoreCluster()
   updateLayerDisplay()
-  if (businessLayer) {
+  // 只在非聚合模式下对 businessLayer 调用 setStyle（markerClusterGroup 不支持此方法）
+  if (businessLayer && !showCluster.value && businessLayer.setStyle) {
     businessLayer.setStyle({ opacity: layerOpacity.value, fillOpacity: layerOpacity.value * 0.3 })
   }
 })
@@ -2509,11 +2551,17 @@ const toggleHeatmap = () => {
 
 // 切换聚合
 const toggleCluster = () => {
+  console.log('[toggleCluster] 开始, 当前showCluster:', showCluster.value)
   showCluster.value = !showCluster.value
+  console.log('[toggleCluster] 切换后showCluster:', showCluster.value)
   if (showCluster.value) {
     showHeatmap.value = false
+    console.log('[toggleCluster] 开始构建聚合图层')
     buildAllStoreCluster()
   }
+  // 无论开启还是关闭聚合，都需要更新图层显示
+  console.log('[toggleCluster] 调用updateLayerDisplay')
+  updateLayerDisplay()
 }
 
 // 清除绘制
