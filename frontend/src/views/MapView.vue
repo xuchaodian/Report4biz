@@ -128,37 +128,9 @@
         </el-tooltip>
         <el-divider style="margin: 6px 0;" />
         <!-- 热力图 -->
-        <div class="tool-item" :class="{ active: showHeatmap }" @click="heatmapMenuVisible = !heatmapMenuVisible">
+        <div class="tool-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
           <el-icon><DataLine /></el-icon>
           <span>热力图</span>
-          <el-icon style="margin-left: auto; font-size: 10px;"><ArrowLeft /></el-icon>
-        </div>
-        <!-- 热力图样式菜单（内嵌展开） -->
-        <div v-if="heatmapMenuVisible" class="heatmap-style-panel">
-          <div class="panel-section-title">热力图样式</div>
-          <div 
-            v-for="s in heatmapStyles" 
-            :key="s.name"
-            class="heatmap-style-item"
-            :class="{ active: heatmapStyle === s.name }"
-            @click="selectHeatmapStyle(s.name)"
-          >
-            <div class="style-preview">
-              <span v-for="(color, idx) in s.preview" :key="idx" 
-                :style="{ backgroundColor: color, flex: 1, height: '8px' }"></span>
-            </div>
-            <span class="style-label">{{ s.label }}</span>
-          </div>
-          <div style="padding: 4px 0;">
-            <el-button 
-              :type="showHeatmap ? 'danger' : 'primary'" 
-              size="small" 
-              @click="toggleHeatmap" 
-              style="width: 100%; font-size: 11px;"
-            >
-              {{ showHeatmap ? '关闭热力图' : '开启热力图' }}
-            </el-button>
-          </div>
         </div>
         <!-- 聚合显示 -->
         <el-tooltip content="聚合显示" placement="left">
@@ -588,35 +560,7 @@ const activeTool = ref('')
 const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
-const heatmapMenuVisible = ref(false)
-const heatmapStyle = ref('classic')
 
-// 热力图预设样式
-const heatmapStyles = [
-  {
-    name: 'classic',
-    label: '经典（蓝→红）',
-    preview: ['#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff0000'],
-    options: { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } }
-  },
-  {
-    name: 'density',
-    label: '密度（绿→红）',
-    preview: ['#00ff00', '#7fff00', '#ffff00', '#ff7f00', '#ff0000'],
-    options: { radius: 38, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.1: '#22cc22', 0.4: '#88ee00', 0.6: '#ffcc00', 0.8: '#ff6600', 1.0: '#dd1100' } }
-  },
-  {
-    name: 'cool',
-    label: '冷色（深蓝→青）',
-    preview: ['#000033', '#003366', '#0066cc', '#0099ff', '#00ccff'],
-    options: { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.1: '#001144', 0.3: '#0044aa', 0.6: '#0088dd', 0.8: '#22bbff', 1.0: '#66ccdd' } }
-  }
-]
-
-const getCurrentHeatmapOptions = () => {
-  const s = heatmapStyles.find(s => s.name === heatmapStyle.value) || heatmapStyles[0]
-  return s.options
-}
 const showBusinessLayer = ref(true)
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
@@ -1260,9 +1204,9 @@ const loadMarkers = async () => {
     markerClusterGroup.addLayer(marker)
   })
 
-  // 热力图
+  // 热力图（经典样式：蓝→红）
   const heatmapData = dataToShow.map(m => [m.latitude, m.longitude, 1])
-  heatmapLayer = L.heatLayer(heatmapData, getCurrentHeatmapOptions())
+  heatmapLayer = L.heatLayer(heatmapData, { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } })
 
   // 根据显示模式添加图层
   updateLayerDisplay()
@@ -1332,7 +1276,7 @@ const reloadBusinessLayer = () => {
   // 热力图
   if (heatmapLayer) { try { map.removeLayer(heatmapLayer) } catch(e) {} }
   const hmData = dataToShow.map(m => [m.latitude, m.longitude, 1])
-  heatmapLayer = L.heatLayer(hmData, getCurrentHeatmapOptions())
+  heatmapLayer = L.heatLayer(hmData, { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } })
   if (wasOnMap) {
     if (showHeatmap.value) {
       map.addLayer(heatmapLayer)
@@ -2419,7 +2363,6 @@ const toggleHeatmap = () => {
   if (!map) return
   showHeatmap.value = !showHeatmap.value
   if (showHeatmap.value) showCluster.value = false
-  heatmapMenuVisible.value = false
   if (showHeatmap.value) {
     try { map.addLayer(heatmapLayer) } catch(e) {}
     try {
@@ -2435,13 +2378,6 @@ const toggleHeatmap = () => {
       }
     } catch(e) {}
   }
-}
-
-// 选择热力图样式
-const selectHeatmapStyle = (styleName) => {
-  heatmapStyle.value = styleName
-  // 重新加载热力图
-  reloadBusinessLayer()
 }
 
 // 切换聚合
@@ -3570,63 +3506,6 @@ onUnmounted(() => {
 
     .el-divider {
       margin: 4px 0;
-    }
-
-    .heatmap-style-panel {
-      background: #f8f9fa;
-      border: 1px solid #e4e7ed;
-      border-radius: 6px;
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      min-width: 150px;
-
-      .panel-section-title {
-        font-size: 11px;
-        font-weight: 600;
-        color: #666;
-        padding: 2px 4px;
-        margin-bottom: 2px;
-      }
-
-      .heatmap-style-item {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        padding: 5px 6px;
-        border-radius: 4px;
-        cursor: pointer;
-        border: 1px solid transparent;
-        transition: all 0.2s;
-
-        .style-preview {
-          display: flex;
-          border-radius: 3px;
-          overflow: hidden;
-          height: 8px;
-          width: 100%;
-        }
-
-        .style-label {
-          font-size: 11px;
-          color: #555;
-        }
-
-        &:hover {
-          background: #ecf5ff;
-          border-color: #c6e2ff;
-        }
-
-        &.active {
-          background: #ecf5ff;
-          border-color: #409eff;
-          .style-label {
-            color: #409eff;
-            font-weight: 600;
-          }
-        }
-      }
     }
   }
 
