@@ -446,7 +446,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="circleDialogVisible = false">取消</el-button>
+        <el-button @click="closeCircleDialog">取消</el-button>
         <el-button type="primary" @click="circleDialogMode === 'population' ? analyzePopulationDistribution() : analyzeCircleStores()">
           {{ circleDialogMode === 'population' ? '分析' : '确定' }}
         </el-button>
@@ -629,8 +629,12 @@ const circleAnalysisTitle = ref('圆形内门店分析')
 
 // 商圈人口分布相关
 let populationLayerGroup = null  // 人口分布图层组
+let tempPopulationMarker = null   // 人口分布临时圆心标记
 const populationFieldOptions = ref([])  // 可选的统计字段列表
 const selectedPopulationField = ref('')  // 用户选择的统计字段
+
+// 商圈内点位相关
+let tempCircleMarker = null  // 商圈内点位临时圆心标记
 
 // POI搜索结果
 const poiResultVisible = ref(false)
@@ -649,7 +653,6 @@ const businessCircleExpanded = ref(false)
 
 // 半径圆搜索状态
 const pendingCircleSearch = ref(null) // { lat, lng }
-let tempCircleMarker = null
 
 // 多边形搜索状态
 const pendingPolygonSearch = ref(false)
@@ -749,6 +752,16 @@ const analyzeCircleStores = () => {
   circleAnalysisVisible.value = true
 }
 
+// 关闭圆形对话框
+const closeCircleDialog = () => {
+  circleDialogVisible.value = false
+  // 清除临时图钉标记
+  if (tempPopulationMarker) {
+    map.removeLayer(tempPopulationMarker)
+    tempPopulationMarker = null
+  }
+}
+
 // 商圈人口分布 - 打开对话框
 const openPopulationDistribution = async () => {
   if (!map) return
@@ -768,6 +781,12 @@ const openPopulationDistribution = async () => {
   // 重置字段选项
   populationFieldOptions.value = []
   selectedPopulationField.value = ''
+  
+  // 清除之前的人口分布图层
+  if (populationLayerGroup) {
+    map.removeLayer(populationLayerGroup)
+    populationLayerGroup = null
+  }
   
   // 加载统计字段选项
   try {
@@ -823,6 +842,12 @@ const openPopulationDistribution = async () => {
   const originalCursor = map.getContainer().style.cursor
   map.getContainer().style.cursor = 'crosshair'
   
+  // 清除之前的临时标记
+  if (tempPopulationMarker) {
+    map.removeLayer(tempPopulationMarker)
+    tempPopulationMarker = null
+  }
+  
   // 添加一次性地图点击监听
   map.once('click', (e) => {
     // 恢复原始光标
@@ -831,6 +856,31 @@ const openPopulationDistribution = async () => {
     circleForm.center = e.latlng
     circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
     ElMessage.success(`已选择位置：${circleForm.centerText}`)
+    
+    // 在点击位置显示小图钉标记
+    const pinIcon = L.divIcon({
+      html: `<div style="
+        width: 16px;
+        height: 22px;
+        position: relative;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+      ">
+        <svg viewBox="0 0 24 40" width="16" height="22" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 28 12 28s12-19 12-28c0-6.6-5.4-12-12-12z" fill="#ef4444"/>
+          <circle cx="12" cy="12" r="4" fill="white"/>
+        </svg>
+      </div>`,
+      className: '',
+      iconSize: [16, 22],
+      iconAnchor: [8, 22],
+      popupAnchor: [0, -22]
+    })
+    
+    tempPopulationMarker = L.marker([e.latlng.lat, e.latlng.lng], {
+      icon: pinIcon,
+      zIndexOffset: 1000
+    }).addTo(map)
+    
     // 用户点击地图后，才打开对话框
     circleDialogVisible.value = true
   })
@@ -1171,6 +1221,22 @@ const analyzePopulationDistribution = async () => {
     })
     populationLayerGroup.addLayer(circle)
     
+    // 7. 移除图钉，用黑色圆圈替代圆心
+    if (tempPopulationMarker) {
+      map.removeLayer(tempPopulationMarker)
+      tempPopulationMarker = null
+    }
+    
+    // 添加黑色圆圈作为圆心标记
+    const centerCircle = L.circleMarker([centerLat, centerLng], {
+      radius: 8,
+      color: '#000',
+      fillColor: '#fff',
+      fillOpacity: 1,
+      weight: 3
+    })
+    populationLayerGroup.addLayer(centerCircle)
+    
     // 7. 绘制统计信息面板（位于多边形最右侧外侧）
     // 1. 收集所有多边形顶点的边界
     const allPoints = []
@@ -1259,7 +1325,7 @@ const analyzePopulationDistribution = async () => {
     })
     populationLayerGroup.addLayer(panelMarker)
     
-    // 8. 调整视图 - 使用圆形边界作为默认
+    // 9. 调整视图 - 使用圆形边界作为默认
     try {
       const circleBounds = L.circle([centerLat, centerLng], { radius: radiusInMeters }).getBounds()
       if (allMatchingData.length > 0 && populationLayerGroup.getLayers().length > 0) {
@@ -1275,7 +1341,7 @@ const analyzePopulationDistribution = async () => {
       map.setView([centerLat, centerLng], 12)
     }
     
-    // 9. 显示结果
+    // 10. 显示结果
     ElMessage.success(`找到 ${allMatchingData.length} 个多边形，${fieldName} 合计: ${total.toLocaleString()}`)
     
     // 关闭对话框
@@ -3284,11 +3350,43 @@ const handleDrawRectangle = (e) => {
 // 绘制圆形
 const handleDrawCircle = (e) => {
   if (!map) return
+  
+  // 清除之前的临时标记
+  if (tempCircleMarker) {
+    map.removeLayer(tempCircleMarker)
+    tempCircleMarker = null
+  }
+  
   // 记录圆心，打开对话框让用户设置半径
   circleForm.center = e.latlng
   circleForm.centerText = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`
   circleForm.radius = 1
   circleForm.unit = 'km'
+  
+  // 显示小图钉标记
+  const pinIcon = L.divIcon({
+    html: `<div style="
+      width: 16px;
+      height: 22px;
+      position: relative;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+    ">
+      <svg viewBox="0 0 24 40" width="16" height="22" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 28 12 28s12-19 12-28c0-6.6-5.4-12-12-12z" fill="#409eff"/>
+        <circle cx="12" cy="12" r="4" fill="white"/>
+      </svg>
+    </div>`,
+    className: '',
+    iconSize: [16, 22],
+    iconAnchor: [8, 22],
+    popupAnchor: [0, -22]
+  })
+  
+  tempCircleMarker = L.marker([e.latlng.lat, e.latlng.lng], {
+    icon: pinIcon,
+    zIndexOffset: 1000
+  }).addTo(map)
+  
   circleDialogVisible.value = true
 }
 
@@ -3308,16 +3406,23 @@ const confirmDrawCircle = () => {
     fillOpacity: 0.3
   }).addTo(map)
   drawnItems.addLayer(circle)
-  // 在圆心添加图标
-  const centerIcon = L.marker(circleForm.center, {
-    icon: L.divIcon({
-      className: '',
-      html: `<div style="background:#fff;color:#409eff;width:12px;height:12px;border:2px solid #409eff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>`,
-      iconSize: [12, 12],
-      iconAnchor: [6, 6]
-    })
+  
+  // 移除蓝色小图钉，用黑色圆圈替代圆心
+  if (tempCircleMarker) {
+    map.removeLayer(tempCircleMarker)
+    tempCircleMarker = null
+  }
+  
+  // 在圆心添加黑色圆圈
+  const centerIcon = L.circleMarker(circleForm.center, {
+    radius: 8,
+    color: '#000',
+    fillColor: '#fff',
+    fillOpacity: 1,
+    weight: 3
   }).addTo(map)
   drawnItems.addLayer(centerIcon)
+  
   circleDialogVisible.value = false
   activeTool.value = ''
   measurementResult.value = ''
