@@ -50,14 +50,14 @@
           />
         </div>
         <div class="poi-search-modes">
-          <el-button size="small" class="poi-mode-btn" @click="startCircleSearch">
+          <div class="poi-mode-btn" @click="startCircleSearch">
             <el-icon><Location /></el-icon>
-            半径圆检索
-          </el-button>
-          <el-button size="small" class="poi-mode-btn" @click="startPolygonSearch">
+            <span>半径圆</span>
+          </div>
+          <div class="poi-mode-btn" @click="startPolygonSearch">
             <el-icon><Edit /></el-icon>
-            多边形检索
-          </el-button>
+            <span>多边形</span>
+          </div>
         </div>
       </div>
     </div>
@@ -69,14 +69,14 @@
         <span class="business-circle-arrow" :class="{ expanded: businessCircleExpanded }">▼</span>
       </div>
       <div v-show="businessCircleExpanded" class="business-circle-body">
-        <el-button size="small" class="business-circle-btn" @click="setTool('circle')">
+        <div class="business-circle-btn" @click="setTool('circle')">
           <el-icon><Coordinate /></el-icon>
-          商圈内点位
-        </el-button>
-        <el-button size="small" class="business-circle-btn" @click="analyzeExistingCircles">
+          <span>商圈内点位</span>
+        </div>
+        <div class="business-circle-btn" @click="analyzeExistingCircles">
           <el-icon><DataAnalysis /></el-icon>
-          分析已有圆形
-        </el-button>
+          <span>分析已有圆形</span>
+        </div>
       </div>
     </div>
 
@@ -3748,7 +3748,7 @@ onUnmounted(() => {
 .toolbar {
   position: absolute;
   top: 10px;
-  right: 10px;
+  right: 15px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -4017,12 +4017,13 @@ onUnmounted(() => {
 .poi-search-panel {
   position: absolute;
   top: 10px;
-  right: 280px;
+  right: 287px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   z-index: 1001;
   min-width: 110px;
+  max-width: 110px;
   overflow: hidden;
   border: 2px solid #409eff;
 
@@ -4059,10 +4060,17 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
+    box-sizing: border-box;
 
     .poi-search-input {
+      width: 100%;
+      max-width: 100px;
+      box-sizing: border-box;
+
       .el-input__inner {
         border-color: #409eff;
+        width: 100%;
       }
     }
 
@@ -4072,26 +4080,33 @@ onUnmounted(() => {
       gap: 6px;
 
       .poi-mode-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         width: 100%;
-        padding: 8px 12px !important;
-        border: 1px solid #dcdfe6 !important;
-        background: #fff !important;
-        color: #606266 !important;
-        
+        padding: 7px 10px;
+        border: 1px solid #dcdfe6;
+        border-radius: 4px;
+        background: #fff;
+        color: #606266;
+        font-size: 12px;
+        cursor: pointer;
+        box-sizing: border-box;
+        user-select: none;
+
         &:hover {
-          background: #ecf5ff !important;
-          border-color: #409eff !important;
-          color: #409eff !important;
+          background: #ecf5ff;
+          border-color: #409eff;
+          color: #409eff;
         }
-        
-        // Element Plus按钮内部结构
+
         .el-icon {
-          margin-right: 6px;
-          vertical-align: middle;
+          font-size: 14px;
+          flex-shrink: 0;
         }
-        
+
         span {
-          vertical-align: middle;
+          line-height: 1;
         }
       }
     }
@@ -4146,25 +4161,33 @@ onUnmounted(() => {
     gap: 8px;
 
     .business-circle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       width: 100%;
-      padding: 8px 12px !important;
-      border: 1px solid #dcdfe6 !important;
-      background: #fff !important;
-      color: #606266 !important;
+      padding: 7px 10px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      background: #fff;
+      color: #606266;
+      font-size: 12px;
+      cursor: pointer;
+      box-sizing: border-box;
+      user-select: none;
 
       &:hover {
-        background: #fff4e6 !important;
-        border-color: #ff8800 !important;
-        color: #ff8800 !important;
+        background: #fff4e6;
+        border-color: #ff8800;
+        color: #ff8800;
       }
 
       .el-icon {
-        margin-right: 6px;
-        vertical-align: middle;
+        font-size: 14px;
+        flex-shrink: 0;
       }
 
       span {
-        vertical-align: middle;
+        line-height: 1;
       }
     }
   }
@@ -4174,7 +4197,7 @@ onUnmounted(() => {
 .store-toggle-panel {
   position: absolute;
   top: 10px;
-  right: 150px;
+  right: 152px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
