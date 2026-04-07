@@ -795,9 +795,22 @@ const openPopulationDistribution = async () => {
       }
     }
     
-    populationFieldOptions.value = Array.from(allFields)
+    // 过滤掉 RecID，并按优先级排序
+    const filteredFields = Array.from(allFields)
+      .filter(f => f !== 'RecID')
+      .sort((a, b) => {
+        // 优先选择 常住人口
+        if (a === '常住人口') return -1
+        if (b === '常住人口') return 1
+        return 0
+      })
+    
+    populationFieldOptions.value = filteredFields
     if (populationFieldOptions.value.length > 0) {
-      selectedPopulationField.value = populationFieldOptions.value[0]
+      // 默认选择 常住人口，如果不存在则选择第一个
+      const defaultField = populationFieldOptions.value.find(f => f === '常住人口') 
+        || populationFieldOptions.value[0]
+      selectedPopulationField.value = defaultField
     }
   } catch (e) {
     console.error('加载统计字段失败:', e)
@@ -967,8 +980,9 @@ const analyzePopulationDistribution = async () => {
       return
     }
     
-    // 2. 遍历每个shapefile，找出圆形范围内的多边形
+    // 2. 遍历每个shapefile，找出圆形范围内的多边形，并收集所有整型字段
     const allMatchingData = []  // 收集所有匹配的数据
+    const allIntegerFields = {}  // 收集所有整型字段的统计值
     
     for (const sf of shapefiles) {
       try {
@@ -992,14 +1006,33 @@ const analyzePopulationDistribution = async () => {
           
           // 检测多边形是否与圆相交（中心点在圆内 OR 边界穿过圆 OR 圆心在多边形内）
           if (isPolygonIntersectsCircle(geom, centerLat, centerLng, radiusInMeters)) {
+            // 计算多边形与圆的交集面积比例
+            const intersectionRatio = calculateIntersectionRatio(geom, centerLat, centerLng, radiusInMeters)
+            
             const value = parseInt(feature.properties?.[fieldName]) || 0
             allMatchingData.push({
               feature,
-              value,
+              value: Math.round(value * intersectionRatio),  // 按面积占比计算
+              originalValue: value,
+              intersectionRatio,
               fieldName,
               shapefileName: sf.name,
               geom: geom
             })
+            
+            // 收集所有整型字段的值（按面积占比计算）
+            const props = feature.properties || {}
+            for (const [key, val] of Object.entries(props)) {
+              if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
+                if (!allIntegerFields[key]) {
+                  allIntegerFields[key] = { total: 0, count: 0, originalTotal: 0 }
+                }
+                const weightedValue = Math.round(Number(val) * intersectionRatio)
+                allIntegerFields[key].total += weightedValue
+                allIntegerFields[key].originalTotal += Number(val)
+                allIntegerFields[key].count++
+              }
+            }
           }
         }
       } catch (e) {
@@ -1091,6 +1124,39 @@ const analyzePopulationDistribution = async () => {
         `)
         
         populationLayerGroup.addLayer(polygon)
+        
+        // 在多边形中心添加数值标签
+        const polyCenter = getFeatureCenter(feature)
+        if (polyCenter) {
+          // 格式化数值
+          let displayValue = value
+          if (value >= 10000) {
+            displayValue = (value / 10000).toFixed(1) + '万'
+          } else if (value >= 1000) {
+            displayValue = value.toLocaleString()
+          }
+          
+          const labelMarker = L.marker([polyCenter.lat, polyCenter.lng], {
+            icon: L.divIcon({
+              className: 'population-label',
+              html: `<div style="
+                background: rgba(255,255,255,0.9);
+                border: 1px solid ${color};
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 11px;
+                font-weight: bold;
+                color: #333;
+                white-space: nowrap;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                text-align: center;
+              ">${displayValue}</div>`,
+              iconSize: [60, 20],
+              iconAnchor: [30, 10]
+            })
+          })
+          populationLayerGroup.addLayer(labelMarker)
+        }
       }
     })
     
@@ -1100,21 +1166,98 @@ const analyzePopulationDistribution = async () => {
       color: '#ff7800',
       fillColor: '#ff7800',
       fillOpacity: 0.1,
-      weight: 2,
-      dashArray: '5, 5'
+      weight: 4,  // 加粗边框
+      dashArray: '8, 4'  // 增加虚线间距使边框更明显
     })
     populationLayerGroup.addLayer(circle)
     
-    // 7. 绘制圆心标记
-    const centerMarker = L.marker([centerLat, centerLng], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="background:#fff;color:#ff7800;width:16px;height:16px;border:2px solid #ff7800;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-      })
+    // 7. 绘制统计信息面板（位于多边形最右侧外侧）
+    // 1. 收集所有多边形顶点的边界
+    const allPoints = []
+    allMatchingData.forEach(data => {
+      const geom = data.geom
+      if (geom.type === 'Polygon') {
+        geom.coordinates[0].forEach(c => allPoints.push([c[1], c[0]])) // [lng,lat] -> [lat,lng]
+      } else if (geom.type === 'MultiPolygon') {
+        geom.coordinates.forEach(poly => poly[0].forEach(c => allPoints.push([c[1], c[0]])))
+      }
     })
-    populationLayerGroup.addLayer(centerMarker)
+    
+    // 2. 找到经度最大的点（最右侧）
+    let rightMostLng = centerLng
+    let rightMostLat = centerLat
+    allPoints.forEach(p => {
+      if (p[1] > rightMostLng) {
+        rightMostLng = p[1]
+        rightMostLat = p[0]
+      }
+    })
+    
+    // 3. 在最右侧点偏移200像素（使用经纬度直接计算）
+    const panelOffsetLng = 0.003 // 约300米
+    const panelLatLng = [rightMostLat, rightMostLng + panelOffsetLng]
+    
+    // 构建统计信息HTML（恢复原始紧凑样式）
+    const formatNumber = (num) => {
+      if (num >= 10000) {
+        return (num / 10000).toFixed(1) + '万'
+      }
+      return num.toLocaleString()
+    }
+    
+    // 定义字段显示顺序
+    const fieldOrder = ['常住人口', '本地人口', '0-14岁', '15-59岁', '60-64岁', '65岁以上']
+    
+    // 生成统计面板HTML
+    let statsHtml = `<div style="background:rgba(255,255,255,0.95);border:2px solid #ff7800;border-radius:8px;padding:8px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.3);min-width:130px;cursor:grab;user-select:none;">`
+    statsHtml += `<div style="font-size:12px;font-weight:bold;color:#ff7800;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;">📊 统计信息</div>`
+    statsHtml += `<div style="font-size:10px;color:#999;margin-bottom:4px;">共${allMatchingData.length}个区域</div>`
+    
+    // 按指定顺序显示所有整型字段
+    const allFields = Object.entries(allIntegerFields)
+    
+    // 排序：先按指定顺序，然后按原始值总和排序
+    allFields.sort((a, b) => {
+      const idxA = fieldOrder.indexOf(a[0])
+      const idxB = fieldOrder.indexOf(b[0])
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB
+      if (idxA !== -1) return -1
+      if (idxB !== -1) return 1
+      return b[1].originalTotal - a[1].originalTotal
+    })
+    
+    // 显示最多6个字段（包括当前选择字段）
+    const displayFields = allFields.slice(0, 6)
+    
+    displayFields.forEach(([key, data]) => {
+      const isCurrentField = key === fieldName
+      statsHtml += `<div style="font-size:11px;${isCurrentField ? 'color:#e6a23c;font-weight:bold;' : 'color:#666;'}margin-top:3px;">
+        ${key}: <span style="${isCurrentField ? 'color:#e6a23c;' : 'color:#409eff;font-weight:bold;'}">${formatNumber(data.total)}</span>
+      </div>`
+    })
+    
+    // 添加面积占比说明和拖动提示
+    statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#aaa;">*按面积占比计算</div>`
+    statsHtml += `<div style="margin-top:4px;font-size:9px;color:#ff7800;text-align:center;">📋 可拖动调整位置</div>`
+    
+    statsHtml += `</div>`
+    
+    const panelWidth = 150 // 面板宽度(px)
+    const panelMarker = L.marker([panelLatLng[0], panelLatLng[1]], {
+      icon: L.divIcon({
+        className: 'draggable-panel',
+        html: statsHtml,
+        iconSize: [panelWidth, 'auto'],
+        iconAnchor: [0, 0]  // 左上角对齐
+      }),
+      draggable: true  // 启用拖动
+    })
+    // 拖动时更新位置
+    panelMarker.on('dragend', (e) => {
+      const pos = e.target.getLatLng()
+      console.log('面板拖动到:', pos.lat, pos.lng)
+    })
+    populationLayerGroup.addLayer(panelMarker)
     
     // 8. 调整视图 - 使用圆形边界作为默认
     try {
@@ -1245,6 +1388,109 @@ const isLineIntersectsCircle = (lat1, lng1, lat2, lng2, centerLat, centerLng, ra
   const closestLng = lng1 + t * (lng2 - lng1)
   
   return dist(closestLat, closestLng, centerLat, centerLng) <= radius
+}
+
+// 计算多边形面积（平方米）- 使用球面近似公式
+const calculatePolygonArea = (ring) => {
+  if (!ring || ring.length < 3) return 0
+  
+  let area = 0
+  const n = ring.length
+  const R = 6371000  // 地球半径（米）
+  
+  for (let i = 0; i < n; i++) {
+    const [lng1, lat1] = ring[i]
+    const [lng2, lat2] = ring[(i + 1) % n]
+    
+    const lat1Rad = lat1 * Math.PI / 180
+    const lat2Rad = lat2 * Math.PI / 180
+    const lng1Rad = lng1 * Math.PI / 180
+    const lng2Rad = lng2 * Math.PI / 180
+    
+    area += (lng2Rad - lng1Rad) * (2 + Math.sin(lat1Rad) + Math.sin(lat2Rad))
+  }
+  
+  area = Math.abs(area * R * R / 2)
+  return area
+}
+
+// 计算多边形与圆的交集面积比例（使用采样方法）
+const calculateIntersectionRatio = (geom, centerLat, centerLng, radius) => {
+  // 获取多边形的外边界
+  let outerRing = null
+  if (geom.type === 'Polygon') {
+    outerRing = geom.coordinates[0]
+  } else if (geom.type === 'MultiPolygon') {
+    // 使用第一个多边形的外边界
+    outerRing = geom.coordinates[0][0]
+  }
+  
+  if (!outerRing) return 0
+  
+  // 计算多边形总面积
+  const polygonArea = calculatePolygonArea(outerRing)
+  if (polygonArea === 0) return 0
+  
+  // 计算圆的面积
+  const circleArea = Math.PI * radius * radius
+  
+  // 如果圆面积大于多边形面积，直接用多边形面积估算
+  if (circleArea > polygonArea * 2) {
+    // 检查多边形是否完全在圆内
+    let allInside = true
+    for (const coord of outerRing) {
+      const [lng, lat] = coord
+      if (getDistanceFromLatLng(centerLat, centerLng, lat, lng) > radius) {
+        allInside = false
+        break
+      }
+    }
+    if (allInside) return 1.0
+  }
+  
+  // 使用采样方法估算交集面积
+  // 获取多边形的边界框
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity
+  for (const [lng, lat] of outerRing) {
+    minLng = Math.min(minLng, lng)
+    maxLng = Math.max(maxLng, lng)
+    minLat = Math.min(minLat, lat)
+    maxLat = Math.max(maxLat, lat)
+  }
+  
+  // 将经纬度边界转换为米
+  const centerLngM = centerLng
+  const lngDiff = maxLng - minLng
+  const latDiff = maxLat - minLat
+  
+  // 采样点数量（越多越精确但越慢）
+  const samples = 200
+  let insidePolygon = 0
+  let insideBoth = 0
+  
+  for (let i = 0; i < samples; i++) {
+    // 在边界框内随机生成点
+    const sampleLng = minLng + Math.random() * lngDiff
+    const sampleLat = minLat + Math.random() * latDiff
+    
+    // 检查点是否在多边形内
+    if (isPointInPolygon(sampleLng, sampleLat, outerRing)) {
+      insidePolygon++
+      
+      // 检查点是否在圆内
+      if (getDistanceFromLatLng(centerLat, centerLng, sampleLat, sampleLng) <= radius) {
+        insideBoth++
+      }
+    }
+  }
+  
+  // 如果采样点太少，返回保守估计
+  if (insidePolygon < 10) {
+    return 0.5  // 假设一半面积在圆内
+  }
+  
+  // 返回交集面积占多边形面积的比例
+  return insideBoth / insidePolygon
 }
 
 // 关闭分析对话框（同时关闭圆形设置对话框）
@@ -4967,3 +5213,4 @@ onUnmounted(() => {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }
 }
+
