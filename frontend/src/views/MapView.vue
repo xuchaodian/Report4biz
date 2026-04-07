@@ -73,9 +73,9 @@
           <el-icon><Coordinate /></el-icon>
           <span>商圈内点位</span>
         </div>
-        <div class="business-circle-btn" @click="analyzeExistingCircles">
+        <div class="business-circle-btn" @click="openPopulationDistribution">
           <el-icon><DataAnalysis /></el-icon>
-          <span>分析已有圆形</span>
+          <span>商圈人口分布</span>
         </div>
       </div>
     </div>
@@ -404,8 +404,8 @@
     <!-- 绘制圆形对话框 -->
     <el-dialog
       v-model="circleDialogVisible"
-      title="设置圆形半径"
-      width="400px"
+      :title="circleDialogMode === 'population' ? '商圈人口分布' : '设置圆形半径'"
+      width="420px"
     >
       <el-form :model="circleForm" label-width="80px">
         <el-form-item label="圆心坐标">
@@ -425,10 +425,31 @@
             <el-radio value="m">米</el-radio>
           </el-radio-group>
         </el-form-item>
+        <!-- 统计字段选择（仅商圈人口分布模式显示） -->
+        <el-form-item v-if="circleDialogMode === 'population'" label="统计字段">
+          <el-select
+            v-model="selectedPopulationField"
+            placeholder="选择统计字段"
+            style="width: 100%;"
+            :disabled="populationFieldOptions.length === 0"
+          >
+            <el-option
+              v-for="field in populationFieldOptions"
+              :key="field"
+              :label="field"
+              :value="field"
+            />
+          </el-select>
+          <div v-if="populationFieldOptions.length === 0" style="font-size: 12px; color: #999; margin-top: 4px;">
+            正在扫描数据文件...
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="circleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="analyzeCircleStores">确定</el-button>
+        <el-button type="primary" @click="circleDialogMode === 'population' ? analyzePopulationDistribution() : analyzeCircleStores()">
+          {{ circleDialogMode === 'population' ? '分析' : '确定' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -588,6 +609,7 @@ const currentMarkerStyle = ref('store') // 当前图标样式
 
 // 绘制圆形相关
 const circleDialogVisible = ref(false)
+const circleDialogMode = ref('stores') // 'stores'=商圈内点位, 'population'=商圈人口分布
 const circleForm = reactive({
   center: null,
   centerText: '',
@@ -604,6 +626,11 @@ const circleAnalysisData = reactive({
   competitorStoresFull: []
 })
 const circleAnalysisTitle = ref('圆形内门店分析')
+
+// 商圈人口分布相关
+let populationLayerGroup = null  // 人口分布图层组
+const populationFieldOptions = ref([])  // 可选的统计字段列表
+const selectedPopulationField = ref('')  // 用户选择的统计字段
 
 // POI搜索结果
 const poiResultVisible = ref(false)
@@ -722,39 +749,502 @@ const analyzeCircleStores = () => {
   circleAnalysisVisible.value = true
 }
 
-// 分析已有圆形（从地图上已绘制的圆形中分析）
-const analyzeExistingCircles = () => {
+// 商圈人口分布 - 打开对话框
+const openPopulationDistribution = async () => {
   if (!map) return
-  
-  // 获取drawnItems中的所有圆形图层
-  const circles = []
-  drawnItems.eachLayer(layer => {
-    if (layer instanceof L.Circle) {
-      circles.push(layer)
-    }
-  })
-  
-  if (circles.length === 0) {
-    ElMessage.warning('地图上还没有绘制圆形，请先绘制圆形')
-    return
-  }
-  
-  // 只分析第一个圆形（如果有多个，可以扩展为选择）
-  const circle = circles[0]
-  const center = circle.getLatLng()
-  const radius = circle.getRadius()
-  
-  // 设置分析参数
-  circleForm.center = center
-  circleForm.centerText = `${center.lng.toFixed(6)}, ${center.lat.toFixed(6)}`
-  circleForm.radius = radius >= 1000 ? (radius / 1000).toFixed(1) : radius
-  circleForm.unit = radius >= 1000 ? 'km' : 'm'
-  
-  // 调用分析函数
-  analyzeCircleStores()
   
   // 关闭商圈工具面板
   businessCircleExpanded.value = false
+  
+  // 设置为人口分布模式
+  circleDialogMode.value = 'population'
+  
+  // 重置表单
+  circleForm.center = null
+  circleForm.centerText = ''
+  circleForm.radius = 2
+  circleForm.unit = 'km'
+  
+  // 重置字段选项
+  populationFieldOptions.value = []
+  selectedPopulationField.value = ''
+  
+  // 加载统计字段选项
+  try {
+    const userId = localStorage.getItem('userId') || 1
+    const listRes = await fetch(`/api/shapefiles?userId=${userId}`)
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+    
+    const allFields = new Set()
+    
+    for (const sf of shapefiles.slice(0, 5)) {  // 最多检查5个文件
+      try {
+        const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
+          headers: { 'x-user-id': userId }
+        })
+        const sfData = await sfRes.json()
+        const geojson = sfData.data?.geojson || sfData.geojson
+        
+        if (geojson && geojson.features && geojson.features.length > 0) {
+          const fields = findAllIntegerFields(geojson.features)
+          fields.forEach(f => allFields.add(f))
+        }
+      } catch (e) {
+        console.error(`获取 ${sf.name} 字段失败:`, e)
+      }
+    }
+    
+    populationFieldOptions.value = Array.from(allFields)
+    if (populationFieldOptions.value.length > 0) {
+      selectedPopulationField.value = populationFieldOptions.value[0]
+    }
+  } catch (e) {
+    console.error('加载统计字段失败:', e)
+  }
+  
+  // 提示用户点击地图
+  ElMessage.info('请在地图上点击选择圆心位置')
+  
+  // 设置鼠标为十字光标
+  const originalCursor = map.getContainer().style.cursor
+  map.getContainer().style.cursor = 'crosshair'
+  
+  // 添加一次性地图点击监听
+  map.once('click', (e) => {
+    // 恢复原始光标
+    map.getContainer().style.cursor = originalCursor
+    
+    circleForm.center = e.latlng
+    circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
+    ElMessage.success(`已选择位置：${circleForm.centerText}`)
+    // 用户点击地图后，才打开对话框
+    circleDialogVisible.value = true
+  })
+}
+
+// 识别多边形要素的中心点
+const getFeatureCenter = (feature) => {
+  const geom = feature.geometry
+  if (!geom) return null
+  
+  let coords = []
+  if (geom.type === 'Polygon') {
+    coords = geom.coordinates[0]
+  } else if (geom.type === 'MultiPolygon') {
+    coords = geom.coordinates[0][0]
+  } else {
+    return null
+  }
+  
+  if (!coords || coords.length === 0) return null
+  
+  const lng = coords.reduce((sum, c) => sum + c[0], 0) / coords.length
+  const lat = coords.reduce((sum, c) => sum + c[1], 0) / coords.length
+  return { lat, lng }
+}
+
+// 自动识别整数型统计字段（返回所有符合条件的字段列表）
+const findAllIntegerFields = (features) => {
+  if (!features || features.length === 0) return []
+  
+  const fieldCount = {}  // 统计每个字段出现整数值的次数
+  
+  // 检查前20个要素
+  const sampleSize = Math.min(20, features.length)
+  for (let i = 0; i < sampleSize; i++) {
+    const props = features[i].properties || {}
+    for (const [key, value] of Object.entries(props)) {
+      if (value === null || value === undefined || value === '') continue
+      
+      // 检查是否为整数（允许0和负数）
+      const num = parseFloat(value)
+      if (!isNaN(num) && Number.isInteger(num)) {
+        fieldCount[key] = (fieldCount[key] || 0) + 1
+      }
+    }
+  }
+  
+  // 找到所有出现次数>=50%的整数型字段
+  const validFields = []
+  for (const [field, count] of Object.entries(fieldCount)) {
+    if (count >= sampleSize * 0.5) {
+      validFields.push(field)
+    }
+  }
+  
+  return validFields
+}
+
+// 获取单个整数型字段（兼容旧函数）
+const findIntegerField = (features) => {
+  const fields = findAllIntegerFields(features)
+  return fields.length > 0 ? fields[0] : null
+}
+
+// WGS84转GCJ-02 (标准算法)
+const wgs84ToGcj02 = (lng, lat) => {
+  const PI = 3.1415926535897932384626
+  const a = 6378245.0
+  const ee = 0.00669342162296594323
+  
+  let dLat = transformLat(lng - 105.0, lat - 35.0)
+  let dLng = transformLng(lng - 105.0, lat - 35.0)
+  
+  const radLat = lat / 180.0 * PI
+  let magic = Math.sin(radLat)
+  magic = 1 - ee * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  
+  dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI)
+  dLat = (dLat * 180.0) / (a * (1 - ee) / (magic * sqrtMagic) * PI)
+  
+  const mgLat = lat + dLat
+  const mgLng = lng + dLng
+  
+  return [mgLng, mgLat]
+}
+
+const transformLat = (x, y) => {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+  ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0
+  ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320.0 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0
+  return ret
+}
+
+const transformLng = (x, y) => {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+  ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0
+  ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
+  return ret
+}
+
+// 转换坐标数组
+const transformCoords = (coords) => {
+  if (typeof coords[0] === 'number') {
+    const [gcjLng, gcjLat] = wgs84ToGcj02(coords[0], coords[1])
+    return [gcjLng, gcjLat]
+  } else {
+    return coords.map(c => transformCoords(c))
+  }
+}
+
+// 分析人口分布 - 使用用户选择的统计字段
+const analyzePopulationDistribution = async () => {
+  if (!circleForm.center) {
+    ElMessage.warning('请先在地图上点击选择位置')
+    return
+  }
+  
+  // 检查是否已选择统计字段
+  if (!selectedPopulationField.value) {
+    ElMessage.warning('请等待数据文件扫描完成')
+    return
+  }
+  
+  try {
+    const userId = localStorage.getItem('userId') || 1
+    const radiusInMeters = circleForm.unit === 'km' 
+      ? circleForm.radius * 1000 
+      : circleForm.radius
+    
+    const centerLat = circleForm.center.lat
+    const centerLng = circleForm.center.lng
+    
+    // 使用用户选择的字段
+    const fieldName = selectedPopulationField.value
+    
+    // 1. 获取用户所有shapefile
+    ElMessage.info('正在扫描数据文件...')
+    const listRes = await fetch(`/api/shapefiles?userId=${userId}`)
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+    
+    if (shapefiles.length === 0) {
+      ElMessage.warning('没有找到上传的数据文件，请先上传shp文件')
+      return
+    }
+    
+    // 2. 遍历每个shapefile，找出圆形范围内的多边形
+    const allMatchingData = []  // 收集所有匹配的数据
+    
+    for (const sf of shapefiles) {
+      try {
+        const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
+          headers: { 'x-user-id': userId }
+        })
+        const sfData = await sfRes.json()
+        
+        // geojson存储在sfData.data.geojson中
+        const geojson = sfData.data?.geojson || sfData.geojson
+        
+        if (!geojson) continue
+        
+        const features = geojson.features || []
+        if (features.length === 0) continue
+        
+        // 过滤圆形范围内的多边形（检测多边形是否与圆相交）
+        for (const feature of features) {
+          const geom = feature.geometry
+          if (!geom) continue
+          
+          // 检测多边形是否与圆相交（中心点在圆内 OR 边界穿过圆 OR 圆心在多边形内）
+          if (isPolygonIntersectsCircle(geom, centerLat, centerLng, radiusInMeters)) {
+            const value = parseInt(feature.properties?.[fieldName]) || 0
+            allMatchingData.push({
+              feature,
+              value,
+              fieldName,
+              shapefileName: sf.name,
+              geom: geom
+            })
+          }
+        }
+      } catch (e) {
+        console.error(`处理 ${sf.name} 失败:`, e)
+      }
+    }
+    
+    if (allMatchingData.length === 0) {
+      ElMessage.warning(`在 ${circleForm.radius}${circleForm.unit} 范围内没有找到有效的多边形`)
+      return
+    }
+    
+    // 3. 计算统计信息
+    const values = allMatchingData.map(d => d.value)
+    const total = values.reduce((sum, v) => sum + v, 0)
+    const minVal = Math.min(...values)
+    const maxVal = Math.max(...values)
+    
+    // 4. 改进颜色分级：使用分位数分级（quantile classification）
+    // 确保每个颜色级别有相似数量的多边形，区分度更好
+    const colors = ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']  // 蓝-绿-黄-橙-红，更直观
+    const sortedValues = [...values].sort((a, b) => a - b)
+    
+    // 计算分位数阈值（把数据分成5等份）
+    const getQuantile = (arr, q) => {
+      const pos = (arr.length - 1) * q
+      const base = Math.floor(pos)
+      const rest = pos - base
+      if (arr[base + 1] !== undefined) {
+        return arr[base] + rest * (arr[base + 1] - arr[base])
+      }
+      return arr[base]
+    }
+    
+    // 5级分位数阈值：0%, 20%, 40%, 60%, 80%, 100%
+    const thresholds = [
+      getQuantile(sortedValues, 0),
+      getQuantile(sortedValues, 0.2),
+      getQuantile(sortedValues, 0.4),
+      getQuantile(sortedValues, 0.6),
+      getQuantile(sortedValues, 0.8),
+      getQuantile(sortedValues, 1)
+    ]
+    
+    const getColorByValue = (value) => {
+      if (value <= thresholds[1]) return colors[0]
+      if (value <= thresholds[2]) return colors[1]
+      if (value <= thresholds[3]) return colors[2]
+      if (value <= thresholds[4]) return colors[3]
+      return colors[4]
+    }
+    
+    // 5. 清除之前的图层并绘制
+    if (populationLayerGroup) {
+      map.removeLayer(populationLayerGroup)
+    }
+    populationLayerGroup = L.layerGroup().addTo(map)
+    
+    allMatchingData.forEach((data, index) => {
+      const { feature, value, geom } = data
+      const color = getColorByValue(value)
+      
+      // GeoJSON坐标已经是GCJ-02，直接使用
+      let latlngs = []
+      if (geom.type === 'Polygon') {
+        latlngs = geom.coordinates[0].map(c => [c[1], c[0]])  // [lng, lat] -> [lat, lng]
+      } else if (geom.type === 'MultiPolygon') {
+        latlngs = geom.coordinates[0][0].map(c => [c[1], c[0]])
+      }
+      
+      if (latlngs.length > 0) {
+        const polygon = L.polygon(latlngs, {
+          color: '#ff7800',
+          weight: 1,
+          fillColor: color,
+          fillOpacity: 0.7
+        })
+        
+        const props = feature.properties || {}
+        polygon.bindPopup(`
+          <div style="font-size: 12px; min-width: 140px;">
+            <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
+            <span style="color: #666;">${fieldName}:</span> 
+            <strong style="color: #e6a23c;">${value.toLocaleString()}</strong><br/>
+            <span style="color: #999; font-size: 11px;">
+              占总计: ${(value / total * 100).toFixed(1)}%
+            </span>
+          </div>
+        `)
+        
+        populationLayerGroup.addLayer(polygon)
+      }
+    })
+    
+    // 6. 绘制圆形边界
+    const circle = L.circle([centerLat, centerLng], {
+      radius: radiusInMeters,
+      color: '#ff7800',
+      fillColor: '#ff7800',
+      fillOpacity: 0.1,
+      weight: 2,
+      dashArray: '5, 5'
+    })
+    populationLayerGroup.addLayer(circle)
+    
+    // 7. 绘制圆心标记
+    const centerMarker = L.marker([centerLat, centerLng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#fff;color:#ff7800;width:16px;height:16px;border:2px solid #ff7800;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      })
+    })
+    populationLayerGroup.addLayer(centerMarker)
+    
+    // 8. 调整视图 - 使用圆形边界作为默认
+    try {
+      const circleBounds = L.circle([centerLat, centerLng], { radius: radiusInMeters }).getBounds()
+      if (allMatchingData.length > 0 && populationLayerGroup.getLayers().length > 0) {
+        const layerBounds = populationLayerGroup.getBounds()
+        if (layerBounds && layerBounds.isValid && layerBounds.isValid()) {
+          map.fitBounds(layerBounds, { padding: [50, 50] })
+          return
+        }
+      }
+      map.fitBounds(circleBounds, { padding: [50, 50] })
+    } catch (e) {
+      console.error('调整视图失败:', e)
+      map.setView([centerLat, centerLng], 12)
+    }
+    
+    // 9. 显示结果
+    ElMessage.success(`找到 ${allMatchingData.length} 个多边形，${fieldName} 合计: ${total.toLocaleString()}`)
+    
+    // 关闭对话框
+    circleDialogVisible.value = false
+    
+  } catch (error) {
+    console.error('分析人口分布失败:', error)
+    ElMessage.error('分析失败：' + error.message)
+  }
+}
+
+// 计算两点之间的距离（米）- 使用Haversine公式
+const getDistanceFromLatLng = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000 // 地球半径（米）
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+// 检测点是否在圆形内（使用球面距离）
+const isPointInCircle = (pointLat, pointLng, centerLat, centerLng, radius) => {
+  return getDistanceFromLatLng(centerLat, centerLng, pointLat, pointLng) <= radius
+}
+
+// 检测多边形是否与圆相交
+const isPolygonIntersectsCircle = (geom, centerLat, centerLng, radius) => {
+  let polygons = []
+  
+  if (geom.type === 'Polygon') {
+    polygons = geom.coordinates
+  } else if (geom.type === 'MultiPolygon') {
+    polygons = geom.coordinates.flat()
+  } else {
+    return false
+  }
+  
+  for (const ring of polygons) {
+    for (const coord of ring) {
+      // 检查多边形的每个顶点是否在圆内
+      const [lng, lat] = coord
+      if (isPointInCircle(lat, lng, centerLat, centerLng, radius)) {
+        return true
+      }
+    }
+    
+    // 检查圆心是否在多边形内（射线法）
+    if (isPointInPolygon(centerLng, centerLat, ring)) {
+      return true
+    }
+  }
+  
+  // 检查多边形边是否与圆相交
+  for (const ring of polygons) {
+    for (let i = 0; i < ring.length - 1; i++) {
+      const [lng1, lat1] = ring[i]
+      const [lng2, lat2] = ring[i + 1]
+      if (isLineIntersectsCircle(lat1, lng1, lat2, lng2, centerLat, centerLng, radius)) {
+        return true
+      }
+    }
+  }
+  
+  return false
+}
+
+// 检测圆心是否在多边形内（射线法）
+const isPointInPolygon = (x, y, ring) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+// 检测线段是否与圆相交
+const isLineIntersectsCircle = (lat1, lng1, lat2, lng2, centerLat, centerLng, radius) => {
+  // Haversine距离函数内联
+  const dist = (p1lat, p1lng, p2lat, p2lng) => {
+    const R = 6371000
+    const dLat = (p2lat - p1lat) * Math.PI / 180
+    const dLng = (p2lng - p1lng) * Math.PI / 180
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(p1lat * Math.PI / 180) * Math.cos(p2lat * Math.PI / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+  
+  // 检查线段两个端点是否在圆内
+  if (dist(lat1, lng1, centerLat, centerLng) <= radius) return true
+  if (dist(lat2, lng2, centerLat, centerLng) <= radius) return true
+  
+  // 检查线段是否穿过圆的边界
+  const d = dist(lat1, lng1, lat2, lng2)
+  if (d === 0) return false
+  
+  // 计算线段到圆心的最近点
+  const t = Math.max(0, Math.min(1, 
+    ((centerLat - lat1) * (lat2 - lat1) + (centerLng - lng1) * (lng2 - lng1)) / 
+    (Math.pow(lat2 - lat1, 2) + Math.pow(lng2 - lng1, 2))
+  ))
+  const closestLat = lat1 + t * (lat2 - lat1)
+  const closestLng = lng1 + t * (lng2 - lng1)
+  
+  return dist(closestLat, closestLng, centerLat, centerLng) <= radius
 }
 
 // 关闭分析对话框（同时关闭圆形设置对话框）
