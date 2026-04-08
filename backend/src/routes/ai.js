@@ -187,6 +187,7 @@ async function executeQueryStats(userId, args) {
         WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
         GROUP BY ${col}
         ORDER BY count DESC
+        LIMIT 20
       `).all(userId)
     } else {
       rows = db.prepare(`
@@ -195,10 +196,16 @@ async function executeQueryStats(userId, args) {
         WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
         GROUP BY ${col}
         ORDER BY count DESC
+        LIMIT 20
       `).all(userId)
     }
 
-    return { success: true, data: rows, group_by: col, data_type }
+    // 仅返回摘要信息，避免大量数据传入 AI（节省 token）
+    const summary = rows.length > 0
+      ? `共 ${rows.length} 个分组（前 ${rows.length} 条）：` + rows.map(r => `${r.label} ${r.count}家`).join('；')
+      : '暂无数据'
+
+    return { success: true, data: rows, summary, group_by: col, data_type }
   } catch (err) {
     return { success: false, error: err.message }
   }

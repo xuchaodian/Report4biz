@@ -65,7 +65,7 @@
               <el-icon><Search /></el-icon>
               检索
             </el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)">
+            <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </template>

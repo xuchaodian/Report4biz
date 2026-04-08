@@ -791,12 +791,14 @@ const openPopulationDistribution = async () => {
   // 加载统计字段选项
   try {
     const userId = localStorage.getItem('userId') || 1
-    const listRes = await fetch(`/api/shapefiles?userId=${userId}`)
+    const listRes = await fetch(`/api/shapefiles`, {
+      headers: { 'x-user-id': userId }
+    })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
-    
+
     const allFields = new Set()
-    
+
     for (const sf of shapefiles.slice(0, 5)) {  // 最多检查5个文件
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
@@ -1021,7 +1023,9 @@ const analyzePopulationDistribution = async () => {
     
     // 1. 获取用户所有shapefile
     ElMessage.info('正在扫描数据文件...')
-    const listRes = await fetch(`/api/shapefiles?userId=${userId}`)
+    const listRes = await fetch(`/api/shapefiles`, {
+      headers: { 'x-user-id': userId }
+    })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
     

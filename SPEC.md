@@ -204,3 +204,40 @@ webgis-system/
 - 高德地图需要申请 Web API Key (免费额度足够测试)
 - 部署时需配置环境变量
 - 生产环境建议使用 PostgreSQL + PostGIS
+
+## 10. AI 助手开发规范
+
+### Token 消耗控制原则
+
+AI 助手基于豆包 Seed 2.0 Pro（Function Calling），每次对话涉及两次 API 调用：
+1. **第一次调用**：用户消息 + 历史 → 返回 tool_calls
+2. **第二次调用**（仅服务端工具）：用户消息 + 历史 + 工具执行结果 → 返回文字
+
+**核心原则：工具执行结果会作为第二次调用的输入 token，必须严格控制大小。**
+
+### 工具分类与 Token 策略
+
+| 分类 | 说明 | Token 策略 |
+|------|------|-----------|
+| **客户端工具** | 在前端直接执行，结果不上报 AI | ✅ 随意，不计 AI token |
+| **服务端工具** | 后端执行，结果传入第二次 AI 调用 | ⚠️ **必须控制返回数据量** |
+
+**当前分类**：
+- 客户端工具：`filter_markers`、`filter_competitors`、`filter_brand_stores`、`filter_shopping_centers`、`locate_city`、`toggle_layer`、`activate_tool`、`poi_around_search`、`poi_text_search`、`poi_polygon_search`
+- 服务端工具：`query_stats`（已优化：LIMIT 20 + 摘要压缩）
+
+### 新增 AI 工具的 Token 规范
+
+1. **优先选择客户端执行**：能前端完成的工具（如筛选、图层切换）不要走后端
+2. **服务端口必须限制**：后端 SQL 查询加 `LIMIT 20`，POI 接口已默认 `offset: 20`
+3. **返回摘要而非原始数据**：如 `query_stats` 返回 `{ data: [], summary: "共5个分组..." }`，让 AI 直接用摘要
+4. **禁止返回大量 geometry**：GeoJSON 坐标数据严禁传回 AI
+5. **对话历史注意累积**：连续对话时历史消息会累积，后续可考虑压缩策略
+
+### 文件位置
+
+- 工具定义：`backend/src/ai/tools.js`
+- 后端路由：`backend/src/routes/ai.js`
+- 前端执行器：`frontend/src/utils/aiExecutor.js`
+- 对话组件：`frontend/src/components/AiAssistant.vue`
+

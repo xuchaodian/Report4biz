@@ -112,14 +112,18 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 })
 
-// 获取用户的所有 Shapefile
+// 获取用户的所有 Shapefile（同时包含管理员的，方便商圈人口分布功能共享数据）
 router.get('/', (req, res) => {
   try {
     const db = getDb()
     const userId = req.headers['x-user-id'] || 1
 
+    // 返回当前用户 + 管理员(user_id=1) 的文件（去重）
     const rows = db.prepare(
-      `SELECT id, name, field_names, feature_count, created_at FROM shapefiles WHERE user_id = ? ORDER BY created_at DESC`
+      `SELECT id, name, field_names, feature_count, created_at, user_id
+       FROM shapefiles
+       WHERE user_id = ? OR user_id = 1
+       ORDER BY created_at DESC`
     ).all(userId)
 
     // 解析 field_names
