@@ -61,7 +61,8 @@ async function geocode(address) {
   const data = response.data;
   
   if (data.status !== '1') {
-    throw new Error(data.info || '地理编码失败');
+    // 保留高德错误码，便于调用方重试判断
+    throw new Error(`${data.info || '地理编码失败'}(${data.infocode || 'N/A'})`);
   }
   
   if (!data.geocodes || data.geocodes.length === 0) {

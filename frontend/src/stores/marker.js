@@ -113,6 +113,16 @@ export const useMarkerStore = defineStore('marker', {
       }
     },
 
+    // 批量地理编码（调用高德API，将地址转换为坐标）
+    async batchGeocode(addresses) {
+      try {
+        const { data } = await axios.post(`${API_URL}/poi/batch-geocode`, { addresses })
+        return { success: true, ...data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.error || '地理编码失败' }
+      }
+    },
+
     // 设置地图可见ID列表（null=全部，数组=仅这些ID）
     setVisibleIds(ids) {
       this.visibleIds = ids

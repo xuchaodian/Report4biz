@@ -6,6 +6,9 @@
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加门店
         </el-button>
+        <el-button @click="showGeocodeDialog">
+          <el-icon><MapLocation /></el-icon>地址解析
+        </el-button>
         <el-button @click="handleImport">
           <el-icon><Upload /></el-icon>导入
         </el-button>
@@ -327,6 +330,78 @@
         <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>
       </template>
     </el-dialog>
+
+    <!-- 地址解析对话框 -->
+    <el-dialog v-model="geocodeDialogVisible" title="地址解析" width="900px" draggable>
+      <!-- 步骤1：上传CSV -->
+      <div v-if="geocodeStep === 1">
+        <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+          <template #title>
+            请上传含地址信息的 CSV 文件，每行一条记录，支持字段：
+            <b>name（门店名称）</b>、<b>address（地址）</b>、city（城市）、district（区县）
+          </template>
+        </el-alert>
+        <el-upload
+          ref="geocodeUploadRef"
+          :auto-upload="false"
+          :limit="1"
+          accept=".csv"
+          :on-change="handleGeocodeFileChange"
+          drag
+        >
+          <el-icon class="el-icon--upload"><Upload /></el-icon>
+          <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
+          <template #tip>
+            <div class="el-upload__tip">
+              CSV 文件需包含 <b>name</b> 和 <b>address</b> 列，其他列将原样保留
+            </div>
+          </template>
+        </el-upload>
+      </div>
+
+      <!-- 步骤2：预览解析结果 -->
+      <div v-if="geocodeStep === 2">
+        <el-alert type="success" :closable="false" style="margin-bottom: 12px">
+          共 {{ geocodeResults.length }} 条记录，解析成功 <b>{{ geocodeSuccessCount }}</b> 条，失败 <b>{{ geocodeResults.length - geocodeSuccessCount }}</b> 条
+        </el-alert>
+        <el-table :data="geocodeResults" max-height="350" border stripe size="small">
+          <el-table-column prop="name" label="门店名称" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="address" label="原始地址" min-width="180" show-overflow-tooltip />
+          <el-table-column label="状态" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.success" type="success" size="small">✓ 成功</el-tag>
+              <el-tooltip v-else :content="row.error" placement="top">
+                <el-tag type="danger" size="small">✗ 失败</el-tag>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+          <el-table-column label="解析结果" min-width="200">
+            <template #default="{ row }">
+              <span v-if="row.success" style="color: #67c23a">
+                {{ row.formatted_address || '' }}<br>
+                <span style="font-size: 12px; color: #999">
+                  坐标: {{ row.longitude?.toFixed(6) }}, {{ row.latitude?.toFixed(6) }}
+                </span>
+              </span>
+              <span v-else style="color: #f56c6c; font-size: 12px">{{ row.error }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button v-if="geocodeStep === 1" @click="geocodeDialogVisible = false">取消</el-button>
+        <el-button v-if="geocodeStep === 1" type="primary" :disabled="!geocodeCsvFile" :loading="geocodeParsing" @click="handleParseGeocode">
+          解析地址
+        </el-button>
+        <template v-if="geocodeStep === 2">
+          <el-button @click="handleGeocodeExport">导出CSV</el-button>
+          <el-button type="success" :loading="geocodeImporting" @click="handleGeocodeImport">
+            导入到门店库
+          </el-button>
+        </template>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -334,7 +409,8 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation } from '@element-plus/icons-vue'
+import Papa from 'papaparse'
 import { useMarkerStore } from '@/stores/marker'
 
 const router = useRouter()
@@ -723,7 +799,7 @@ const downloadTemplate = () => {
   const template = `store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,area,seats,rent,store_category,contact_person,contact_phone,latitude,longitude,description
 BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,李明,13800138001,王芳,13800138002,国贸大厦一层,2023-01-15,07:00-22:00,200,80,50000,直营,张总,13900139001,39.9088,116.4610,CBD核心区
 BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13800138001,,,,,180,70,42000,加盟,陈总,13900139003,39.9965,116.4710,重点跟进`
-  const blob = new Blob([template], { type: 'text/csv' })
+  const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -731,6 +807,193 @@ BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13
   a.click()
   URL.revokeObjectURL(url)
 }
+
+// ===== 地址解析 =====
+// 对话框控制
+const geocodeDialogVisible = ref(false)
+const geocodeStep = ref(1)           // 1=上传 2=结果
+const geocodeCsvFile = ref(null)      // 上传的CSV文件
+const geocodeUploadRef = ref(null)
+const geocodeParsing = ref(false)
+const geocodeImporting = ref(false)
+const geocodeResults = ref([])        // 解析结果列表
+const geocodeSuccessCount = computed(() => geocodeResults.value.filter(r => r.success).length)
+
+// 原始CSV数据（保留所有列，用于导入）
+let geocodeRawData = []
+
+const showGeocodeDialog = () => {
+  geocodeDialogVisible.value = true
+  geocodeStep.value = 1
+  geocodeCsvFile.value = null
+  geocodeResults.value = []
+  geocodeRawData = []
+}
+
+const handleGeocodeFileChange = (file) => {
+  geocodeCsvFile.value = file.raw
+}
+
+// 解析CSV并批量调用地理编码
+const handleParseGeocode = async () => {
+  if (!geocodeCsvFile.value) {
+    ElMessage.warning('请先上传CSV文件')
+    return
+  }
+
+  geocodeParsing.value = true
+  geocodeResults.value = []
+  geocodeRawData = []
+
+  try {
+    // 1. 自动识别编码：先尝试 UTF-8，若检测到乱码则改用 GBK
+    const buffer = await geocodeCsvFile.value.arrayBuffer()
+    let text = new TextDecoder('utf-8').decode(buffer)
+    // 检测 UTF-8 乱码：U+FFFD 是 UTF-8 解码失败的替换字符，连续出现说明原本是 GBK
+    // 注意：不要用 /[\x80-\xff]{3,}/ 检测连续高字节，因为中文 UTF-8 本身就是连续高字节
+    const seemsGarbled = (text.match(/\ufffd/g) || []).length >= 2
+    if (seemsGarbled) {
+      text = new TextDecoder('gbk').decode(buffer)
+    }
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true })
+
+    if (!parsed.data || parsed.data.length === 0) {
+      ElMessage.error('CSV 文件为空或格式错误')
+      geocodeParsing.value = false
+      return
+    }
+
+    geocodeRawData = parsed.data
+
+    // 2. 构造地址列表
+    const addresses = geocodeRawData.map((row, i) => ({
+      name: row.name || row.门店名称 || `门店${i + 1}`,
+      address: row.address || row.地址 || '',
+      city: row.city || row.城市 || '',
+      district: row.district || row.区县 || ''
+    })).filter(a => a.address)
+
+    if (addresses.length === 0) {
+      ElMessage.error('未找到有效的地址数据（需包含 address 列）')
+      geocodeParsing.value = false
+      return
+    }
+
+    // 3. 批量调用地理编码
+    const result = await markerStore.batchGeocode(addresses)
+
+    if (!result.success) {
+      ElMessage.error(result.message)
+      geocodeParsing.value = false
+      return
+    }
+
+    // 4. 合并结果：将地理编码结果与原始数据合并
+    geocodeResults.value = result.results.map((r, i) => ({
+      ...r,
+      // 保留原始CSV的其他字段
+      ...Object.fromEntries(
+        Object.entries(geocodeRawData[i] || {})
+          .filter(([k]) => !['name', 'address', 'city', 'district'].includes(k))
+      )
+    }))
+
+    geocodeStep.value = 2
+    ElMessage.success(`解析完成！成功 ${geocodeSuccessCount.value} 条`)
+  } catch (err) {
+    console.error(err)
+    ElMessage.error('解析失败：' + err.message)
+  } finally {
+    geocodeParsing.value = false
+  }
+}
+
+// 导出解析结果为CSV
+const handleGeocodeExport = () => {
+  if (geocodeResults.value.length === 0) return
+
+  // 构造CSV字段
+  const sample = geocodeResults.value[0]
+  const fields = ['name', 'address', 'city', 'district', 'longitude', 'latitude',
+    'formatted_address', ...Object.keys(sample).filter(k => !['name','address','city','district','longitude','latitude','formatted_address','success','error'].includes(k))
+  ]
+
+  const csv = Papa.unparse(geocodeResults.value.filter(r => r.success), { fields })
+  // 添加 UTF-8 BOM，确保 Excel 正确识别中文
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `geocode_result_${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('导出成功')
+}
+
+// 将解析成功的记录导入门店库
+const handleGeocodeImport = async () => {
+  const successItems = geocodeResults.value.filter(r => r.success)
+  if (successItems.length === 0) {
+    ElMessage.warning('没有可导入的记录')
+    return
+  }
+
+  geocodeImporting.value = true
+  let importCount = 0
+  let failCount = 0
+
+  try {
+    for (const item of successItems) {
+      const marker = {
+        name: item.name,
+        address: item.address || item.formatted_address || '',
+        city: item.city || '',
+        district: item.district || '',
+        latitude: item.latitude,
+        longitude: item.longitude,
+        // 从原始数据中取其他字段
+        store_code: item.store_code || '',
+        brand: item.brand || '',
+        store_type: item.store_type || '',
+        area_manager: item.area_manager || '',
+        phone1: item.phone1 || '',
+        store_manager: item.store_manager || '',
+        phone2: item.phone2 || '',
+        area: item.area ? Number(item.area) : null,
+        seats: item.seats ? Number(item.seats) : null,
+        rent: item.rent ? Number(item.rent) : null,
+        store_category: item.store_category || '',
+        contact_person: item.contact_person || '',
+        contact_phone: item.contact_phone || '',
+        open_date: item.open_date || '',
+        business_hours: item.business_hours || '',
+        description: item.description || ''
+      }
+      const result = await markerStore.addMarker(marker)
+      if (result.success) importCount++
+      else failCount++
+    }
+    ElMessage.success(`成功导入 ${importCount} 条${failCount > 0 ? `，失败 ${failCount} 条` : ''}`)
+    geocodeDialogVisible.value = false
+    markerStore.fetchMarkers()
+  } catch (err) {
+    ElMessage.error('导入出错：' + err.message)
+  } finally {
+    geocodeImporting.value = false
+  }
+}
+
+// 监听对话框关闭，重置状态
+watch(geocodeDialogVisible, (val) => {
+  if (!val) {
+    setTimeout(() => {
+      geocodeStep.value = 1
+      geocodeCsvFile.value = null
+      geocodeResults.value = []
+      geocodeRawData = []
+    }, 300)
+  }
+})
 
 onMounted(() => {
   markerStore.fetchMarkers()
