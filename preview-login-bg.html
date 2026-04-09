@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录页预览 - 选址赢家Online</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .login-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* 背景图片 */
+      background-image: url('file:///Users/xuchaodian/微云同步助手(1265679625)/工作同步目录/5.Marketing/Logo/网站底图/绿色背景.jpg');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      /* 模糊效果 */
+      backdrop-filter: blur(8px);
+      /* 暗色遮罩，让背景图变暗一些，便于看清表单 */
+      background-color: rgba(0, 0, 0, 0.3);
+    }
+    
+    .login-box {
+      width: 400px;
+      padding: 40px;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(10px);
+    }
+    
+    .login-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .login-logo {
+      width: 72px;
+      height: 72px;
+      margin-bottom: 16px;
+    }
+    
+    .login-header h1 {
+      font-size: 28px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    
+    .login-header p {
+      color: #666;
+      font-size: 14px;
+    }
+    
+    .login-form {
+      margin-bottom: 20px;
+    }
+    
+    .form-item {
+      margin-bottom: 20px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: all 0.3s;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #67c23a;
+      box-shadow: 0 0 0 3px rgba(103, 194, 58, 0.1);
+    }
+    
+    .input-with-icon {
+      position: relative;
+    }
+    
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #999;
+      font-size: 16px;
+    }
+    
+    .input-with-icon .form-input {
+      padding-left: 42px;
+    }
+    
+    .login-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #67c23a 0%, #529b2e 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .login-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(103, 194, 58, 0.35);
+    }
+    
+    .login-footer {
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+    
+    .login-footer a {
+      color: #67c23a;
+      text-decoration: none;
+      margin-left: 5px;
+    }
+    
+    .login-footer a:hover {
+      text-decoration: underline;
+    }
+    
+    /* 背景切换按钮 */
+    .preview-controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      z-index: 100;
+    }
+    
+    .preview-controls h3 {
+      font-size: 14px;
+      color: #333;
+      margin-bottom: 12px;
+    }
+    
+    .preview-controls button {
+      display: block;
+      width: 100%;
+      padding: 10px 16px;
+      margin-bottom: 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    
+    .preview-controls button:last-child {
+      margin-bottom: 0;
+    }
+    
+    .preview-controls button:hover {
+      background: #f5f5f5;
+    }
+    
+    .preview-controls button.active {
+      background: #67c23a;
+      color: white;
+      border-color: #67c23a;
+    }
+    
+    .preview-tip {
+      font-size: 12px;
+      color: #999;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+  <!-- 预览控制面板 -->
+  <div class="preview-controls">
+    <h3>背景切换预览</h3>
+    <button id="btn-blur" class="active">模糊 + 半透明</button>
+    <button id="btn-dark">深色遮罩</button>
+    <button id="btn-light">浅色遮罩</button>
+    <button id="btn-blur-dark">模糊 + 深色遮罩</button>
+    <div class="preview-tip">
+      📌 实际部署后只保留一种效果<br>
+      建议：模糊 + 深色遮罩<br>
+      ⚠️ 部署需先上传图片到服务器
+    </div>
+  </div>
+  
+  <!-- 登录页 -->
+  <div class="login-container" id="loginContainer">
+    <div class="login-box">
+      <div class="login-header">
+        <img src="https://mka-online.cn/assets/logo-DrJ_hVFW.png" alt="Logo" class="login-logo" onerror="this.style.display='none'">
+        <h1>选址赢家Online</h1>
+        <p>智能选址分析平台</p>
+      </div>
+      
+      <div class="login-form">
+        <div class="form-item">
+          <div class="input-with-icon">
+            <span class="input-icon">👤</span>
+            <input type="text" class="form-input" placeholder="请输入用户名">
+          </div>
+        </div>
+        
+        <div class="form-item">
+          <div class="input-with-icon">
+            <span class="input-icon">🔒</span>
+            <input type="password" class="form-input" placeholder="请输入密码">
+          </div>
+        </div>
+        
+        <div class="form-item">
+          <button class="login-btn">登 录</button>
+        </div>
+      </div>
+      
+      <div class="login-footer">
+        <span>还没有账号？</span>
+        <a href="#">立即注册</a>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    const container = document.getElementById('loginContainer');
+    const buttons = document.querySelectorAll('.preview-controls button');
+    
+    const styles = {
+      'btn-blur': {
+        backgroundImage: "url('file:///Users/xuchaodian/微云同步助手(1265679625)/工作同步目录/5.Marketing/Logo/网站底图/绿色背景.jpg')",
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        backdropFilter: 'blur(8px)'
+      },
+      'btn-dark': {
+        backgroundImage: "url('file:///Users/xuchaodian/微云同步助手(1265679625)/工作同步目录/5.Marketing/Logo/网站底图/绿色背景.jpg')",
+        backgroundColor: 'rgba(0, 0, 0, 0.55)',
+        backdropFilter: 'none'
+      },
+      'btn-light': {
+        backgroundImage: "url('file:///Users/xuchaodian/微云同步助手(1265679625)/工作同步目录/5.Marketing/Logo/网站底图/绿色背景.jpg')",
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        backdropFilter: 'none'
+      },
+      'btn-blur-dark': {
+        backgroundImage: "url('file:///Users/xuchaodian/微云同步助手(1265679625)/工作同步目录/5.Marketing/Logo/网站底图/绿色背景.jpg')",
+        backgroundColor: 'rgba(0, 0, 0, 0.45)',
+        backdropFilter: 'blur(6px)'
+      }
+    };
+    
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // 更新按钮状态
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        // 应用样式
+        const style = styles[btn.id];
+        container.style.backgroundImage = style.backgroundImage;
+        container.style.backgroundColor = style.backgroundColor;
+        container.style.backdropFilter = style.backdropFilter;
+      });
+    });
+  </script>
+</body>
+</html>

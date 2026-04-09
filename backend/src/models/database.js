@@ -37,9 +37,17 @@ export async function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'user',
+      company TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `)
+
+  // 为已有数据库添加 company 字段（如果不存在）
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN company TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
 
   // 创建点位表 - 门店管理
   db.run(`

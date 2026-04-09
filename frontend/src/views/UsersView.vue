@@ -2,9 +2,26 @@
   <div class="users-view">
     <div class="users-header">
       <h2>用户管理</h2>
-      <el-button type="primary" @click="showAddDialog">
-        <el-icon><Plus /></el-icon>添加用户
-      </el-button>
+      <div class="header-actions">
+        <el-select
+          v-model="filterCompany"
+          placeholder="按公司筛选"
+          clearable
+          filterable
+          style="width: 200px; margin-right: 12px"
+          @change="handleFilterChange"
+        >
+          <el-option
+            v-for="company in companyList"
+            :key="company"
+            :label="company"
+            :value="company"
+          />
+        </el-select>
+        <el-button type="primary" @click="showAddDialog">
+          <el-icon><Plus /></el-icon>添加用户
+        </el-button>
+      </div>
     </div>
 
     <!-- 用户表格 -->
@@ -19,6 +36,7 @@
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="email" label="邮箱" min-width="180" />
+        <el-table-column prop="company" label="公司" min-width="150" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.role === 'admin' ? 'danger' : 'success'">
@@ -56,7 +74,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑用户' : '添加用户'"
-      width="450px"
+      width="500px"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="用户名" prop="username">
@@ -64,6 +82,9 @@
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入邮箱" />
+        </el-form-item>
+        <el-form-item label="公司" prop="company">
+          <el-input v-model="form.company" placeholder="请输入公司名称" />
         </el-form-item>
         <el-form-item v-if="!isEdit" label="密码" prop="password">
           <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
@@ -99,10 +120,12 @@ const isEdit = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
 const formRef = ref(null)
+const filterCompany = ref('')
 
 const form = reactive({
   username: '',
   email: '',
+  company: '',
   password: '',
   role: 'user'
 })
@@ -125,6 +148,18 @@ const rules = {
 
 const currentUserId = computed(() => userStore.user?.id)
 
+// 公司列表（去重）
+const companyList = computed(() => {
+  const companies = users.value
+    .map(u => u.company)
+    .filter(c => c && c.trim())
+  return [...new Set(companies)]
+})
+
+const handleFilterChange = () => {
+  fetchUsers()
+}
+
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
@@ -134,7 +169,11 @@ const formatDate = (dateStr) => {
 const fetchUsers = async () => {
   loading.value = true
   try {
-    const data = await api.get('/users')
+    const params = {}
+    if (filterCompany.value) {
+      params.company = filterCompany.value
+    }
+    const data = await api.get('/users', { params })
     users.value = data.users
   } catch (error) {
     ElMessage.error('获取用户列表失败')
@@ -149,6 +188,7 @@ const showAddDialog = () => {
   Object.assign(form, {
     username: '',
     email: '',
+    company: '',
     password: '',
     role: 'user'
   })
@@ -161,6 +201,7 @@ const handleEdit = (row) => {
   Object.assign(form, {
     username: row.username,
     email: row.email,
+    company: row.company || '',
     password: '',
     role: row.role
   })
@@ -174,7 +215,7 @@ const handleSave = async () => {
   saving.value = true
   try {
     if (isEdit.value) {
-      const updateData = { email: form.email, role: form.role }
+      const updateData = { email: form.email, role: form.role, company: form.company }
       if (form.password) {
         updateData.password = form.password
       }
@@ -248,6 +289,11 @@ onMounted(() => {
     margin: 0;
     font-size: 18px;
     color: #333;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
   }
 }
 

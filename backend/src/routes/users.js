@@ -9,11 +9,19 @@ const router = express.Router()
 router.get('/', authenticate, requireAdmin, (req, res) => {
   try {
     const db = getDb()
-    const users = db.prepare(`
-      SELECT id, username, email, role, created_at
-      FROM users
-      ORDER BY created_at DESC
-    `).all()
+    const { company } = req.query
+    
+    let sql = `SELECT id, username, email, role, company, created_at FROM users`
+    const params = []
+    
+    if (company) {
+      sql += ` WHERE company LIKE ?`
+      params.push(`%${company}%`)
+    }
+    
+    sql += ` ORDER BY created_at DESC`
+    
+    const users = db.prepare(sql).all(...params)
 
     res.json({ users })
   } catch (error) {
@@ -25,7 +33,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
 // 创建用户
 router.post('/', authenticate, requireAdmin, (req, res) => {
   try {
-    const { username, email, password, role } = req.body
+    const { username, email, password, role, company } = req.body
 
     if (!username || !email || !password) {
       return res.status(400).json({ message: '请填写所有必填字段' })
@@ -48,11 +56,11 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
 
     // 创建用户
     const result = db.prepare(`
-      INSERT INTO users (username, email, password, role)
-      VALUES (?, ?, ?, ?)
-    `).run(username, email, hashedPassword, role || 'user')
+      INSERT INTO users (username, email, password, role, company)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(username, email, hashedPassword, role || 'user', company || '')
 
-    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
+    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
 
     res.status(201).json({
       message: '用户创建成功',
@@ -107,7 +115,7 @@ router.put('/me', authenticate, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(userId)
+    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '修改成功',
@@ -122,7 +130,7 @@ router.put('/me', authenticate, (req, res) => {
 // 更新用户
 router.put('/:id', authenticate, requireAdmin, (req, res) => {
   try {
-    const { email, password, role } = req.body
+    const { email, password, role, company } = req.body
     const userId = req.params.id
 
     const db = getDb()
@@ -155,6 +163,11 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(role)
     }
 
+    if (company !== undefined) {
+      updates.push('company = ?')
+      params.push(company)
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({ message: '没有需要更新的字段' })
     }
@@ -162,7 +175,7 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    const user = db.prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?').get(userId)
+    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '用户更新成功',
