@@ -115,11 +115,18 @@
         </el-icon>
       </div>
       <div v-show="toolbarExpanded" class="toolbar-body">
-        <!-- 标注点 -->
-        <el-tooltip content="标注点" placement="left">
+        <!-- 添加门店 -->
+        <el-tooltip content="添加门店" placement="left">
           <div class="tool-item" :class="{ active: activeTool === 'marker' }" @click="setTool('marker')">
             <el-icon><Location /></el-icon>
-            <span>标注点</span>
+            <span>添加门店</span>
+          </div>
+        </el-tooltip>
+        <!-- 定位门店 -->
+        <el-tooltip content="定位门店" placement="left">
+          <div class="tool-item" :class="{ active: storeSearchVisible }" @click="storeSearchVisible = !storeSearchVisible">
+            <el-icon><Search /></el-icon>
+            <span>定位门店</span>
           </div>
         </el-tooltip>
         <!-- 测量距离 -->
@@ -158,17 +165,57 @@
             <span>清除绘制</span>
           </div>
         </el-tooltip>
-        <!-- 定位数据 -->
-        <el-tooltip content="定位数据" placement="left">
-          <div class="tool-item" @click="fitBounds">
-            <el-icon><View /></el-icon>
-            <span>定位数据</span>
-          </div>
-        </el-tooltip>
       </div>
       <!-- 测量结果显示 -->
       <div v-if="measurementResult" class="measurement-result">
         {{ measurementResult }}
+      </div>
+    </div>
+
+    <!-- 门店检索浮层 -->
+    <div v-if="storeSearchVisible" class="store-search-panel">
+      <div class="store-search-header">
+        <span class="store-search-title">
+          <el-icon><Search /></el-icon>
+          定位门店
+        </span>
+        <el-button link @click="storeSearchVisible = false">
+          <el-icon><Close /></el-icon>
+        </el-button>
+      </div>
+      <div class="store-search-input-wrap">
+        <el-input
+          v-model="storeSearchKeyword"
+          placeholder="输入名称、地址、品牌关键词…"
+          clearable
+          autofocus
+          @input="onStoreSearch"
+          @clear="onStoreSearch"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+      </div>
+      <div class="store-search-list">
+        <div
+          v-if="storeSearchResults.length === 0"
+          class="store-search-empty"
+        >{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
+        <div
+          v-for="s in storeSearchResults"
+          :key="s.id"
+          class="store-search-item"
+          @click="locateStore(s)"
+        >
+          <div class="store-search-name">{{ s.name }}</div>
+          <div class="store-search-sub">
+            <span v-if="s.brand">{{ s.brand }}</span>
+            <span v-if="s.city">{{ s.city }}</span>
+            <span v-if="s.district">{{ s.district }}</span>
+          </div>
+          <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
+        </div>
       </div>
     </div>
 
@@ -254,6 +301,8 @@
       v-model="markerDialogVisible"
       :title="editingMarker ? '编辑门店' : '添加门店'"
       width="700px"
+      draggable
+      @close="onMarkerDialogClose"
     >
       <el-form ref="markerFormRef" :model="markerForm" :rules="markerRules" label-width="90px">
         <el-row :gutter="20">
@@ -508,7 +557,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit
+  Delete, View, Grid, DataLine, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -2055,6 +2104,7 @@ const loadMarkers = async () => {
       }
     })
 
+    marker._storeId = markerData.id
     businessLayer.addLayer(marker)
   })
 
@@ -2245,6 +2295,7 @@ const reloadBusinessLayer = () => {
         }
       }
     })
+    marker._storeId = markerData.id
     businessLayer.addLayer(marker)
   })
 
@@ -3025,6 +3076,7 @@ const executeClick = (e) => {
     case 'marker':
       markerForm.latitude = lat
       markerForm.longitude = lng
+      showAddMarkerPin(lat, lng)
       markerDialogVisible.value = true
       break
 
@@ -3842,7 +3894,48 @@ const handleShapefileQuery = (event) => {
   }
 }
 
-// 定位数据范围
+// ===== 定位门店检索 =====
+const storeSearchVisible = ref(false)
+const storeSearchKeyword = ref('')
+const storeSearchResults = ref([])
+
+// 模糊检索：名称、品牌、地址
+const onStoreSearch = () => {
+  const kw = storeSearchKeyword.value.trim().toLowerCase()
+  if (!kw) {
+    storeSearchResults.value = []
+    return
+  }
+  storeSearchResults.value = markerStore.markers.filter(m => {
+    return (
+      m.name?.toLowerCase().includes(kw) ||
+      m.brand?.toLowerCase().includes(kw) ||
+      m.address?.toLowerCase().includes(kw) ||
+      m.city?.toLowerCase().includes(kw) ||
+      m.district?.toLowerCase().includes(kw) ||
+      m.store_code?.toLowerCase().includes(kw)
+    )
+  }).slice(0, 50) // 最多显示 50 条
+}
+
+// 点击门店跳转到地图
+const locateStore = (store) => {
+  if (!store.latitude || !store.longitude) {
+    ElMessage.warning('该门店没有坐标信息')
+    return
+  }
+  map.flyTo([store.latitude, store.longitude], 16, { animate: true, duration: 0.8 })
+  // 打开门店 popup（找到对应 marker 层）
+  if (businessLayer) {
+    businessLayer.eachLayer(layer => {
+      if (layer._storeId === store.id) {
+        layer.openPopup()
+      }
+    })
+  }
+}
+
+// 定位数据范围（保留供 AI 助手使用）
 const fitBounds = () => {
   if (markerStore.markers.length === 0) {
     ElMessage.warning('暂无点位数据')
@@ -4421,11 +4514,55 @@ const saveMarker = async () => {
 
   if (result.success) {
     ElMessage.success(editingMarker.value ? '更新成功' : '添加成功')
+    removeAddMarkerPin()
     markerDialogVisible.value = false
     loadMarkers()
     resetMarkerForm()
   } else {
     ElMessage.error(result.message)
+  }
+}
+
+// ===== 添加门店图钉预览 =====
+let addMarkerPin = null  // 预览图钉 marker
+
+const showAddMarkerPin = (lat, lng) => {
+  // 清除旧的预览图钉
+  removeAddMarkerPin()
+
+  // SVG 图钉图标（红色）
+  const pinSvg = encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+    <defs>
+      <filter id="pshadow">
+        <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.35)"/>
+      </filter>
+    </defs>
+    <path d="M16 2C9.37 2 4 7.37 4 14c0 9 12 24 12 24S28 23 28 14C28 7.37 22.63 2 16 2z"
+      fill="#ff4444" stroke="#cc0000" stroke-width="1.5" filter="url(#pshadow)"/>
+    <circle cx="16" cy="14" r="5" fill="white" opacity="0.9"/>
+  </svg>`)
+
+  const icon = L.divIcon({
+    html: `<div class="add-marker-pin-wrapper"><img src="data:image/svg+xml,${pinSvg}" width="32" height="40" /></div>`,
+    className: '',
+    iconSize: [32, 40],
+    iconAnchor: [16, 40],
+  })
+
+  addMarkerPin = L.marker([lat, lng], { icon, zIndexOffset: 9999 }).addTo(map)
+}
+
+const removeAddMarkerPin = () => {
+  if (addMarkerPin && map) {
+    map.removeLayer(addMarkerPin)
+    addMarkerPin = null
+  }
+}
+
+// 对话框关闭（取消/×）时移除预览图钉
+const onMarkerDialogClose = () => {
+  if (!editingMarker.value) {
+    removeAddMarkerPin()
   }
 }
 
@@ -5274,6 +5411,120 @@ onUnmounted(() => {
   img {
     filter: grayscale(100%) brightness(1.05);
   }
+}
+
+/* 门店检索浮层 */
+.store-search-panel {
+  position: absolute;
+  top: 60px;
+  right: 180px;
+  width: 300px;
+  max-height: 480px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.store-search-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #eee;
+  gap: 6px;
+}
+
+.store-search-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.store-search-input-wrap {
+  padding: 10px 12px 8px;
+}
+
+.store-search-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.store-search-empty {
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.store-search-item {
+  padding: 10px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.store-search-item:last-child {
+  border-bottom: none;
+}
+
+.store-search-item:hover {
+  background: #f0f7ff;
+}
+
+.store-search-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: #222;
+  margin-bottom: 3px;
+}
+
+.store-search-sub {
+  font-size: 12px;
+  color: #888;
+  display: flex;
+  gap: 6px;
+}
+
+.store-search-sub span::after {
+  content: '·';
+  margin-left: 6px;
+  color: #ccc;
+}
+
+.store-search-sub span:last-child::after {
+  content: '';
+}
+
+.store-search-addr {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 添加门店图钉预览动画 */
+.add-marker-pin-wrapper {
+  animation: pin-drop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom center;
+  display: block;
+}
+
+@keyframes pin-drop {
+  0%   { transform: translateY(-28px) scale(0.7); opacity: 0.4; }
+  60%  { transform: translateY(4px) scale(1.05); opacity: 1; }
+  80%  { transform: translateY(-3px) scale(0.97); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 </style>
 
