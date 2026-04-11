@@ -460,12 +460,33 @@
         <el-form-item label="圆心坐标">
           <el-input v-model="circleForm.centerText" disabled />
         </el-form-item>
-        <el-form-item label="半径">
+        <el-form-item label="半径1">
           <el-input-number
             v-model="circleForm.radius"
             :min="1"
             :max="50000"
             style="width: 100%;"
+            placeholder="第一圈半径"
+          />
+        </el-form-item>
+        <el-form-item label="半径2">
+          <el-input-number
+            v-model="circleForm.radius2"
+            :min="1"
+            :max="50000"
+            style="width: 100%;"
+            placeholder="留空则不显示"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="半径3">
+          <el-input-number
+            v-model="circleForm.radius3"
+            :min="1"
+            :max="50000"
+            style="width: 100%;"
+            placeholder="留空则不显示"
+            clearable
           />
         </el-form-item>
         <el-form-item label="单位">
@@ -662,7 +683,9 @@ const circleDialogMode = ref('stores') // 'stores'=商圈内点位, 'population'
 const circleForm = reactive({
   center: null,
   centerText: '',
-  radius: 1,
+  radius: 2,
+  radius2: null,
+  radius3: null,
   unit: 'km'
 })
 
@@ -825,6 +848,8 @@ const openPopulationDistribution = async () => {
   circleForm.center = null
   circleForm.centerText = ''
   circleForm.radius = 2
+  circleForm.radius2 = null
+  circleForm.radius3 = null
   circleForm.unit = 'km'
   
   // 重置字段选项
@@ -951,6 +976,8 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
   circleForm.center = { lat, lng }
   circleForm.centerText = `${lng.toFixed(6)}, ${lat.toFixed(6)}`
   circleForm.radius = typeof radius === 'number' && radius > 0 ? radius : 2
+  circleForm.radius2 = null
+  circleForm.radius3 = null
   circleForm.unit = 'km'
 
   // 重置字段选项
@@ -1124,95 +1151,99 @@ const transformCoords = (coords) => {
   }
 }
 
-// 分析人口分布 - 使用用户选择的统计字段
+// 分析人口分布 - 支持多半径
 const analyzePopulationDistribution = async () => {
   if (!circleForm.center) {
     ElMessage.warning('请先在地图上点击选择位置')
     return
   }
-  
-  // 检查是否已选择统计字段
+
   if (!selectedPopulationField.value) {
     ElMessage.warning('请等待数据文件扫描完成')
     return
   }
-  
+
   try {
     const userId = localStorage.getItem('userId') || 1
-    const radiusInMeters = circleForm.unit === 'km' 
-      ? circleForm.radius * 1000 
-      : circleForm.radius
-    
+
+    // 收集所有有效半径（米）
+    const allRadiiMeters = []
+    if (circleForm.radius) {
+      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius * 1000 : circleForm.radius)
+    }
+    if (circleForm.radius2) {
+      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius2 * 1000 : circleForm.radius2)
+    }
+    if (circleForm.radius3) {
+      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius3 * 1000 : circleForm.radius3)
+    }
+
+    if (allRadiiMeters.length === 0) {
+      ElMessage.warning('请至少设置一个半径')
+      return
+    }
+
+    const maxRadiusMeters = Math.max(...allRadiiMeters)
     const centerLat = circleForm.center.lat
     const centerLng = circleForm.center.lng
-    
-    // 使用用户选择的字段
     const fieldName = selectedPopulationField.value
-    
-    // 1. 获取用户所有shapefile
+
     ElMessage.info('正在扫描数据文件...')
     const listRes = await fetch(`/api/shapefiles`, {
       headers: { 'x-user-id': userId }
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
-    
+
     if (shapefiles.length === 0) {
       ElMessage.warning('没有找到上传的数据文件，请先上传shp文件')
       return
     }
-    
-    // 2. 遍历每个shapefile，找出圆形范围内的多边形，并收集所有整型字段
-    const allMatchingData = []  // 收集所有匹配的数据
-    const allIntegerFields = {}  // 收集所有整型字段的统计值
-    
+
+    // 每个半径的匹配结果
+    const radiusResults = {}  // key: radiusInMeters
+
     for (const sf of shapefiles) {
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
           headers: { 'x-user-id': userId }
         })
         const sfData = await sfRes.json()
-        
-        // geojson存储在sfData.data.geojson中
         const geojson = sfData.data?.geojson || sfData.geojson
-        
         if (!geojson) continue
-        
+
         const features = geojson.features || []
         if (features.length === 0) continue
-        
-        // 过滤圆形范围内的多边形（检测多边形是否与圆相交）
+
         for (const feature of features) {
           const geom = feature.geometry
           if (!geom) continue
-          
-          // 检测多边形是否与圆相交（中心点在圆内 OR 边界穿过圆 OR 圆心在多边形内）
-          if (isPolygonIntersectsCircle(geom, centerLat, centerLng, radiusInMeters)) {
-            // 计算多边形与圆的交集面积比例
-            const intersectionRatio = calculateIntersectionRatio(geom, centerLat, centerLng, radiusInMeters)
-            
-            const value = parseInt(feature.properties?.[fieldName]) || 0
-            allMatchingData.push({
-              feature,
-              value: Math.round(value * intersectionRatio),  // 按面积占比计算
-              originalValue: value,
-              intersectionRatio,
-              fieldName,
-              shapefileName: sf.name,
-              geom: geom
-            })
-            
-            // 收集所有整型字段的值（按面积占比计算）
-            const props = feature.properties || {}
-            for (const [key, val] of Object.entries(props)) {
-              if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
-                if (!allIntegerFields[key]) {
-                  allIntegerFields[key] = { total: 0, count: 0, originalTotal: 0 }
+
+          const props = feature.properties || {}
+          const rawValue = parseInt(props[fieldName]) || 0
+
+          for (const r of allRadiiMeters) {
+            if (isPolygonIntersectsCircle(geom, centerLat, centerLng, r)) {
+              const intersectionRatio = calculateIntersectionRatio(geom, centerLat, centerLng, r)
+              const weightedValue = Math.round(rawValue * intersectionRatio)
+
+              if (!radiusResults[r]) {
+                radiusResults[r] = { matchingData: [], allFields: {} }
+              }
+              radiusResults[r].matchingData.push({
+                feature, value: weightedValue, originalValue: rawValue,
+                intersectionRatio, fieldName, shapefileName: sf.name, geom
+              })
+
+              for (const [key, val] of Object.entries(props)) {
+                if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
+                  if (!radiusResults[r].allFields[key]) {
+                    radiusResults[r].allFields[key] = { total: 0, originalTotal: 0 }
+                  }
+                  const wv = Math.round(Number(val) * intersectionRatio)
+                  radiusResults[r].allFields[key].total += wv
+                  radiusResults[r].allFields[key].originalTotal += Number(val)
                 }
-                const weightedValue = Math.round(Number(val) * intersectionRatio)
-                allIntegerFields[key].total += weightedValue
-                allIntegerFields[key].originalTotal += Number(val)
-                allIntegerFields[key].count++
               }
             }
           }
@@ -1221,44 +1252,38 @@ const analyzePopulationDistribution = async () => {
         console.error(`处理 ${sf.name} 失败:`, e)
       }
     }
-    
-    if (allMatchingData.length === 0) {
-      ElMessage.warning(`在 ${circleForm.radius}${circleForm.unit} 范围内没有找到有效的多边形`)
+
+    const hasData = Object.values(radiusResults).some(r => r.matchingData.length > 0)
+    if (!hasData) {
+      ElMessage.warning('在所有设置的范围内没有找到有效的多边形')
       return
     }
-    
-    // 3. 计算统计信息
-    const values = allMatchingData.map(d => d.value)
-    const total = values.reduce((sum, v) => sum + v, 0)
-    const minVal = Math.min(...values)
-    const maxVal = Math.max(...values)
-    
-    // 4. 改进颜色分级：使用分位数分级（quantile classification）
-    // 确保每个颜色级别有相似数量的多边形，区分度更好
-    const colors = ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']  // 蓝-绿-黄-橙-红，更直观
-    const sortedValues = [...values].sort((a, b) => a - b)
-    
-    // 计算分位数阈值（把数据分成5等份）
+
+    if (populationLayerGroup) {
+      map.removeLayer(populationLayerGroup)
+    }
+    populationLayerGroup = L.layerGroup().addTo(map)
+
+    // 基于最大半径数据做颜色分级
+    const maxRadiusData = radiusResults[maxRadiusMeters] || { matchingData: [], allFields: {} }
+    const colors = ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']
+    const allValues = maxRadiusData.matchingData.map(d => d.value)
+
     const getQuantile = (arr, q) => {
-      const pos = (arr.length - 1) * q
+      if (arr.length === 0) return 0
+      const sorted = [...arr].sort((a, b) => a - b)
+      const pos = (sorted.length - 1) * q
       const base = Math.floor(pos)
       const rest = pos - base
-      if (arr[base + 1] !== undefined) {
-        return arr[base] + rest * (arr[base + 1] - arr[base])
-      }
-      return arr[base]
+      if (sorted[base + 1] !== undefined) return sorted[base] + rest * (sorted[base + 1] - sorted[base])
+      return sorted[base]
     }
-    
-    // 5级分位数阈值：0%, 20%, 40%, 60%, 80%, 100%
+
     const thresholds = [
-      getQuantile(sortedValues, 0),
-      getQuantile(sortedValues, 0.2),
-      getQuantile(sortedValues, 0.4),
-      getQuantile(sortedValues, 0.6),
-      getQuantile(sortedValues, 0.8),
-      getQuantile(sortedValues, 1)
+      getQuantile(allValues, 0), getQuantile(allValues, 0.2), getQuantile(allValues, 0.4),
+      getQuantile(allValues, 0.6), getQuantile(allValues, 0.8), getQuantile(allValues, 1)
     ]
-    
+
     const getColorByValue = (value) => {
       if (value <= thresholds[1]) return colors[0]
       if (value <= thresholds[2]) return colors[1]
@@ -1266,58 +1291,43 @@ const analyzePopulationDistribution = async () => {
       if (value <= thresholds[4]) return colors[3]
       return colors[4]
     }
-    
-    // 5. 清除之前的图层并绘制
-    if (populationLayerGroup) {
-      map.removeLayer(populationLayerGroup)
-    }
-    populationLayerGroup = L.layerGroup().addTo(map)
-    
-    allMatchingData.forEach((data, index) => {
+
+    // 绘制多边形（使用最大半径数据）
+    const grandTotal = allValues.reduce((s, v) => s + v, 0)
+    maxRadiusData.matchingData.forEach((data, index) => {
       const { feature, value, geom } = data
       const color = getColorByValue(value)
-      
-      // GeoJSON坐标已经是GCJ-02，直接使用
+
       let latlngs = []
       if (geom.type === 'Polygon') {
-        latlngs = geom.coordinates[0].map(c => [c[1], c[0]])  // [lng, lat] -> [lat, lng]
+        latlngs = geom.coordinates[0].map(c => [c[1], c[0]])
       } else if (geom.type === 'MultiPolygon') {
         latlngs = geom.coordinates[0][0].map(c => [c[1], c[0]])
       }
-      
+
       if (latlngs.length > 0) {
         const polygon = L.polygon(latlngs, {
-          color: '#ff7800',
-          weight: 1,
-          fillColor: color,
-          fillOpacity: 0.7
+          color: '#ff7800', weight: 1, fillColor: color, fillOpacity: 0.7
         })
-        
         const props = feature.properties || {}
         polygon.bindPopup(`
           <div style="font-size: 12px; min-width: 140px;">
             <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
-            <span style="color: #666;">${fieldName}:</span> 
+            <span style="color: #666;">${fieldName}:</span>
             <strong style="color: #e6a23c;">${value.toLocaleString()}</strong><br/>
             <span style="color: #999; font-size: 11px;">
-              占总计: ${(value / total * 100).toFixed(1)}%
+              占总计: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
             </span>
           </div>
         `)
-        
         populationLayerGroup.addLayer(polygon)
-        
-        // 在多边形中心添加数值标签
+
         const polyCenter = getFeatureCenter(feature)
         if (polyCenter) {
-          // 格式化数值
           let displayValue = value
-          if (value >= 10000) {
-            displayValue = (value / 10000).toFixed(1) + '万'
-          } else if (value >= 1000) {
-            displayValue = value.toLocaleString()
-          }
-          
+          if (value >= 10000) displayValue = (value / 10000).toFixed(1) + '万'
+          else if (value >= 1000) displayValue = value.toLocaleString()
+
           const labelMarker = L.marker([polyCenter.lat, polyCenter.lng], {
             icon: L.divIcon({
               className: 'population-label',
@@ -1341,47 +1351,47 @@ const analyzePopulationDistribution = async () => {
         }
       }
     })
-    
-    // 6. 绘制圆形边界
-    const circle = L.circle([centerLat, centerLng], {
-      radius: radiusInMeters,
-      color: '#ff7800',
-      fillColor: '#ff7800',
-      fillOpacity: 0.1,
-      weight: 4,  // 加粗边框
-      dashArray: '8, 4'  // 增加虚线间距使边框更明显
+
+    // 绘制所有半径圆（黑色加粗实线边框）
+    const sortedRadii = [...allRadiiMeters].sort((a, b) => b - a)
+    sortedRadii.forEach((r) => {
+      const circle = L.circle([centerLat, centerLng], {
+        radius: r,
+        color: '#333333',  // 黑色
+        fillColor: 'transparent',
+        fillOpacity: 0,
+        weight: 4,  // 加粗
+        dashArray: null  // 实线
+      })
+      populationLayerGroup.addLayer(circle)
     })
-    populationLayerGroup.addLayer(circle)
-    
-    // 7. 移除图钉，用黑色圆圈替代圆心
+
+    // 圆心标记
     if (tempPopulationMarker) {
       map.removeLayer(tempPopulationMarker)
       tempPopulationMarker = null
     }
-    
-    // 添加黑色圆圈作为圆心标记
-    const centerCircle = L.circleMarker([centerLat, centerLng], {
-      radius: 8,
-      color: '#000',
-      fillColor: '#fff',
-      fillOpacity: 1,
-      weight: 3
+    const centerMarker = L.circleMarker([centerLat, centerLng], {
+      radius: 8, color: '#000', fillColor: '#fff', fillOpacity: 1, weight: 3
     })
-    populationLayerGroup.addLayer(centerCircle)
-    
-    // 7. 绘制统计信息面板（位于多边形最右侧外侧）
-    // 1. 收集所有多边形顶点的边界
+    populationLayerGroup.addLayer(centerMarker)
+
+    // 构建多半径统计面板（表格形式）
+    const formatNumber = (num) => {
+      if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+      return num.toLocaleString()
+    }
+
     const allPoints = []
-    allMatchingData.forEach(data => {
+    maxRadiusData.matchingData.forEach(data => {
       const geom = data.geom
       if (geom.type === 'Polygon') {
-        geom.coordinates[0].forEach(c => allPoints.push([c[1], c[0]])) // [lng,lat] -> [lat,lng]
+        geom.coordinates[0].forEach(c => allPoints.push([c[1], c[0]]))
       } else if (geom.type === 'MultiPolygon') {
         geom.coordinates.forEach(poly => poly[0].forEach(c => allPoints.push([c[1], c[0]])))
       }
     })
-    
-    // 2. 找到经度最大的点（最右侧）
+
     let rightMostLng = centerLng
     let rightMostLat = centerLat
     allPoints.forEach(p => {
@@ -1390,95 +1400,94 @@ const analyzePopulationDistribution = async () => {
         rightMostLat = p[0]
       }
     })
-    
-    // 3. 在最右侧点偏移200像素（使用经纬度直接计算）
-    const panelOffsetLng = 0.003 // 约300米
-    const panelLatLng = [rightMostLat, rightMostLng + panelOffsetLng]
-    
-    // 构建统计信息HTML（恢复原始紧凑样式）
-    const formatNumber = (num) => {
-      if (num >= 10000) {
-        return (num / 10000).toFixed(1) + '万'
+
+    const panelLatLng = [rightMostLat, rightMostLng + 0.003]
+
+    // 收集所有字段（排除RecID和fieldName）
+    const allFieldNames = new Set()
+    sortedRadii.forEach(r => {
+      const data = radiusResults[r]
+      if (data && data.allFields) {
+        Object.keys(data.allFields).forEach(k => {
+          if (k !== 'RecID' && k !== fieldName) {
+            allFieldNames.add(k)
+          }
+        })
       }
-      return num.toLocaleString()
-    }
-    
-    // 定义字段显示顺序
-    const fieldOrder = ['常住人口', '本地人口', '0-14岁', '15-59岁', '60-64岁', '65岁以上']
-    
-    // 生成统计面板HTML
-    let statsHtml = `<div style="background:rgba(255,255,255,0.95);border:2px solid #ff7800;border-radius:8px;padding:8px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.3);min-width:130px;cursor:grab;user-select:none;">`
-    statsHtml += `<div style="font-size:12px;font-weight:bold;color:#ff7800;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;">📊 统计信息</div>`
-    statsHtml += `<div style="font-size:10px;color:#999;margin-bottom:4px;">共${allMatchingData.length}个区域</div>`
-    
-    // 按指定顺序显示所有整型字段
-    const allFields = Object.entries(allIntegerFields)
-    
-    // 排序：先按指定顺序，然后按原始值总和排序
-    allFields.sort((a, b) => {
-      const idxA = fieldOrder.indexOf(a[0])
-      const idxB = fieldOrder.indexOf(b[0])
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB
-      if (idxA !== -1) return -1
-      if (idxB !== -1) return 1
-      return b[1].originalTotal - a[1].originalTotal
     })
-    
-    // 显示最多6个字段（包括当前选择字段）
-    const displayFields = allFields.slice(0, 6)
-    
-    displayFields.forEach(([key, data]) => {
-      const isCurrentField = key === fieldName
-      statsHtml += `<div style="font-size:11px;${isCurrentField ? 'color:#e6a23c;font-weight:bold;' : 'color:#666;'}margin-top:3px;">
-        ${key}: <span style="${isCurrentField ? 'color:#e6a23c;' : 'color:#409eff;font-weight:bold;'}">${formatNumber(data.total)}</span>
-      </div>`
+    const fieldList = Array.from(allFieldNames).sort()
+
+    let statsHtml = `<div style="background:rgba(255,255,255,0.95);border:2px solid #333;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:grab;user-select:none;">`
+    statsHtml += `<div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;">📊 人口分布分析</div>`
+
+    // 表头
+    statsHtml += `<table style="width:100%;border-collapse:collapse;font-size:10px;">`
+    statsHtml += `<tr style="background:#f5f7fa;">`
+    statsHtml += `<th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">字段</th>`
+    sortedRadii.forEach(r => {
+      statsHtml += `<th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;color:#666;">${(r / 1000).toFixed(1)}km</th>`
     })
-    
-    // 添加面积占比说明和拖动提示
-    statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#aaa;">*按面积占比计算</div>`
-    statsHtml += `<div style="margin-top:4px;font-size:9px;color:#ff7800;text-align:center;">📋 可拖动调整位置</div>`
-    
+    statsHtml += `</tr>`
+
+    // 选定字段行
+    statsHtml += `<tr style="background:#ecf5ff;">`
+    statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;font-weight:bold;">${fieldName}</td>`
+    sortedRadii.forEach(r => {
+      const data = radiusResults[r]
+      const values = data ? data.matchingData.map(d => d.value) : []
+      const total = values.reduce((s, v) => s + v, 0)
+      statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;">${formatNumber(total)}</td>`
+    })
+    statsHtml += `</tr>`
+
+    // 其他字段行
+    fieldList.forEach(field => {
+      statsHtml += `<tr>`
+      statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;color:#606266;">${field}</td>`
+      sortedRadii.forEach(r => {
+        const data = radiusResults[r]
+        const val = data?.allFields?.[field]?.total || 0
+        statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">${formatNumber(val)}</td>`
+      })
+      statsHtml += `</tr>`
+    })
+
+    statsHtml += `</table>`
+    statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
     statsHtml += `</div>`
-    
-    const panelWidth = 150 // 面板宽度(px)
+
     const panelMarker = L.marker([panelLatLng[0], panelLatLng[1]], {
       icon: L.divIcon({
         className: 'draggable-panel',
         html: statsHtml,
-        iconSize: [panelWidth, 'auto'],
-        iconAnchor: [0, 0]  // 左上角对齐
+        iconSize: [220, 'auto'],
+        iconAnchor: [0, 0]
       }),
-      draggable: true  // 启用拖动
+      draggable: true
     })
-    // 拖动时更新位置
     panelMarker.on('dragend', (e) => {
-      const pos = e.target.getLatLng()
-      console.log('面板拖动到:', pos.lat, pos.lng)
+      console.log('面板拖动到:', e.target.getLatLng())
     })
     populationLayerGroup.addLayer(panelMarker)
-    
-    // 9. 调整视图 - 使用圆形边界作为默认
+
+    // 关闭对话框并调整视图
+    circleDialogVisible.value = false
+    businessCircleExpanded.value = false
+
     try {
-      const circleBounds = L.circle([centerLat, centerLng], { radius: radiusInMeters }).getBounds()
-      if (allMatchingData.length > 0 && populationLayerGroup.getLayers().length > 0) {
-        const layerBounds = populationLayerGroup.getBounds()
-        if (layerBounds && layerBounds.isValid && layerBounds.isValid()) {
-          map.fitBounds(layerBounds, { padding: [50, 50] })
-          return
-        }
+      const circleBounds = L.circle([centerLat, centerLng], { radius: maxRadiusMeters }).getBounds()
+      const layerBounds = populationLayerGroup.getBounds()
+      if (layerBounds && layerBounds.isValid && layerBounds.isValid()) {
+        map.fitBounds(layerBounds, { padding: [50, 50] })
+      } else {
+        map.fitBounds(circleBounds, { padding: [50, 50] })
       }
-      map.fitBounds(circleBounds, { padding: [50, 50] })
     } catch (e) {
-      console.error('调整视图失败:', e)
       map.setView([centerLat, centerLng], 12)
     }
-    
-    // 10. 显示结果
-    ElMessage.success(`找到 ${allMatchingData.length} 个多边形，${fieldName} 合计: ${total.toLocaleString()}`)
-    
-    // 关闭对话框
-    circleDialogVisible.value = false
-    
+
+    ElMessage.success(`找到 ${grandTotal.toLocaleString()}（${fieldName}），共 ${allValues.length} 个多边形`)
+
   } catch (error) {
     console.error('分析人口分布失败:', error)
     ElMessage.error('分析失败：' + error.message)
@@ -3496,7 +3505,9 @@ const handleDrawCircle = (e) => {
   // 记录圆心，打开对话框让用户设置半径
   circleForm.center = e.latlng
   circleForm.centerText = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`
-  circleForm.radius = 1
+  circleForm.radius = 2
+  circleForm.radius2 = null
+  circleForm.radius3 = null
   circleForm.unit = 'km'
   
   // 显示小图钉标记
