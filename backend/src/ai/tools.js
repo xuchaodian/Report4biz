@@ -198,6 +198,30 @@ const poiTextSearch = {
   }
 }
 
+// ===== 商圈分析类工具 =====
+
+const storePopulationDistribution = {
+  type: 'function',
+  function: {
+    name: 'store_population_distribution',
+    description: '对指定门店进行商圈人口分布分析。根据门店名称或关键词找到目标门店，以该门店为圆心展示周边人口分布热力图（需要已上传Shapefile人口数据）。用户说"XX门店人口分布"、"分析XX的商圈人口"、"XX周边人口分布"等时调用此工具。',
+    parameters: {
+      type: 'object',
+      required: ['store_keyword'],
+      properties: {
+        store_keyword: {
+          type: 'string',
+          description: '门店名称或关键词，用于在"我的门店"中查找目标门店，如"朝阳路店"、"北京一号店"'
+        },
+        radius: {
+          type: 'number',
+          description: '分析半径（公里），默认2公里，范围0.5~10'
+        }
+      }
+    }
+  }
+}
+
 // ===== 统计查询类工具 =====
 
 const queryStats = {
@@ -243,7 +267,8 @@ export const tools = [
   queryStats,
   poiAroundSearch,
   poiPolygonSearch,
-  poiTextSearch
+  poiTextSearch,
+  storePopulationDistribution
 ]
 
 /**

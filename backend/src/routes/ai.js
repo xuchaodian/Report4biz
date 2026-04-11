@@ -34,6 +34,7 @@ router.post('/chat', authenticate, async (req, res) => {
 - 图层开关：toggle_layer
 - 激活工具：activate_tool（热力图、聚合、测量等）
 - 统计查询：query_stats
+- 门店人口分布：store_population_distribution（用户提到"XX门店人口分布"、"分析XX商圈人口"时调用）
 
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}

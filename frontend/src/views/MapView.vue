@@ -937,6 +937,85 @@ const openPopulationDistribution = async () => {
   })
 }
 
+// 门店popup"人口分布"按钮 - 直接以门店坐标为圆心打开对话框
+const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
+  if (!map) return
+
+  // 关闭商圈工具面板
+  businessCircleExpanded.value = false
+
+  // 设置为人口分布模式
+  circleDialogMode.value = 'population'
+
+  // 直接使用门店坐标作为圆心（不需要点击地图）
+  circleForm.center = { lat, lng }
+  circleForm.centerText = `${lng.toFixed(6)}, ${lat.toFixed(6)}`
+  circleForm.radius = typeof radius === 'number' && radius > 0 ? radius : 2
+  circleForm.unit = 'km'
+
+  // 重置字段选项
+  populationFieldOptions.value = []
+  selectedPopulationField.value = ''
+
+  // 清除之前的人口分布图层
+  if (populationLayerGroup) {
+    map.removeLayer(populationLayerGroup)
+    populationLayerGroup = null
+  }
+
+  // 清除之前的临时标记
+  if (tempPopulationMarker) {
+    map.removeLayer(tempPopulationMarker)
+    tempPopulationMarker = null
+  }
+
+  // 加载统计字段选项
+  try {
+    const userId = localStorage.getItem('userId') || 1
+    const listRes = await fetch(`/api/shapefiles`, {
+      headers: { 'x-user-id': userId }
+    })
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+
+    const allFields = new Set()
+    for (const sf of shapefiles.slice(0, 5)) {
+      try {
+        const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
+          headers: { 'x-user-id': userId }
+        })
+        const sfData = await sfRes.json()
+        const geojson = sfData.data?.geojson || sfData.geojson
+        if (geojson && geojson.features && geojson.features.length > 0) {
+          const fields = findAllIntegerFields(geojson.features)
+          fields.forEach(f => allFields.add(f))
+        }
+      } catch (e) {
+        console.error(`获取 ${sf.name} 字段失败:`, e)
+      }
+    }
+
+    const filteredFields = Array.from(allFields)
+      .filter(f => f !== 'RecID')
+      .sort((a, b) => {
+        if (a === '常住人口') return -1
+        if (b === '常住人口') return 1
+        return 0
+      })
+
+    populationFieldOptions.value = filteredFields
+    if (filteredFields.length > 0) {
+      selectedPopulationField.value =
+        filteredFields.find(f => f === '常住人口') || filteredFields[0]
+    }
+  } catch (e) {
+    console.error('加载统计字段失败:', e)
+  }
+
+  // 直接打开对话框（无需点击地图）
+  circleDialogVisible.value = true
+}
+
 // 识别多边形要素的中心点
 const getFeatureCenter = (feature) => {
   const geom = feature.geometry
@@ -2057,9 +2136,10 @@ const loadMarkers = async () => {
         ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
         ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
         ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-        <div style="margin-top: 10px; display: flex; gap: 8px;">
+        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
           <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #f56c6c; color: white; border: none; border-radius: 4px;">删除</button>
+          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #ff8800; color: white; border: none; border-radius: 4px;">人口分布</button>
         </div>
       </div>
     `)
@@ -4651,6 +4731,7 @@ const _poiFunctions = { startCircleSearch, startPolygonSearch }
 onMounted(() => {
   window.editMarkerExternal = editMarker
   window.deleteMarkerExternal = deleteMarker
+  window.openStorePopulationDistribution = openStorePopulationDistribution
 
   // 暴露Shapefile检索结果显示函数
   window.handleShapefileQueryFromGlobal = () => {
@@ -4716,6 +4797,7 @@ onUnmounted(() => {
   if (map) map.remove()
   delete window.editMarkerExternal
   delete window.deleteMarkerExternal
+  delete window.openStorePopulationDistribution
   delete window.handleShapefileQueryFromGlobal
 })
 </script>

@@ -306,6 +306,50 @@ export async function executeTool(name, args, ctx) {
       }
     }
 
+    // ===== 门店人口分布分析 =====
+    case 'store_population_distribution': {
+      const { store_keyword, radius = 2 } = args
+
+      // 在门店列表中查找目标门店
+      const allMarkers = markerStore.markers
+      if (!allMarkers || allMarkers.length === 0) {
+        return { success: false, message: '暂无门店数据，请先加载门店' }
+      }
+
+      const kw = store_keyword.toLowerCase()
+      const matched = allMarkers.filter(m =>
+        m.name?.toLowerCase().includes(kw) ||
+        m.address?.toLowerCase().includes(kw)
+      )
+
+      if (matched.length === 0) {
+        return { success: false, message: `未找到名称包含"${store_keyword}"的门店` }
+      }
+
+      // 取第一个匹配的门店
+      const store = matched[0]
+      const lat = store.latitude
+      const lng = store.longitude
+
+      if (!lat || !lng) {
+        return { success: false, message: `门店"${store.name}"缺少坐标信息` }
+      }
+
+      // 调用全局函数打开人口分布对话框（由MapView注册）
+      if (typeof window.openStorePopulationDistribution === 'function') {
+        window.openStorePopulationDistribution(lat, lng, radius)
+        const storeName = matched.length === 1
+          ? `"${store.name}"`
+          : `"${store.name}"等 ${matched.length} 家门店中的第一家`
+        return {
+          success: true,
+          message: `已定位到${storeName}，正在打开人口分布分析对话框（半径 ${radius} 公里）`
+        }
+      } else {
+        return { success: false, message: '人口分布功能未就绪，请确认已打开地图页面' }
+      }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -382,6 +426,10 @@ export function getActionDescription(name, args) {
       return `关键词搜索：${args.keywords}${args.city ? '（' + args.city + '）' : ''}`
     case 'poi_polygon_search':
       return `多边形搜索：${args.keywords}`
+    case 'store_population_distribution': {
+      const radiusText = args.radius ? `${args.radius}公里` : '2公里'
+      return `门店人口分布分析：${args.store_keyword}（半径 ${radiusText}）`
+    }
     default:
       return name
   }
