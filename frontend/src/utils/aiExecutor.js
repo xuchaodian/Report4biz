@@ -350,6 +350,71 @@ export async function executeTool(name, args, ctx) {
       }
     }
 
+    // ===== 人口对比分析 =====
+    case 'compare_population': {
+      const { store_keywords = [], radius = 2 } = args
+
+      // 验证门店数量
+      if (store_keywords.length < 2) {
+        return { success: false, message: '人口对比至少需要2家门店，请提供更多门店名称' }
+      }
+      if (store_keywords.length > 5) {
+        return { success: false, message: '人口对比最多支持5家门店，请减少门店数量' }
+      }
+
+      // 在门店列表中查找所有目标门店
+      const allMarkers = markerStore.markers
+      if (!allMarkers || allMarkers.length === 0) {
+        return { success: false, message: '暂无门店数据，请先加载门店' }
+      }
+
+      const matchedStores = []
+      const notFound = []
+
+      for (const kw of store_keywords) {
+        const keyword = kw.toLowerCase()
+        const found = allMarkers.filter(m =>
+          m.name?.toLowerCase().includes(keyword) ||
+          m.address?.toLowerCase().includes(keyword)
+        )
+        if (found.length > 0) {
+          // 取第一个匹配的
+          matchedStores.push(found[0])
+        } else {
+          notFound.push(kw)
+        }
+      }
+
+      if (matchedStores.length < 2) {
+        return {
+          success: false,
+          message: notFound.length > 0
+            ? `只找到1家门店，无法对比。未找到：${notFound.join('、')}`
+            : '匹配到的门店不足2家，无法进行对比'
+        }
+      }
+
+      if (notFound.length > 0) {
+        console.warn('[人口对比] 未找到门店:', notFound)
+      }
+
+      // 调用全局函数打开人口对比对话框（由DataView页面注册）
+      if (typeof window.openPopulationCompare === 'function') {
+        // 将匹配的门店ID和半径传给对话框
+        const storeIds = matchedStores.map(s => s.id)
+        window.openPopulationCompare(storeIds, radius)
+        return {
+          success: true,
+          message: `已准备好 ${matchedStores.length} 家门店：${matchedStores.map(s => s.name).join('、')}。正在打开人口对比对话框...`
+        }
+      } else {
+        return {
+          success: false,
+          message: '人口对比功能未就绪，请先打开"数据管理"页面，然后再次尝试'
+        }
+      }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -429,6 +494,11 @@ export function getActionDescription(name, args) {
     case 'store_population_distribution': {
       const radiusText = args.radius ? `${args.radius}公里` : '2公里'
       return `门店人口分布分析：${args.store_keyword}（半径 ${radiusText}）`
+    }
+    case 'compare_population': {
+      const storeList = Array.isArray(args.store_keywords) ? args.store_keywords.join('、') : args.store_keywords
+      const radiusText = args.radius ? `${args.radius}公里` : '2公里'
+      return `人口对比分析：对比 ${storeList}（半径 ${radiusText}）`
     }
     default:
       return name

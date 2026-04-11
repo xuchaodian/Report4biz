@@ -222,6 +222,29 @@ const storePopulationDistribution = {
   }
 }
 
+const comparePopulation = {
+  type: 'function',
+  function: {
+    name: 'compare_population',
+    description: '对多家门店进行人口对比分析。用户说"对比门店A和门店B的人口"、"对比XX和YY的人口分布"、"哪些门店周边人口更多"等时调用此工具。返回后将跳转到数据页面进行门店对比操作（需要已上传Shapefile人口数据）。',
+    parameters: {
+      type: 'object',
+      required: ['store_keywords'],
+      properties: {
+        store_keywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '门店名称列表，如["星巴克国贸店", "星巴克望京店"]，支持2-5家门店'
+        },
+        radius: {
+          type: 'number',
+          description: '分析半径（公里），默认2公里，范围0.5~10'
+        }
+      }
+    }
+  }
+}
+
 // ===== 统计查询类工具 =====
 
 const queryStats = {
@@ -268,7 +291,8 @@ export const tools = [
   poiAroundSearch,
   poiPolygonSearch,
   poiTextSearch,
-  storePopulationDistribution
+  storePopulationDistribution,
+  comparePopulation
 ]
 
 /**

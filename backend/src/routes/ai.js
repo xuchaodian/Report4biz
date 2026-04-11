@@ -35,6 +35,7 @@ router.post('/chat', authenticate, async (req, res) => {
 - 激活工具：activate_tool（热力图、聚合、测量等）
 - 统计查询：query_stats
 - 门店人口分布：store_population_distribution（用户提到"XX门店人口分布"、"分析XX商圈人口"时调用）
+- 人口对比分析：compare_population（用户提到"对比门店A和门店B的人口"、"哪些门店周边人口更多"、"对比XX和YY"时调用，需要2-5家门店）
 
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}

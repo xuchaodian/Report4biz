@@ -6,6 +6,9 @@
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加门店
         </el-button>
+        <el-button type="warning" @click="showPopulationCompareDialog">
+          <el-icon><DataAnalysis /></el-icon>人口对比
+        </el-button>
         <el-button @click="showGeocodeDialog">
           <el-icon><MapLocation /></el-icon>地址解析
         </el-button>
@@ -402,15 +405,201 @@
         </template>
       </template>
     </el-dialog>
+
+    <!-- 人口对比对话框 -->
+    <el-dialog v-model="populationCompareVisible" title="人口对比分析" width="900px" draggable>
+      <!-- 步骤1：选择门店和设置参数 -->
+      <div v-if="compareStep === 1">
+        <el-form label-width="100px" style="margin-bottom: 16px;">
+          <el-form-item label="分析半径">
+            <el-input-number v-model="compareRadius" :min="0.5" :max="10" :step="0.5" />
+            <span style="margin-left: 8px;">公里</span>
+          </el-form-item>
+        </el-form>
+
+        <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+          <template #title>
+            请选择 2-5 家门店进行人口对比分析
+          </template>
+        </el-alert>
+
+        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <el-input
+            v-model="compareSearchKeyword"
+            placeholder="输入门店名称搜索"
+            style="width: 300px;"
+            clearable
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+        </div>
+
+        <!-- 已选择的门店（始终渲染，只是隐藏） -->
+        <div v-show="selectedCompareStoresState.list.length > 0" style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">已选择 ({{ selectedCompareStoresState.list.length }}/5)：</div>
+          <el-tag
+            v-for="store in selectedCompareStoresState.list"
+            :key="store.id"
+            closable
+            @close="removeCompareStore(store)"
+            style="margin-right: 8px; margin-bottom: 4px;"
+          >
+            {{ store.name }}
+          </el-tag>
+        </div>
+
+        <!-- 门店列表 -->
+        <div style="max-height: 280px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
+          <div
+            v-for="store in filteredCompareStores"
+            :key="store.id"
+            style="display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ebeef5; cursor: pointer;"
+            :style="{ background: selectedCompareStoresState.list.some(s => s.id === store.id) ? '#ecf5ff' : 'white' }"
+            @click="toggleCompareStore(store)"
+          >
+            <el-button
+              :type="selectedCompareStoresState.list.some(s => s.id === store.id) ? 'primary' : 'default'"
+              size="small"
+              style="margin-right: 12px;"
+              @click.stop="toggleCompareStore(store)"
+            >
+              {{ selectedCompareStoresState.list.some(s => s.id === store.id) ? '已选' : '选择' }}
+            </el-button>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">{{ store.name }}</div>
+              <div style="font-size: 12px; color: #999;">{{ store.brand }} | {{ store.city }} {{ store.district }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 8px; font-size: 12px; color: #999;">
+          共 {{ filteredCompareStores.length }} 家门店
+        </div>
+      </div>
+
+      <!-- 步骤2：显示对比结果 -->
+      <div v-if="compareStep === 2" style="max-height: 600px; overflow-y: auto;">
+        <!-- 2家门店：表格 + 柱状图 -->
+        <div v-if="compareResults.length === 2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <div style="flex: 1;">
+            <el-table
+              :data="compareTableData"
+              border
+              stripe
+              size="small"
+              max-height="400"
+            >
+              <el-table-column prop="field" label="字段" width="120" fixed />
+              <el-table-column
+                v-for="(store, idx) in compareResults"
+                :key="store.id"
+                :label="store.name"
+                align="right"
+              >
+                <template #default="{ row }">
+                  <span :style="{ color: row.maxIndex === idx ? '#f56c6c' : '#333', fontWeight: row.maxIndex === idx ? 'bold' : 'normal' }">
+                    {{ row.values[idx] }}
+                  </span>
+                  <span v-if="row.diffs[idx]" style="color: #909399; font-size: 11px; margin-left: 4px;">
+                    {{ row.diffs[idx] }}
+                  </span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div style="width: 450px; height: 400px;" ref="barChartRef"></div>
+        </div>
+
+        <!-- 3家及以上门店：表格热力图 -->
+        <div v-else style="margin-bottom: 16px;">
+          <div style="display: flex; gap: 16px;">
+            <div style="flex: 1;">
+              <el-table
+                :data="compareTableData"
+                border
+                stripe
+                size="small"
+                max-height="400"
+              >
+                <el-table-column prop="field" label="字段" width="120" fixed />
+                <el-table-column
+                  v-for="(store, idx) in compareResults"
+                  :key="store.id"
+                  :label="store.name"
+                  align="center"
+                >
+                  <template #default="{ row }">
+                    <div
+                      :style="getHeatmapCellStyle(row.nums, idx)"
+                      style="padding: 4px 8px; border-radius: 4px; font-weight: 500;"
+                    >
+                      {{ row.values[idx] }}
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div style="width: 120px; padding: 20px 10px;">
+              <div style="font-size: 12px; color: #666; margin-bottom: 8px; text-align: center;">数值大小</div>
+              <div
+                style="width: 100%; height: 200px; border-radius: 4px; overflow: hidden;"
+                :style="{ background: 'linear-gradient(to bottom, #d7191c, #fdae61, #ffffbf, #abdda4, #2b83f6)' }"
+              ></div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: #666; margin-top: 4px;">
+                <span>高</span>
+                <span>低</span>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top: 12px; padding: 8px 12px; background: #f5f7fa; border-radius: 4px; font-size: 12px; color: #666;">
+            <div style="display: flex; gap: 16px;">
+              <span><span style="display: inline-block; width: 16px; height: 16px; background: #2b83f6; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>数值较低</span>
+              <span><span style="display: inline-block; width: 16px; height: 16px; background: #ffffbf; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>数值中等</span>
+              <span><span style="display: inline-block; width: 16px; height: 16px; background: #d7191c; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>数值最高</span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="compareResults.length === 2" style="margin-top: 16px; text-align: center;">
+          <div style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">
+            {{ compareResults[0].name }} vs {{ compareResults[1].name }}
+          </div>
+          <div style="font-size: 12px; color: #666;">
+            <span :style="{ color: compareResults[0].total > compareResults[1].total ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }">
+              {{ compareResults[0].total > compareResults[1].total ? compareResults[0].name : compareResults[1].name }}
+            </span>
+            总体人口优势
+            <span style="color: #f56c6c; font-weight: bold;">
+              {{ Math.abs(compareResults[0].total - compareResults[1].total).toLocaleString() }}
+            </span>
+            人
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="populationCompareVisible = false">关闭</el-button>
+        <el-button v-if="compareStep === 1" type="primary" :disabled="selectedCompareStoresState.list.length < 2" :loading="compareLoading" @click="startPopulationCompare">
+          开始分析
+        </el-button>
+        <el-button v-if="compareStep === 2" @click="compareStep = 1">
+          重新选择
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis } from '@element-plus/icons-vue'
 import Papa from 'papaparse'
+import * as echarts from 'echarts'
+import { calculatePopulationByRadius, formatNumber } from '@/utils/populationStats'
 import { useMarkerStore } from '@/stores/marker'
 
 const router = useRouter()
@@ -465,6 +654,371 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
+
+// 人口对比相关
+const populationCompareVisible = ref(false)
+const compareStep = ref(1)
+const compareSearchKeyword = ref('')
+const compareRadius = ref(2)
+const compareLoading = ref(false)
+const compareResults = ref([])
+const compareTableData = ref([])
+const barChartRef = ref(null)
+let barChart = null
+// 直接存储选中的门店对象
+const selectedCompareStoresState = reactive({ list: [] })
+const selectedCompareStores = computed(() => selectedCompareStoresState.list)
+
+// 调试 watch（开发时启用）
+// watch(() => selectedCompareStoresState.list.length, (newLen, oldLen) => {
+  // console.log('list length changed:', oldLen, '->', newLen)
+// })
+
+// 人口对比 - 筛选门店
+const filteredCompareStores = computed(() => {
+  const kw = compareSearchKeyword.value.toLowerCase()
+  const selectedIds = new Set(selectedCompareStoresState.list.map(s => s.id))
+  
+  // 先把已选门店放进去
+  const result = [...selectedCompareStoresState.list]
+  
+  // 再添加匹配的门店（去重）
+  markerStore.markers.forEach(m => {
+    if (!selectedIds.has(m.id)) {
+      if (!kw || m.name?.toLowerCase().includes(kw) || m.brand?.toLowerCase().includes(kw)) {
+        result.push(m)
+      }
+    }
+  })
+  
+  return result
+})
+
+// 移除已选门店
+const removeCompareStore = (store) => {
+  selectedCompareStoresState.list = selectedCompareStoresState.list.filter(s => s.id !== store.id)
+}
+
+// 切换门店选择状态
+const toggleCompareStore = (store) => {
+  const idx = selectedCompareStoresState.list.findIndex(s => s.id === store.id)
+  if (idx >= 0) {
+    // 已选中，取消选择
+    selectedCompareStoresState.list = selectedCompareStoresState.list.filter((_, i) => i !== idx)
+  } else {
+    // 未选中，添加到已选（最多5家）
+    if (selectedCompareStoresState.list.length < 5) {
+      selectedCompareStoresState.list = [...selectedCompareStoresState.list, { ...store }]
+    }
+  }
+}
+
+// 显示人口对比对话框
+const showPopulationCompareDialog = () => {
+  compareStep.value = 1
+  compareSearchKeyword.value = ''
+  compareRadius.value = 2
+  selectedCompareStoresState.list = []
+  compareResults.value = []
+  compareTableData.value = []
+  populationCompareVisible.value = true
+}
+
+// 开始人口对比分析
+const startPopulationCompare = async () => {
+  if (selectedCompareStoresState.list.length < 2) {
+    ElMessage.warning('请至少选择2家门店')
+    return
+  }
+  const storesToCompare = [...selectedCompareStoresState.list]
+
+  compareLoading.value = true
+  compareResults.value = []
+  compareTableData.value = []
+
+  try {
+    // 获取所有shapefile
+    const userId = localStorage.getItem('userId') || 1
+    const listRes = await fetch(`/api/shapefiles`, {
+      headers: { 'x-user-id': userId }
+    })
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+
+    if (shapefiles.length === 0) {
+      ElMessage.warning('没有找到上传的数据文件，请先上传shp文件')
+      compareLoading.value = false
+      return
+    }
+
+    // 获取第一个整数字段作为统计字段
+    const firstSf = shapefiles[0]
+    const sfRes = await fetch(`/api/shapefiles/${firstSf.id}`, {
+      headers: { 'x-user-id': userId }
+    })
+    const sfData = await sfRes.json()
+    const geojson = sfData.data?.geojson || sfData.geojson
+
+    let statField = null
+    if (geojson?.features?.length > 0) {
+      const props = geojson.features[0].properties || {}
+      for (const [key, val] of Object.entries(props)) {
+        if (key !== 'RecID' && Number.isInteger(Number(val))) {
+          statField = key
+          break
+        }
+      }
+    }
+
+    if (!statField) {
+      ElMessage.warning('数据文件中未找到有效的统计字段')
+      compareLoading.value = false
+      return
+    }
+
+    // 获取shapefile数据的回调
+    const getShapefiles = async () => {
+      const results = []
+      for (const sf of shapefiles) {
+        try {
+          const res = await fetch(`/api/shapefiles/${sf.id}`, {
+            headers: { 'x-user-id': userId }
+          })
+          const data = await res.json()
+          results.push({
+            id: sf.id,
+            name: sf.name,
+            geojson: data.data?.geojson || data.geojson
+          })
+        } catch (e) {
+          console.error(`获取 ${sf.name} 失败:`, e)
+        }
+      }
+      return results
+    }
+
+    const radiusMeters = compareRadius.value * 1000
+    const allResults = []
+
+    for (const store of storesToCompare) {
+      const lat = store.latitude
+      const lng = store.longitude
+
+      if (!lat || !lng) {
+        ElMessage.warning(`门店 "${store.name}" 缺少坐标信息`)
+        continue
+      }
+
+      const result = await calculatePopulationByRadius(lat, lng, radiusMeters, statField, getShapefiles)
+      allResults.push({
+        ...store,
+        total: result.total,
+        statField,
+        allFields: result.allFields
+      })
+    }
+
+    if (allResults.length < 2) {
+      ElMessage.warning('有效门店数量不足，请检查门店坐标')
+      compareLoading.value = false
+      return
+    }
+
+    compareResults.value = allResults
+
+    // 构建对比表格数据
+    const fieldNames = [statField, ...Object.keys(allResults[0].allFields || {}).filter(k => k !== statField)]
+    compareTableData.value = fieldNames.map(field => {
+      const values = allResults.map(r => {
+        if (field === statField) return formatNumber(r.total)
+        return formatNumber(r.allFields?.[field] || 0)
+      })
+
+      const nums = allResults.map(r => {
+        if (field === statField) return r.total
+        return r.allFields?.[field] || 0
+      })
+
+      const maxVal = Math.max(...nums)
+      const maxIndex = nums.indexOf(maxVal)
+      // 差值：最高值显示为空，其他显示与最高值的差距
+      const diffs = nums.map((v, i) => {
+        if (i === maxIndex) return ''  // 最高值不显示差值
+        return '-' + formatNumber(Math.abs(v - maxVal))
+      })
+
+      return {
+        field,
+        values,
+        nums,
+        maxIndex,
+        diffs
+      }
+    })
+
+    compareStep.value = 2
+
+    // 仅2家门店时渲染柱状图
+    if (allResults.length === 2) {
+      await nextTick()
+      renderBarChart()
+    }
+
+  } catch (e) {
+    console.error('人口对比分析失败:', e)
+    ElMessage.error('分析失败：' + e.message)
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+// 计算热力图单元格颜色（使用分位数分级，确保颜色分布均匀）
+const getHeatmapCellStyle = (nums, idx, maxIdx) => {
+  if (!nums || nums.length === 0) {
+    return { background: '#f5f5f5', color: '#333' }
+  }
+
+  // 过滤无效值
+  const validNums = nums.map(n => Math.abs(Number(n) || 0))
+  const maxVal = Math.max(...validNums)
+  const minVal = Math.min(...validNums)
+  const range = maxVal - minVal
+
+  if (range === 0) {
+    // 所有值相同，返回中等颜色
+    return { background: '#ffffbf', color: '#333' }
+  }
+
+  // 归一化到 0-1
+  const normalized = (validNums[idx] - minVal) / range
+
+  // 使用蓝-绿-黄-橙-红 配色方案
+  // #2b83f6 (蓝) → #abdda4 (绿) → #ffffbf (黄) → #fdae61 (橙) → #d7191c (红)
+  const colors = [
+    { pos: 0, r: 43, g: 131, b: 246 },    // 蓝
+    { pos: 0.25, r: 171, g: 221, b: 164 }, // 绿
+    { pos: 0.5, r: 255, g: 255, b: 191 },  // 黄
+    { pos: 0.75, r: 253, g: 174, b: 97 },  // 橙
+    { pos: 1, r: 215, g: 25, b: 28 }       // 红
+  ]
+
+  // 找到对应的颜色区间
+  let c1, c2, t
+  for (let i = 0; i < colors.length - 1; i++) {
+    if (normalized >= colors[i].pos && normalized <= colors[i + 1].pos) {
+      c1 = colors[i]
+      c2 = colors[i + 1]
+      t = (normalized - c1.pos) / (c2.pos - c1.pos)
+      break
+    }
+  }
+
+  if (!c1) {
+    c1 = colors[0]
+    c2 = colors[0]
+    t = 0
+  }
+
+  // 线性插值
+  const r = Math.round(c1.r + (c2.r - c1.r) * t)
+  const g = Math.round(c1.g + (c2.g - c1.g) * t)
+  const b = Math.round(c1.b + (c2.b - c1.b) * t)
+
+  // 文字颜色：浅色背景用深色字，深色背景用白色字
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  const textColor = brightness > 150 ? '#333' : '#fff'
+
+  return {
+    background: `rgb(${r}, ${g}, ${b})`,
+    color: textColor
+  }
+}
+
+// 渲染柱状图（仅2家门店时使用）
+const renderBarChart = () => {
+  if (!barChartRef.value || compareResults.value.length !== 2) return
+
+  if (barChart) {
+    barChart.dispose()
+  }
+
+  barChart = echarts.init(barChartRef.value)
+
+  const [r1, r2] = compareResults.value
+  const uniqueFields = compareResults.value.flatMap(r => [r.statField, ...Object.keys(r.allFields || {})])
+  const fields = [...new Set(uniqueFields)].filter(f => f !== 'RecID')
+
+  const option = {
+    title: {
+      text: `${r1.name} vs ${r2.name}`,
+      left: 'center',
+      textStyle: { fontSize: 14, fontWeight: 'bold' }
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        let result = `<b>${params[0].axisValue}</b><br/>`
+        params.forEach(p => {
+          result += `${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b><br/>`
+        })
+        return result
+      }
+    },
+    legend: {
+      data: [r1.name, r2.name],
+      bottom: 0
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '15%',
+      top: '15%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: fields,
+      axisLabel: { rotate: 15, fontSize: 11 }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        formatter: (val) => {
+          if (val >= 10000) return (val / 10000) + '万'
+          return val
+        }
+      }
+    },
+    series: [
+      {
+        name: r1.name,
+        type: 'bar',
+        barGap: '5%',
+        itemStyle: { color: '#409EFF' },
+        data: fields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)),
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 }
+      },
+      {
+        name: r2.name,
+        type: 'bar',
+        barGap: '5%',
+        itemStyle: { color: '#67C23A' },
+        data: fields.map(f => f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)),
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 }
+      }
+    ]
+  }
+
+  barChart.setOption(option)
+}
+
+// 窗口大小变化时重绘柱状图
+window.addEventListener('resize', () => {
+  if (barChart) {
+    barChart.resize()
+  }
+})
 
 // 表单数据
 const formRef = ref(null)
@@ -1004,6 +1558,30 @@ onMounted(() => {
   filterDistrict.value = markerStore.filters.filterDistrict
   filterStoreCategory.value = markerStore.filters.filterStoreCategory
   filterBrand.value = markerStore.filters.filterBrand
+
+  // 注册全局函数：AI助手调用人口对比
+  window.openPopulationCompare = (storeIds, radius) => {
+    if (!storeIds || storeIds.length < 2) return
+
+    // 预选门店
+    const storesToSelect = storeIds
+      .map(id => markerStore.markers.find(m => m.id === id))
+      .filter(Boolean)
+
+    if (storesToSelect.length < 2) {
+      ElMessage.warning('有效门店不足2家，无法进行对比')
+      return
+    }
+
+    // 设置半径
+    compareRadius.value = radius || 2
+
+    // 预选门店
+    selectedCompareStoresState.list = storesToSelect.map(s => ({ ...s }))
+
+    // 打开对话框
+    showPopulationCompareDialog()
+  }
 })
 </script>
 
