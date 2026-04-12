@@ -58,6 +58,10 @@
             <el-icon><Edit /></el-icon>
             <span>多边形</span>
           </div>
+          <div class="poi-mode-btn" @click="clearPoiSearch">
+            <el-icon><Delete /></el-icon>
+            <span>清除</span>
+          </div>
         </div>
       </div>
     </div>
@@ -573,7 +577,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, shallowRef, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -711,7 +715,7 @@ let tempCircleMarker = null  // 商圈内点位临时圆心标记
 // POI搜索结果
 const poiResultVisible = ref(false)
 const poiResults = ref([])
-const poiMarkers = ref([])
+const poiMarkers = shallowRef([])
 let poiCenterMarker = null    // POI中心点标记
 let poiRadiusCircle = null   // POI搜索半径圆
 let poiCenterPoint = null     // POI中心点坐标
@@ -4106,16 +4110,31 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
   console.log('[showPoiOnMap] 调用参数:', { pois: pois?.length, centerLat, centerLng, radius })
   
   // 清除之前的POI标记
-  poiMarkers.value.forEach(m => map.removeLayer(m))
+  console.log('[showPoiOnMap] 清除旧标记，当前数量:', poiMarkers.value.length)
+  poiMarkers.value.forEach(m => {
+    try {
+      map.removeLayer(m)
+    } catch (e) {
+      console.warn('[showPoiOnMap] 移除标记失败:', e)
+    }
+  })
   poiMarkers.value = []
   
   // 清除之前的中心点标记和半径圆
   if (poiCenterMarker) {
-    map.removeLayer(poiCenterMarker)
+    try {
+      map.removeLayer(poiCenterMarker)
+    } catch (e) {
+      console.warn('[showPoiOnMap] 移除中心点标记失败:', e)
+    }
     poiCenterMarker = null
   }
   if (poiRadiusCircle) {
-    map.removeLayer(poiRadiusCircle)
+    try {
+      map.removeLayer(poiRadiusCircle)
+    } catch (e) {
+      console.warn('[showPoiOnMap] 移除半径圆失败:', e)
+    }
     poiRadiusCircle = null
   }
   
@@ -4146,7 +4165,7 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
     // 绘制中心点标记（红色图钉）
     poiCenterMarker = L.marker([centerLat, centerLng], {
       icon: L.divIcon({
-        className: '',
+        className: 'poi-center-icon',
         html: `<div style="position:relative;width:32px;height:40px;">
           <svg width="32" height="40" viewBox="0 0 32 40" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
             <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#ef4444" stroke="#fff" stroke-width="2"/>
@@ -4157,6 +4176,11 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
         iconAnchor: [16, 40]
       })
     }).addTo(map)
+    
+    // 点击圆心标记显示POI结果面板
+    poiCenterMarker.on('click', () => {
+      poiResultVisible.value = true
+    })
     
     bounds.push([centerLat, centerLng])
   }
@@ -4170,7 +4194,7 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
     
     const icon = L.divIcon({
       html: `<div style="background:#6366f1;color:#fff;padding:4px 8px;border-radius:12px;font-size:11px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,0.2);white-space:nowrap;">${index + 1}</div>`,
-      className: 'poi-marker',
+      className: 'poi-marker-icon',
       iconSize: [24, 24],
       iconAnchor: [12, 12]
     })
@@ -4227,6 +4251,20 @@ const startCircleSearch = () => {
     ElMessage.warning('请输入搜索关键词')
     return
   }
+  
+  // 清除之前的搜索结果（地图上的标记）
+  poiResultVisible.value = false
+  poiMarkers.value.forEach(m => map.removeLayer(m))
+  poiMarkers.value = []
+  if (poiCenterMarker) {
+    map.removeLayer(poiCenterMarker)
+    poiCenterMarker = null
+  }
+  if (poiRadiusCircle) {
+    map.removeLayer(poiRadiusCircle)
+    poiRadiusCircle = null
+  }
+  
   circleSearchActive = true
   
   // 关闭面板
@@ -4234,6 +4272,10 @@ const startCircleSearch = () => {
   
   // 提示用户点击地图
   ElMessage.info('请在地图上点击选择圆心位置')
+  
+  // 设置鼠标为十字光标
+  const originalCursor = map.getContainer().style.cursor
+  map.getContainer().style.cursor = 'crosshair'
   
   // 清除之前的临时标记
   if (tempCircleMarker) {
@@ -4246,6 +4288,9 @@ const startCircleSearch = () => {
   // =============================================
   // 监听地图点击
   map.once('click', async (e) => {
+    // 恢复原始光标
+    map.getContainer().style.cursor = originalCursor
+    
     const { lat, lng } = e.latlng
     console.log('[Circle Search v3] 点击地图, 坐标:', lat, lng)
     
@@ -4352,6 +4397,19 @@ const startPolygonSearch = () => {
   if (!poiKeywords.value.trim()) {
     ElMessage.warning('请输入搜索关键词')
     return
+  }
+  
+  // 清除之前的搜索结果（地图上的标记）
+  poiResultVisible.value = false
+  poiMarkers.value.forEach(m => map.removeLayer(m))
+  poiMarkers.value = []
+  if (poiCenterMarker) {
+    map.removeLayer(poiCenterMarker)
+    poiCenterMarker = null
+  }
+  if (poiRadiusCircle) {
+    map.removeLayer(poiRadiusCircle)
+    poiRadiusCircle = null
   }
   
   // 关闭面板
@@ -4529,12 +4587,21 @@ const finishPolygonSearch = async () => {
   }
 }
 
-// 关闭POI结果面板
+// 关闭POI结果面板（只隐藏面板，保留地图上的显示）
 const closePoiResults = () => {
   poiResultVisible.value = false
+}
+
+// 清除POI搜索结果（清除地图上的所有显示）
+const clearPoiSearch = () => {
+  // 隐藏结果面板
+  poiResultVisible.value = false
+  poiResults.value = []
+  
   // 清除地图上的POI标记
   poiMarkers.value.forEach(m => map.removeLayer(m))
   poiMarkers.value = []
+  
   // 清除中心点标记和半径圆
   if (poiCenterMarker) {
     map.removeLayer(poiCenterMarker)
@@ -4544,8 +4611,13 @@ const closePoiResults = () => {
     map.removeLayer(poiRadiusCircle)
     poiRadiusCircle = null
   }
+  
   poiCenterPoint = null
-  poiResults.value = []
+  poiSearchRadius = 2000
+  
+  // 重置搜索状态
+  circleSearchActive = false
+  polygonSearchActive = false
 }
 
 // POI位置选择模式：在地图上选点后执行搜索
