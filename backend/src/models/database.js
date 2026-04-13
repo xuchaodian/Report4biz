@@ -49,6 +49,13 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 为已有数据库添加 quota 字段（如果不存在）
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT 0`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 创建点位表 - 门店管理
   db.run(`
     CREATE TABLE IF NOT EXISTS markers (
@@ -245,6 +252,31 @@ export async function initDatabase() {
   // 创建 Shapefile 索引
   try {
     db.run(`CREATE INDEX IF NOT EXISTS idx_shapefiles_user ON shapefiles(user_id)`)
+  } catch (e) {
+    // 索引可能已存在
+  }
+
+  // 创建智慧足迹购买记录表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      center_lng REAL,
+      center_lat REAL,
+      radius INTEGER,
+      city_month TEXT,
+      services TEXT,
+      quota_used INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      result_data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+
+  // 创建购买记录索引
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id)`)
   } catch (e) {
     // 索引可能已存在
   }

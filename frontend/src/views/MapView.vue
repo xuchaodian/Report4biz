@@ -84,6 +84,18 @@
       </div>
     </div>
 
+    <!-- 智慧足迹入口按钮 -->
+    <div 
+      v-if="true"
+      class="smartsteps-float-btn"
+      :class="{ active: smartstepsVisible }"
+      @click="smartstepsVisible = !smartstepsVisible"
+      title="智慧足迹人口分析"
+    >
+      <span class="smartsteps-btn-icon">📊</span>
+      <span class="smartsteps-btn-text">联通人口</span>
+    </div>
+
     <!-- 显示门店开关 - 工具栏左侧 -->
     <div class="store-toggle-panel">
       <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
@@ -160,8 +172,15 @@
             <span>聚合显示</span>
           </div>
         </el-tooltip>
-        <!-- 图标样式（已隐藏） -->
         <el-divider style="margin: 6px 0;" />
+        <!-- 智慧足迹 -->
+        <el-tooltip content="智慧足迹人口分析" placement="left">
+          <div class="tool-item" :class="{ active: smartstepsVisible }" @click="smartstepsVisible = !smartstepsVisible">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>人口分析</span>
+          </div>
+        </el-tooltip>
+        <!-- 图标样式（已隐藏） -->
         <!-- 清除绘制 -->
         <el-tooltip content="清除绘制" placement="left">
           <div class="tool-item" @click="clearDrawings">
@@ -282,6 +301,20 @@
       :pois="poiResults"
       :map="map"
       @close="closePoiResults"
+    />
+
+    <!-- 智慧足迹面板 -->
+    <SmartstepsPanel
+      :visible="smartstepsVisible"
+      :map="map"
+      @update:visible="smartstepsVisible = $event"
+    />
+
+    <!-- 门店联通人口对话框 -->
+    <StoreSmartstepsDialog
+      :visible="storeSmartstepsVisible"
+      :store="selectedStoreForSmartsteps"
+      @update:visible="storeSmartstepsVisible = $event"
     />
 
     <!-- POI位置选择提示 -->
@@ -598,6 +631,8 @@ import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
+import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
+import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
@@ -719,6 +754,13 @@ const poiMarkers = shallowRef([])
 let poiCenterMarker = null    // POI中心点标记
 let poiRadiusCircle = null   // POI搜索半径圆
 let poiCenterPoint = null     // POI中心点坐标
+
+// 智慧足迹面板
+const smartstepsVisible = ref(false)
+
+// 门店联通人口对话框
+const storeSmartstepsVisible = ref(false)
+const selectedStoreForSmartsteps = ref(null)
 
 // 周边检索面板
 const poiSearchExpanded = ref(false)
@@ -1045,6 +1087,29 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
 
   // 直接打开对话框（无需点击地图）
   circleDialogVisible.value = true
+}
+
+// 门店popup"联通人口"按钮 - 打开联通人口对话框
+const openStoreSmartsteps = (storeId) => {
+  // 关闭其他面板
+  smartstepsVisible.value = false
+  businessCircleExpanded.value = false
+  
+  // 查找门店数据
+  const store = markerStore.markers.find(m => m.id === storeId)
+  if (!store) {
+    ElMessage.error('未找到门店信息')
+    return
+  }
+  
+  // 设置选中的门店并打开对话框
+  selectedStoreForSmartsteps.value = {
+    id: store.id,
+    name: store.name,
+    latitude: store.latitude,
+    longitude: store.longitude
+  }
+  storeSmartstepsVisible.value = true
 }
 
 // 识别多边形要素的中心点
@@ -2153,6 +2218,7 @@ const loadMarkers = async () => {
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
           <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #f56c6c; color: white; border: none; border-radius: 4px;">删除</button>
           <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #ff8800; color: white; border: none; border-radius: 4px;">人口分布</button>
+          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #764ba2; color: white; border: none; border-radius: 4px;">联通人口</button>
         </div>
       </div>
     `)
@@ -4815,6 +4881,7 @@ onMounted(() => {
   window.editMarkerExternal = editMarker
   window.deleteMarkerExternal = deleteMarker
   window.openStorePopulationDistribution = openStorePopulationDistribution
+  window.openStoreSmartsteps = openStoreSmartsteps
 
   // 暴露Shapefile检索结果显示函数
   window.handleShapefileQueryFromGlobal = () => {
@@ -4881,6 +4948,7 @@ onUnmounted(() => {
   delete window.editMarkerExternal
   delete window.deleteMarkerExternal
   delete window.openStorePopulationDistribution
+  delete window.openStoreSmartsteps
   delete window.handleShapefileQueryFromGlobal
 })
 </script>
@@ -5337,6 +5405,47 @@ onUnmounted(() => {
         line-height: 1;
       }
     }
+  }
+}
+
+// 智慧足迹浮动按钮样式 - 绝对定位右上角（商圈工具左侧）
+.smartsteps-float-btn {
+  position: absolute;
+  top: 10px;
+  right: 560px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+  cursor: pointer;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s;
+  border: 2px solid transparent;
+  min-width: 110px;
+  justify-content: center;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  }
+
+  &.active {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    border-color: #fff;
+    box-shadow: 0 6px 20px rgba(118, 75, 162, 0.5);
+  }
+
+  .smartsteps-btn-icon {
+    font-size: 18px;
+  }
+
+  .smartsteps-btn-text {
+    font-size: 13px;
+    font-weight: 600;
   }
 }
 

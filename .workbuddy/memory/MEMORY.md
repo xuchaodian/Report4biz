@@ -32,6 +32,7 @@
 17. **POI搜索（高德地图 Around/Polygon/Text 三种方式）**
 18. **热力图简化（v1.3.6）**：去掉样式选择面板，点击直接切换开/关，固定经典蓝红样式
 19. **热力图数据源扩展**：支持所有四类门店（我的门店/竞品/品牌门店/购物中心），并修复品牌门店加载后热力图不更新的问题
+20. **智慧足迹API集成**：人口数据分析服务，支持23种数据查询，GCJ-02→WGS84自动转换
 
 ## AI 助手功能 (2026-04-04)
 - **模型**：豆包 Seed 2.0 Pro（火山引擎，doubao-seed-2-0-pro）
@@ -95,6 +96,38 @@
 - Python解析脚本：backend/src/utils/shapefile_parser.py（pyshp库）
 - 检索：POST /api/shapefiles/:id/query，数值字段多条件AND组合
 - 地图高亮：橙色边框+黄色填充，分批渲染避免卡死
+
+## 智慧足迹API功能 (2026-04-13)
+- **API Key**: bdca5013c9a66ab882dc6b82be93e3a8de3
+- **基础URL**: https://jm-odp.smartsteps.com
+- **认证方式**: GET /server/openApi/getAuthorization?key={API_KEY} → POST Header传Token
+- **坐标系**: **WGS84 (EPSG:4326)** ⚠️ 系统数据是GCJ-02需转换
+- **Token缓存**: 使用 node-cache，10分钟有效期
+- **统一定价**: ¥60元/次（无论服务类型）
+
+### 后端接口
+- GET /api/smartsteps/services - 获取23个服务列表（含价格）
+- POST /api/smartsteps/query - 查询数据（自动GCJ-02→WGS84转换，需认证）
+- POST /api/smartsteps/convert - 坐标转换测试
+- GET /api/purchase/quota - 获取用户配额
+- POST /api/purchase/buy - 购买配额
+- POST /api/purchase/use - 使用配额（查询前记录）
+
+### 核心文件
+- backend/src/routes/smartsteps.js - 智慧足迹API代理
+- backend/src/routes/purchase.js - 配额购买/使用
+- frontend/src/components/SmartstepsPanel.vue - 前端购买面板
+
+### 数据库表
+- purchases: id, user_id, center_lng, center_lat, radius, city_month, services, quota_used, status, result_data, created_at
+- users.quota: INTEGER DEFAULT 0（管理员分配给用户的配额）
+
+### 联通人口面板UI (2026-04-13)
+- **可拖动**: 面板头部可拖动调整位置
+- **3个半径输入**: 半径1/2/3，单位为公里，默认半径1为1公里
+- **费用显示**: "费用: 60元/次"
+- **剩余次数**: 大字显示配额数量，管理员在用户管理页面分配
+- **购买按钮**: 简化为直接查询，使用配额
 
 ## 商圈人口分布功能 (2026-04-07)
 - **坐标系修复**：分析多边形圆心距离时，GeoJSON坐标已是GCJ-02（后端上传时转换）
