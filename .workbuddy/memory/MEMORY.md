@@ -69,7 +69,10 @@
 - v1.3.0: 2026-04-02，底图切换+地图样式优化
 - v1.3.5: 2026-04-05，修复导航栏部署路径问题（stable-heatmap-safe）
 - v1.3.6: 2026-04-06，热力图简化（点击切换，经典蓝红样式）
-- v1.3.10: 2026-04-07，商圈人口分布支持选择统计字段（可自定义着色字段）
+- v1.3.10: 2026-04-14，智慧足迹购买履历功能（提交ID: 297745c）
+  - 购买履历按钮+对话框（订单ID/时间/门店名称/类型/城市/区县/半径/年月/扣除次数/剩余次数）
+  - IP定位修复（HTTP方案+trust proxy+const→let）
+  - purchases表添加store_name/store_type字段
 
 ## 技术规则
 - **热力图数据同步**：新增 `refreshHeatmap()` 函数，在所有数据加载函数（loadBrandStores/loadCompetitors/loadShoppingCenters/reload*Layer）末尾调用，确保热力图数据与门店数据同步
@@ -121,6 +124,12 @@
 ### 数据库表
 - purchases: id, user_id, center_lng, center_lat, radius, city_month, services, quota_used, status, result_data, created_at
 - users.quota: INTEGER DEFAULT 0（管理员分配给用户的配额）
+
+### 购买履历功能 (2026-04-14)
+- **字段**：订单ID、购买时间、门店名称、门店类型、城市、区县、半径、数据年月、扣除次数、剩余次数
+- **数据库**：purchases表添加store_name/store_type字段，关联markers表获取city/district
+- **UI**：MyAccountView.vue购买履历按钮+对话框（1200px宽度），表格列宽优化
+- **SmartstepsPanel**：添加门店名称输入框和门店类型下拉（已开业/重点候选/一般候选）
 
 ### 联通人口面板UI (2026-04-13)
 - **可拖动**: 面板头部可拖动调整位置

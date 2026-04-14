@@ -75,7 +75,7 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
 // 用户修改自己的信息（只需要登录，不需要 admin）
 router.put('/me', authenticate, (req, res) => {
   try {
-    const { email, password } = req.body
+    const { email, password, company } = req.body
     const userId = req.user.id
 
     const db = getDb()
@@ -106,6 +106,11 @@ router.put('/me', authenticate, (req, res) => {
       }
       updates.push('password = ?')
       params.push(bcrypt.hashSync(password, 10))
+    }
+
+    if (company !== undefined) {
+      updates.push('company = ?')
+      params.push(company)
     }
 
     if (updates.length === 0) {

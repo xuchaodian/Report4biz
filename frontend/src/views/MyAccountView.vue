@@ -18,6 +18,10 @@
           <el-input v-model="userStore.username" disabled />
         </el-form-item>
 
+        <el-form-item label="公司">
+          <el-input v-model="form.company" placeholder="请输入公司名称" />
+        </el-form-item>
+
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入新邮箱" />
         </el-form-item>
@@ -169,6 +173,7 @@ const historyList = ref([])
 
 const form = reactive({
   email: '',
+  company: '',
   newPassword: '',
   confirmPassword: ''
 })
@@ -195,9 +200,12 @@ const rules = {
 }
 
 onMounted(async () => {
-  // 填充当前邮箱
+  // 填充当前邮箱和公司
   if (userStore.user?.email) {
     form.email = userStore.user.email
+  }
+  if (userStore.user?.company) {
+    form.company = userStore.user.company
   }
   // 获取配额信息
   if (!userStore.quota) {
@@ -268,6 +276,9 @@ const handleSubmit = async () => {
     }
     if (form.newPassword) {
       updateData.password = form.newPassword
+    }
+    if (form.company !== undefined) {
+      updateData.company = form.company
     }
 
     const { data } = await axios.put('/api/users/me', updateData)
