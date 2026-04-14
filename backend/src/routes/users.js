@@ -23,6 +23,22 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     
     const users = db.prepare(sql).all(...params)
 
+    // 为每个用户计算剩余次数
+    const usersWithQuota = users.map(user => {
+      if (user.role === 'admin') {
+        return { ...user, remainingQuota: null }
+      }
+      // 计算用户已使用的配额
+      const usedResult = db.prepare(`
+        SELECT COALESCE(SUM(quota_used), 0) as used
+        FROM purchases
+        WHERE user_id = ? AND status = 'active'
+      `).get(user.id)
+      const usedQuota = usedResult?.used || 0
+      const remainingQuota = Math.max(0, (user.quota || 0) - usedQuota)
+      return { ...user, remainingQuota }
+    })
+
     // 计算已分配的配额总和（不包括管理员）
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
@@ -35,7 +51,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const availableQuota = Math.max(0, totalQuota - allocatedQuota)
 
     res.json({ 
-      users,
+      users: usersWithQuota,
       quotaInfo: {
         totalQuota,
         allocatedQuota,

@@ -58,9 +58,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="quota" label="已分配次数" width="100" align="center">
+        <el-table-column prop="remainingQuota" label="剩余次数" width="100" align="center">
           <template #default="{ row }">
-            <el-tag type="info">{{ row.quota ?? 0 }}</el-tag>
+            <el-tag type="info">{{ row.remainingQuota ?? 0 }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="160">
