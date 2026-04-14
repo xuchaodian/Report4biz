@@ -11,7 +11,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const db = getDb()
     const { company } = req.query
     
-    let sql = `SELECT id, username, email, role, company, created_at FROM users`
+    let sql = `SELECT id, username, email, role, company, quota, created_at FROM users`
     const params = []
     
     if (company) {
@@ -135,7 +135,7 @@ router.put('/me', authenticate, (req, res) => {
 // 更新用户
 router.put('/:id', authenticate, requireAdmin, (req, res) => {
   try {
-    const { email, password, role, company } = req.body
+    const { email, password, role, company, quota } = req.body
     const userId = req.params.id
 
     const db = getDb()
@@ -173,6 +173,11 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(company)
     }
 
+    if (quota !== undefined) {
+      updates.push('quota = ?')
+      params.push(parseInt(quota) || 0)
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({ message: '没有需要更新的字段' })
     }
@@ -180,7 +185,7 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(userId)
+    const user = db.prepare('SELECT id, username, email, role, company, quota, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '用户更新成功',

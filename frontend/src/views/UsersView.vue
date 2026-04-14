@@ -44,6 +44,11 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="quota" label="剩余次数" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag type="info">{{ row.quota ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="160">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
@@ -95,6 +100,9 @@
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isEdit" label="剩余次数">
+          <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="分配联通人口数据配额" style="width: 100%" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -127,7 +135,8 @@ const form = reactive({
   email: '',
   company: '',
   password: '',
-  role: 'user'
+  role: 'user',
+  quota: 0
 })
 
 const rules = {
@@ -203,7 +212,8 @@ const handleEdit = (row) => {
     email: row.email,
     company: row.company || '',
     password: '',
-    role: row.role
+    role: row.role,
+    quota: row.quota ?? 0
   })
   dialogVisible.value = true
 }
@@ -215,7 +225,7 @@ const handleSave = async () => {
   saving.value = true
   try {
     if (isEdit.value) {
-      const updateData = { email: form.email, role: form.role, company: form.company }
+      const updateData = { email: form.email, role: form.role, company: form.company, quota: form.quota }
       if (form.password) {
         updateData.password = form.password
       }
