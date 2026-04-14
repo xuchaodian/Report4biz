@@ -262,8 +262,8 @@ const handleSubmit = async () => {
     return
   }
 
-  if (!form.email && !form.newPassword) {
-    ElMessage.warning('请至少填写邮箱或新密码')
+  if (!form.email && !form.newPassword && form.company === userStore.user?.company) {
+    ElMessage.warning('请至少修改一项信息')
     return
   }
 
