@@ -24,6 +24,9 @@ const __dirname = dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3000
 
+// 信任代理（获取真实客户端IP）
+app.set('trust proxy', true)
+
 // 中间件
 app.use(cors())
 app.use(express.json())

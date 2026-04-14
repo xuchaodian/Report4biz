@@ -22,6 +22,20 @@
       <div class="step-section">
         <div class="step-title">② 设置查询参数</div>
         <el-form :model="queryForm" label-width="80px" size="small">
+          <el-form-item label="门店名称">
+            <el-input
+              v-model="queryForm.storeName"
+              placeholder="请输入门店名称"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="门店类型">
+            <el-select v-model="queryForm.storeType" placeholder="选择门店类型" style="width: 100%;">
+              <el-option label="已开业" value="已开业" />
+              <el-option label="重点候选" value="重点候选" />
+              <el-option label="一般候选" value="一般候选" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="半径1">
             <el-input-number
               v-model="queryForm.radius1"
@@ -115,6 +129,8 @@
       <div class="confirm-content">
         <p>您即将购买联通人口数据查询服务：</p>
         <ul>
+          <li><strong>门店名称:</strong> {{ queryForm.storeName || '-' }}</li>
+          <li><strong>门店类型:</strong> {{ queryForm.storeType || '-' }}</li>
           <li><strong>圆心位置:</strong> {{ circleCenter?.lat.toFixed(6) }}, {{ circleCenter?.lng.toFixed(6) }}</li>
           <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
           <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
@@ -137,6 +153,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   visible: Boolean,
@@ -144,6 +161,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:visible', 'start-select'])
+
+const userStore = useUserStore()
 
 // 状态
 const circleCenter = ref(null)
@@ -155,6 +174,8 @@ const showConfirmDialog = ref(false)
 
 // 查询表单（3个半径，单位：公里）
 const queryForm = ref({
+  storeName: '',
+  storeType: '',
   radius1: 1,
   radius2: 0,
   radius3: 0,
@@ -301,6 +322,8 @@ async function loadQuota() {
   try {
     const res = await axios.get('/api/purchase/quota')
     quotaInfo.value = res.data
+    // 同步到全局 store
+    userStore.updateQuota(res.data)
   } catch (e) {
     console.error('加载配额失败:', e)
     quotaInfo.value = { total: 0, used: 0, available: 0 }
@@ -410,7 +433,9 @@ async function executePurchase() {
       radii: radii,     // 传递所有半径
       services: ['1001'],  // 默认全量人口
       cityMonth: queryForm.value.cityMonth,
-      quotaUsed: 1        // 消耗1次配额
+      quotaUsed: 1,        // 消耗1次配额
+      storeName: queryForm.value.storeName,
+      storeType: queryForm.value.storeType
     })
     
     queryResult.value = res.data

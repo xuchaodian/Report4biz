@@ -1969,22 +1969,29 @@ const DEFAULT_LAT = 39.9042
 const DEFAULT_LNG = 116.4074
 const DEFAULT_CITY = '北京市'
 
-// 获取IP位置
+// 获取IP位置 - 通过后端接口（避免浏览器混合内容限制）
 const getLocationByIP = async () => {
   try {
-    // 使用后端API进行IP定位
+    // 通过后端 /api/geocode/ip-location 获取位置
+    // 后端会调用 HTTP 版本的 ip-api.com，不受浏览器 HTTPS 限制
     const response = await fetch('/api/geocode/ip-location')
     const data = await response.json()
-    if (data.success) {
+    
+    if (data.success && data.lat && data.lng) {
+      console.log('[IP定位] 成功，位置:', data.city, '坐标:', data.lat, data.lng)
       return {
         lat: data.lat,
         lng: data.lng,
         city: data.city || DEFAULT_CITY
       }
+    } else {
+      console.log('[IP定位] 后端返回失败:', data.message)
     }
   } catch (error) {
-    console.log('IP定位失败，使用默认位置')
+    console.log('[IP定位] 后端接口失败:', error.message)
   }
+  
+  console.log('[IP定位] 失败，使用默认位置')
   return null
 }
 

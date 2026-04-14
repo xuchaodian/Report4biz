@@ -261,11 +261,12 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS purchases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
+      store_name TEXT,
+      store_type TEXT,
       center_lng REAL,
       center_lat REAL,
       radius INTEGER,
       city_month TEXT,
-      services TEXT,
       quota_used INTEGER DEFAULT 0,
       status TEXT DEFAULT 'active',
       result_data TEXT,
@@ -279,6 +280,18 @@ export async function initDatabase() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id)`)
   } catch (e) {
     // 索引可能已存在
+  }
+
+  // 为已有数据库添加门店相关字段
+  try {
+    db.run(`ALTER TABLE purchases ADD COLUMN store_name TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+  try {
+    db.run(`ALTER TABLE purchases ADD COLUMN store_type TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
   }
 
   // 创建默认管理员账户 (密码: admin123)

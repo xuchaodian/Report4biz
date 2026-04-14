@@ -143,21 +143,73 @@ router.post('/use', authenticate, (req, res) => {
 router.get('/history', authenticate, (req, res) => {
   try {
     const db = getDb()
+    
+    // 获取用户总配额
+    const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
+    const totalQuota = user?.quota || 0
+    
+    // 查询购买记录，关联门店表获取城市和区县
     const purchases = db.prepare(`
-      SELECT id, center_lng, center_lat, radius, city_month, services, quota_used, created_at
-      FROM purchases
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-      LIMIT 50
+      SELECT 
+        p.id,
+        p.store_name,
+        p.store_type,
+        p.center_lng,
+        p.center_lat,
+        p.radius,
+        p.city_month,
+        p.quota_used,
+        p.created_at,
+        m.city,
+        m.district
+      FROM purchases p
+      LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      WHERE p.user_id = ? AND p.status = 'active'
+      ORDER BY p.created_at DESC
+      LIMIT 100
     `).all(req.user.id)
     
-    // 解析services字段
-    const formatted = purchases.map(p => ({
-      ...p,
-      services: p.services ? JSON.parse(p.services) : []
-    }))
+    // 计算每条记录后的剩余配额（逆序累减）
+    let cumulativeUsed = 0
+    const formatted = purchases.map(p => {
+      cumulativeUsed += p.quota_used || 0
+      return {
+        id: p.id,
+        store_name: p.store_name || '-',
+        store_type: p.store_type || '-',
+        center_lng: p.center_lng,
+        center_lat: p.center_lat,
+        radius: p.radius,
+        city_month: p.city_month,
+        quota_used: p.quota_used || 0,
+        remaining: totalQuota - cumulativeUsed + (p.quota_used || 0),
+        created_at: p.created_at,
+        // 优先使用门店表的地址，如果没有则显示坐标
+        city: p.city || '-',
+        district: p.district || '-',
+        location: (p.city || p.district) ? `${p.city || ''}${p.district || ''}`.replace(/^,|,$/g, '') : '-'
+      }
+    })
     
-    res.json({ purchases: formatted })
+    // 解析半径显示
+    const enriched = formatted.map(p => {
+      let radiusDisplay = p.radius
+      try {
+        const radii = JSON.parse(p.radius)
+        if (Array.isArray(radii)) {
+          radiusDisplay = radii.map(r => r + '米').join(', ')
+        }
+      } catch (e) {}
+      if (typeof radiusDisplay === 'number') {
+        radiusDisplay = radiusDisplay + ' 米'
+      }
+      return {
+        ...p,
+        radius_display: radiusDisplay
+      }
+    })
+    
+    res.json({ purchases: enriched })
   } catch (error) {
     console.error('获取历史失败:', error)
     res.status(500).json({ message: '获取历史失败' })

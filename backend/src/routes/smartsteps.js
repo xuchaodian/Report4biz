@@ -179,7 +179,7 @@ router.get('/services', (req, res) => {
  */
 router.post('/query', authenticate, async (req, res) => {
   try {
-    const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1 } = req.body
+    const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType } = req.body
     
     if (!centerLng || !centerLat || !radius) {
       return res.status(400).json({ message: '缺少必要参数: centerLng, centerLat, radius' })
@@ -233,47 +233,58 @@ router.post('/query', authenticate, async (req, res) => {
       body: JSON.stringify(requestBody)
     })
     
+    let result = null
+    let querySuccess = false
+    
     if (!response.ok) {
       const errorText = await response.text()
       console.error('智慧足迹API错误:', response.status, errorText)
-      throw new Error(`API调用失败: ${response.status} ${errorText}`)
+      // API 调用失败，但仍记录配额使用
+      result = { error: `API调用失败: ${response.status}` }
+    } else {
+      result = await response.json()
+      querySuccess = true
+      console.log('智慧足迹查询成功')
     }
     
-    const result = await response.json()
-    console.log('智慧足迹查询成功')
-    
-    // 记录配额使用
+    // 无论 API 返回什么结果，都记录配额使用（已扣减配额）
     try {
       db.prepare(`
         INSERT INTO purchases (
-          user_id, center_lng, center_lat, radius,
-          city_month, services, quota_used, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+          user_id, store_name, store_type, center_lng, center_lat, radius,
+          city_month, quota_used, status, result_data
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
       `).run(
         req.user.id,
+        storeName || '',
+        storeType || '',
         centerLng,
         centerLat,
         JSON.stringify(radii || [radius]),
         cityMonth || '',
-        JSON.stringify(services),
-        quotaUsed
+        quotaUsed,
+        JSON.stringify({ querySuccess, apiResult: result })
       )
     } catch (dbError) {
       console.error('记录配额使用失败:', dbError)
-      // 不影响主流程
     }
     
-    // 返回结果
+    // 返回结果（包含扣减后的配额）
     res.json({
-      success: true,
+      success: querySuccess,
       wkt: wkt,
       centerWgs: gcj02ToWgs84(centerLng, centerLat),
       data: result,
+      quotaUsed: quotaUsed,
       remainingQuota: available - quotaUsed
     })
   } catch (error) {
     console.error('智慧足迹查询失败:', error)
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ 
+      message: error.message,
+      quotaUsed: quotaUsed,
+      remainingQuota: available - quotaUsed
+    })
   }
 })
 
