@@ -23,10 +23,15 @@ router.get('/quota', authenticate, (req, res) => {
       WHERE user_id = ? AND status = 'active'
     `).get(req.user.id)
     
+    // 获取剩余总配额
+    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+    const totalQuota = quotaRecord?.total_quota || 0
+    
     res.json({
-      total: user.quota || 0,
-      used: usedResult?.used || 0,
-      available: (user.quota || 0) - (usedResult?.used || 0)
+      total: user.quota || 0,  // 用户已分配次数
+      used: usedResult?.used || 0,  // 用户已使用次数
+      available: (user.quota || 0) - (usedResult?.used || 0),  // 用户剩余次数
+      totalQuota  // 运营商剩余总次数
     })
   } catch (error) {
     console.error('获取配额失败:', error)
@@ -35,34 +40,17 @@ router.get('/quota', authenticate, (req, res) => {
 })
 
 /**
- * 购买配额
- * 请求体: { amount: number } 购买的配额数量
+ * 购买配额（此接口已停用，配额需通过管理员从联通购买）
  */
 router.post('/buy', authenticate, (req, res) => {
   try {
-    const { amount } = req.body
-    
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: '请输入有效的购买数量' })
-    }
-    
-    const db = getDb()
-    
-    // 更新用户配额
-    db.prepare(`
-      UPDATE users SET quota = quota + ? WHERE id = ?
-    `).run(amount, req.user.id)
-    
-    // 获取更新后的配额
-    const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
-    
-    res.json({
-      message: `成功购买 ${amount} 次配额`,
-      total: user.quota
+    // 此接口已停用，用户配额需通过管理员分配
+    res.status(403).json({ 
+      message: '配额购买功能已停用，请联系管理员从运营商购买配额后分配给您' 
     })
   } catch (error) {
     console.error('购买配额失败:', error)
-    res.status(500).json({ message: '购买失败' })
+    res.status(500).json({ message: '操作失败' })
   }
 })
 
@@ -101,6 +89,16 @@ router.post('/use', authenticate, (req, res) => {
       })
     }
     
+    // 检查剩余总配额是否足够
+    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+    const totalQuota = quotaRecord?.total_quota || 0
+    
+    if (totalQuota < quotaUsed) {
+      return res.status(400).json({
+        message: `运营商配额不足，需要 ${quotaUsed} 次，当前剩余 ${totalQuota} 次。请联系管理员追加配额。`
+      })
+    }
+    
     // 创建购买记录
     const result = db.prepare(`
       INSERT INTO purchases (
@@ -118,6 +116,9 @@ router.post('/use', authenticate, (req, res) => {
       resultData ? JSON.stringify(resultData) : null
     )
     
+    // 同步扣减剩余总配额
+    db.prepare(`UPDATE admin_quota SET total_quota = total_quota - ? WHERE id = 1`).run(quotaUsed)
+    
     // 获取更新后的配额
     const usedAfter = db.prepare(`
       SELECT COALESCE(SUM(quota_used), 0) as used
@@ -125,11 +126,14 @@ router.post('/use', authenticate, (req, res) => {
       WHERE user_id = ? AND status = 'active'
     `).get(req.user.id)
     
+    const newTotalQuota = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+    
     res.json({
       message: '查询成功',
       purchaseId: result.lastInsertRowid,
       quotaUsed,
-      remaining: (user.quota || 0) - (usedAfter?.used || 0)
+      remaining: (user.quota || 0) - (usedAfter?.used || 0),
+      totalQuotaRemaining: newTotalQuota?.total_quota || 0
     })
   } catch (error) {
     console.error('使用配额失败:', error)
