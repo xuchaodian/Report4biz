@@ -23,10 +23,10 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     
     const users = db.prepare(sql).all(...params)
 
-    // 为每个用户计算剩余次数
+    // 为每个用户计算配额信息
     const usersWithQuota = users.map(user => {
       if (user.role === 'admin') {
-        return { ...user, remainingQuota: null }
+        return { ...user, remainingQuota: null, usedQuota: 0 }
       }
       // 计算用户已使用的配额
       const usedResult = db.prepare(`
@@ -36,7 +36,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
       `).get(user.id)
       const usedQuota = usedResult?.used || 0
       const remainingQuota = Math.max(0, (user.quota || 0) - usedQuota)
-      return { ...user, remainingQuota }
+      return { ...user, remainingQuota, usedQuota }
     })
 
     // 计算已分配的配额总和（不包括管理员）
@@ -325,6 +325,74 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
   } catch (error) {
     console.error('删除用户错误:', error)
     res.status(500).json({ message: '删除用户失败' })
+  }
+})
+
+// 获取月度使用统计
+router.get('/monthly-stats', authenticate, requireAdmin, (req, res) => {
+  try {
+    const { month, company } = req.query
+    
+    if (!month) {
+      return res.status(400).json({ message: '请选择月份' })
+    }
+    
+    const db = getDb()
+    
+    // 解析月份，获取起始和结束日期
+    const [year, monthNum] = month.split('-')
+    const startDate = `${year}-${monthNum}-01`
+    const endDate = monthNum === '12' 
+      ? `${parseInt(year) + 1}-01-01` 
+      : `${year}-${String(parseInt(monthNum) + 1).padStart(2, '0')}-01`
+    
+    // 构建查询：获取该公司所有用户的月度使用情况
+    let sql = `
+      SELECT 
+        u.id,
+        u.username,
+        u.email,
+        u.company,
+        u.quota as total_quota,
+        COALESCE(SUM(p.quota_used), 0) as monthly_used,
+        u.quota - COALESCE(SUM(p.quota_used), 0) as monthly_remaining
+      FROM users u
+      LEFT JOIN purchases p ON u.id = p.user_id 
+        AND p.status = 'active'
+        AND p.created_at >= ?
+        AND p.created_at < ?
+    `
+    
+    const params = [startDate, endDate]
+    
+    // 如果选择了公司，按公司筛选
+    if (company) {
+      sql += ` WHERE u.company LIKE ?`
+      params.push(`%${company}%`)
+    }
+    
+    sql += ` GROUP BY u.id ORDER BY u.created_at DESC`
+    
+    const users = db.prepare(sql).all(...params)
+    
+    // 计算汇总
+    const totalMonthlyUsed = users.reduce((sum, u) => sum + (u.monthly_used || 0), 0)
+    
+    res.json({
+      month,
+      users: users.map(u => ({
+        ...u,
+        monthly_used: u.monthly_used || 0,
+        monthly_remaining: Math.max(0, u.monthly_remaining || 0)
+      })),
+      summary: {
+        totalUsers: users.length,
+        totalMonthlyUsed
+      }
+    })
+  } catch (error) {
+    console.error('获取月度统计错误:', error)
+    res.status(500).json({ message: '获取月度统计失败' })
   }
 })
 

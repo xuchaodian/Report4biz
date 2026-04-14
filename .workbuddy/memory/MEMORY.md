@@ -131,6 +131,20 @@
 - **UI**：MyAccountView.vue购买履历按钮+对话框（1200px宽度），表格列宽优化
 - **SmartstepsPanel**：添加门店名称输入框和门店类型下拉（已开业/重点候选/一般候选）
 
+### 管理员配额管理系统 (2026-04-14)
+- **admin_quota 表**：id=1，total_quota（管理员从联通购买的总配额）
+- **用户表 quota 字段**：管理员分配给用户的配额次数
+- **配额扣减逻辑**：用户实际使用配额时才扣减总配额（purchase/use时），分配时不扣减
+- **用户管理页面**：
+  - 剩余总次数：管理员可手动编辑（从联通购买后手动添加）
+  - 剩余可分配次数：自动计算 = 总配额 - SUM(所有用户已分配配额)
+  - 消费次数列：显示用户实际使用的次数（usedQuota = SUM(purchases.quota_used)）
+  - 剩余次数列：显示用户剩余可用次数（remainingQuota = 用户配额 - 已用配额）
+- **后端路由**：
+  - GET /users - 返回 quotaInfo（totalQuota/allocatedQuota/availableQuota）和每个用户的 usedQuota/remainingQuota
+  - PUT /users/quota - 更新总配额
+- **前端组件**：UsersView.vue 显示配额卡片和用户配额列
+
 ### 联通人口面板UI (2026-04-13)
 - **可拖动**: 面板头部可拖动调整位置
 - **3个半径输入**: 半径1/2/3，单位为公里，默认半径1为1公里

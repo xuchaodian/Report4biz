@@ -17,6 +17,9 @@
             <span class="value">{{ quotaInfo.availableQuota }}</span>
           </div>
         </div>
+        <el-button type="info" @click="showMonthlyStatsDialog">
+          📊 月度统计
+        </el-button>
         <el-select
           v-model="filterCompany"
           placeholder="按公司筛选"
@@ -40,6 +43,7 @@
 
     <!-- 用户表格 -->
     <div class="users-table">
+      <div class="table-title">用户列表</div>
       <el-table
         :data="users"
         v-loading="loading"
@@ -56,6 +60,11 @@
             <el-tag :type="row.role === 'admin' ? 'danger' : 'success'">
               {{ row.role === 'admin' ? '管理员' : '普通用户' }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="usedQuota" label="消费次数" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag type="warning">{{ row.usedQuota ?? 0 }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="remainingQuota" label="剩余次数" width="100" align="center">
@@ -114,7 +123,7 @@
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isEdit" label="已分配次数">
+        <el-form-item v-if="isEdit" label="剩余次数">
           <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="分配联通人口数据配额" style="width: 100%" />
           <div class="quota-tip">剩余可分配次数: {{ quotaInfo.availableQuota }}</div>
         </el-form-item>
@@ -137,6 +146,75 @@
         <el-button @click="quotaDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="quotaSaving" @click="handleSaveQuota">确定</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 月度使用统计对话框 -->
+    <el-dialog v-model="monthlyStatsDialogVisible" title="📊 月度使用统计" width="800px">
+      <div class="stats-filters">
+        <el-date-picker
+          v-model="statsMonth"
+          type="month"
+          placeholder="选择月份"
+          format="YYYY-MM"
+          value-format="YYYY-MM"
+          style="width: 140px; margin-right: 12px"
+        />
+        <el-select
+          v-model="statsCompany"
+          placeholder="选择公司"
+          clearable
+          filterable
+          style="width: 180px; margin-right: 12px"
+        >
+          <el-option
+            v-for="company in companyList"
+            :key="company"
+            :label="company"
+            :value="company"
+          />
+        </el-select>
+        <el-button type="primary" @click="fetchMonthlyStats" :loading="statsLoading">
+          查询
+        </el-button>
+      </div>
+      <div class="stats-summary" v-if="monthlyStats.length > 0" style="margin-top: 16px">
+        <div class="summary-item">
+          <span class="label">用户总数：</span>
+          <span class="value">{{ statsSummary.totalUsers }}</span>
+        </div>
+        <div class="summary-item highlight">
+          <span class="label">当月使用总次数：</span>
+          <span class="value">{{ statsSummary.totalMonthlyUsed }}</span>
+        </div>
+      </div>
+      <el-table
+        v-if="monthlyStats.length > 0"
+        :data="monthlyStats"
+        v-loading="statsLoading"
+        border
+        stripe
+        style="width: 100%; margin-top: 16px"
+      >
+        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column prop="username" label="用户名" min-width="120" />
+        <el-table-column prop="company" label="公司" min-width="150" />
+        <el-table-column prop="total_quota" label="已分配次数" width="110" align="center">
+          <template #default="{ row }">
+            {{ row.total_quota ?? 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="monthly_used" label="当月使用次数" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag type="warning">{{ row.monthly_used ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="monthly_remaining" label="当月剩余次数" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag type="info">{{ row.monthly_remaining ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else-if="!statsLoading" description="请选择月份后点击查询" style="margin: 40px 0" />
     </el-dialog>
   </div>
 </template>
@@ -204,9 +282,52 @@ const companyList = computed(() => {
   return [...new Set(companies)]
 })
 
+// 月度统计相关
+const monthlyStatsDialogVisible = ref(false)
+const statsMonth = ref('')
+const statsCompany = ref('')
+const statsLoading = ref(false)
+const monthlyStats = ref([])
+const statsSummary = ref({
+  totalUsers: 0,
+  totalMonthlyUsed: 0
+})
+
 const handleFilterChange = () => {
   fetchUsers()
 }
+
+// 打开月度统计对话框
+const showMonthlyStatsDialog = () => {
+  statsMonth.value = ''
+  statsCompany.value = ''
+  monthlyStats.value = []
+  monthlyStatsDialogVisible.value = true
+}
+
+// 获取月度统计
+const fetchMonthlyStats = async () => {
+  if (!statsMonth.value) {
+    ElMessage.warning('请先选择月份')
+    return
+  }
+  statsLoading.value = true
+  try {
+    const params = { month: statsMonth.value }
+    if (statsCompany.value) {
+      params.company = statsCompany.value
+    }
+    const data = await api.get('/users/monthly-stats', { params })
+    monthlyStats.value = data.users || []
+    statsSummary.value = data.summary || { totalUsers: 0, totalMonthlyUsed: 0 }
+  } catch (error) {
+    ElMessage.error('获取月度统计失败')
+    monthlyStats.value = []
+  } finally {
+    statsLoading.value = false
+  }
+}
+
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -428,6 +549,48 @@ onMounted(() => {
   border-radius: 8px;
   padding: 15px;
   overflow: auto;
+
+  .table-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 12px;
+  }
+}
+
+.stats-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stats-summary {
+  display: flex;
+  gap: 24px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 6px;
+
+  .summary-item {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+
+    .label {
+      color: #606266;
+    }
+
+    .value {
+      font-weight: 600;
+      color: #303133;
+    }
+
+    &.highlight .value {
+      color: #e6a23c;
+      font-size: 16px;
+    }
+  }
 }
 
 .quota-tip {
