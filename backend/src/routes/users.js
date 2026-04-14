@@ -5,7 +5,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js'
 
 const router = express.Router()
 
-// 获取用户列表
+// 获取用户列表（包含配额信息）
 router.get('/', authenticate, requireAdmin, (req, res) => {
   try {
     const db = getDb()
@@ -23,10 +23,63 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     
     const users = db.prepare(sql).all(...params)
 
-    res.json({ users })
+    // 计算已分配的配额总和（不包括管理员）
+    const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
+    const allocatedQuota = allocatedResult?.total || 0
+
+    // 获取管理员设置的总配额
+    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+    const totalQuota = quotaRecord?.total_quota || 0
+
+    // 剩余可分配 = 总配额 - 已分配
+    const availableQuota = Math.max(0, totalQuota - allocatedQuota)
+
+    res.json({ 
+      users,
+      quotaInfo: {
+        totalQuota,
+        allocatedQuota,
+        availableQuota
+      }
+    })
   } catch (error) {
     console.error('获取用户列表错误:', error)
     res.status(500).json({ message: '获取用户列表失败' })
+  }
+})
+
+// 更新总配额（管理员手动设置）
+router.put('/quota', authenticate, requireAdmin, (req, res) => {
+  try {
+    const { totalQuota } = req.body
+    
+    if (totalQuota === undefined || totalQuota < 0) {
+      return res.status(400).json({ message: '请输入有效的总配额数值' })
+    }
+
+    const db = getDb()
+
+    // 计算已分配的配额总和（不包括管理员）
+    const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
+    const allocatedQuota = allocatedResult?.total || 0
+
+    // 更新总配额
+    db.prepare(`UPDATE admin_quota SET total_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(parseInt(totalQuota))
+
+    // 剩余可分配 = 总配额 - 已分配
+    const availableQuota = Math.max(0, totalQuota - allocatedQuota)
+
+    res.json({
+      message: '总配额已更新',
+      quotaInfo: {
+        totalQuota: parseInt(totalQuota),
+        allocatedQuota,
+        availableQuota
+      }
+    })
+  } catch (error) {
+    console.error('更新总配额错误:', error)
+    res.status(500).json({ message: '更新总配额失败' })
   }
 })
 
@@ -146,6 +199,29 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
 
+    // 如果要更新配额，需要检查配额限制
+    if (quota !== undefined) {
+      const newQuota = parseInt(quota) || 0
+      
+      // 计算当前已分配的配额（不包括当前用户）
+      const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
+      const currentAllocated = allocatedResult?.total || 0
+
+      // 获取总配额
+      const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+      const totalQuota = quotaRecord?.total_quota || 0
+
+      // 可用配额 = 总配额 - 其他用户已分配的配额
+      const availableQuota = Math.max(0, totalQuota - currentAllocated)
+
+      // 如果新配额大于可用配额，拒绝
+      if (newQuota > availableQuota) {
+        return res.status(400).json({ 
+          message: `分配失败：超出可用配额。${newQuota} > ${availableQuota}（可用配额 = 总配额 ${totalQuota} - 已分配给其他用户的 ${currentAllocated}）` 
+        })
+      }
+    }
+
     // 更新用户信息
     const updates = []
     const params = []
@@ -185,11 +261,22 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
+    // 返回更新后的配额信息
+    const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
+    const allocatedQuota = allocatedResult?.total || 0
+    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
+    const totalQuota = quotaRecord?.total_quota || 0
+
     const user = db.prepare('SELECT id, username, email, role, company, quota, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '用户更新成功',
-      user
+      user,
+      quotaInfo: {
+        totalQuota,
+        allocatedQuota,
+        availableQuota: Math.max(0, totalQuota - allocatedQuota)
+      }
     })
   } catch (error) {
     console.error('更新用户错误:', error)

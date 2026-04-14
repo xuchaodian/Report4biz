@@ -3,6 +3,20 @@
     <div class="users-header">
       <h2>用户管理</h2>
       <div class="header-actions">
+        <!-- 配额信息卡片 -->
+        <div class="quota-cards">
+          <div class="quota-card total">
+            <span class="label">剩余总次数</span>
+            <span class="value">{{ quotaInfo.totalQuota }}</span>
+            <el-button type="primary" link size="small" @click="showQuotaDialog">
+              <el-icon><Edit /></el-icon>
+            </el-button>
+          </div>
+          <div class="quota-card available">
+            <span class="label">剩余可分配次数</span>
+            <span class="value">{{ quotaInfo.availableQuota }}</span>
+          </div>
+        </div>
         <el-select
           v-model="filterCompany"
           placeholder="按公司筛选"
@@ -44,7 +58,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="quota" label="剩余次数" width="100" align="center">
+        <el-table-column prop="quota" label="已分配次数" width="100" align="center">
           <template #default="{ row }">
             <el-tag type="info">{{ row.quota ?? 0 }}</el-tag>
           </template>
@@ -100,13 +114,28 @@
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isEdit" label="剩余次数">
+        <el-form-item v-if="isEdit" label="已分配次数">
           <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="分配联通人口数据配额" style="width: 100%" />
+          <div class="quota-tip">剩余可分配次数: {{ quotaInfo.availableQuota }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑总配额对话框 -->
+    <el-dialog v-model="quotaDialogVisible" title="设置总配额" width="400px">
+      <el-form>
+        <el-form-item label="剩余总次数">
+          <el-input-number v-model="editTotalQuota" :min="0" :max="999999" style="width: 100%" />
+          <div class="quota-tip">从联通公司购买的总配额次数，可手动修改</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quotaDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="quotaSaving" @click="handleSaveQuota">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -129,6 +158,16 @@ const saving = ref(false)
 const editingId = ref(null)
 const formRef = ref(null)
 const filterCompany = ref('')
+
+// 配额相关
+const quotaInfo = ref({
+  totalQuota: 0,
+  allocatedQuota: 0,
+  availableQuota: 0
+})
+const quotaDialogVisible = ref(false)
+const quotaSaving = ref(false)
+const editTotalQuota = ref(0)
 
 const form = reactive({
   username: '',
@@ -184,10 +223,35 @@ const fetchUsers = async () => {
     }
     const data = await api.get('/users', { params })
     users.value = data.users
+    // 更新配额信息
+    if (data.quotaInfo) {
+      quotaInfo.value = data.quotaInfo
+    }
   } catch (error) {
     ElMessage.error('获取用户列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 显示编辑总配额对话框
+const showQuotaDialog = () => {
+  editTotalQuota.value = quotaInfo.value.totalQuota
+  quotaDialogVisible.value = true
+}
+
+// 保存总配额
+const handleSaveQuota = async () => {
+  quotaSaving.value = true
+  try {
+    const data = await api.put('/users/quota', { totalQuota: editTotalQuota.value })
+    quotaInfo.value = data.quotaInfo
+    quotaDialogVisible.value = false
+    ElMessage.success('总配额已更新')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '更新失败')
+  } finally {
+    quotaSaving.value = false
   }
 }
 
@@ -199,7 +263,8 @@ const showAddDialog = () => {
     email: '',
     company: '',
     password: '',
-    role: 'user'
+    role: 'user',
+    quota: 0
   })
   dialogVisible.value = true
 }
@@ -229,8 +294,12 @@ const handleSave = async () => {
       if (form.password) {
         updateData.password = form.password
       }
-      await api.put(`/users/${editingId.value}`, updateData)
+      const data = await api.put(`/users/${editingId.value}`, updateData)
       ElMessage.success('更新成功')
+      // 更新配额信息
+      if (data.quotaInfo) {
+        quotaInfo.value = data.quotaInfo
+      }
     } else {
       await api.post('/users', { ...form })
       ElMessage.success('添加成功')
@@ -294,6 +363,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 
   h2 {
     margin: 0;
@@ -304,6 +375,50 @@ onMounted(() => {
   .header-actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .quota-cards {
+    display: flex;
+    gap: 16px;
+    margin-right: auto;
+
+    .quota-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: white;
+      border: 1px solid #dcdfe6;
+
+      &.total {
+        border-color: #409eff;
+        background: linear-gradient(135deg, #ecf5ff 0%, #f0f7ff 100%);
+
+        .label { color: #409eff; }
+        .value { color: #409eff; font-weight: bold; font-size: 18px; }
+      }
+
+      &.available {
+        border-color: #67c23a;
+        background: linear-gradient(135deg, #f0f9eb 0%, #e8f5e0 100%);
+
+        .label { color: #67c23a; }
+        .value { color: #67c23a; font-weight: bold; font-size: 18px; }
+      }
+
+      .label {
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      .value {
+        min-width: 40px;
+        text-align: center;
+      }
+    }
   }
 }
 
@@ -313,5 +428,12 @@ onMounted(() => {
   border-radius: 8px;
   padding: 15px;
   overflow: auto;
+}
+
+.quota-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>
