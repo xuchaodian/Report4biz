@@ -142,6 +142,66 @@ router.post('/use', authenticate, (req, res) => {
 })
 
 /**
+ * 获取单个购买记录详情（包含查询结果）
+ */
+router.get('/:id', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+    
+    const purchase = db.prepare(`
+      SELECT 
+        p.*,
+        m.city,
+        m.district
+      FROM purchases p
+      LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      WHERE p.id = ? AND p.user_id = ? AND p.status = 'active'
+    `).get(id, req.user.id)
+    
+    if (!purchase) {
+      return res.status(404).json({ message: '记录不存在' })
+    }
+    
+    // 解析 result_data
+    let resultData = null
+    if (purchase.result_data) {
+      try {
+        resultData = JSON.parse(purchase.result_data)
+      } catch (e) {
+        resultData = purchase.result_data
+      }
+    }
+    
+    // 解析半径
+    let radii = []
+    try {
+      radii = JSON.parse(purchase.radius)
+    } catch (e) {
+      radii = [purchase.radius]
+    }
+    
+    res.json({
+      id: purchase.id,
+      store_name: purchase.store_name,
+      store_type: purchase.store_type,
+      center_lng: purchase.center_lng,
+      center_lat: purchase.center_lat,
+      radii: radii,
+      city_month: purchase.city_month,
+      quota_used: purchase.quota_used,
+      created_at: purchase.created_at,
+      city: purchase.city,
+      district: purchase.district,
+      result_data: resultData
+    })
+  } catch (error) {
+    console.error('获取详情失败:', error)
+    res.status(500).json({ message: '获取详情失败' })
+  }
+})
+
+/**
  * 获取购买历史
  */
 router.get('/history', authenticate, (req, res) => {

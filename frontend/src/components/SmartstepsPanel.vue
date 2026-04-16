@@ -419,25 +419,25 @@ function confirmPurchase() {
 // 执行购买并查询
 async function executePurchase() {
   if (!circleCenter.value) return
-  
+
   showConfirmDialog.value = false
   isLoading.value = true
   queryResult.value = null
-  
+
   try {
     // 刷新最新配额
     await loadQuota()
-    
+
     // 检查配额（配额未加载或配额不足）
     if (!quotaInfo.value || quotaInfo.value.available < 1) {
       ElMessage.error('配额不足，请联系管理员分配配额')
       isLoading.value = false
       return
     }
-    
+
     // 获取半径列表（米）
     const radii = getRadiiInMeters()
-    
+
     // 调用查询API
     const res = await axios.post('/api/smartsteps/query', {
       centerLng: circleCenter.value.lng,
@@ -450,10 +450,16 @@ async function executePurchase() {
       storeName: queryForm.value.storeName,
       storeType: queryForm.value.storeType
     })
-    
+
     queryResult.value = res.data
-    ElMessage.success('查询成功!')
-    
+
+    // 检查是否返还配额（空数据情况）
+    if (res.data.refunded) {
+      ElMessage.warning('该区域暂无数据，配额已返还')
+    } else {
+      ElMessage.success('查询成功!')
+    }
+
     // 刷新配额
     loadQuota()
   } catch (e) {
@@ -521,9 +527,30 @@ function getServiceName(code) {
 
 function formatValue(value) {
   if (value === null || value === undefined) return '-'
+  
+  // 如果是对象类型
   if (typeof value === 'object') {
-    return JSON.stringify(value, null, 2)
+    // 检查是否是简单对象 { total: number } 或 { value: number }
+    if (value && typeof value.total === 'number') {
+      return String(value.total)
+    }
+    if (value && typeof value.value === 'number') {
+      return String(value.value)
+    }
+    if (value && typeof value.count === 'number') {
+      return String(value.count)
+    }
+    // 数组且第一个元素是数字数组 [[lng, lat, value], ...]
+    if (Array.isArray(value) && value.length > 0) {
+      const first = value[0]
+      if (Array.isArray(first) && first.length >= 3) {
+        return `[网格数据: ${value.length}个点]`
+      }
+    }
+    // 其他对象显示为"详情"
+    return '<详情>'
   }
+  
   return String(value)
 }
 

@@ -149,7 +149,42 @@
             <span class="quota-remaining">{{ row.remaining ?? '-' }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="viewPurchaseDetail(row)">
+              查看结果
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- 查看结果对话框 -->
+    <el-dialog
+      v-model="detailDialogVisible"
+      :title="`📊 查询结果详情 - ${currentDetail?.store_name || '订单' + currentDetail?.id}`"
+      width="700px"
+    >
+      <div v-if="detailLoading" class="detail-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>加载中...</span>
+      </div>
+      <div v-else-if="currentDetail" class="detail-content">
+        <div class="detail-info">
+          <p><strong>订单ID:</strong> {{ currentDetail.id }}</p>
+          <p><strong>查询时间:</strong> {{ formatDate(currentDetail.created_at) }}</p>
+          <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
+          <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
+          <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+        </div>
+        <div class="detail-result" v-if="resultData">
+          <h4>📊 查询数据</h4>
+          <div class="result-grid" v-html="formatResultData(resultData)"></div>
+        </div>
+        <div v-else class="no-result">
+          <p>暂无数据（该订单配额已返还）</p>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -170,6 +205,12 @@ const quotaLoading = ref(false)
 const historyDialogVisible = ref(false)
 const historyLoading = ref(false)
 const historyList = ref([])
+
+// 查看详情相关
+const detailDialogVisible = ref(false)
+const detailLoading = ref(false)
+const currentDetail = ref(null)
+const resultData = ref(null)
 
 const form = reactive({
   email: '',
@@ -253,6 +294,90 @@ const formatDate = (dateStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+// 查看购买详情
+const viewPurchaseDetail = async (row) => {
+  detailDialogVisible.value = true
+  detailLoading.value = true
+  currentDetail.value = null
+  resultData.value = null
+  
+  try {
+    const { data } = await axios.get(`/api/purchase/${row.id}`)
+    currentDetail.value = data
+    resultData.value = data.result_data
+  } catch (e) {
+    console.error('加载详情失败:', e)
+    ElMessage.error('加载详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+// 格式化结果显示
+const formatResultData = (data) => {
+  if (!data) return '<p>暂无数据</p>'
+  
+  const apiResult = data.apiResult
+  if (!apiResult) return '<p>暂无数据</p>'
+  
+  // 如果是错误信息
+  if (apiResult.error) {
+    return `<p style="color:red;">❌ ${apiResult.error}</p>`
+  }
+  
+  let html = ''
+  if (typeof apiResult === 'object' && apiResult !== null) {
+    for (const [key, value] of Object.entries(apiResult)) {
+      if (key === 'error') continue
+      const label = getServiceName(key)
+      const displayValue = formatDetailValue(value)
+      html += `<div class="result-item">
+        <span class="result-label">${label}（${key}）</span>
+        <span class="result-value">${displayValue}</span>
+      </div>`
+    }
+  }
+  
+  return html || '<p>暂无数据</p>'
+}
+
+// 格式化单个字段值
+const formatDetailValue = (value) => {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return value
+  if (typeof value === 'object') {
+    // 检查是否是简单对象
+    if (value && typeof value.total === 'number') return String(value.total)
+    if (value && typeof value.value === 'number') return String(value.value)
+    if (value && typeof value.count === 'number') return String(value.count)
+    // 数组且第一个元素是坐标数组
+    if (Array.isArray(value) && value.length > 0) {
+      const first = value[0]
+      if (Array.isArray(first) && first.length >= 3) {
+        return `[网格数据: ${value.length}个点]`
+      }
+    }
+    return '<详情>'
+  }
+  return String(value)
+}
+
+// 获取服务名称
+const getServiceName = (code) => {
+  const names = {
+    '1001': '全量人口', '1002': '居住人口', '1003': '工作人口', '1004': '到访人口',
+    '1005': '每小时段人口流量', '1006': '人口属性分析', '1007': '消费水平分布',
+    '1008': '年龄段分布', '1009': '性别比例', '1010': '收入水平分布',
+    '1011': '家庭状况分布', '1012': '出行方式分布', '1013': '居住地分布',
+    '1014': '工作地分布', '1015': '工作日/周末对比', '1016': '日均人流热度',
+    '1017': '月均人流热度', '1018': '月到访频次', '1019': '市外来源分布',
+    '1020': '省内来源分布', '1021': '市内来源分布', '1022': '停留时长分布',
+    '1023': '全量人口(全)'
+  }
+  return names[code] || code
 }
 
 const handleSubmit = async () => {
@@ -418,5 +543,73 @@ const handleSubmit = async () => {
   .el-dialog__body {
     padding: 16px 20px;
   }
+}
+
+.detail-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: #666;
+}
+
+.detail-content {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.detail-info {
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  
+  p {
+    margin: 8px 0;
+    font-size: 14px;
+    color: #666;
+  }
+}
+
+.detail-result {
+  h4 {
+    margin: 16px 0 12px 0;
+    color: #333;
+    font-size: 15px;
+  }
+}
+
+.result-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.result-label {
+  color: #764ba2;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.result-value {
+  color: #333;
+  font-weight: 500;
+}
+
+.no-result {
+  text-align: center;
+  padding: 30px;
+  color: #999;
 }
 </style>

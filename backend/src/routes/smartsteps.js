@@ -121,6 +121,57 @@ function buildCircleWkt(lng, lat, radius) {
 }
 
 /**
+ * 检测返回数据是否全为0/空（需要返还配额）
+ * @param {any} data - API返回的数据
+ * @returns {boolean} - true表示全为0/空，需要返还配额
+ */
+function checkIfDataIsEmpty(data) {
+  // 空数据情况
+  if (data === null || data === undefined) return true
+  if (data.error) return false  // 有错误信息不算空数据
+  
+  // 如果是对象
+  if (typeof data === 'object') {
+    // 空对象
+    if (Object.keys(data).length === 0) return true
+    
+    // 遍历所有数值字段
+    let hasValidNumber = false
+    for (const [key, value] of Object.entries(data)) {
+      if (key === 'error') continue  // 跳过错误字段
+      if (value === null || value === undefined) continue
+      
+      // 如果是数字
+      if (typeof value === 'number') {
+        if (value !== 0) {
+          hasValidNumber = true
+          break
+        }
+      }
+      // 如果是字符串数字
+      else if (typeof value === 'string') {
+        const num = parseFloat(value)
+        if (!isNaN(num) && num !== 0) {
+          hasValidNumber = true
+          break
+        }
+      }
+      // 如果是数组或对象，递归检查
+      else if (typeof value === 'object') {
+        if (!checkIfDataIsEmpty(value)) {
+          hasValidNumber = true
+          break
+        }
+      }
+    }
+    
+    return !hasValidNumber
+  }
+  
+  return false
+}
+
+/**
  * 获取Token
  */
 router.get('/token', async (req, res) => {
@@ -257,7 +308,13 @@ router.post('/query', authenticate, async (req, res) => {
       }
     }
     
-    // 无论 API 返回什么结果，都记录配额使用并扣减运营商总配额
+    // 检测返回数据是否全为0/空（需要返还配额）
+    const isEmptyData = checkIfDataIsEmpty(result)
+    
+    // 实际扣减的配额（空数据时为0）
+    const actualQuotaUsed = isEmptyData ? 0 : quotaUsed
+    
+    // 记录到purchases表
     try {
       db.prepare(`
         INSERT INTO purchases (
@@ -272,24 +329,27 @@ router.post('/query', authenticate, async (req, res) => {
         centerLat,
         JSON.stringify(radii || [radius]),
         cityMonth || '',
-        quotaUsed,
-        JSON.stringify({ querySuccess, apiResult: result })
+        actualQuotaUsed,
+        JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
       )
       
-      // 扣减运营商总配额
-      db.prepare(`UPDATE admin_quota SET total_quota = total_quota - ? WHERE id = 1`).run(quotaUsed)
+      // 仅在非空数据时扣减运营商总配额
+      if (!isEmptyData) {
+        db.prepare(`UPDATE admin_quota SET total_quota = total_quota - ? WHERE id = 1`).run(quotaUsed)
+      }
     } catch (dbError) {
       console.error('记录配额使用失败:', dbError)
     }
     
-    // 返回结果（包含扣减后的配额）
+    // 返回结果（包含扣减后的配额，空数据时返还）
     res.json({
       success: querySuccess,
+      refunded: isEmptyData,
       wkt: wkt,
       centerWgs: gcj02ToWgs84(centerLng, centerLat),
       data: result,
-      quotaUsed: quotaUsed,
-      remainingQuota: available - quotaUsed
+      quotaUsed: actualQuotaUsed,
+      remainingQuota: available  // 返还时配额不变
     })
   } catch (error) {
     console.error('智慧足迹查询失败:', error)
