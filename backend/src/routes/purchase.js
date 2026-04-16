@@ -142,79 +142,19 @@ router.post('/use', authenticate, (req, res) => {
 })
 
 /**
- * 获取单个购买记录详情（包含查询结果）
- */
-router.get('/:id', authenticate, (req, res) => {
-  try {
-    const { id } = req.params
-    const db = getDb()
-    
-    const purchase = db.prepare(`
-      SELECT 
-        p.*,
-        m.city,
-        m.district
-      FROM purchases p
-      LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
-      WHERE p.id = ? AND p.user_id = ? AND p.status = 'active'
-    `).get(id, req.user.id)
-    
-    if (!purchase) {
-      return res.status(404).json({ message: '记录不存在' })
-    }
-    
-    // 解析 result_data
-    let resultData = null
-    if (purchase.result_data) {
-      try {
-        resultData = JSON.parse(purchase.result_data)
-      } catch (e) {
-        resultData = purchase.result_data
-      }
-    }
-    
-    // 解析半径
-    let radii = []
-    try {
-      radii = JSON.parse(purchase.radius)
-    } catch (e) {
-      radii = [purchase.radius]
-    }
-    
-    res.json({
-      id: purchase.id,
-      store_name: purchase.store_name,
-      store_type: purchase.store_type,
-      center_lng: purchase.center_lng,
-      center_lat: purchase.center_lat,
-      radii: radii,
-      city_month: purchase.city_month,
-      quota_used: purchase.quota_used,
-      created_at: purchase.created_at,
-      city: purchase.city,
-      district: purchase.district,
-      result_data: resultData
-    })
-  } catch (error) {
-    console.error('获取详情失败:', error)
-    res.status(500).json({ message: '获取详情失败' })
-  }
-})
-
-/**
- * 获取购买历史
+ * 获取购买历史（静态路由必须在 /:id 之前）
  */
 router.get('/history', authenticate, (req, res) => {
   try {
     const db = getDb()
-    
+
     // 获取用户总配额
     const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
     const totalQuota = user?.quota || 0
-    
+
     // 查询购买记录，关联门店表获取城市和区县
     const purchases = db.prepare(`
-      SELECT 
+      SELECT
         p.id,
         p.store_name,
         p.store_type,
@@ -232,7 +172,7 @@ router.get('/history', authenticate, (req, res) => {
       ORDER BY p.created_at DESC
       LIMIT 100
     `).all(req.user.id)
-    
+
     // 计算每条记录后的剩余配额（顺序累加，然后从总配额中减去）
     let cumulativeUsed = 0
     const formatted = purchases.map(p => {
@@ -256,7 +196,7 @@ router.get('/history', authenticate, (req, res) => {
         location: (p.city || p.district) ? `${p.city || ''}${p.district || ''}`.replace(/^,|,$/g, '') : '-'
       }
     })
-    
+
     // 解析半径显示
     const enriched = formatted.map(p => {
       let radiusDisplay = p.radius
@@ -274,11 +214,71 @@ router.get('/history', authenticate, (req, res) => {
         radius_display: radiusDisplay
       }
     })
-    
+
     res.json({ purchases: enriched })
   } catch (error) {
     console.error('获取历史失败:', error)
     res.status(500).json({ message: '获取历史失败' })
+  }
+})
+
+/**
+ * 获取单个购买记录详情（包含查询结果）
+ */
+router.get('/:id', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+
+    const purchase = db.prepare(`
+      SELECT
+        p.*,
+        m.city,
+        m.district
+      FROM purchases p
+      LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      WHERE p.id = ? AND p.user_id = ? AND p.status = 'active'
+    `).get(id, req.user.id)
+
+    if (!purchase) {
+      return res.status(404).json({ message: '记录不存在' })
+    }
+
+    // 解析 result_data
+    let resultData = null
+    if (purchase.result_data) {
+      try {
+        resultData = JSON.parse(purchase.result_data)
+      } catch (e) {
+        resultData = purchase.result_data
+      }
+    }
+
+    // 解析半径
+    let radii = []
+    try {
+      radii = JSON.parse(purchase.radius)
+    } catch (e) {
+      radii = [purchase.radius]
+    }
+
+    res.json({
+      id: purchase.id,
+      store_name: purchase.store_name,
+      store_type: purchase.store_type,
+      center_lng: purchase.center_lng,
+      center_lat: purchase.center_lat,
+      radii: radii,
+      city_month: purchase.city_month,
+      quota_used: purchase.quota_used,
+      created_at: purchase.created_at,
+      city: purchase.city,
+      district: purchase.district,
+      result_data: resultData
+    })
+  } catch (error) {
+    console.error('获取详情失败:', error)
+    res.status(500).json({ message: '获取详情失败' })
   }
 })
 
