@@ -7,7 +7,7 @@ const router = express.Router()
 
 // 智慧足迹API配置
 const SMARTSTEPS_CONFIG = {
-  baseUrl: 'https://jm-odp.smartsteps.com',
+  baseUrl: 'https://jm-odp.smartsteps.com/febs',
   apiKey: 'bdca5013c9a66ab882dc6b82be93e3a8de3',
   // 费用60元/次
   costPerQuery: 60
@@ -43,15 +43,15 @@ async function getAuthorization() {
 
     const data = await response.json()
     
-    // 假设返回格式: { token: "xxx", expires_in: 3600 }
-    if (data.token) {
-      // 提前5分钟过期，确保token有效
-      const ttl = Math.floor((data.expires_in || 3600) / 60) - 5
-      tokenCache.set('smartsteps_token', data.token, ttl > 0 ? ttl : 1)
-      return data.token
+    // 文档返回格式: { code: 200, data: "eyJhbGciOiJIUkZkJiQmJRd...." }
+    if (data.code === 200 && data.data) {
+      const token = data.data
+      // JWT token 有效期约10分钟，提前1分钟过期
+      tokenCache.set('smartsteps_token', token, 540)
+      return token
     }
     
-    throw new Error('Token响应格式异常: ' + JSON.stringify(data))
+    throw new Error('Token响应异常: ' + JSON.stringify(data))
   } catch (error) {
     console.error('智慧足迹获取Token失败:', error)
     throw error
@@ -116,7 +116,7 @@ function transformLng(x, y) {
 function buildCircleWkt(lng, lat, radius) {
   // 转换为WGS84
   const wgs = gcj02ToWgs84(lng, lat)
-  // 智慧足迹使用 point(lng lat) 格式
+  // 智慧足迹使用 point(经度 纬度) 格式（空格分隔）
   return `point(${wgs.lng} ${wgs.lat})`
 }
 
@@ -178,9 +178,13 @@ router.get('/services', (req, res) => {
  * }
  */
 router.post('/query', authenticate, async (req, res) => {
+  // 从请求体获取参数（提到try外面供catch块访问）
+  const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType } = req.body
+
+  // 数据库和配额变量（提到try外供catch访问）
+  let db, available
+
   try {
-    const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType } = req.body
-    
     if (!centerLng || !centerLat || !radius) {
       return res.status(400).json({ message: '缺少必要参数: centerLng, centerLat, radius' })
     }
@@ -190,7 +194,7 @@ router.post('/query', authenticate, async (req, res) => {
     }
     
     // 检查用户配额
-    const db = getDb()
+    db = getDb()
     const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
     const usedResult = db.prepare(`
       SELECT COALESCE(SUM(quota_used), 0) as used
@@ -198,7 +202,7 @@ router.post('/query', authenticate, async (req, res) => {
       WHERE user_id = ? AND status = 'active'
     `).get(req.user.id)
     
-    const available = (user?.quota || 0) - (usedResult?.used || 0)
+    available = (user?.quota || 0) - (usedResult?.used || 0)
     
     if (available < quotaUsed) {
       return res.status(400).json({
@@ -206,24 +210,24 @@ router.post('/query', authenticate, async (req, res) => {
       })
     }
     
-    // 构建WKT圆（使用主要半径）
+    // 构建polygons参数（point格式：point(经度 纬度)）
     const wkt = buildCircleWkt(centerLng, centerLat, radius)
     
-    // 获取Token
-    const token = await getAuthorization()
-    
-    // 构建请求
+    // 构建请求 - 根据联通API格式
     const requestBody = {
-      codes: services,
+      codes: Array.isArray(services) ? services.join(',') : services,
       cityMonth: cityMonth || '',
       radius: radius,
-      polygons: []
+      polygons: wkt  // 直接使用point格式
     }
-    
-    requestBody.wkt = wkt
     
     console.log('智慧足迹查询请求:', JSON.stringify(requestBody, null, 2))
     
+    // 先获取授权Token
+    const token = await getAuthorization()
+    console.log('获取到Token:', token ? `${token.substring(0, 20)}...` : 'null')
+    
+    // 调用智慧足迹API（需带Token）
     const response = await fetch(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
       method: 'POST',
       headers: {
@@ -239,12 +243,18 @@ router.post('/query', authenticate, async (req, res) => {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('智慧足迹API错误:', response.status, errorText)
-      // API 调用失败，但仍记录配额使用
       result = { error: `API调用失败: ${response.status}` }
     } else {
-      result = await response.json()
-      querySuccess = true
-      console.log('智慧足迹查询成功')
+      const apiResponse = await response.json()
+      // 解析返回的数据结构
+      if (apiResponse.code === 200) {
+        result = apiResponse.data
+        querySuccess = true
+        console.log('智慧足迹查询成功')
+      } else {
+        result = { error: `API返回错误码: ${apiResponse.code}` }
+        console.error('智慧足迹API返回错误:', apiResponse)
+      }
     }
     
     // 无论 API 返回什么结果，都记录配额使用（已扣减配额）
@@ -283,7 +293,7 @@ router.post('/query', authenticate, async (req, res) => {
     res.status(500).json({ 
       message: error.message,
       quotaUsed: quotaUsed,
-      remainingQuota: available - quotaUsed
+      remainingQuota: null  // 无法计算
     })
   }
 })

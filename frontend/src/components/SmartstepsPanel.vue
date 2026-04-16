@@ -81,7 +81,7 @@
           </el-form-item>
         </el-form>
         <div class="query-info">
-          <span>单位: 公里 | 费用: 60元/次</span>
+          <span>单位: 公里</span>
         </div>
       </div>
 
@@ -134,7 +134,6 @@
           <li><strong>圆心位置:</strong> {{ circleCenter?.lat.toFixed(6) }}, {{ circleCenter?.lng.toFixed(6) }}</li>
           <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
           <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
-          <li><strong>服务费用:</strong> ¥60.00</li>
         </ul>
       </div>
       <template #footer>
@@ -431,7 +430,7 @@ async function executePurchase() {
       centerLat: circleCenter.value.lat,
       radius: radii[0], // 使用第一个半径作为主要半径
       radii: radii,     // 传递所有半径
-      services: ['1001'],  // 默认全量人口
+      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1016','1017','1018','1019','1020','1021','1022','1023'],  // 全部服务
       cityMonth: queryForm.value.cityMonth,
       quotaUsed: 1,        // 消耗1次配额
       storeName: queryForm.value.storeName,
@@ -454,24 +453,27 @@ async function executePurchase() {
 // 格式化结果
 function formatResult(data) {
   if (!data || !data.data) return '<p>暂无数据</p>'
-  
+
   const result = data.data
-  let html = '<div class="result-grid">'
-  
-  // 解析返回的数据结构
-  if (typeof result === 'object') {
+  let html = ''
+
+  // 如果是错误信息
+  if (result && result.error) {
+    return `<p style="color:red;">❌ ${result.error}</p>`
+  }
+
+  // 遍历所有返回字段
+  if (typeof result === 'object' && result !== null) {
     for (const [key, value] of Object.entries(result)) {
       const label = getServiceName(key)
-      const val = formatValue(value)
-      html += `<div class="result-item">
-        <span class="result-label">${label}</span>
-        <span class="result-value">${val}</span>
-      </div>`
+      html += `<div class="result-item" style="flex-direction:column;align-items:flex-start;gap:4px;">`
+      html += `<span class="result-label" style="font-weight:bold;color:#764ba2;">${label}（${key}）</span>`
+      html += `<span class="result-value" style="white-space:pre-wrap;word-break:break-all;font-size:12px;">${formatValue(value)}</span>`
+      html += `</div>`
     }
   }
-  
-  html += '</div>'
-  return html || '<p>暂无数据</p>'
+
+  return html ? `<div class="result-grid">${html}</div>` : '<p>暂无数据</p>'
 }
 
 function getServiceName(code) {
@@ -479,16 +481,36 @@ function getServiceName(code) {
     '1001': '全量人口',
     '1002': '居住人口',
     '1003': '工作人口',
-    '1004': '到访人口'
+    '1004': '到访人口',
+    '1005': '每小时段人口流量',
+    '1006': '人口属性分析',
+    '1007': '消费水平分布',
+    '1008': '年龄段分布',
+    '1009': '性别比例',
+    '1010': '收入水平分布',
+    '1011': '家庭状况分布',
+    '1012': '出行方式分布',
+    '1013': '居住地分布',
+    '1014': '工作地分布',
+    '1015': '工作日/周末对比',
+    '1016': '日均人流热度',
+    '1017': '月均人流热度',
+    '1018': '月到访频次',
+    '1019': '市外来源分布',
+    '1020': '省内来源分布',
+    '1021': '市内来源分布',
+    '1022': '停留时长分布',
+    '1023': '全量人口(全)'
   }
   return names[code] || code
 }
 
 function formatValue(value) {
+  if (value === null || value === undefined) return '-'
   if (typeof value === 'object') {
-    return JSON.stringify(value)
+    return JSON.stringify(value, null, 2)
   }
-  return value ? String(value) : '-'
+  return String(value)
 }
 
 // 关闭

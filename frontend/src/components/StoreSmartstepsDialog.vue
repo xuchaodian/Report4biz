@@ -60,7 +60,7 @@
     </el-form>
 
     <div class="query-info">
-      <span>单位: 公里 | 费用: 60元/次</span>
+      <span>单位: 公里</span>
     </div>
 
     <div class="quota-section">
@@ -110,7 +110,6 @@
         <li><strong>圆心位置:</strong> {{ storeInfo?.latitude.toFixed(6) }}, {{ storeInfo?.longitude.toFixed(6) }}</li>
         <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
         <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
-        <li><strong>服务费用:</strong> ¥60.00</li>
       </ul>
     </div>
     <template #footer>
