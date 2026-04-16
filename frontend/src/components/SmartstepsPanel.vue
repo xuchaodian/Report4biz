@@ -108,6 +108,13 @@
         >
           {{ isLoading ? '🔄 处理中...' : '💳 购买' }}
         </el-button>
+        <!-- 禁用原因提示 -->
+        <div class="purchase-hint" v-if="!canPurchase && !isLoading">
+          <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">⚠️ 配额不足，请联系管理员分配配额</span>
+          <span v-else-if="!circleCenter">请先选择位置</span>
+          <span v-else-if="!hasRadius">请设置至少一个半径</span>
+          <span v-else>请选择数据年月</span>
+        </div>
       </div>
 
       <!-- 结果展示 -->
@@ -166,7 +173,7 @@ const userStore = useUserStore()
 // 状态
 const circleCenter = ref(null)
 const isSelecting = ref(false)
-const quotaInfo = ref(null)
+const quotaInfo = ref(null)  // 配额信息
 const isLoading = ref(false)
 const queryResult = ref(null)
 const showConfirmDialog = ref(false)
@@ -237,11 +244,14 @@ const selectedMonthLabel = computed(() => {
   return month ? month.label : ''
 })
 
-// 是否可以购买
+// 是否有有效半径
+const hasRadius = computed(() => {
+  return queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0
+})
+
+// 是否可以购买（只要选择了位置、半径、年月就允许点击，执行时再检查配额）
 const canPurchase = computed(() => {
-  const hasRadius = queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0
-  // 需要：圆心位置 + 至少一个半径 + 已选月份 + 配额充足
-  return circleCenter.value && hasRadius && queryForm.value.cityMonth && quotaInfo.value?.available > 0
+  return circleCenter.value && hasRadius.value && queryForm.value.cityMonth
 })
 
 // 开始拖动
@@ -415,9 +425,13 @@ async function executePurchase() {
   queryResult.value = null
   
   try {
-    // 检查配额
+    // 刷新最新配额
+    await loadQuota()
+    
+    // 检查配额（配额未加载或配额不足）
     if (!quotaInfo.value || quotaInfo.value.available < 1) {
       ElMessage.error('配额不足，请联系管理员分配配额')
+      isLoading.value = false
       return
     }
     
@@ -668,6 +682,13 @@ onUnmounted(() => {
   color: #999 !important;
   cursor: not-allowed;
   opacity: 1 !important;
+}
+
+.purchase-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #e6a23c;
+  text-align: center;
 }
 
 .result-section {

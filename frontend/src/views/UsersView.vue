@@ -393,13 +393,15 @@ const showAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
+  // 管理员账号的 quota 字段显示为 0（配额从 admin_quota 表管理）
+  const editQuota = row.role === 'admin' ? 0 : (row.quota ?? 0)
   Object.assign(form, {
     username: row.username,
     email: row.email,
     company: row.company || '',
     password: '',
     role: row.role,
-    quota: row.quota ?? 0
+    quota: editQuota
   })
   dialogVisible.value = true
 }

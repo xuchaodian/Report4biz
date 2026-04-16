@@ -215,9 +215,12 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
 
-    // 如果要更新配额，需要检查配额限制
+    // 如果要更新配额，需要检查配额限制（追加模式）
     if (quota !== undefined) {
-      const newQuota = parseInt(quota) || 0
+      const addQuota = parseInt(quota) || 0
+      
+      // 获取当前用户的现有配额
+      const currentUserQuota = existingUser.quota || 0
       
       // 计算当前已分配的配额（不包括当前用户）
       const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
@@ -230,10 +233,10 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       // 可用配额 = 总配额 - 其他用户已分配的配额
       const availableQuota = Math.max(0, totalQuota - currentAllocated)
 
-      // 如果新配额大于可用配额，拒绝
-      if (newQuota > availableQuota) {
+      // 如果要追加的配额大于可用配额，拒绝
+      if (addQuota > availableQuota) {
         return res.status(400).json({ 
-          message: `分配失败：超出可用配额。${newQuota} > ${availableQuota}（可用配额 = 总配额 ${totalQuota} - 已分配给其他用户的 ${currentAllocated}）` 
+          message: `分配失败：超出可用配额。需要追加 ${addQuota} 次，可用 ${availableQuota} 次（总配额 ${totalQuota} - 已分配给其他用户的 ${currentAllocated}）` 
         })
       }
     }
@@ -266,7 +269,8 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     if (quota !== undefined) {
-      updates.push('quota = ?')
+      // 追加配额而不是覆盖
+      updates.push('quota = quota + ?')
       params.push(parseInt(quota) || 0)
     }
 

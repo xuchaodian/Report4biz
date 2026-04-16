@@ -173,10 +173,12 @@ router.get('/history', authenticate, (req, res) => {
       LIMIT 100
     `).all(req.user.id)
     
-    // 计算每条记录后的剩余配额（逆序累减）
+    // 计算每条记录后的剩余配额（顺序累加，然后从总配额中减去）
     let cumulativeUsed = 0
     const formatted = purchases.map(p => {
+      const previousRemaining = totalQuota - cumulativeUsed
       cumulativeUsed += p.quota_used || 0
+      const currentRemaining = totalQuota - cumulativeUsed
       return {
         id: p.id,
         store_name: p.store_name || '-',
@@ -186,7 +188,7 @@ router.get('/history', authenticate, (req, res) => {
         radius: p.radius,
         city_month: p.city_month,
         quota_used: p.quota_used || 0,
-        remaining: totalQuota - cumulativeUsed + (p.quota_used || 0),
+        remaining: currentRemaining,  // 当前剩余 = 总配额 - 累计已使用
         created_at: p.created_at,
         // 优先使用门店表的地址，如果没有则显示坐标
         city: p.city || '-',

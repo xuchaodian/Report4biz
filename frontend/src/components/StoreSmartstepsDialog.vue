@@ -100,7 +100,7 @@
   <!-- 购买确认对话框 -->
   <el-dialog
     v-model="showConfirmDialog"
-    title="确认购买"
+    title="确认订单"
     width="400px"
   >
     <div class="confirm-content">
@@ -110,6 +110,8 @@
         <li><strong>圆心位置:</strong> {{ storeInfo?.latitude.toFixed(6) }}, {{ storeInfo?.longitude.toFixed(6) }}</li>
         <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
         <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
+        <li><strong>本次扣除:</strong> {{ getQuotaToUse() }}次</li>
+        <li><strong>扣除后剩余:</strong> {{ getRemainingAfterUse() }}次</li>
       </ul>
     </div>
     <template #footer>
@@ -167,6 +169,21 @@ const selectedMonthLabel = computed(() => {
   const month = availableMonths.value.find(m => m.value === queryForm.value.cityMonth)
   return month ? month.label : ''
 })
+
+// 计算本次扣除次数（有效半径的数量）
+function getQuotaToUse() {
+  let count = 0
+  if (queryForm.value.radius1 > 0) count++
+  if (queryForm.value.radius2 > 0) count++
+  if (queryForm.value.radius3 > 0) count++
+  return count
+}
+
+// 计算扣除后剩余次数
+function getRemainingAfterUse() {
+  if (!quotaInfo.value) return '-'
+  return quotaInfo.value.available - getQuotaToUse()
+}
 
 // 获取半径显示
 function getRadiiDisplay() {
@@ -249,9 +266,12 @@ async function executeQuery() {
       centerLat: storeInfo.value.latitude,
       radius: radii[0],
       radii: radii,
-      services: ['1001'],
+      // 请求全部23个服务
+      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1016','1017','1018','1019','1020','1021','1022','1023'],
       cityMonth: queryForm.value.cityMonth,
-      quotaUsed: 1
+      quotaUsed: getQuotaToUse(),
+      storeName: storeInfo.value.name,
+      storeType: storeInfo.value.store_type || '已开业'
     })
 
     queryResult.value = res.data
@@ -275,11 +295,29 @@ function formatResult(data) {
   if (typeof result === 'object') {
     for (const [key, value] of Object.entries(result)) {
       const label = getServiceName(key)
-      const val = formatValue(value)
-      html += `<div class="result-item">
-        <span class="result-label">${label}</span>
-        <span class="result-value">${val}</span>
-      </div>`
+      
+      // 根据数据类型格式化显示
+      if (typeof value === 'object' && value !== null) {
+        // 对象类型，展开显示
+        let subHtml = ''
+        for (const [subKey, subVal] of Object.entries(value)) {
+          subHtml += `<div style="font-size:11px;padding:2px 0;border-bottom:1px dashed #eee;">
+            <span style="color:#999;">${subKey}:</span>
+            <span style="font-weight:normal;">${subVal}</span>
+          </div>`
+        }
+        html += `<div class="result-item result-object">
+          <span class="result-label">${label}</span>
+          <div class="result-object-content">${subHtml}</div>
+        </div>`
+      } else {
+        // 基本类型，直接显示
+        const val = formatValue(value)
+        html += `<div class="result-item">
+          <span class="result-label">${label}</span>
+          <span class="result-value">${val}</span>
+        </div>`
+      }
     }
   }
   
@@ -292,7 +330,26 @@ function getServiceName(code) {
     '1001': '全量人口',
     '1002': '居住人口',
     '1003': '工作人口',
-    '1004': '到访人口'
+    '1004': '到访人口',
+    '1005': '每小时段人口流量',
+    '1006': '人口属性分析',
+    '1007': '消费水平分布',
+    '1008': '年龄段分布',
+    '1009': '性别比例',
+    '1010': '收入水平分布',
+    '1011': '家庭状况分布',
+    '1012': '出行方式分布',
+    '1013': '居住地分布',
+    '1014': '工作地分布',
+    '1015': '工作日/周末对比',
+    '1016': '日均人流热度',
+    '1017': '月均人流热度',
+    '1018': '月到访频次',
+    '1019': '市外来源分布',
+    '1020': '省内来源分布',
+    '1021': '市内来源分布',
+    '1022': '停留时长分布',
+    '1023': '全量人口(全)'
   }
   return names[code] || code
 }
@@ -409,6 +466,18 @@ watch(() => props.store, (newStore) => {
   background: white;
   border-radius: 4px;
   border: 1px solid #eee;
+}
+
+.result-object {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-object-content {
+  width: 100%;
+  padding: 8px;
+  background: #f8f8f8;
+  border-radius: 4px;
 }
 
 .result-label {

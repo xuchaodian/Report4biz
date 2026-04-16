@@ -257,7 +257,7 @@ router.post('/query', authenticate, async (req, res) => {
       }
     }
     
-    // 无论 API 返回什么结果，都记录配额使用（已扣减配额）
+    // 无论 API 返回什么结果，都记录配额使用并扣减运营商总配额
     try {
       db.prepare(`
         INSERT INTO purchases (
@@ -275,6 +275,9 @@ router.post('/query', authenticate, async (req, res) => {
         quotaUsed,
         JSON.stringify({ querySuccess, apiResult: result })
       )
+      
+      // 扣减运营商总配额
+      db.prepare(`UPDATE admin_quota SET total_quota = total_quota - ? WHERE id = 1`).run(quotaUsed)
     } catch (dbError) {
       console.error('记录配额使用失败:', dbError)
     }
