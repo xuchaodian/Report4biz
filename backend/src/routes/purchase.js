@@ -249,6 +249,12 @@ router.get('/:id', authenticate, (req, res) => {
     if (purchase.result_data) {
       try {
         resultData = JSON.parse(purchase.result_data)
+        // 过滤掉 1016 服务的条目
+        if (Array.isArray(resultData)) {
+          resultData = resultData.filter(item => item.service_code !== '1016' && item.service_code !== 1016)
+        } else if (resultData && typeof resultData === 'object') {
+          delete resultData['1016']
+        }
       } catch (e) {
         resultData = purchase.result_data
       }

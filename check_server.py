@@ -10,18 +10,16 @@ client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(HOST, port=PORT, username=USER, password=PASSWORD)
 
-# 直接测试智慧足迹API
-print("=== 直接测试智慧足迹API ===")
-cmd = '''curl -s -X POST "https://jm-odp.smartsteps.com/febs/server/openApi/getData" \\
-  -H "Content-Type: application/json" \\
-  -d '{"codes":"1001,1002,1003","cityMonth":"202603","polygons":"point(121.50652 31.090825)","radius":1000}' '''
-stdin, stdout, stderr = client.exec_command(cmd)
-result = stdout.read().decode()
-print(f"响应: {result[:2000]}")
+# 检查服务器上的文件
+sftp = client.open_sftp()
+try:
+    with sftp.open('/var/www/geomanger/frontend/dist/assets/MyAccountView-CuiMBQgK.js', 'r') as f:
+        content = f.read().decode('utf-8', errors='ignore')
+        import re
+        matches = re.findall(r'月驻留[\u4e00-\u9fa5\d\-次]+', content)
+        print("服务器上的列名:", matches[:10] if matches else "未找到")
+except Exception as e:
+    print(f"错误: {e}")
 
-# 查看PM2日志
-print("\n=== PM2日志 ===")
-stdin, stdout, stderr = client.exec_command('pm2 logs geomanger-api --lines 10 --nostream')
-print(stdout.read().decode())
-
+sftp.close()
 client.close()

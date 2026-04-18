@@ -178,7 +178,7 @@
           <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
         </div>
         <div class="detail-result" v-if="resultData">
-          <h4>📊 查询数据</h4>
+          <h4>📊 人口概览</h4>
           <div class="result-grid" v-html="formatResultData(resultData)"></div>
         </div>
         <div v-else class="no-result">
@@ -308,13 +308,30 @@ const viewPurchaseDetail = async (row) => {
     const { data } = await axios.get(`/api/purchase/${row.id}`)
     currentDetail.value = data
     resultData.value = data.result_data
+    // 调试：输出 monthly_reach_count 的结构
+    console.log('result_data keys:', data.result_data ? Object.keys(data.result_data) : 'null')
+    if (data.result_data?.apiResult) {
+      const apiResult = data.result_data.apiResult
+      for (const key of Object.keys(apiResult)) {
+        const val = apiResult[key]
+        if (Array.isArray(val) && val.length > 0) {
+          console.log(`apiResult.${key} 第一条数据 keys:`, Object.keys(val[0]))
+        }
+      }
+    }
   } catch (e) {
     console.error('加载详情失败:', e)
-    ElMessage.error('加载详情失败')
+    ElMessage.error('加载详情失败: ' + (e.response?.data?.message || e.message))
+    // 关闭对话框而不是让它显示空白内容
+    detailDialogVisible.value = false
+    return
   } finally {
     detailLoading.value = false
   }
 }
+
+// 排除的服务列表（不显示在结果中）
+const excludeServices = ['1003', '1004', '1008', '1016', '1017', '1018', '1019', '1020', '1021', '1022', '1023']
 
 // 服务名称映射
 const getServiceName = (code) => {
@@ -332,7 +349,8 @@ const getServiceName = (code) => {
     '1012': '人生阶段分布',
     '1013': '综合消费能力预测',
     '1014': '网购能力预测',
-    '1015': '资产预测（收入/有车/有房）'
+    '1015': '资产预测（收入/有车/有房）',
+
   }
   return names[code] || code
 }
@@ -574,6 +592,544 @@ const formatP0SData = (data) => {
   return html
 }
 
+// 格式化其他服务数据（数组格式）- 处理 popu_type/tag_value/tag_name 格式
+const formatArrayData = (data, serviceCode) => {
+  if (!data) return '<p>暂无数据</p>'
+  if (!Array.isArray(data) || data.length === 0) return '<p>暂无数据</p>'
+  
+  const firstItem = data[0]
+  if (!firstItem || typeof firstItem !== 'object') return '<p>暂无数据</p>'
+  
+  // 如果是消费水平格式 {popu_type, spendpower, spendpower_value} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.spendpower !== undefined && firstItem.spendpower_value !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    
+    // 创建 spendpower 到数值的映射，按 popu_type 分列
+    const spendMap = new Map()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const spendLevel = item.spendpower
+      if (!spendMap.has(spendLevel)) {
+        spendMap.set(spendLevel, { '到访': 0, '居住': 0, '工作': 0 })
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        spendMap.get(spendLevel)[type] = item.spendpower_value || 0
+      }
+    }
+    
+    // 按消费力等级排序
+    const sortedSpend = [...spendMap.entries()].sort((a, b) => a[0] - b[0])
+    
+    // 消费力等级标签
+    const spendLabels = {
+      1: '消费力指数1（最低）',
+      2: '消费力指数2',
+      3: '消费力指数3',
+      4: '消费力指数4',
+      5: '消费力指数5',
+      6: '消费力指数6',
+      7: '消费力指数7',
+      8: '消费力指数8（最高）'
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>消费力指数</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    for (const [level, values] of sortedSpend) {
+      const label = spendLabels[level] || `消费力指数${level}`
+      html += `<tr><td>${label}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 如果是人口教育水平格式 {popu_type, fname, p0, p1, p2, p3, p4} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p0 !== undefined && firstItem.fname !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p0': '高中及以下', 'p1': '大专', 'p2': '本科', 'p3': '硕士', 'p4': '博士' }
+    const pKeys = ['p0', 'p1', 'p2', 'p3', 'p4']
+    
+    // 创建 fname 到数值的映射，按 popu_type 分列
+    const eduMap = new Map()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!eduMap.has(fname)) {
+        eduMap.set(fname, { '到访': {}, '居住': {}, '工作': {} })
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            eduMap.get(fname)[type][pKey] = item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>学历</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    
+    // 遍历所有教育等级
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      let toVisit = 0, residence = 0, work = 0
+      
+      // 汇总所有 fname 下的该教育等级数据
+      for (const [fname, values] of eduMap) {
+        toVisit += values['到访'][pKey] || 0
+        residence += values['居住'][pKey] || 0
+        work += values['工作'][pKey] || 0
+      }
+      
+      html += `<tr><td>${label}</td><td class="num">${toVisit.toLocaleString()}</td><td class="num">${residence.toLocaleString()}</td><td class="num">${work.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 根据 serviceCode 精确匹配各服务的数据格式
+  // 1012: 人生阶段分布 {popu_type, p1, p2, p3}
+  if (serviceCode === '1012' && firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.p3 !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '已婚已育', 'p2': '已婚未育', 'p3': '未婚未育' }
+    const pKeys = ['p1', 'p2', 'p3']
+    
+    const totals = { '到访': {}, '居住': {}, '工作': {} }
+    for (const pKey of pKeys) {
+      totals['到访'][pKey] = 0
+      totals['居住'][pKey] = 0
+      totals['工作'][pKey] = 0
+    }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            totals[type][pKey] += item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>人生阶段</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      html += `<tr><td>${label}</td><td class="num">${totals['到访'][pKey].toLocaleString()}</td><td class="num">${totals['居住'][pKey].toLocaleString()}</td><td class="num">${totals['工作'][pKey].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 1013: 综合消费能力预测 {popu_type, p1, p2, p3}
+  if (serviceCode === '1013' && firstItem.popu_type !== undefined && firstItem.p1 !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '消费水平高', 'p2': '消费水平中', 'p3': '消费水平低' }
+    const pKeys = ['p1', 'p2', 'p3']
+    
+    const totals = { '到访': {}, '居住': {}, '工作': {} }
+    for (const pKey of pKeys) {
+      totals['到访'][pKey] = 0
+      totals['居住'][pKey] = 0
+      totals['工作'][pKey] = 0
+    }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            totals[type][pKey] += item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>消费能力</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      html += `<tr><td>${label}</td><td class="num">${totals['到访'][pKey].toLocaleString()}</td><td class="num">${totals['居住'][pKey].toLocaleString()}</td><td class="num">${totals['工作'][pKey].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 1014: 网购能力预测 {popu_type, p1, p2, p3, p4, p5}
+  if (serviceCode === '1014' && firstItem.popu_type !== undefined && firstItem.p1 !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '网购能力高', 'p2': '网购能力中高', 'p3': '网购能力中', 'p4': '网购能力中低', 'p5': '网购能力低' }
+    const pKeys = ['p1', 'p2', 'p3', 'p4', 'p5']
+    
+    const totals = { '到访': {}, '居住': {}, '工作': {} }
+    for (const pKey of pKeys) {
+      totals['到访'][pKey] = 0
+      totals['居住'][pKey] = 0
+      totals['工作'][pKey] = 0
+    }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            totals[type][pKey] += item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>网购能力</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      html += `<tr><td>${label}</td><td class="num">${totals['到访'][pKey].toLocaleString()}</td><td class="num">${totals['居住'][pKey].toLocaleString()}</td><td class="num">${totals['工作'][pKey].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 1015: 资产预测（收入/有车/有房）{popu_type, fname, p1, p2, p3, p4, p5}
+  if (serviceCode === '1015' && firstItem.popu_type !== undefined && firstItem.fname !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '预测概率高', 'p2': '预测概率中高', 'p3': '预测概率中', 'p4': '预测概率中低', 'p5': '预测概率低' }
+    const pKeys = ['p1', 'p2', 'p3', 'p4', 'p5']
+    
+    const fnameGroups = {}
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!fnameGroups[fname]) {
+        fnameGroups[fname] = { '到访': {}, '居住': {}, '工作': {} }
+        for (const pKey of pKeys) {
+          fnameGroups[fname]['到访'][pKey] = 0
+          fnameGroups[fname]['居住'][pKey] = 0
+          fnameGroups[fname]['工作'][pKey] = 0
+        }
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            fnameGroups[fname][type][pKey] += item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    const fnameConfig = {
+      '收入预测': { title: '收入预测', bgClass: 'asset-income' },
+      '有车预测': { title: '有车预测', bgClass: 'asset-car' },
+      '有房预测': { title: '有房预测', bgClass: 'asset-house' }
+    }
+    
+    let html = `<div class="pop-group">`
+    for (const [fname, values] of Object.entries(fnameGroups)) {
+      const config = fnameConfig[fname] || { title: fname, bgClass: '' }
+      html += `<div class="asset-section ${config.bgClass}">
+        <div class="group-header">${config.title}</div>
+        <table class="data-table cross-table"><thead><tr><th>概率等级</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+      for (const pKey of pKeys) {
+        const label = pLabels[pKey] || pKey
+        html += `<tr><td>${label}</td><td class="num">${values['到访'][pKey].toLocaleString()}</td><td class="num">${values['居住'][pKey].toLocaleString()}</td><td class="num">${values['工作'][pKey].toLocaleString()}</td></tr>`
+      }
+      html += '</tbody></table></div>'
+    }
+    html += '</div>'
+    return html
+  }
+  
+  // 如果是人口行业分布格式 {popu_type, fname, p1, p2, ..., p10} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.p10 !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = {
+      'p1': '金融从业者',
+      'p2': '医务人员',
+      'p3': '公务员&事业单位',
+      'p4': '白领及一般职员',
+      'p5': '工人及服务业人员',
+      'p6': '教师',
+      'p7': '农民及其他',
+      'p8': '网约车司机',
+      'p9': '外卖员',
+      'p10': '快递员'
+    }
+    const pKeys = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']
+    
+    // 创建 fname 到数值的映射，按 popu_type 分列
+    const jobMap = new Map()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!jobMap.has(fname)) {
+        jobMap.set(fname, { '到访': {}, '居住': {}, '工作': {} })
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            jobMap.get(fname)[type][pKey] = item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>行业</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    
+    // 遍历所有行业
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      let toVisit = 0, residence = 0, work = 0
+      
+      // 汇总所有 fname 下的该行业数据
+      for (const [fname, values] of jobMap) {
+        toVisit += values['到访'][pKey] || 0
+        residence += values['居住'][pKey] || 0
+        work += values['工作'][pKey] || 0
+      }
+      
+      html += `<tr><td>${label}</td><td class="num">${toVisit.toLocaleString()}</td><td class="num">${residence.toLocaleString()}</td><td class="num">${work.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 如果是标签分布格式 {popu_type, tag_value, tag_name} - 合并为一张表
+  if (firstItem.popu_type !== undefined && firstItem.tag_value !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const groups = { '到访': [], '居住': [], '工作': [], '其他': [] }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (!groups[type]) groups[type] = []
+      groups[type].push(item)
+    }
+    
+    // 创建标签到数值的映射
+    const tagMap = new Map()
+    for (const [type, items] of Object.entries(groups)) {
+      if (items.length === 0) continue
+      for (const item of items) {
+        const tagName = item.tag_name || '-'
+        if (!tagMap.has(tagName)) {
+          tagMap.set(tagName, { '到访': 0, '居住': 0, '工作': 0 })
+        }
+        tagMap.get(tagName)[type] = item.tag_value || 0
+      }
+    }
+    
+    // 按到访人数降序排序
+    const sortedTags = [...tagMap.entries()].sort((a, b) => b[1]['到访'] - a[1]['到访'])
+    
+    // 计算总计
+    const totals = { '到访': 0, '居住': 0, '工作': 0 }
+    for (const [, values] of sortedTags) {
+      totals['到访'] += values['到访']
+      totals['居住'] += values['居住']
+      totals['工作'] += values['工作']
+    }
+    
+    let html = `<div class="pop-group">
+      <table class="data-table cross-table"><thead><tr><th>标签</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
+    for (const [tagName, values] of sortedTags) {
+      html += `<tr><td>${tagName}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 如果是每日人流量及停留时长格式 {day_type, day_visit, day_all, stay1, stay2, ...}
+  if (firstItem.day_visit !== undefined && firstItem.day_all !== undefined && firstItem.stay1 !== undefined) {
+    const dayTypes = { 0: '工作日', 1: '周末' }
+    const groups = { '工作日': [], '周末': [], '其他': [] }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const dayType = dayTypes[item.day_type] || '其他'
+      if (!groups[dayType]) groups[dayType] = []
+      groups[dayType].push(item)
+    }
+    
+    // 定义正确的字段顺序
+    const fieldOrder = ['day_visit', 'day_all', 'stay1', 'stay2', 'stay3', 'stay4', 'stay5', 'stay6']
+    const fieldLabels = {
+      'day_visit': '日均到访人次',
+      'day_all': '日均全量人次',
+      'stay1': '停留<30分钟',
+      'stay2': '停留30-60分钟',
+      'stay3': '停留1-2小时',
+      'stay4': '停留2-4小时',
+      'stay5': '停留4-8小时',
+      'stay6': '停留>8小时'
+    }
+    
+    let html = ''
+    for (const [dayType, items] of Object.entries(groups)) {
+      // 跳过空数据
+      if (items.length === 0) continue
+      
+      // 只显示工作日和周末，不显示"其他"的标题
+      const showHeader = dayType !== '其他'
+      
+      const totalVisit = items.reduce((sum, item) => sum + (item.day_visit || 0), 0)
+      const totalAll = items.reduce((sum, item) => sum + (item.day_all || 0), 0)
+      
+      html += `<div class="pop-group">`
+      if (showHeader) {
+        html += `<div class="group-header">${dayType} <span class="group-total">到访${totalVisit.toLocaleString()} / 全量${totalAll.toLocaleString()}</span></div>`
+      }
+      html += `<table class="data-table"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody>`
+      
+      for (const field of fieldOrder) {
+        if (field in items[0]) {
+          const values = items.map(item => item[field] || 0)
+          const total = values.reduce((a, b) => a + b, 0)
+          html += `<tr><td>${fieldLabels[field] || field}</td><td class="num">${total.toLocaleString()}</td></tr>`
+        }
+      }
+      html += '</tbody></table></div>'
+    }
+    return html || '<p>暂无数据</p>'
+  }
+  
+  // 如果是每月到达次数分布格式 {month, reach1/reach6, ...}
+  // 检测：month 字段 + reach 开头的数字字段
+  const hasReachFields = (obj) => {
+    if (!obj || typeof obj !== 'object') return false
+    const keys = Object.keys(obj)
+    // 检查是否有 reach1-6 或 Reach1-6 等变体
+    const reachNums = []
+    for (const key of keys) {
+      const match = key.match(/^reach(\d+)$/i)
+      if (match) reachNums.push(parseInt(match[1]))
+    }
+    return reachNums.length > 0
+  }
+  
+  if (hasReachFields(firstItem)) {
+    // 动态检测 reach 字段并按数字排序
+    const reachFields = []
+    for (const key of Object.keys(firstItem)) {
+      const match = key.match(/^reach(\d+)$/i)
+      if (match) {
+        reachFields.push({ key, num: parseInt(match[1]) })
+      }
+    }
+    reachFields.sort((a, b) => a.num - b.num)
+    
+    // reach 字段名称映射（按序号）
+    const reachLabels = {
+      1: '月驻留1次',
+      2: '月驻留2-4次',
+      3: '月驻留5-10次',
+      4: '月驻留11-20次',
+      5: '月驻留20次以上'
+    }
+    
+    // 按月排序（如果有 month 字段）
+    const hasMonth = data.some(item => item.month !== undefined)
+    const sorted = hasMonth ? [...data].sort((a, b) => (a.month || '').localeCompare(b.month || '')) : data
+    
+    let html = `<div class="pop-group">
+      <table class="data-table"><thead><tr>`
+    if (hasMonth) {
+      html += `<th>月份</th>`
+    }
+    for (const { key, num } of reachFields) {
+      html += `<th>${reachLabels[num] || key}</th>`
+    }
+    html += `</tr></thead><tbody>`
+    
+    for (const item of sorted) {
+      if (hasMonth) {
+        html += `<tr><td>${item.month || '-'}</td>`
+      } else {
+        html += `<tr>`
+      }
+      for (const { key } of reachFields) {
+        html += `<td class="num">${(item[key] || 0).toLocaleString()}</td>`
+      }
+      html += '</tr>'
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 如果是小时段格式 {day_type, hour_period, hour_all, hour_visit} - 合并工作日和周末
+  if (firstItem.day_type !== undefined && firstItem.hour_period !== undefined) {
+    // 按小时分组
+    const hourMap = new Map()
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const hour = item.hour_period
+      if (!hourMap.has(hour)) {
+        hourMap.set(hour, { 工作日: null, 周末: null })
+      }
+      const entry = hourMap.get(hour)
+      if (item.day_type === 0) {
+        entry.工作日 = item
+      } else if (item.day_type === 1) {
+        entry.周末 = item
+      }
+    }
+    
+    // 按小时排序
+    const sortedHours = [...hourMap.entries()].sort((a, b) => a[0] - b[0])
+    
+    let html = `<div class="pop-group">
+      <table class="data-table"><thead><tr><th>时段</th><th>工作日到访人次</th><th>周末到访人次</th><th>工作日全量人次</th><th>周末全量人次</th></tr></thead><tbody>`
+    for (const [hour, entries] of sortedHours) {
+      const weekday = entries.工作日
+      const weekend = entries.周末
+      html += `<tr>
+        <td>${hour}点</td>
+        <td class="num">${(weekday?.hour_visit || 0).toLocaleString()}</td>
+        <td class="num">${(weekend?.hour_visit || 0).toLocaleString()}</td>
+        <td class="num">${(weekday?.hour_all || 0).toLocaleString()}</td>
+        <td class="num">${(weekend?.hour_all || 0).toLocaleString()}</td>
+      </tr>`
+    }
+    html += '</tbody></table></div>'
+    return html
+  }
+  
+  // 默认数组格式 - 直接显示表格
+  let html = `<table class="data-table"><thead><tr>`
+  const headers = Object.keys(firstItem)
+  for (const h of headers) {
+    html += `<th>${h}</th>`
+  }
+  html += `</tr></thead><tbody>`
+  
+  for (const item of data.slice(0, 20)) {  // 限制前20行
+    html += '<tr>'
+    for (const h of headers) {
+      const val = item[h]
+      const display = typeof val === 'number' ? val.toLocaleString() : (val ?? '-')
+      html += `<td class="num">${display}</td>`
+    }
+    html += '</tr>'
+  }
+  html += '</tbody></table>'
+  return html
+}
+
 // 格式化其他服务数据（按人群类型分组）- 使用完整字段映射，表格形式
 const formatOtherData = (data, serviceCode) => {
   // 按人群类型分组
@@ -613,20 +1169,47 @@ const formatOtherData = (data, serviceCode) => {
 // 格式化结果显示
 const formatResultData = (data) => {
   if (!data) return '<p>暂无数据</p>'
-  const apiResult = data.apiResult
-  if (!apiResult) return '<p>暂无数据</p>'
+  
+  // 如果 data 是字符串，尝试解析
+  let apiResult = data
+  if (typeof data === 'string') {
+    try {
+      apiResult = JSON.parse(data)
+    } catch (e) {
+      console.error('JSON解析失败:', e)
+      return '<p>暂无数据</p>'
+    }
+  }
+  
+  // 如果 data 是 { apiResult: {...} } 格式
+  if (apiResult && apiResult.apiResult) {
+    apiResult = apiResult.apiResult
+  }
+  
+  if (!apiResult || typeof apiResult !== 'object') return '<p>暂无数据</p>'
   if (apiResult.error) return `<p style="color:red;">❌ ${apiResult.error}</p>`
 
   let html = ''
   
   for (const [key, value] of Object.entries(apiResult)) {
     if (key === 'error') continue
+    // 跳过排除列表中的服务
+    if (excludeServices.includes(key)) continue
     const serviceName = getServiceName(key)
     
     // 1001 服务特殊处理 - 分列对比表格
     if (key === '1001' && typeof value === 'object' && !Array.isArray(value)) {
       html += `<div class="detail-result">
         ${formatP0SData(value)}
+      </div>`
+      continue
+    }
+    
+    // 数组格式数据（如 1002, 1005 等）
+    if (Array.isArray(value)) {
+      html += `<div class="detail-result">
+        <h4>📊 ${serviceName}</h4>
+        ${formatArrayData(value, key)}
       </div>`
       continue
     }
@@ -968,6 +1551,12 @@ const handleSubmit = async () => {
   color: #764ba2;
 }
 
+.detail-result :deep(.data-table tr.total-row td) {
+  background: linear-gradient(90deg, #f8f0ff, #fff, #f8f0ff);
+  font-weight: 600;
+  color: #764ba2;
+}
+
 .group-header {
   font-weight: 600;
   color: #764ba2;
@@ -982,5 +1571,43 @@ const handleSubmit = async () => {
 .group-total {
   color: #333;
   font-size: 14px;
+}
+
+/* 资产预测各部分背景色 */
+.asset-section {
+  margin-bottom: 12px;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.asset-section .data-table {
+  margin-bottom: 0;
+}
+
+.asset-section .group-header {
+  margin-bottom: 8px;
+}
+
+/* 收入预测 - 蓝色调 */
+.asset-income {
+  background: linear-gradient(135deg, #e6f3ff 0%, #b3d9ff 100%);
+  border: 1px solid #8bc8ff;
+}
+
+/* 有车预测 - 浅绿色调 */
+.asset-car {
+  background: linear-gradient(135deg, #e6ffe6 0%, #b3ffb3 100%);
+  border: 1px solid #8cff8c;
+}
+
+/* 有房预测 - 浅黄色调 */
+.asset-house {
+  background: linear-gradient(135deg, #fffbe6 0%, #fff3b3 100%);
+  border: 1px solid #ffd966;
+}
+
+/* 资产表格表头颜色调整 */
+.asset-section :deep(.data-table th) {
+  background: rgba(255, 255, 255, 0.6);
 }
 </style>
