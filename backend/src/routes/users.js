@@ -43,19 +43,21 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
 
-    // 获取管理员设置的总配额
-    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
-    const totalQuota = quotaRecord?.total_quota || 0
+    // 获取初始总配额和当前剩余配额
+    const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
+    const initialQuota = quotaRecord?.initial_quota || 0
+    const remainingQuota = quotaRecord?.remaining_quota || 0
 
-    // 剩余可分配 = 总配额 - 已分配
-    const availableQuota = Math.max(0, totalQuota - allocatedQuota)
+    // 剩余可分配 = 初始总配额 - 已分配（与用户实际使用无关）
+    const availableQuota = Math.max(0, initialQuota - allocatedQuota)
 
     res.json({ 
       users: usersWithQuota,
       quotaInfo: {
-        totalQuota,
-        allocatedQuota,
-        availableQuota
+        initialQuota,     // 初始总配额（我手动输入的值）
+        remainingQuota,   // 当前剩余配额（实际可查询的次数）
+        allocatedQuota,   // 已分配给用户的次数
+        availableQuota    // 剩余可分配次数
       }
     })
   } catch (error) {
@@ -75,20 +77,32 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
 
     const db = getDb()
 
+    // 获取当前数据用于计算
+    const currentQuota = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
+    const currentInitial = currentQuota?.initial_quota || 0
+    const currentRemaining = currentQuota?.remaining_quota || 0
+
     // 计算已分配的配额总和（不包括管理员）
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
 
-    // 更新总配额
-    db.prepare(`UPDATE admin_quota SET total_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(parseInt(totalQuota))
+    // 计算新的 remaining_quota
+    // 规则：新增配额时，remaining_quota 也要增加
+    const quotaDiff = parseInt(totalQuota) - currentInitial
+    const newRemaining = Math.max(0, currentRemaining + quotaDiff)
 
-    // 剩余可分配 = 总配额 - 已分配
-    const availableQuota = Math.max(0, totalQuota - allocatedQuota)
+    // 更新初始总配额和当前剩余配额
+    db.prepare(`UPDATE admin_quota SET initial_quota = ?, remaining_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`)
+      .run(parseInt(totalQuota), newRemaining)
+
+    // 剩余可分配 = 初始总配额 - 已分配
+    const availableQuota = Math.max(0, parseInt(totalQuota) - allocatedQuota)
 
     res.json({
       message: '总配额已更新',
       quotaInfo: {
-        totalQuota: parseInt(totalQuota),
+        initialQuota: parseInt(totalQuota),
+        remainingQuota: newRemaining,
         allocatedQuota,
         availableQuota
       }
@@ -226,17 +240,17 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
       const currentAllocated = allocatedResult?.total || 0
 
-      // 获取总配额
-      const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
-      const totalQuota = quotaRecord?.total_quota || 0
+      // 获取初始总配额
+      const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
+      const initialQuota = quotaRecord?.initial_quota || 0
 
-      // 可用配额 = 总配额 - 其他用户已分配的配额
-      const availableQuota = Math.max(0, totalQuota - currentAllocated)
+      // 可用配额 = 初始总配额 - 其他用户已分配的配额
+      const availableQuota = Math.max(0, initialQuota - currentAllocated)
 
       // 如果要追加的配额大于可用配额，拒绝
       if (addQuota > availableQuota) {
         return res.status(400).json({ 
-          message: `分配失败：超出可用配额。需要追加 ${addQuota} 次，可用 ${availableQuota} 次（总配额 ${totalQuota} - 已分配给其他用户的 ${currentAllocated}）` 
+          message: `分配失败：超出可用配额。需要追加 ${addQuota} 次，可用 ${availableQuota} 次（初始总配额 ${initialQuota} - 已分配给其他用户的 ${currentAllocated}）` 
         })
       }
     }
@@ -284,8 +298,9 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     // 返回更新后的配额信息
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
-    const quotaRecord = db.prepare(`SELECT total_quota FROM admin_quota WHERE id = 1`).get()
-    const totalQuota = quotaRecord?.total_quota || 0
+    const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
+    const initialQuota = quotaRecord?.initial_quota || 0
+    const remainingQuota = quotaRecord?.remaining_quota || 0
 
     const user = db.prepare('SELECT id, username, email, role, company, quota, created_at FROM users WHERE id = ?').get(userId)
 
@@ -293,9 +308,10 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       message: '用户更新成功',
       user,
       quotaInfo: {
-        totalQuota,
+        initialQuota,
+        remainingQuota,
         allocatedQuota,
-        availableQuota: Math.max(0, totalQuota - allocatedQuota)
+        availableQuota: Math.max(0, initialQuota - allocatedQuota)
       }
     })
   } catch (error) {

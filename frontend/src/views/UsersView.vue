@@ -6,11 +6,15 @@
         <!-- 配额信息卡片 -->
         <div class="quota-cards">
           <div class="quota-card total">
-            <span class="label">剩余总次数</span>
-            <span class="value">{{ quotaInfo.totalQuota }}</span>
+            <span class="label">初始总配额</span>
+            <span class="value">{{ quotaInfo.initialQuota }}</span>
             <el-button type="primary" link size="small" @click="showQuotaDialog">
               <el-icon><Edit /></el-icon>
             </el-button>
+          </div>
+          <div class="quota-card remaining">
+            <span class="label">当前剩余配额</span>
+            <span class="value">{{ quotaInfo.remainingQuota }}</span>
           </div>
           <div class="quota-card available">
             <span class="label">剩余可分配次数</span>
@@ -135,11 +139,11 @@
     </el-dialog>
 
     <!-- 编辑总配额对话框 -->
-    <el-dialog v-model="quotaDialogVisible" title="设置总配额" width="400px">
+    <el-dialog v-model="quotaDialogVisible" title="设置初始总配额" width="400px">
       <el-form>
-        <el-form-item label="剩余总次数">
+        <el-form-item label="初始总配额">
           <el-input-number v-model="editTotalQuota" :min="0" :max="999999" style="width: 100%" />
-          <div class="quota-tip">从联通公司购买的总配额次数，可手动修改</div>
+          <div class="quota-tip">从联通公司购买的总配额次数，设置后将同步调整"当前剩余配额"</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -239,9 +243,10 @@ const filterCompany = ref('')
 
 // 配额相关
 const quotaInfo = ref({
-  totalQuota: 0,
-  allocatedQuota: 0,
-  availableQuota: 0
+  initialQuota: 0,    // 初始总配额
+  remainingQuota: 0,  // 当前剩余配额
+  allocatedQuota: 0,  // 已分配
+  availableQuota: 0   // 剩余可分配次数
 })
 const quotaDialogVisible = ref(false)
 const quotaSaving = ref(false)
@@ -357,7 +362,7 @@ const fetchUsers = async () => {
 
 // 显示编辑总配额对话框
 const showQuotaDialog = () => {
-  editTotalQuota.value = quotaInfo.value.totalQuota
+  editTotalQuota.value = quotaInfo.value.initialQuota
   quotaDialogVisible.value = true
 }
 
@@ -530,6 +535,14 @@ onMounted(() => {
 
         .label { color: #67c23a; }
         .value { color: #67c23a; font-weight: bold; font-size: 18px; }
+      }
+
+      &.remaining {
+        border-color: #e6a23c;
+        background: linear-gradient(135deg, #fdf6ec 0%, #fef0e0 100%);
+
+        .label { color: #e6a23c; }
+        .value { color: #e6a23c; font-weight: bold; font-size: 18px; }
       }
 
       .label {

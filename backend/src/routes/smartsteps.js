@@ -244,20 +244,14 @@ router.post('/query', authenticate, async (req, res) => {
       return res.status(400).json({ message: '请至少选择一个服务' })
     }
     
-    // 检查用户配额
+    // 检查运营商当前剩余配额
     db = getDb()
-    const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
-    const usedResult = db.prepare(`
-      SELECT COALESCE(SUM(quota_used), 0) as used
-      FROM purchases
-      WHERE user_id = ? AND status = 'active'
-    `).get(req.user.id)
-    
-    available = (user?.quota || 0) - (usedResult?.used || 0)
+    const quotaRecord = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
+    available = quotaRecord?.remaining_quota || 0
     
     if (available < quotaUsed) {
       return res.status(400).json({
-        message: `配额不足，需要 ${quotaUsed} 次，当前可用 ${available} 次`
+        message: `运营商剩余配额不足，需要 ${quotaUsed} 次，当前剩余 ${available} 次`
       })
     }
     
@@ -333,9 +327,9 @@ router.post('/query', authenticate, async (req, res) => {
         JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
       )
       
-      // 仅在非空数据时扣减运营商总配额
+      // 仅在非空数据时扣减当前剩余配额（不是初始总配额）
       if (!isEmptyData) {
-        db.prepare(`UPDATE admin_quota SET total_quota = total_quota - ? WHERE id = 1`).run(quotaUsed)
+        db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
       }
     } catch (dbError) {
       console.error('记录配额使用失败:', dbError)

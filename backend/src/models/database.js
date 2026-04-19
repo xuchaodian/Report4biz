@@ -60,14 +60,15 @@ export async function initDatabase() {
   db.run(`
     CREATE TABLE IF NOT EXISTS admin_quota (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      total_quota INTEGER DEFAULT 0,
+      initial_quota INTEGER DEFAULT 0,
+      remaining_quota INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `)
 
   // 确保有一条配额记录
   try {
-    db.run(`INSERT INTO admin_quota (id, total_quota) VALUES (1, 0)`)
+    db.run(`INSERT INTO admin_quota (id, initial_quota, remaining_quota) VALUES (1, 0, 0)`)
   } catch (e) {
     // 已存在，忽略
   }
