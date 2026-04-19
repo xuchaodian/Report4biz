@@ -88,7 +88,14 @@
         <el-table-column type="selection" width="45" reserve-selection />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="100" />
-        <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.name }}
+            <template v-if="getStoreStars(row.name) > 0">
+              <span class="store-stars">{{ '⭐'.repeat(getStoreStars(row.name)) }}</span>
+            </template>
+          </template>
+        </el-table-column>
         <el-table-column prop="store_type" label="类型" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="getStoreTypeTag(row.store_type)">{{ row.store_type || '-' }}</el-tag>
@@ -597,6 +604,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis } from '@element-plus/icons-vue'
+import axios from 'axios'
 import Papa from 'papaparse'
 import * as echarts from 'echarts'
 import { calculatePopulationByRadius, formatNumber } from '@/utils/populationStats'
@@ -604,6 +612,9 @@ import { useMarkerStore } from '@/stores/marker'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
+
+// 门店购买次数映射 {门店名称: 购买次数}
+const storePurchaseCount = ref({})
 
 // 筛选和分页 - 使用 store 中的筛选条件（持久化）
 // 使用 ref 包装 store 中的 filters，确保响应式
@@ -1549,8 +1560,10 @@ watch(geocodeDialogVisible, (val) => {
   }
 })
 
-onMounted(() => {
-  markerStore.fetchMarkers()
+onMounted(async () => {
+  console.log('🏪 DataView 已加载！', new Date().toISOString())
+  await markerStore.fetchMarkers()
+  console.log('✅ 门店列表加载完成，准备获取购买次数', markerStore.markers.length, '条')
   // 从 store 恢复筛选条件
   searchKeyword.value = markerStore.filters.searchKeyword
   filterStoreType.value = markerStore.filters.filterStoreType
@@ -1558,6 +1571,9 @@ onMounted(() => {
   filterDistrict.value = markerStore.filters.filterDistrict
   filterStoreCategory.value = markerStore.filters.filterStoreCategory
   filterBrand.value = markerStore.filters.filterBrand
+  // 获取门店购买次数
+  await fetchStorePurchaseCounts()
+  console.log('✅ 购买次数获取完成')
 
   // 注册全局函数：AI助手调用人口对比
   window.openPopulationCompare = (storeIds, radius) => {
@@ -1583,6 +1599,23 @@ onMounted(() => {
     showPopulationCompareDialog()
   }
 })
+
+// 获取所有门店的购买次数（批量查询，一次API调用）
+async function fetchStorePurchaseCounts() {
+  try {
+    console.log('开始获取购买次数...')
+    const res = await axios.get('/api/purchase/store-counts')
+    console.log('购买次数结果:', res.data.counts)
+    storePurchaseCount.value = res.data.counts || {}
+  } catch (e) {
+    console.error('获取购买次数失败:', e)
+  }
+}
+
+// 获取门店名称的星星数量
+function getStoreStars(storeName) {
+  return storePurchaseCount.value[storeName] || 0
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1659,5 +1692,10 @@ onMounted(() => {
     font-size: 13px;
     color: #666;
   }
+}
+
+.store-stars {
+  margin-left: 4px;
+  font-size: 12px;
 }
 </style>

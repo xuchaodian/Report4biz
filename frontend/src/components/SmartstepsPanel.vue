@@ -45,7 +45,6 @@
               :precision="1"
               style="width: 100%;"
             />
-            <span class="radius-unit">公里</span>
           </el-form-item>
           <el-form-item label="半径2">
             <el-input-number
@@ -56,7 +55,6 @@
               :precision="1"
               style="width: 100%;"
             />
-            <span class="radius-unit">公里</span>
           </el-form-item>
           <el-form-item label="半径3">
             <el-input-number
@@ -67,7 +65,6 @@
               :precision="1"
               style="width: 100%;"
             />
-            <span class="radius-unit">公里</span>
           </el-form-item>
           <el-form-item label="数据年月">
             <el-select v-model="queryForm.cityMonth" placeholder="选择月份" style="width: 100%;">
@@ -81,7 +78,7 @@
           </el-form-item>
         </el-form>
         <div class="query-info">
-          <span>单位: 公里</span>
+          <span>单位: 公里 ｜ 请在当月10日之后选择上月数据</span>
         </div>
       </div>
 

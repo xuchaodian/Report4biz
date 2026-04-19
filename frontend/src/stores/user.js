@@ -5,7 +5,7 @@ const API_URL = '/api'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
-    token: localStorage.getItem('token') || '',
+    token: sessionStorage.getItem('token') || '',
     user: null,
     loading: false,
     quota: null // 配额信息 { total, used, available }
@@ -25,7 +25,7 @@ export const useUserStore = defineStore('user', {
         const { data } = await axios.post(`${API_URL}/auth/login`, { username, password })
         this.token = data.token
         this.user = data.user
-        localStorage.setItem('token', data.token)
+        sessionStorage.setItem('token', data.token)
         axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
         // 登录后获取配额
         await this.fetchQuota()
@@ -81,7 +81,7 @@ export const useUserStore = defineStore('user', {
       this.token = ''
       this.user = null
       this.quota = null
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
       delete axios.defaults.headers.common['Authorization']
     }
   }

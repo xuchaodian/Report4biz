@@ -223,6 +223,70 @@ router.get('/history', authenticate, (req, res) => {
 })
 
 /**
+ * 批量获取门店购买次数（一次查询所有门店）
+ */
+router.get('/store-counts', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+
+    // 查询所有门店的购买次数（按 store_name 分组）
+    const counts = db.prepare(`
+      SELECT 
+        store_name,
+        COUNT(*) as count
+      FROM purchases
+      WHERE user_id = ? AND status = 'active' AND store_name IS NOT NULL AND store_name != ''
+      GROUP BY store_name
+    `).all(req.user.id)
+
+    // 转换为 {门店名称: 次数} 的格式
+    const result = {}
+    counts.forEach(item => {
+      result[item.store_name] = item.count
+    })
+
+    res.json({ counts: result })
+  } catch (error) {
+    console.error('获取门店购买次数失败:', error)
+    res.status(500).json({ message: '获取失败' })
+  }
+})
+
+/**
+ * 按门店名称查询购买履历
+ */
+router.get('/by-store/:storeName', authenticate, (req, res) => {
+  try {
+    const { storeName } = req.params
+    const db = getDb()
+
+    const purchases = db.prepare(`
+      SELECT
+        p.id,
+        p.store_name,
+        p.store_type,
+        p.center_lng,
+        p.center_lat,
+        p.radius,
+        p.city_month,
+        p.quota_used,
+        p.created_at,
+        m.city,
+        m.district
+      FROM purchases p
+      LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      WHERE p.user_id = ? AND p.store_name = ? AND p.status = 'active'
+      ORDER BY p.created_at DESC
+    `).all(req.user.id, storeName)
+
+    res.json({ purchases })
+  } catch (error) {
+    console.error('获取门店购买履历失败:', error)
+    res.status(500).json({ message: '获取失败' })
+  }
+})
+
+/**
  * 获取单个购买记录详情（包含查询结果）
  */
 router.get('/:id', authenticate, (req, res) => {

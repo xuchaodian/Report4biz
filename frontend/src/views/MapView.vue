@@ -1094,14 +1094,14 @@ const openStoreSmartsteps = (storeId) => {
   // 关闭其他面板
   smartstepsVisible.value = false
   businessCircleExpanded.value = false
-  
+
   // 查找门店数据
   const store = markerStore.markers.find(m => m.id === storeId)
   if (!store) {
     ElMessage.error('未找到门店信息')
     return
   }
-  
+
   // 设置选中的门店并打开对话框
   selectedStoreForSmartsteps.value = {
     id: store.id,
@@ -1110,6 +1110,16 @@ const openStoreSmartsteps = (storeId) => {
     longitude: store.longitude
   }
   storeSmartstepsVisible.value = true
+}
+
+// 检查门店是否有购买履历
+const storeHasPurchaseHistory = async (storeName) => {
+  try {
+    const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(storeName)}`)
+    return (res.data?.purchases || []).length > 0
+  } catch (e) {
+    return false
+  }
 }
 
 // 识别多边形要素的中心点
@@ -2229,6 +2239,17 @@ const loadMarkers = async () => {
         </div>
       </div>
     `)
+
+    // popup打开时检查是否有购买履历并更新显示
+    marker.on('popupopen', async () => {
+      const hasHistory = await storeHasPurchaseHistory(markerData.name)
+      if (hasHistory) {
+        const titleEl = marker.getPopup().getElement()?.querySelector('h4')
+        if (titleEl && !titleEl.querySelector('.star-icon')) {
+          titleEl.innerHTML = `<span class="star-icon" title="该门店有购买记录">⭐</span> ` + titleEl.innerHTML
+        }
+      }
+    })
 
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
@@ -4889,6 +4910,7 @@ onMounted(() => {
   window.deleteMarkerExternal = deleteMarker
   window.openStorePopulationDistribution = openStorePopulationDistribution
   window.openStoreSmartsteps = openStoreSmartsteps
+  window.storeHasPurchaseHistory = storeHasPurchaseHistory
 
   // 暴露Shapefile检索结果显示函数
   window.handleShapefileQueryFromGlobal = () => {

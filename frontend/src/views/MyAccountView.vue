@@ -164,6 +164,7 @@
       v-model="detailDialogVisible"
       :title="`📊 查询结果详情 - ${currentDetail?.store_name || '订单' + currentDetail?.id}`"
       width="700px"
+      draggable
     >
       <div v-if="detailLoading" class="detail-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
