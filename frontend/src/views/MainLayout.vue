@@ -53,6 +53,9 @@
               <el-dropdown-item command="brands">
                 <el-icon><Setting /></el-icon>设置图标
               </el-dropdown-item>
+              <el-dropdown-item command="purchase">
+                <el-icon><Document /></el-icon>购买履历
+              </el-dropdown-item>
               <el-dropdown-item command="logout" divided>
                 <el-icon><SwitchButton /></el-icon>退出登录
               </el-dropdown-item>
@@ -88,6 +91,9 @@ const handleCommand = async (command) => {
     router.push('/account')
   } else if (command === 'brands') {
     router.push('/brands')
+  } else if (command === 'purchase') {
+    // 跳转到个人中心并自动打开购买履历
+    router.push('/account?openHistory=true')
   } else if (command === 'logout') {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
       type: 'warning'

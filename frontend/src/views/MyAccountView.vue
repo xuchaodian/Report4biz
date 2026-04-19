@@ -90,17 +90,53 @@
       :close-on-click-modal="false"
       class="history-dialog"
     >
+      <!-- 筛选表单 -->
+      <div class="history-filter">
+        <el-input
+          v-model="filterKeywords"
+          placeholder="搜索门店名称"
+          style="width: 180px"
+          clearable
+          @input="handleFilterChange"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-select v-model="filterStoreType" placeholder="门店类型" style="width: 120px" clearable @change="handleFilterChange">
+          <el-option label="已开业" value="已开业" />
+          <el-option label="重点候选" value="重点候选" />
+          <el-option label="一般候选" value="一般候选" />
+        </el-select>
+        <el-select v-model="filterCity" placeholder="城市" style="width: 120px" clearable @change="handleFilterChange">
+          <el-option v-for="city in cityOptions" :key="city" :label="city" :value="city" />
+        </el-select>
+        <el-select v-model="filterDistrict" placeholder="区县" style="width: 120px" clearable @change="handleFilterChange">
+          <el-option v-for="d in districtOptions" :key="d" :label="d" :value="d" />
+        </el-select>
+        <el-select v-model="filterRadius" placeholder="半径" style="width: 120px" clearable @change="handleFilterChange">
+          <el-option v-for="r in radiusOptions" :key="r" :label="r" :value="r" />
+        </el-select>
+        <el-select v-model="filterCityMonth" placeholder="数据年月" style="width: 130px" clearable @change="handleFilterChange">
+          <el-option v-for="m in cityMonthOptions" :key="m" :label="m" :value="m" />
+        </el-select>
+        <el-button v-if="hasActiveFilters" type="warning" plain @click="resetFilters">
+          <el-icon><Close /></el-icon>清除筛选
+        </el-button>
+        <span class="filter-count">共 {{ filteredHistoryList.length }} 条</span>
+      </div>
+
       <div v-if="historyLoading" class="history-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
       <el-table
         v-else
-        :data="historyList"
+        :data="filteredHistoryList"
         stripe
         border
         style="width: 100%"
-        :max-height="500"
+        :max-height="450"
       >
         <el-table-column prop="id" label="订单ID" width="70" fixed />
         <el-table-column label="购买时间" width="150">
@@ -191,13 +227,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { FIELD_LABELS } from './field_labels'
 
+const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
@@ -207,6 +246,72 @@ const quotaLoading = ref(false)
 const historyDialogVisible = ref(false)
 const historyLoading = ref(false)
 const historyList = ref([])
+
+// 筛选相关
+const filterKeywords = ref('')
+const filterStoreType = ref('')
+const filterCity = ref('')
+const filterDistrict = ref('')
+const filterRadius = ref('')
+const filterCityMonth = ref('')
+
+// 筛选选项（从历史数据中提取）
+const storeTypeOptions = ['已开业', '重点候选', '一般候选']
+const cityOptions = computed(() => [...new Set(historyList.value.map(h => h.city).filter(Boolean))])
+const districtOptions = computed(() => [...new Set(historyList.value.map(h => h.district).filter(Boolean))])
+const radiusOptions = computed(() => [...new Set(historyList.value.map(h => h.radius_display || h.radius).filter(Boolean))])
+const cityMonthOptions = computed(() => [...new Set(historyList.value.map(h => h.city_month).filter(Boolean))])
+
+// 是否有激活的筛选条件
+const hasActiveFilters = computed(() => {
+  return filterKeywords.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterRadius.value || filterCityMonth.value
+})
+
+// 筛选后的历史列表
+const filteredHistoryList = computed(() => {
+  return historyList.value.filter(h => {
+    // 关键词搜索（门店名称）
+    if (filterKeywords.value && !h.store_name?.toLowerCase().includes(filterKeywords.value.toLowerCase())) {
+      return false
+    }
+    // 门店类型
+    if (filterStoreType.value && h.store_type !== filterStoreType.value) {
+      return false
+    }
+    // 城市
+    if (filterCity.value && h.city !== filterCity.value) {
+      return false
+    }
+    // 区县
+    if (filterDistrict.value && h.district !== filterDistrict.value) {
+      return false
+    }
+    // 半径
+    if (filterRadius.value && h.radius_display !== filterRadius.value && h.radius !== filterRadius.value) {
+      return false
+    }
+    // 数据年月
+    if (filterCityMonth.value && h.city_month !== filterCityMonth.value) {
+      return false
+    }
+    return true
+  })
+})
+
+// 筛选变化时重置页码
+const handleFilterChange = () => {
+  // 如果有筛选条件，自动定位到第一页
+}
+
+// 重置筛选
+const resetFilters = () => {
+  filterKeywords.value = ''
+  filterStoreType.value = ''
+  filterCity.value = ''
+  filterDistrict.value = ''
+  filterRadius.value = ''
+  filterCityMonth.value = ''
+}
 
 // 查看详情相关
 const detailDialogVisible = ref(false)
@@ -253,6 +358,26 @@ onMounted(async () => {
   // 获取配额信息
   if (!userStore.quota) {
     await userStore.fetchQuota()
+  }
+
+  // 检查 URL 参数：如果有 storeName 或 openHistory，自动打开购买履历
+  const storeName = route.query.storeName
+  const openHistory = route.query.openHistory
+  if (storeName || openHistory) {
+    // 延迟打开对话框，确保 UI 已渲染
+    setTimeout(async () => {
+      await showHistoryDialog()
+      // 如果有该门店的记录，高亮显示
+      if (storeName && historyList.value.length > 0) {
+        const targetStore = historyList.value.find(h => h.store_name === storeName)
+        if (targetStore) {
+          viewPurchaseDetail(targetStore)
+        }
+      }
+      // 如果只是打开购买履历（无特定门店），不自动打开详情
+      // 清除 URL 参数（避免刷新后又打开）
+      router.replace({ query: {} })
+    }, 500)
   }
 })
 
@@ -1394,6 +1519,23 @@ const handleSubmit = async () => {
 .history-dialog {
   .el-dialog__body {
     padding: 16px 20px;
+  }
+}
+
+.history-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  align-items: center;
+
+  .filter-count {
+    margin-left: auto;
+    color: #666;
+    font-size: 13px;
   }
 }
 

@@ -115,16 +115,19 @@
         <el-table-column prop="store_category" label="门店区分" width="100" align="center">
           <template #default="{ row }">{{ row.store_category || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
             <el-button type="success" link @click="handleLocate(row)">
               <el-icon><Location /></el-icon>
+            </el-button>
+            <el-button type="warning" link @click="handleViewPurchase(row)">
+              📋
+            </el-button>
+            <el-button type="danger" link @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
             </el-button>
           </template>
         </el-table-column>
@@ -1256,6 +1259,12 @@ const handleDelete = async (row) => {
   } catch {
     // 用户取消
   }
+}
+
+// 查看该门店的购买履历
+const handleViewPurchase = (row) => {
+  // 跳转到个人中心，并传递门店名称参数
+  router.push({ path: '/account', query: { storeName: row.name } })
 }
 
 // 表格选择变化
