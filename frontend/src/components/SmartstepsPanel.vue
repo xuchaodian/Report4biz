@@ -120,7 +120,7 @@
           <span class="result-title">📊 查询结果</span>
           <button class="clear-result" @click="queryResult = null">清除</button>
         </div>
-        <div class="result-data" v-html="formatResult(queryResult)"></div>
+        <div class="result-data" v-html="formatResultData(queryResult.data)"></div>
       </div>
     </div>
 
@@ -467,87 +467,388 @@ async function executePurchase() {
   }
 }
 
-// 格式化结果
-function formatResult(data) {
-  if (!data || !data.data) return '<p>暂无数据</p>'
-
-  const result = data.data
-  let html = ''
-
-  // 如果是错误信息
-  if (result && result.error) {
-    return `<p style="color:red;">❌ ${result.error}</p>`
-  }
-
-  // 遍历所有返回字段
-  if (typeof result === 'object' && result !== null) {
-    for (const [key, value] of Object.entries(result)) {
-      const label = getServiceName(key)
-      html += `<div class="result-item" style="flex-direction:column;align-items:flex-start;gap:4px;">`
-      html += `<span class="result-label" style="font-weight:bold;color:#764ba2;">${label}（${key}）</span>`
-      html += `<span class="result-value" style="white-space:pre-wrap;word-break:break-all;font-size:12px;">${formatValue(value)}</span>`
-      html += `</div>`
+// 格式化结果显示 - 与购买履历保持一致
+function formatResultData(data) {
+  if (!data) return '<p>暂无数据</p>'
+  
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data)
+    } catch (e) {
+      return '<p>暂无数据</p>'
     }
   }
+  
+  if (data && data.apiResult) {
+    data = data.apiResult
+  }
+  
+  if (!data || typeof data !== 'object') return '<p>暂无数据</p>'
+  if (data.error) return `<p style="color:red;">❌ ${data.error}</p>`
 
-  return html ? `<div class="result-grid">${html}</div>` : '<p>暂无数据</p>'
+  let html = ''
+  
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'error') continue
+    if (excludeServices.includes(key)) continue
+    
+    const serviceName = getServiceName(key)
+    
+    // 1001 服务特殊处理
+    if (key === '1001' && typeof value === 'object' && !Array.isArray(value)) {
+      html += `<div class="detail-result-item">
+        ${formatP0SData(value)}
+      </div>`
+      continue
+    }
+    
+    // 数组格式数据
+    if (Array.isArray(value)) {
+      html += `<div class="detail-result-item">
+        <h4>📊 ${serviceName}</h4>
+        ${formatArrayData(value, key)}
+      </div>`
+      continue
+    }
+    
+    // 其他服务
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      html += `<div class="detail-result-item">
+        <h4>📊 ${serviceName}</h4>
+        ${formatOtherData(value, key)}
+      </div>`
+    } else if (typeof value === 'number') {
+      html += `<div class="result-item-simple">
+        <span class="result-label">${serviceName}</span>
+        <span class="result-value">${value.toLocaleString()}</span>
+      </div>`
+    }
+  }
+  
+  return html || '<p>暂无数据</p>'
 }
 
+// 排除的服务列表（去掉1003手机品牌、1008到访交通方式、1019市外来源）
+const excludeServices = ['1016', '1003', '1008', '1019']
+
+// 服务名称映射
 function getServiceName(code) {
   const names = {
-    '1001': '全量人口',
-    '1002': '居住人口',
-    '1003': '工作人口',
-    '1004': '到访人口',
+    '1001': '人口基础属性',
+    '1002': '上网标签分布 TOP10',
+    '1004': '居住人口画像',
     '1005': '每小时段人口流量',
-    '1006': '人口属性分析',
-    '1007': '消费水平分布',
-    '1008': '年龄段分布',
-    '1009': '性别比例',
-    '1010': '收入水平分布',
-    '1011': '家庭状况分布',
-    '1012': '出行方式分布',
-    '1013': '居住地分布',
-    '1014': '工作地分布',
-    '1015': '工作日/周末对比',
-
-    '1017': '月均人流热度',
-    '1018': '月到访频次',
-    '1019': '市外来源分布',
+    '1006': '到访频次分析',
+    '1007': '每月到达次数分布',
+    '1009': '消费水平（富裕度指数）',
+    '1010': '消费业态偏好',
+    '1011': '人口婚姻状态',
+    '1012': '人口学历分析',
+    '1013': '综合消费能力预测',
+    '1014': '网购能力预测',
+    '1015': '资产预测',
+    '1017': '消费品牌偏好',
+    '1018': '餐饮消费偏好',
     '1020': '省内来源分布',
     '1021': '市内来源分布',
-    '1022': '停留时长分布',
-    '1023': '全量人口(全)'
+    '1022': '消费档次分布',
+    '1023': '家庭汽车情况'
   }
-  return names[code] || code
+  return names[code] || `服务${code}`
+}
+
+// 1001服务数据格式化（人口基础属性）
+function formatP0SData(data) {
+  if (!data || typeof data !== 'object') return '<p>数据格式错误</p>'
+
+  const visitTotal = data.p0_sum || 0
+  const grandTotal = data.pall_sum || 0
+  // 居住人数 = 居住人口男+女
+  const dwellTotal = (data.male1_sum || 0) + (data.female1_sum || 0)
+  // 工作人数 = 工作人口男+女
+  const workTotal = (data.male2_sum || 0) + (data.female2_sum || 0)
+
+  // 年龄段（age0_=到访，age1_=居住，age2_=工作）
+  const ageGroups = [
+    ['0-6岁', '0006'], ['6-12岁', '0612'], ['12-15岁', '1215'], ['15-18岁', '1518'],
+    ['19-24岁', '1924'], ['25-29岁', '2529'], ['30-34岁', '3034'], ['35-39岁', '3539'],
+    ['40-44岁', '4044'], ['45-49岁', '4549'], ['50-54岁', '5054'], ['55-59岁', '5559'],
+    ['60-64岁', '6064'], ['65-69岁', '6569'], ['70岁+', '70up']
+  ]
+
+  // P层级（去掉P1/P2，去掉前缀，只显示中文名称）
+  const pLevels = [
+    ['总人口规模', grandTotal],
+    ['外省到访人数', data.p3_sum || 0],
+    ['娱乐人数', data.p4_sum || 0],
+    ['居住工作重合人数', data.p5_sum || 0],
+  ]
+
+  // 三个大数字
+  let html = `<div style="display:flex;gap:10px;margin-bottom:12px;">
+    <div style="flex:1;background:#f0f2f5;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#764ba2;">${visitTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">到访人数</div>
+    </div>
+    <div style="flex:1;background:#e8f4fd;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#409eff;">${dwellTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">居住人数</div>
+    </div>
+    <div style="flex:1;background:#fce8f3;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#f56c9e;">${workTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">工作人数</div>
+    </div>
+  </div>`
+
+  // P层级表格（表头改为"其他人口"）
+  html += `<table class="data-table"><thead><tr><th>其他人口</th><th class="num">人数</th></tr></thead><tbody>`
+  for (const [label, val] of pLevels) {
+    html += `<tr><td>${label}</td><td class="num">${val.toLocaleString()}</td></tr>`
+  }
+  html += `</tbody></table>`
+
+  // 性别分布
+  const maleV = data.male0_sum || 0
+  const femaleV = data.female0_sum || 0
+  const maleD = data.male1_sum || 0
+  const femaleD = data.female1_sum || 0
+  const maleW = data.male2_sum || 0
+  const femaleW = data.female2_sum || 0
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">性别分布</div>`
+  html += `<table class="data-table"><thead><tr><th>性别</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+  html += `<tr><td>男性人数</td><td class="num">${maleV.toLocaleString()}</td><td class="num">${maleD.toLocaleString()}</td><td class="num">${maleW.toLocaleString()}</td></tr>`
+  html += `<tr><td>女性人数</td><td class="num">${femaleV.toLocaleString()}</td><td class="num">${femaleD.toLocaleString()}</td><td class="num">${femaleW.toLocaleString()}</td></tr>`
+  html += `</tbody></table>`
+
+  // 年龄分布
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">年龄段分布</div>`
+  html += `<table class="data-table"><thead><tr><th>年龄段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+  for (const [label, code] of ageGroups) {
+    const v0 = data[`age0_${code}`] || 0
+    const v1 = data[`age1_${code}`] || 0
+    const v2 = data[`age2_${code}`] || 0
+    if (v0 + v1 + v2 === 0) continue
+    html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
+  }
+  html += `</tbody></table>`
+
+  // 月出账金额（改为三列：到访/居住/工作）
+  const arpuGroups = [
+    ['50元以下', '50'], ['50-100元', '100'], ['100-150元', '150'],
+    ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
+  ]
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">月出账金额</div>`
+  html += `<table class="data-table"><thead><tr><th>话费区间</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+  for (const [label, suffix] of arpuGroups) {
+    const v0 = data[`arpu0_${suffix}`] || 0
+    const v1 = data[`arpu1_${suffix}`] || 0
+    const v2 = data[`arpu2_${suffix}`] || 0
+    if (v0 + v1 + v2 === 0) continue
+    html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
+  }
+  html += `</tbody></table>`
+
+  return html
+}
+
+// 格式化数组数据
+function formatArrayData(data, serviceCode) {
+  if (!Array.isArray(data) || data.length === 0) return '<p>暂无数据</p>'
+
+  const firstItem = data[0]
+
+  // 1002: 上网标签分布 TOP15（标签/到访/居住/工作）- 按popu_type分组合并
+  if (firstItem.popu_type !== undefined && firstItem.tag_value !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const groups = { '到访': [], '居住': [], '工作': [], '其他': [] }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (!groups[type]) groups[type] = []
+      groups[type].push(item)
+    }
+    
+    // 创建标签到数值的映射
+    const tagMap = new Map()
+    for (const [type, items] of Object.entries(groups)) {
+      if (items.length === 0) continue
+      for (const item of items) {
+        const tagName = item.tag_name || '-'
+        if (!tagMap.has(tagName)) {
+          tagMap.set(tagName, { '到访': 0, '居住': 0, '工作': 0 })
+        }
+        tagMap.get(tagName)[type] = item.tag_value || 0
+      }
+    }
+    
+    // 按到访人数降序排序，取前10
+    const sortedTags = [...tagMap.entries()].sort((a, b) => b[1]['到访'] - a[1]['到访']).slice(0, 10)
+    
+    let html = `<table class="data-table"><thead><tr><th>标签</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const [tagName, values] of sortedTags) {
+      html += `<tr><td>${tagName}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1005: 每小时段人口流量（时段/工作日到访/周末到访/工作日全量/周末全量）
+  if (firstItem.hour_period !== undefined) {
+    const hourMap = {}
+    for (const item of data) {
+      const h = item.hour_period
+      if (!hourMap[h]) {
+        hourMap[h] = { workday_visit: 0, weekend_visit: 0, workday_all: 0, weekend_all: 0 }
+      }
+      // day_type=0 是工作日，day_type=1 是周末
+      if (item.day_type === 0) {
+        hourMap[h].workday_visit = item.hour_visit
+        hourMap[h].workday_all = item.hour_all
+      } else {
+        hourMap[h].weekend_visit = item.hour_visit
+        hourMap[h].weekend_all = item.hour_all
+      }
+    }
+    const sortedHours = Object.keys(hourMap).map(Number).sort((a, b) => a - b)
+    let html = `<table class="data-table"><thead><tr><th>时段</th><th class="num">工作日到访人次</th><th class="num">周末到访人次</th><th class="num">工作日全量人次</th><th class="num">周末全量人次</th></tr></thead><tbody>`
+    for (const h of sortedHours) {
+      const d = hourMap[h]
+      html += `<tr><td>${h}:00</td><td class="num">${d.workday_visit.toLocaleString()}</td><td class="num">${d.weekend_visit.toLocaleString()}</td><td class="num">${d.workday_all.toLocaleString()}</td><td class="num">${d.weekend_all.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1007: 每月到达次数分布
+  if (firstItem.reach1 !== undefined) {
+    const reachLabels = [
+      ['1次', 'reach1'],
+      ['2-4次', 'reach2'],
+      ['5-10次', 'reach3'],
+      ['11-20次', 'reach4'],
+      ['20次以上', 'reach5']
+    ]
+    let html = `<table class="data-table"><thead><tr><th>月驻留次数</th><th class="num">人数</th></tr></thead><tbody>`
+    for (const [label, key] of reachLabels) {
+      const val = data[key] || 0
+      if (val === 0) continue
+      html += `<tr><td>${label}</td><td class="num">${val.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1009: 消费水平（富裕度指数）- 按spendpower分组合并到访/居住/工作
+  if (firstItem.spendpower !== undefined) {
+    const spendLabels = { '1': '极低', '2': '低', '3': '中低', '4': '中', '5': '中高', '6': '高', '7': '极高', '8': '超高' }
+    const groups = { '到访': {}, '居住': {}, '工作': {}, '其他': {} }
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeNames = ['到访', '居住', '工作']
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (!groups[type]) groups[type] = {}
+      groups[type][item.spendpower] = item.spendpower_value || 0
+    }
+    
+    // 获取所有消费等级
+    const allSpendLevels = new Set()
+    for (const items of Object.values(groups)) {
+      for (const level of Object.keys(items)) {
+        allSpendLevels.add(level)
+      }
+    }
+    const sortedLevels = [...allSpendLevels].sort((a, b) => Number(a) - Number(b))
+    
+    let html = `<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const level of sortedLevels) {
+      const label = spendLabels[level] || `等级${level}`
+      const v0 = groups['到访'][level] || 0
+      const v1 = groups['居住'][level] || 0
+      const v2 = groups['工作'][level] || 0
+      if (v0 + v1 + v2 === 0) continue
+      html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 默认表格
+  let html = `<table class="data-table"><thead><tr>`
+  const headers = Object.keys(firstItem)
+  for (const h of headers) {
+    html += `<th>${h}</th>`
+  }
+  html += `</tr></thead><tbody>`
+  
+  for (const item of data.slice(0, 20)) {
+    html += '<tr>'
+    for (const h of headers) {
+      const val = item[h]
+      const display = typeof val === 'number' ? val.toLocaleString() : (val ?? '-')
+      html += `<td class="num">${display}</td>`
+    }
+    html += '</tr>'
+  }
+  html += '</tbody></table>'
+  return html
+}
+
+// 格式化其他服务数据
+function formatOtherData(data, serviceCode) {
+  const groups = { '到访': {}, '居住': {}, '工作': {}, '其他': {} }
+  
+  for (const [key, val] of Object.entries(data)) {
+    if (typeof val !== 'number') continue
+    const type = getPopTypeLabel(key)
+    if (type && groups[type]) {
+      groups[type][key] = val
+    } else {
+      groups['其他'][key] = val
+    }
+  }
+  
+  let html = ''
+  for (const [type, items] of Object.entries(groups)) {
+    if (Object.keys(items).length === 0) continue
+    const total = Object.values(items).reduce((a, b) => a + b, 0)
+    const sortedItems = Object.entries(items).sort((a, b) => a[0].localeCompare(b[0]))
+    
+    html += `<div class="pop-group">
+      <div class="group-header">${type}人口 <span class="group-total">${total.toLocaleString()}</span></div>
+      <table class="data-table"><thead><tr><th>指标名称</th><th>数值</th></tr></thead><tbody>`
+    for (const [key, val] of sortedItems) {
+      const label = getFieldLabel(serviceCode, key)
+      html += `<tr><td>${label}</td><td class="num">${val.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table></div>'
+  }
+  return html
+}
+
+// 获取人群类型标签
+function getPopTypeLabel(key) {
+  const suffix = key.slice(-1)
+  const map = { '0': '到访', '1': '居住', '2': '工作' }
+  return map[suffix]
+}
+
+// 获取字段中文标签
+function getFieldLabel(serviceCode, key) {
+  const baseLabels = {
+    's0': '未知年龄', 's1': '儿童/青少年', 's2': '青年', 's3': '中年', 's4': '老年', 's5': '学生', 's6': '家庭', 's7': '商务',
+    'm0': '未知性别', 'm1': '男性', 'm2': '女性',
+    'pop_dwell': '居住人口', 'pop_work': '工作人口', 'visit_count': '到访人次'
+  }
+  return baseLabels[key] || key
 }
 
 function formatValue(value) {
   if (value === null || value === undefined) return '-'
-  
-  // 如果是对象类型
-  if (typeof value === 'object') {
-    // 检查是否是简单对象 { total: number } 或 { value: number }
-    if (value && typeof value.total === 'number') {
-      return String(value.total)
-    }
-    if (value && typeof value.value === 'number') {
-      return String(value.value)
-    }
-    if (value && typeof value.count === 'number') {
-      return String(value.count)
-    }
-    // 数组且第一个元素是数字数组 [[lng, lat, value], ...]
-    if (Array.isArray(value) && value.length > 0) {
-      const first = value[0]
-      if (Array.isArray(first) && first.length >= 3) {
-        return `[网格数据: ${value.length}个点]`
-      }
-    }
-    // 其他对象显示为"详情"
-    return '<详情>'
-  }
-  
+  if (typeof value === 'number') return value.toLocaleString()
   return String(value)
 }
 
@@ -792,5 +1093,76 @@ onUnmounted(() => {
 
 .confirm-content li:last-child {
   border-bottom: none;
+}
+
+/* 结果详情样式 - 与购买履历一致 */
+.detail-result-item {
+  margin-bottom: 15px;
+  padding: 10px;
+  background: white;
+  border-radius: 4px;
+}
+
+.detail-result-item h4 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #764ba2;
+}
+
+.result-item-simple {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  margin-bottom: 5px;
+}
+
+.pop-group {
+  margin-bottom: 10px;
+}
+
+.group-header {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.group-total {
+  font-weight: bold;
+  color: #764ba2;
+}
+
+/* 数据表格样式 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border: 1px solid #ebeef5;
+}
+
+.data-table th {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 600;
+}
+
+.data-table tbody tr:hover {
+  background: #f5f7fa;
+}
+
+.data-table .num {
+  text-align: right;
+  font-family: 'Monaco', 'Menlo', monospace;
 }
 </style>

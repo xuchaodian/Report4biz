@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>联通人口数据 - 结果样式预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; background: #f0f2f5; padding: 20px; }
+
+.page-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #764ba2;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+}
+
+.panel {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  overflow: hidden;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+.panel-title { font-weight: bold; font-size: 14px; }
+.panel-content { padding: 15px; }
+
+.result-section {
+  margin-top: 15px;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.result-title { font-weight: bold; font-size: 14px; color: #333; }
+
+.detail-result-item {
+  margin-bottom: 15px;
+  padding: 10px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #eee;
+}
+.detail-result-item h4 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #764ba2;
+}
+
+.result-item-simple {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.pop-group { margin-bottom: 10px; }
+.group-header {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #f0f2f5;
+  border-radius: 3px;
+}
+.group-total { font-weight: bold; color: #764ba2; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 5px;
+}
+.data-table th,
+.data-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border: 1px solid #ebeef5;
+}
+.data-table th {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 600;
+}
+.data-table tbody tr:hover { background: #f5f7fa; }
+.data-table .num {
+  text-align: right;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.section-divider {
+  height: 1px;
+  background: #eee;
+  margin: 10px 0;
+}
+</style>
+</head>
+<body>
+
+<div style="max-width:800px;margin:0 auto;">
+  <div class="page-title">📊 联通人口数据 - 结果样式预览（门店：浦江城市生活广场店，半径1km，2026年3月）</div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">📊 联通人口数据</span>
+      <span style="font-size:12px;opacity:0.8;">查询结果</span>
+    </div>
+    <div class="panel-content">
+      <div class="result-section">
+        <div class="result-header">
+          <span class="result-title">📊 查询结果</span>
+          <span style="color:#999;font-size:12px;">（示例数据）</span>
+        </div>
+        <div id="result-data"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const apiData = {"1001": {"age1_6569": 506, "age0_0612": 0, "female2_sum": 2931, "arpu0_200": 5693, "arpu2_250": 58, "male2_sum": 3134, "male0_sum": 155920, "age1_70up": 600, "age1_1518": 37, "age2_1924": 736, "pall_sum": 288391, "age1_3539": 1322, "female1_sum": 4567, "age1_2529": 1303, "age1_5559": 334, "arpu1_200": 137, "age1_4549": 458, "male1_sum": 4222, "arpu1_50": 6259, "arpu1_up": 78, "age0_3539": 46648, "arpu0_150": 15510, "age2_5054": 374, "age2_6064": 363, "age0_6569": 11712, "age2_4044": 661, "female0_sum": 130000, "age0_5559": 12593, "age2_3034": 962, "age0_4549": 22157, "age0_1518": 1081, "age0_2529": 41691, "arpu2_100": 1400, "age2_1215": 0, "age2_0006": 0, "p1_sum": 8789, "age0_70up": 12694, "arpu1_150": 417, "age1_1924": 623, "p0_sum": 285920, "arpu2_50": 4087, "arpu2_up": 59, "p2_sum": 6065, "age1_4044": 884, "age1_3034": 1594, "age1_6064": 651, "arpu2_150": 338, "arpu0_100": 67560, "age1_5054": 477, "age0_1924": 24414, "age2_0612": 0, "p3_sum": 52296, "age1_0006": 0, "age1_1215": 0, "arpu1_100": 1806, "age0_0006": 0, "age2_70up": 210, "age0_1215": 8, "p5_sum": 12741, "age2_6569": 218, "arpu0_250": 2321, "arpu2_200": 123, "age0_5054": 16638, "age0_4044": 32670, "age2_5559": 245, "age2_4549": 340, "age2_3539": 965, "age2_1518": 44, "age2_2529": 947, "p4_sum": 45507, "arpu1_250": 92, "age0_3034": 45894, "age0_6064": 17720, "age1_0612": 0, "arpu0_50": 192649, "arpu0_up": 2187}, "1002": [{"popu_type": 0, "tag_value": 263371, "tag_name": "生活综合"}, {"popu_type": 1, "tag_value": 7878, "tag_name": "生活综合"}, {"popu_type": 2, "tag_value": 5508, "tag_name": "生活综合"}, {"popu_type": 0, "tag_value": 262801, "tag_name": "网上购物"}, {"popu_type": 1, "tag_value": 7865, "tag_name": "网上购物"}, {"popu_type": 2, "tag_value": 5530, "tag_name": "网上购物"}, {"popu_type": 0, "tag_value": 260576, "tag_name": "手机视频"}, {"popu_type": 1, "tag_value": 7774, "tag_name": "手机视频"}, {"popu_type": 2, "tag_value": 5487, "tag_name": "手机视频"}, {"popu_type": 0, "tag_value": 258043, "tag_name": "时政要闻"}, {"popu_type": 1, "tag_value": 7687, "tag_name": "时政要闻"}, {"popu_type": 2, "tag_value": 5361, "tag_name": "时政要闻"}, {"popu_type": 0, "tag_value": 255608, "tag_name": "商务办公"}, {"popu_type": 1, "tag_value": 7640, "tag_name": "商务办公"}, {"popu_type": 2, "tag_value": 5390, "tag_name": "商务办公"}, {"popu_type": 0, "tag_value": 247774, "tag_name": "团购打折"}, {"popu_type": 1, "tag_value": 7334, "tag_name": "团购打折"}, {"popu_type": 2, "tag_value": 5161, "tag_name": "团购打折"}, {"popu_type": 0, "tag_value": 246482, "tag_name": "金融理财"}, {"popu_type": 1, "tag_value": 7310, "tag_name": "金融理财"}, {"popu_type": 2, "tag_value": 5189, "tag_name": "金融理财"}, {"popu_type": 0, "tag_value": 241476, "tag_name": "电子支付"}, {"popu_type": 1, "tag_value": 7083, "tag_name": "电子支付"}, {"popu_type": 2, "tag_value": 5031, "tag_name": "电子支付"}, {"popu_type": 0, "tag_value": 239766, "tag_name": "手机数码"}, {"popu_type": 1, "tag_value": 7136, "tag_name": "手机数码"}, {"popu_type": 2, "tag_value": 5066, "tag_name": "手机数码"}, {"popu_type": 0, "tag_value": 239759, "tag_name": "社交网络"}, {"popu_type": 1, "tag_value": 7047, "tag_name": "社交网络"}, {"popu_type": 2, "tag_value": 4967, "tag_name": "社交网络"}], "1003": [{"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 16 Pro Max", "phone_value": 9085}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "Phone 15 Pro Max", "phone_value": 8873}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 16 Pro", "phone_value": 8139}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 13", "phone_value": 7744}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 17 Pro Max", "phone_value": 7486}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "Apple iPhone 14 Pro Max", "phone_value": 6392}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 15 Pro", "phone_value": 6345}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "Apple iPhone 14 Pro", "phone_value": 5855}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "Phone 15", "phone_value": 5216}, {"popu_type": 0, "phone_brand": "苹果", "phone_model": "iPhone 17 Pro", "phone_value": 4791}, {"popu_type": 1, "phone_brand": "苹果", "phone_model": "iPhone 16 Pro Max", "phone_value": 315}, {"popu_type": 1, "phone_brand": "苹果", "phone_model": "Phone 15 Pro Max", "phone_value": 281}, {"popu_type": 1, "phone_brand": "苹果", "phone_model": "iPhone 17 Pro Max", "phone_value": 275}, {"popu_type": 1, "phone_brand": "苹果", "phone_model": "iPhone 16 Pro", "phone_value": 266}, {"popu_type": 2, "phone_brand": "苹果", "phone_model": "iPhone 16 Pro Max", "phone_value": 188}], "1005": [{"day_type": 0, "hour_period": 0, "hour_all": 3726, "hour_visit": 1436}, {"day_type": 1, "hour_period": 0, "hour_all": 4211, "hour_visit": 1682}, {"day_type": 0, "hour_period": 1, "hour_all": 3593, "hour_visit": 1326}, {"day_type": 1, "hour_period": 1, "hour_all": 3887, "hour_visit": 1462}, {"day_type": 0, "hour_period": 2, "hour_all": 3551, "hour_visit": 1255}, {"day_type": 1, "hour_period": 2, "hour_all": 3843, "hour_visit": 1410}, {"day_type": 0, "hour_period": 3, "hour_all": 3536, "hour_visit": 1202}, {"day_type": 1, "hour_period": 3, "hour_all": 3901, "hour_visit": 1465}, {"day_type": 0, "hour_period": 4, "hour_all": 3547, "hour_visit": 1196}, {"day_type": 1, "hour_period": 4, "hour_all": 3961, "hour_visit": 1467}, {"day_type": 0, "hour_period": 5, "hour_all": 3618, "hour_visit": 1229}, {"day_type": 1, "hour_period": 5, "hour_all": 4067, "hour_visit": 1499}, {"day_type": 0, "hour_period": 6, "hour_all": 3720, "hour_visit": 1290}, {"day_type": 1, "hour_period": 6, "hour_all": 4348, "hour_visit": 1698}, {"day_type": 0, "hour_period": 7, "hour_all": 4019, "hour_visit": 1463}, {"day_type": 1, "hour_period": 7, "hour_all": 4799, "hour_visit": 1938}, {"day_type": 0, "hour_period": 8, "hour_all": 4499, "hour_visit": 1765}, {"day_type": 1, "hour_period": 8, "hour_all": 5291, "hour_visit": 2293}, {"day_type": 0, "hour_period": 9, "hour_all": 5010, "hour_visit": 2146}, {"day_type": 1, "hour_period": 9, "hour_all": 6095, "hour_visit": 2893}, {"day_type": 0, "hour_period": 10, "hour_all": 5428, "hour_visit": 2485}, {"day_type": 1, "hour_period": 10, "hour_all": 6696, "hour_visit": 3421}, {"day_type": 0, "hour_period": 11, "hour_all": 5763, "hour_visit": 2971}, {"day_type": 1, "hour_period": 11, "hour_all": 7117, "hour_visit": 3919}, {"day_type": 0, "hour_period": 12, "hour_all": 6096, "hour_visit": 3356}, {"day_type": 1, "hour_period": 12, "hour_all": 7568, "hour_visit": 4388}, {"day_type": 0, "hour_period": 13, "hour_all": 6253, "hour_visit": 3606}, {"day_type": 1, "hour_period": 13, "hour_all": 7688, "hour_visit": 4512}, {"day_type": 0, "hour_period": 14, "hour_all": 6214, "hour_visit": 3589}, {"day_type": 1, "hour_period": 14, "hour_all": 7302, "hour_visit": 4132}, {"day_type": 0, "hour_period": 15, "hour_all": 6238, "hour_visit": 3629}, {"day_type": 1, "hour_period": 15, "hour_all": 7184, "hour_visit": 3951}, {"day_type": 0, "hour_period": 16, "hour_all": 6252, "hour_visit": 3702}, {"day_type": 1, "hour_period": 16, "hour_all": 7108, "hour_visit": 3989}, {"day_type": 0, "hour_period": 17, "hour_all": 6161, "hour_visit": 3611}, {"day_type": 1, "hour_period": 17, "hour_all": 7128, "hour_visit": 4102}, {"day_type": 0, "hour_period": 18, "hour_all": 6294, "hour_visit": 3676}, {"day_type": 1, "hour_period": 18, "hour_all": 7202, "hour_visit": 4193}, {"day_type": 0, "hour_period": 19, "hour_all": 5880, "hour_visit": 3306}, {"day_type": 1, "hour_period": 19, "hour_all": 6926, "hour_visit": 3961}, {"day_type": 0, "hour_period": 20, "hour_all": 5422, "hour_visit": 2888}, {"day_type": 1, "hour_period": 20, "hour_all": 6165, "hour_visit": 3288}, {"day_type": 0, "hour_period": 21, "hour_all": 4782, "hour_visit": 2263}, {"day_type": 1, "hour_period": 21, "hour_all": 5344, "hour_visit": 2658}, {"day_type": 0, "hour_period": 22, "hour_all": 4186, "hour_visit": 1754}, {"day_type": 1, "hour_period": 22, "hour_all": 4653, "hour_visit": 2029}, {"day_type": 0, "hour_period": 23, "hour_all": 3683, "hour_visit": 1530}, {"day_type": 1, "hour_period": 23, "hour_all": 3948, "hour_visit": 1585}], "1007": [{"reach4": 6553, "reach3": 24049, "reach5": 10498, "reach2": 89362, "reach1": 186667}, {"reach4": 215, "reach3": 1256, "reach5": 432, "reach2": 3678, "reach1": 8789}, {"reach4": 189, "reach3": 1089, "reach5": 378, "reach2": 2890, "reach1": 6065}], "1009": [{"popu_type": 0, "spendpower": "1", "spendpower_value": 990}, {"popu_type": 1, "spendpower": "1", "spendpower_value": 7}, {"popu_type": 2, "spendpower": "1", "spendpower_value": 12}, {"popu_type": 0, "spendpower": "2", "spendpower_value": 12756}, {"popu_type": 1, "spendpower": "2", "spendpower_value": 359}, {"popu_type": 2, "spendpower": "2", "spendpower_value": 423}, {"popu_type": 0, "spendpower": "3", "spendpower_value": 37960}, {"popu_type": 1, "spendpower": "3", "spendpower_value": 1283}, {"popu_type": 2, "spendpower": "3", "spendpower_value": 1456}, {"popu_type": 0, "spendpower": "4", "spendpower_value": 81256}, {"popu_type": 1, "spendpower": "4", "spendpower_value": 2760}, {"popu_type": 2, "spendpower": "4", "spendpower_value": 3102}, {"popu_type": 0, "spendpower": "5", "spendpower_value": 99304}, {"popu_type": 1, "spendpower": "5", "spendpower_value": 2853}, {"popu_type": 2, "spendpower": "5", "spendpower_value": 3218}, {"popu_type": 0, "spendpower": "6", "spendpower_value": 44061}, {"popu_type": 1, "spendpower": "6", "spendpower_value": 1234}, {"popu_type": 2, "spendpower": "6", "spendpower_value": 1567}, {"popu_type": 0, "spendpower": "7", "spendpower_value": 9067}, {"popu_type": 1, "spendpower": "7", "spendpower_value": 289}, {"popu_type": 2, "spendpower": "7", "spendpower_value": 345}, {"popu_type": 0, "spendpower": "8", "spendpower_value": 526}, {"popu_type": 1, "spendpower": "8", "spendpower_value": 15}, {"popu_type": 2, "spendpower": "8", "spendpower_value": 23}], "1010": [{"p0": 78773, "popu_type": 0, "fname": "教育水平", "p1": 3645, "p2": 181518, "p3": 21504, "p4": 480}, {"p0": 1467, "popu_type": 1, "fname": "教育水平", "p1": 0, "p2": 6487, "p3": 835, "p4": 0}, {"p0": 2257, "popu_type": 2, "fname": "教育水平", "p1": 83, "p2": 3493, "p3": 232, "p4": 0}], "1012": [{"popu_type": 0, "fname": "人生阶段", "p1": 144325, "p2": 50228, "p3": 91367}, {"popu_type": 1, "fname": "人生阶段", "p1": 3912, "p2": 2005, "p3": 2872}, {"popu_type": 2, "fname": "人生阶段", "p1": 2307, "p2": 1455, "p3": 2303}], "1013": [{"popu_type": 0, "fname": "综合消费能力预测", "p1": 19586, "p2": 138041, "p3": 128293}, {"popu_type": 1, "fname": "综合消费能力预测", "p1": 492, "p2": 4969, "p3": 3328}, {"popu_type": 2, "fname": "综合消费能力预测", "p1": 511, "p2": 2876, "p3": 2678}], "1015": [{"popu_type": 0, "fname": "收入预测", "p1": 56119, "p2": 27980, "p3": 57015, "p4": 20410, "p5": 124396}, {"popu_type": 1, "fname": "收入预测", "p1": 2251, "p2": 834, "p3": 1874, "p4": 620, "p5": 3210}, {"popu_type": 0, "fname": "有车预测", "p1": 45854, "p2": 105491, "p3": 17097, "p4": 24964, "p5": 92514}, {"popu_type": 0, "fname": "有房预测", "p1": 16041, "p2": 64907, "p3": 35786, "p4": 61141, "p5": 108045}], "1019": [{"popu_type": 0, "co_province": "北京市", "co_city": "北京市", "popu_value": 4352}, {"popu_type": 0, "co_province": "天津市", "co_city": "天津市", "popu_value": 1325}, {"popu_type": 0, "co_province": "河北省", "co_city": "石家庄市", "popu_value": 440}, {"popu_type": 0, "co_province": "山西省", "co_city": "太原市", "popu_value": 488}]};
+
+const serviceNames = {
+  '1001': '人口基础属性', '1002': '上网标签分布 TOP10', '1004': '居住人口画像',
+  '1005': '每小时段人口流量', '1006': '到访频次分析', '1007': '每月到达次数分布',
+  '1009': '消费水平（富裕度指数）', '1010': '消费业态偏好',
+  '1011': '人口婚姻状态', '1012': '人口学历分析', '1013': '综合消费能力预测',
+  '1014': '网购能力预测', '1015': '资产预测', '1017': '消费品牌偏好',
+  '1018': '餐饮消费偏好', '1020': '省内来源分布', '1021': '市内来源分布',
+  '1022': '消费档次分布', '1023': '家庭汽车情况'
+};
+// 排除1003(手机品牌TOP排行)、1008(到访交通方式)、1019(市外来源分布)
+const excludeServices = ['1016', '1003', '1008', '1019'];
+const popuTypeNames = ['到访', '居住', '工作'];
+
+function n(v) { return typeof v === 'number' ? v.toLocaleString() : (v ?? '-'); }
+
+function format1001(data) {
+  // 人口总览
+  const visitTotal = data.p0_sum || 0;
+  const grandTotal = data.pall_sum || 0;
+  // 居住人数 = 居住人口男+女
+  const dwellTotal = (data.male1_sum || 0) + (data.female1_sum || 0);
+  // 工作人数 = 工作人口男+女
+  const workTotal = (data.male2_sum || 0) + (data.female2_sum || 0);
+
+  // 年龄段（age0_=到访，age1_=居住，age2_=工作）
+  const ageGroups = [
+    ['0-6岁', '0006'], ['6-12岁', '0612'], ['12-15岁', '1215'], ['15-18岁', '1518'],
+    ['19-24岁', '1924'], ['25-29岁', '2529'], ['30-34岁', '3034'], ['35-39岁', '3539'],
+    ['40-44岁', '4044'], ['45-49岁', '4549'], ['50-54岁', '5054'], ['55-59岁', '5559'],
+    ['60-64岁', '6064'], ['65-69岁', '6569'], ['70岁+', '70up']
+  ];
+
+  // P层级（去掉P1/P2，去掉前缀，只显示中文名称）
+  const pLevels = [
+    ['总人口规模', grandTotal],
+    ['外省到访人数', data.p3_sum||0],
+    ['娱乐人数', data.p4_sum||0],
+    ['居住工作重合人数', data.p5_sum||0],
+  ];
+
+  let html = `<h4>📊 人口基础属性</h4>`;
+
+  // 总人口概览（改名）
+  html += `<div style="display:flex;gap:10px;margin-bottom:12px;">
+    <div style="flex:1;background:#f0f2f5;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#764ba2;">${visitTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">到访人数</div>
+    </div>
+    <div style="flex:1;background:#e8f4fd;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#409eff;">${dwellTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">居住人数</div>
+    </div>
+    <div style="flex:1;background:#fce8f3;border-radius:6px;padding:10px;text-align:center;">
+      <div style="font-size:22px;font-weight:bold;color:#f56c9e;">${workTotal.toLocaleString()}</div>
+      <div style="font-size:11px;color:#999;margin-top:2px;">工作人数</div>
+    </div>
+  </div>`;
+
+  // P层级分布（表头改为"其他人口"）
+  html += `<table class="data-table"><thead><tr><th>其他人口</th><th class="num">人数</th></tr></thead><tbody>`;
+  for (const [label, val] of pLevels) {
+    html += `<tr><td>${label}</td><td class="num">${val.toLocaleString()}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+
+  // 性别分布
+  const maleV = data.male0_sum || 0;
+  const femaleV = data.female0_sum || 0;
+  const maleD = data.male1_sum || 0;
+  const femaleD = data.female1_sum || 0;
+  const maleW = data.male2_sum || 0;
+  const femaleW = data.female2_sum || 0;
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">性别分布</div>`;
+  html += `<table class="data-table"><thead><tr><th>性别</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`;
+  html += `<tr><td>男性人数</td><td class="num">${maleV.toLocaleString()}</td><td class="num">${maleD.toLocaleString()}</td><td class="num">${maleW.toLocaleString()}</td></tr>`;
+  html += `<tr><td>女性人数</td><td class="num">${femaleV.toLocaleString()}</td><td class="num">${femaleD.toLocaleString()}</td><td class="num">${femaleW.toLocaleString()}</td></tr>`;
+  html += `</tbody></table>`;
+
+  // 年龄分布
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">年龄段分布</div>`;
+  html += `<table class="data-table"><thead><tr><th>年龄段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`;
+  for (const [label, code] of ageGroups) {
+    const v0 = data[`age0_${code}`] || 0;
+    const v1 = data[`age1_${code}`] || 0;
+    const v2 = data[`age2_${code}`] || 0;
+    if (v0 + v1 + v2 === 0) continue;
+    html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+
+  // 月出账金额（改为三列：到访/居住/工作）
+  const arpuGroups = [
+    ['50元以下', '50'], ['50-100元', '100'], ['100-150元', '150'],
+    ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
+  ];
+  html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">月出账金额</div>`;
+  html += `<table class="data-table"><thead><tr><th>话费区间</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`;
+  for (const [label, suffix] of arpuGroups) {
+    const v0 = data[`arpu0_${suffix}`] || 0;
+    const v1 = data[`arpu1_${suffix}`] || 0;
+    const v2 = data[`arpu2_${suffix}`] || 0;
+    if (v0 + v1 + v2 === 0) continue;
+    html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+
+  return html;
+}
+
+function formatArrayData(data, key) {
+  if (!data || data.length === 0) return '<p>暂无数据</p>';
+  const first = data[0];
+
+  // 1002: 上网标签分布 TOP15 - 按popu_type分组合并到访/居住/工作
+  if (first.popu_type !== undefined && first.tag_value !== undefined) {
+    const typeNames = ['到访', '居住', '工作'];
+    const groups = { '到访': [], '居住': [], '工作': [], '其他': [] };
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue;
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1;
+      const type = typeNames[typeIdx] || '其他';
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(item);
+    }
+    
+    // 创建标签到数值的映射
+    const tagMap = new Map();
+    for (const [type, items] of Object.entries(groups)) {
+      if (items.length === 0) continue;
+      for (const item of items) {
+        const tagName = item.tag_name || '-';
+        if (!tagMap.has(tagName)) {
+          tagMap.set(tagName, { '到访': 0, '居住': 0, '工作': 0 });
+        }
+        tagMap.get(tagName)[type] = item.tag_value || 0;
+      }
+    }
+    
+    // 按到访人数降序排序，取前10
+    const sortedTags = [...tagMap.entries()].sort((a, b) => b[1]['到访'] - a[1]['到访']).slice(0, 10);
+    
+    let html = `<table class="data-table"><thead><tr><th>标签</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`;
+    for (const [tagName, values] of sortedTags) {
+      html += `<tr><td>${tagName}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // 1005: 每小时段人口流量（时段/工作日到访/周末到访/工作日全量/周末全量）
+  if (first.hour_period !== undefined) {
+    const hourMap = {};
+    for (const item of data) {
+      const h = item.hour_period;
+      if (!hourMap[h]) {
+        hourMap[h] = { workday_visit: 0, weekend_visit: 0, workday_all: 0, weekend_all: 0 };
+      }
+      // day_type=0 是工作日，day_type=1 是周末
+      if (item.day_type === 0) {
+        hourMap[h].workday_visit = item.hour_visit;
+        hourMap[h].workday_all = item.hour_all;
+      } else {
+        hourMap[h].weekend_visit = item.hour_visit;
+        hourMap[h].weekend_all = item.hour_all;
+      }
+    }
+    const sortedHours = Object.keys(hourMap).map(Number).sort((a,b) => a - b);
+    let html = `<table class="data-table"><thead><tr><th>时段</th><th class="num">工作日到访人次</th><th class="num">周末到访人次</th><th class="num">工作日全量人次</th><th class="num">周末全量人次</th></tr></thead><tbody>`;
+    for (const h of sortedHours) {
+      const d = hourMap[h];
+      html += `<tr><td>${h}:00</td><td class="num">${d.workday_visit.toLocaleString()}</td><td class="num">${d.weekend_visit.toLocaleString()}</td><td class="num">${d.workday_all.toLocaleString()}</td><td class="num">${d.weekend_all.toLocaleString()}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // 1007: 每月到达次数分布
+  if (first.reach1 !== undefined) {
+    const reachLabels = [
+      ['1次', 'reach1'],
+      ['2-4次', 'reach2'],
+      ['5-10次', 'reach3'],
+      ['11-20次', 'reach4'],
+      ['20次以上', 'reach5']
+    ];
+    let html = `<table class="data-table"><thead><tr><th>月驻留次数</th><th class="num">人数</th></tr></thead><tbody>`;
+    for (const [label, key] of reachLabels) {
+      const val = first[key] || 0;
+      if (val === 0) continue;
+      html += `<tr><td>${label}</td><td class="num">${val.toLocaleString()}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // 1009: 消费水平（富裕度指数）- 按spendpower分组合并到访/居住/工作
+  if (first.spendpower !== undefined) {
+    const spendLabels = { '1': '极低', '2': '低', '3': '中低', '4': '中', '5': '中高', '6': '高', '7': '极高', '8': '超高' };
+    const groups = { '到访': {}, '居住': {}, '工作': {}, '其他': {} };
+    
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue;
+      const typeNames = ['到访', '居住', '工作'];
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1;
+      const type = typeNames[typeIdx] || '其他';
+      if (!groups[type]) groups[type] = {};
+      groups[type][item.spendpower] = item.spendpower_value || 0;
+    }
+    
+    // 获取所有消费等级
+    const allSpendLevels = new Set();
+    for (const items of Object.values(groups)) {
+      for (const level of Object.keys(items)) {
+        allSpendLevels.add(level);
+      }
+    }
+    const sortedLevels = [...allSpendLevels].sort((a, b) => Number(a) - Number(b));
+    
+    let html = `<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`;
+    for (const level of sortedLevels) {
+      const label = spendLabels[level] || `等级${level}`;
+      const v0 = groups['到访'][level] || 0;
+      const v1 = groups['居住'][level] || 0;
+      const v2 = groups['工作'][level] || 0;
+      if (v0 + v1 + v2 === 0) continue;
+      html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
+  // 1010/1012/1013/1015: fname分组数据
+  if (first.fname !== undefined) {
+    const grouped = {};
+    for (const item of data) {
+      if (!grouped[item.fname]) grouped[item.fname] = [];
+      grouped[item.fname].push(item);
+    }
+    let html = '';
+    for (const [fname, items] of Object.entries(grouped)) {
+      html += `<div class="group-header">${fname}</div>`;
+      html += `<table class="data-table"><thead><tr><th>人群类型</th>`;
+      const pKeys = Object.keys(items[0]).filter(k => k.startsWith('p') && k !== 'popu_type');
+      for (const pk of pKeys) html += `<th class="num">${pk.toUpperCase()}</th>`;
+      html += `</tr></thead><tbody>`;
+      for (const item of items) {
+        const t = popuTypeNames[item.popu_type] || `类型${item.popu_type}`;
+        html += `<tr><td>${t}人口</td>`;
+        for (const pk of pKeys) html += `<td class="num">${(item[pk]||0).toLocaleString()}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    return html;
+  }
+
+  // 默认表格
+  const headers = Object.keys(first);
+  let html = `<table class="data-table"><thead><tr>`;
+  for (const h of headers) html += `<th>${h}</th>`;
+  html += `</tr></thead><tbody>`;
+  for (const item of data.slice(0, 15)) {
+    html += '<tr>';
+    for (const h of headers) {
+      const v = item[h];
+      html += `<td class="${typeof v === 'number' ? 'num' : ''}">${n(v)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderResult(data) {
+  let html = '';
+  for (const [key, value] of Object.entries(data)) {
+    if (excludeServices.includes(key)) continue;
+    const name = serviceNames[key] || `服务${key}`;
+
+    if (key === '1001' && typeof value === 'object' && !Array.isArray(value)) {
+      html += `<div class="detail-result-item">${format1001(value)}</div>`;
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      html += `<div class="detail-result-item"><h4>📊 ${name}</h4>${formatArrayData(value, key)}</div>`;
+    } else if (typeof value === 'number') {
+      html += `<div class="result-item-simple"><span>${name}</span><span style="font-weight:bold;color:#764ba2;">${value.toLocaleString()}</span></div>`;
+    }
+  }
+  return html || '<p>暂无数据</p>';
+}
+
+document.getElementById('result-data').innerHTML = renderResult(apiData);
+</script>
+</body>
+</html>
