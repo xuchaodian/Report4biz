@@ -441,7 +441,7 @@ async function executePurchase() {
       centerLat: circleCenter.value.lat,
       radius: radii[0], // 使用第一个半径作为主要半径
       radii: radii,     // 传递所有半径
-      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],  // 全部服务
+      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023','1024','1025'],  // 全部服务
       cityMonth: queryForm.value.cityMonth,
       quotaUsed: 1,        // 消耗1次配额
       storeName: queryForm.value.storeName,
@@ -502,6 +502,30 @@ function formatResultData(data) {
       continue
     }
     
+    // 1006 每日人流量及停留时长 - 特殊处理
+    if (key === '1006' && typeof value === 'object' && !Array.isArray(value)) {
+      const labelMap = {
+        'day_avg_visit': '日均到访人次',
+        'day_avg_total': '日均全量人次',
+        'stay_30': '停留<30分钟',
+        'stay_60': '停留30-60分钟',
+        'stay_120': '停留1-2小时',
+        'stay_240': '停留2-4小时',
+        'stay_480': '停留4-8小时'
+      };
+      let tableHtml = '<table class="data-table"><thead><tr><th>指标</th><th class="num">数值</th></tr></thead><tbody>';
+      for (const [k, v] of Object.entries(value)) {
+        const label = labelMap[k] || k;
+        tableHtml += `<tr><td>${label}</td><td class="num">${(v || 0).toLocaleString()}</td></tr>`;
+      }
+      tableHtml += '</tbody></table>';
+      html += `<div class="detail-result-item">
+        <h4>📊 ${serviceName}</h4>
+        ${tableHtml}
+      </div>`
+      continue
+    }
+    
     // 数组格式数据
     if (Array.isArray(value)) {
       html += `<div class="detail-result-item">
@@ -538,12 +562,12 @@ function getServiceName(code) {
     '1002': '上网标签分布 TOP10',
     '1004': '居住人口画像',
     '1005': '每小时段人口流量',
-    '1006': '到访频次分析',
+    '1006': '每日人流量及停留时长',
     '1007': '每月到达次数分布',
     '1009': '消费水平（富裕度指数）',
-    '1010': '消费业态偏好',
+    '1010': '人口教育水平',
     '1011': '人口婚姻状态',
-    '1012': '人口学历分析',
+    '1012': '人生阶段分布',
     '1013': '综合消费能力预测',
     '1014': '网购能力预测',
     '1015': '资产预测',
@@ -552,7 +576,9 @@ function getServiceName(code) {
     '1020': '省内来源分布',
     '1021': '市内来源分布',
     '1022': '消费档次分布',
-    '1023': '家庭汽车情况'
+    '1023': '家庭汽车情况',
+    '1024': '人口行业分布',
+    '1025': '到访频次分析'
   }
   return names[code] || `服务${code}`
 }
@@ -740,39 +766,216 @@ function formatArrayData(data, serviceCode) {
     return html
   }
 
-  // 1009: 消费水平（富裕度指数）- 按spendpower分组合并到访/居住/工作
-  if (firstItem.spendpower !== undefined) {
-    const spendLabels = { '1': '极低', '2': '低', '3': '中低', '4': '中', '5': '中高', '6': '高', '7': '极高', '8': '超高' }
-    const groups = { '到访': {}, '居住': {}, '工作': {}, '其他': {} }
+  // 1009: 消费水平（富裕度指数）- 合并为交叉表（与购买履历保持一致）
+  if (firstItem.popu_type !== undefined && firstItem.spendpower !== undefined && firstItem.spendpower_value !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
     
+    // 创建 spendpower 到数值的映射，按 popu_type 分列
+    const spendMap = new Map()
     for (const item of data) {
       if (!item || typeof item !== 'object') continue
-      const typeNames = ['到访', '居住', '工作']
+      const spendLevel = item.spendpower
+      if (!spendMap.has(spendLevel)) {
+        spendMap.set(spendLevel, { '到访': 0, '居住': 0, '工作': 0 })
+      }
       const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
       const type = typeNames[typeIdx] || '其他'
-      if (!groups[type]) groups[type] = {}
-      groups[type][item.spendpower] = item.spendpower_value || 0
-    }
-    
-    // 获取所有消费等级
-    const allSpendLevels = new Set()
-    for (const items of Object.values(groups)) {
-      for (const level of Object.keys(items)) {
-        allSpendLevels.add(level)
+      if (type !== '其他') {
+        spendMap.get(spendLevel)[type] = item.spendpower_value || 0
       }
     }
-    const sortedLevels = [...allSpendLevels].sort((a, b) => Number(a) - Number(b))
     
-    let html = `<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
-    for (const level of sortedLevels) {
-      const label = spendLabels[level] || `等级${level}`
-      const v0 = groups['到访'][level] || 0
-      const v1 = groups['居住'][level] || 0
-      const v2 = groups['工作'][level] || 0
-      if (v0 + v1 + v2 === 0) continue
-      html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
+    // 按消费力等级排序
+    const sortedSpend = [...spendMap.entries()].sort((a, b) => a[0] - b[0])
+    
+    // 消费力等级标签
+    const spendLabels = {
+      1: '消费力指数1（最低）',
+      2: '消费力指数2',
+      3: '消费力指数3',
+      4: '消费力指数4',
+      5: '消费力指数5',
+      6: '消费力指数6',
+      7: '消费力指数7',
+      8: '消费力指数8（最高）'
+    }
+    
+    let html = `<table class="data-table"><thead><tr><th>消费力指数</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const [level, values] of sortedSpend) {
+      const label = spendLabels[level] || `消费力指数${level}`
+      html += `<tr><td>${label}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
     }
     html += '</tbody></table>'
+    return html
+  }
+
+  // 1010: 人口教育水平格式 {popu_type, fname, p0, p1, p2, p3, p4} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p0 !== undefined && firstItem.fname !== undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p0': '高中及以下', 'p1': '大专', 'p2': '本科', 'p3': '硕士', 'p4': '博士' }
+    const pKeys = ['p0', 'p1', 'p2', 'p3', 'p4']
+    
+    // 创建 fname 到数值的映射，按 popu_type 分列
+    const eduMap = new Map()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!eduMap.has(fname)) {
+        eduMap.set(fname, { '到访': {}, '居住': {}, '工作': {} })
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          if (item[pKey] !== undefined) {
+            eduMap.get(fname)[type][pKey] = item[pKey] || 0
+          }
+        }
+      }
+    }
+    
+    let html = `<table class="data-table"><thead><tr><th>学历</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    
+    // 遍历所有教育等级
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      let toVisit = 0, residence = 0, work = 0
+      
+      // 汇总所有 fname 下的该教育等级数据
+      for (const [fname, values] of eduMap) {
+        toVisit += values['到访'][pKey] || 0
+        residence += values['居住'][pKey] || 0
+        work += values['工作'][pKey] || 0
+      }
+      
+      html += `<tr><td>${label}</td><td class="num">${toVisit.toLocaleString()}</td><td class="num">${residence.toLocaleString()}</td><td class="num">${work.toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1024: 人口行业分布格式 {popu_type, fname, p1} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.fname !== undefined && firstItem.p2 === undefined && firstItem.p3 === undefined) {
+    const typeNames = ['到访', '居住', '工作']
+    
+    // 按行业名称分组
+    const indMap = new Map()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!indMap.has(fname)) {
+        indMap.set(fname, { '到访': 0, '居住': 0, '工作': 0 })
+      }
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他' && item.p1 !== undefined) {
+        indMap.get(fname)[type] = item.p1
+      }
+    }
+    
+    let html = `<table class="data-table"><thead><tr><th>行业</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const [fname, values] of indMap) {
+      html += `<tr><td>${fname}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1012: 人生阶段分布格式 {popu_type, fname, p1, p2, p3} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.p2 !== undefined && firstItem.fname === '人生阶段') {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '已婚已育', 'p2': '已婚未育', 'p3': '未婚未育' }
+    const pKeys = ['p1', 'p2', 'p3']
+    
+    // 按 popu_type 分列
+    const stageMap = { '到访': {}, '居住': {}, '工作': {} }
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          stageMap[type][pKey] = item[pKey] || 0
+        }
+      }
+    }
+    
+    let html = `<table class="data-table"><thead><tr><th>人生阶段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      html += `<tr><td>${label}</td><td class="num">${(stageMap['到访'][pKey] || 0).toLocaleString()}</td><td class="num">${(stageMap['居住'][pKey] || 0).toLocaleString()}</td><td class="num">${(stageMap['工作'][pKey] || 0).toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1013: 综合消费能力预测格式 {popu_type, fname, p1, p2, p3} - 合并为交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.p2 !== undefined && firstItem.p3 !== undefined && firstItem.fname === '综合消费能力预测') {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '消费水平高', 'p2': '消费水平中', 'p3': '消费水平低' }
+    const pKeys = ['p1', 'p2', 'p3']
+    
+    const levelMap = { '到访': {}, '居住': {}, '工作': {} }
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+      const type = typeNames[typeIdx] || '其他'
+      if (type !== '其他') {
+        for (const pKey of pKeys) {
+          levelMap[type][pKey] = item[pKey] || 0
+        }
+      }
+    }
+    
+    let html = `<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+    for (const pKey of pKeys) {
+      const label = pLabels[pKey] || pKey
+      html += `<tr><td>${label}</td><td class="num">${(levelMap['到访'][pKey] || 0).toLocaleString()}</td><td class="num">${(levelMap['居住'][pKey] || 0).toLocaleString()}</td><td class="num">${(levelMap['工作'][pKey] || 0).toLocaleString()}</td></tr>`
+    }
+    html += '</tbody></table>'
+    return html
+  }
+
+  // 1015: 资产预测 - 按fname分组，每组显示概率等级交叉表
+  if (firstItem.popu_type !== undefined && firstItem.p1 !== undefined && firstItem.fname !== undefined && data.some(item => ['收入预测', '有车预测', '有房预测'].includes(item.fname))) {
+    const typeNames = ['到访', '居住', '工作']
+    const pLabels = { 'p1': '高概率', 'p2': '中高概率', 'p3': '中等概率', 'p4': '中低概率', 'p5': '低概率' }
+    const pKeys = ['p1', 'p2', 'p3', 'p4', 'p5']
+    
+    // 按 fname 分组
+    const grouped = {}
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const fname = item.fname || '-'
+      if (!grouped[fname]) grouped[fname] = []
+      grouped[fname].push(item)
+    }
+    
+    let html = ''
+    for (const [fname, items] of Object.entries(grouped)) {
+      html += `<div class="group-header">${fname}</div>`
+      
+      // 按 popu_type 分列
+      const probMap = { '到访': {}, '居住': {}, '工作': {} }
+      for (const item of items) {
+        const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
+        const type = typeNames[typeIdx] || '其他'
+        if (type !== '其他') {
+          for (const pKey of pKeys) {
+            if (item[pKey] !== undefined) {
+              probMap[type][pKey] = item[pKey]
+            }
+          }
+        }
+      }
+      
+      html += `<table class="data-table"><thead><tr><th>概率等级</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
+      for (const pKey of pKeys) {
+        const label = pLabels[pKey] || pKey
+        html += `<tr><td>${label}</td><td class="num">${(probMap['到访'][pKey] || 0).toLocaleString()}</td><td class="num">${(probMap['居住'][pKey] || 0).toLocaleString()}</td><td class="num">${(probMap['工作'][pKey] || 0).toLocaleString()}</td></tr>`
+      }
+      html += '</tbody></table>'
+    }
     return html
   }
 
@@ -793,9 +996,9 @@ function formatArrayData(data, serviceCode) {
     }
     html += '</tr>'
   }
-  html += '</tbody></table>'
-  return html
-}
+    html += '</tbody></table>'
+    return html
+  }
 
 // 格式化其他服务数据
 function formatOtherData(data, serviceCode) {
