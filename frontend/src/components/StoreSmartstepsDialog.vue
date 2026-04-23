@@ -1,3 +1,6 @@
+spawn ssh -o StrictHostKeyChecking=no root@47.103.216.151 cat /var/www/Report4biz/frontend/src/components/StoreSmartstepsDialog.vue
+
+root@47.103.216.151's password: 
 <template>
   <el-dialog
     v-model="dialogVisible"
@@ -19,7 +22,7 @@
     <!-- 已购报表按钮 -->
     <div v-if="storePurchases.length > 0" class="history-section">
       <el-button type="warning" size="small" @click="showHistoryDialog">
-        📋 已购报表 ({{ storePurchases.length }})
+        ð 已购报表 ({{ storePurchases.length }})
       </el-button>
     </div>
     <div v-else class="history-section">
@@ -88,7 +91,7 @@
     <!-- 查询结果 -->
     <div v-if="queryResult" class="result-section">
       <div class="result-header">
-        <span class="result-title">📊 查询结果</span>
+        <span class="result-title">ð 查询结果</span>
         <el-button link @click="queryResult = null">清除</el-button>
       </div>
       <div class="result-data" v-html="formatResult(queryResult)"></div>
@@ -186,7 +189,7 @@
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
       </div>
       <div class="detail-result" v-if="resultData">
-        <h4>📊 人口概览</h4>
+        <h4>ð 人口概览</h4>
         <div class="result-grid" v-html="formatResultData(resultData)"></div>
       </div>
       <div v-else class="no-result">
@@ -387,7 +390,7 @@ async function loadPurchaseDetail(id) {
 }
 
 // 排除的服务列表（不在详情页显示）
-const excludeServices = ['1004', '1016', '1003', '1008', '1019']
+const excludeServices = ['1004', '1016', '1003', '1008', '1019', '1002']
 
 // 服务名称映射（与MyAccountView完全一致）
 const getServiceName = (code) => {
@@ -504,6 +507,7 @@ function formatResultData(data) {
       html += `<div class="detail-result-item">
         <h4>${serviceName}</h4>
         ${formatOtherData(value, key)}
+
       </div>`
     } else if (typeof value === 'number') {
       html += `<div class="result-item-simple">
@@ -650,6 +654,65 @@ function formatArrayData(data, serviceCode) {
       return html
     }
   
+  // 1006: 每日人流量及停留时长 {date, day_visit, day_all, stay1-stay5}
+  if (firstItem.date !== undefined && firstItem.day_visit !== undefined) {
+    const columnOrder = [
+      { key: 'day_visit', label: '到访人次' },
+      { key: 'day_all', label: '全量人次' },
+      { key: 'stay1', label: '停留<30m' },
+      { key: 'stay2', label: '30-60m' },
+      { key: 'stay3', label: '1-2h' },
+      { key: 'stay4', label: '2-4h' },
+      { key: 'stay5', label: '4h+' }
+    ];
+
+    // 计算汇总数据
+    const days = data.length;
+    const totals = {};
+    for (const col of columnOrder) {
+      totals[col.key] = 0;
+    }
+    for (const item of data) {
+      for (const col of columnOrder) {
+        totals[col.key] += item[col.key] || 0;
+      }
+    }
+
+    // 计算日期范围
+    const dates = data.map(d => d.date).filter(Boolean).sort()
+    const dateRange = dates.length > 0 ? `${dates[0]} 至 ${dates[dates.length - 1]}` : ''
+
+    // 生成日均汇总表格
+    let html = `<h4>日均汇总</h4><p style="margin:8px 0 16px 0;font-size:13px;color:#666;">数据范围：${dateRange}</p>`;
+    html += '<table class="data-table"><thead><tr><th>指标</th><th class="num">日均值</th><th class="num">月度累计</th></tr></thead><tbody>';
+    for (const col of columnOrder) {
+      const total = totals[col.key];
+      const dailyAvg = Math.round(total / days);
+      html += "<tr><td>" + col.label + "</td><td class=\"num\">" + dailyAvg.toLocaleString() + "</td><td class=\"num\">" + total.toLocaleString() + "</td></tr>";
+    }
+    html += "</tbody></table>";
+
+    // 生成每日明细表格
+    html += "<h4>每日明细</h4>";
+    html += "<table class=\"data-table\"><thead><tr><th>日期</th>";
+    const detailLabels = ["到访人次", "全量人次", "停留<30m", "30-60m", "1-2h", "2-4h", "4h+"];
+    for (const label of detailLabels) {
+      html += "<th class=\"num\">" + label + "</th>";
+    }
+    html += "</tr></thead><tbody>";
+    for (const item of data) {
+      html += "<tr><td>" + (item.date || "-") + "</td>";
+      for (const col of columnOrder) {
+        const v = item[col.key];
+        const display = v !== undefined ? v.toLocaleString() : "-";
+        html += "<td class=\"num\">" + display + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    return html;
+  }
+
   // 1006: 到访频次分析 {popu_type, freq, visit_count}
   if (firstItem.freq !== undefined) {
     const typeNames = ['到访', '居住', '工作']
@@ -813,7 +876,7 @@ async function executeQuery() {
       radius: radii[0],
       radii: radii,
       // 请求全部23个服务
-      services: ['1001','1002','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],
+      services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],
       cityMonth: queryForm.value.cityMonth,
       quotaUsed: getQuotaToUse(),
       storeName: storeInfo.value.name,
@@ -1012,6 +1075,7 @@ watch(() => props.store, (newStore) => {
 
 .confirm-content p {
   margin-bottom: 10px;
+
   color: #666;
 }
 
