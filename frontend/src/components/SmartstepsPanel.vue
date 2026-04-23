@@ -748,6 +748,44 @@ function formatArrayData(data, serviceCode) {
   }
 
   // 1007: 每月到达次数分布
+  // 1006: 每日人流量及停留时长
+  if (serviceCode === '1006' && firstItem.date !== undefined) {
+    // 计算日均
+    const metrics = ['day_visit', 'day_all', 'stay3', 'stay4', 'stay5', 'stay6', 'stay7']
+    const avgData = {}
+    for (const m of metrics) {
+      avgData[m] = data.reduce((sum, item) => sum + (item[m] || 0), 0) / (data.length || 1)
+    }
+    
+    let html = '<div style="margin-bottom:16px;">' +
+      '<div style="margin-bottom:16px;">' +
+        '<div style="font-size:14px;font-weight:bold;color:#333;margin-bottom:8px;">📈 日均汇总</div>' +
+        '<table class="data-table">' +
+          '<thead><tr><th>指标</th><th class="num">日均值</th><th class="num">月度累计</th></tr></thead>' +
+          '<tbody>' +
+            '<tr><td>日均到访人次</td><td class="num">' + Math.round(avgData.day_visit).toLocaleString() + '</td><td class="num">' + Math.round(avgData.day_visit * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均全量人次</td><td class="num">' + Math.round(avgData.day_all).toLocaleString() + '</td><td class="num">' + Math.round(avgData.day_all * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均停留<30分钟</td><td class="num">' + Math.round(avgData.stay3).toLocaleString() + '</td><td class="num">' + Math.round(avgData.stay3 * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均停留30-60分钟</td><td class="num">' + Math.round(avgData.stay4).toLocaleString() + '</td><td class="num">' + Math.round(avgData.stay4 * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均停留1-2小时</td><td class="num">' + Math.round(avgData.stay5).toLocaleString() + '</td><td class="num">' + Math.round(avgData.stay5 * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均停留2-4小时</td><td class="num">' + Math.round(avgData.stay6).toLocaleString() + '</td><td class="num">' + Math.round(avgData.stay6 * 31).toLocaleString() + '</td></tr>' +
+            '<tr><td>日均停留4小时以上</td><td class="num">' + Math.round(avgData.stay7).toLocaleString() + '</td><td class="num">' + Math.round(avgData.stay7 * 31).toLocaleString() + '</td></tr>' +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
+      '<div>' +
+        '<div style="font-size:14px;font-weight:bold;color:#333;margin-bottom:8px;">📅 每日明细</div>' +
+        '<table class="data-table">' +
+          '<thead><tr><th>日期</th><th class="num">到访人次</th><th class="num">全量人次</th><th class="num">停留<30m</th><th class="num">30-60m</th><th class="num">1-2h</th><th class="num">2-4h</th><th class="num">4h+</th></tr></thead>' +
+          '<tbody>'
+    
+    for (const item of data) {
+      html += '<tr><td>' + item.date + '</td><td class="num">' + (item.day_visit||0).toLocaleString() + '</td><td class="num">' + (item.day_all||0).toLocaleString() + '</td><td class="num">' + (item.stay3||0).toLocaleString() + '</td><td class="num">' + (item.stay4||0).toLocaleString() + '</td><td class="num">' + (item.stay5||0).toLocaleString() + '</td><td class="num">' + (item.stay6||0).toLocaleString() + '</td><td class="num">' + (item.stay7||0).toLocaleString() + '</td></tr>'
+    }
+    html += '</tbody></table></div></div>'
+    return html
+  }
+
   if (firstItem.reach1 !== undefined) {
     const reachLabels = [
       ['1次', 'reach1'],

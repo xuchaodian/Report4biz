@@ -25,16 +25,18 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
 
     // 为每个用户计算配额信息
     const usersWithQuota = users.map(user => {
-      if (user.role === 'admin') {
-        return { ...user, remainingQuota: null, usedQuota: 0 }
-      }
-      // 计算用户已使用的配额
+      // 计算用户已使用的配额（所有用户都计算，包括 admin）
       const usedResult = db.prepare(`
         SELECT COALESCE(SUM(quota_used), 0) as used
         FROM purchases
         WHERE user_id = ? AND status = 'active'
       `).get(user.id)
       const usedQuota = usedResult?.used || 0
+
+      if (user.role === 'admin') {
+        // admin 用户不显示剩余配额（由 quotaInfo 统一提供）
+        return { ...user, remainingQuota: null, usedQuota }
+      }
       const remainingQuota = Math.max(0, (user.quota || 0) - usedQuota)
       return { ...user, remainingQuota, usedQuota }
     })
@@ -43,10 +45,19 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
 
-    // 获取初始总配额和当前剩余配额
-    const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
+    // 获取初始总配额
+    const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
     const initialQuota = quotaRecord?.initial_quota || 0
-    const remainingQuota = quotaRecord?.remaining_quota || 0
+
+    // 计算所有用户已消费的配额总和
+    const usedResult = db.prepare(`
+      SELECT COALESCE(SUM(quota_used), 0) as used
+      FROM purchases
+      WHERE status = 'active'
+    `).get()
+    const totalUsedForQuota = usedResult?.used || 0
+    // 当前剩余配额 = 初始总配额 - 已消费配额总和
+    const remainingQuota = Math.max(0, initialQuota - totalUsedForQuota)
 
     // 剩余可分配 = 初始总配额 - 已分配（与用户实际使用无关）
     const availableQuota = Math.max(0, initialQuota - allocatedQuota)

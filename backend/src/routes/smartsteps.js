@@ -17,6 +17,83 @@ const SMARTSTEPS_CONFIG = {
 const tokenCache = new NodeCache({ stdTTL: 600, checkperiod: 120 })
 
 /**
+ * 初始化缓存表
+ */
+function initCacheTable(db) {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS smartsteps_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        center_lng REAL NOT NULL,
+        center_lat REAL NOT NULL,
+        radius INTEGER NOT NULL,
+        city_month TEXT,
+        services TEXT NOT NULL,
+        result_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(center_lng, center_lat, radius, city_month, services)
+      )
+    `)
+    // 创建索引
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_cache_lookup ON smartsteps_cache(center_lng, center_lat, radius, city_month, services)`)
+  } catch (err) {
+    console.error('初始化缓存表失败:', err)
+  }
+}
+
+/**
+ * 查找缓存数据
+ */
+function findCache(db, centerLng, centerLat, radius, cityMonth, services) {
+  try {
+    // 将坐标精度调整为5位小数（约1米精度），避免浮点误差导致缓存不命中
+    const precision = 100000
+    const lngKey = Math.round(centerLng * precision) / precision
+    const latKey = Math.round(centerLat * precision) / precision
+    
+    const servicesStr = Array.isArray(services) ? services.sort().join(',') : services
+    
+    const cached = db.prepare(`
+      SELECT result_data FROM smartsteps_cache 
+      WHERE center_lng = ? AND center_lat = ? AND radius = ? 
+        AND (city_month = ? OR (city_month IS NULL AND ? IS NULL))
+        AND services = ?
+    `).get(lngKey, latKey, radius, cityMonth, cityMonth, servicesStr)
+    
+    if (cached) {
+      return JSON.parse(cached.result_data)
+    }
+    return null
+  } catch (err) {
+    console.error('查找缓存失败:', err)
+    return null
+  }
+}
+
+/**
+ * 保存数据到缓存
+ */
+function saveToCache(db, centerLng, centerLat, radius, cityMonth, services, resultData) {
+  try {
+    // 将坐标精度调整为5位小数
+    const precision = 100000
+    const lngKey = Math.round(centerLng * precision) / precision
+    const latKey = Math.round(centerLat * precision) / precision
+    
+    const servicesStr = Array.isArray(services) ? services.sort().join(',') : services
+    
+    db.prepare(`
+      INSERT OR REPLACE INTO smartsteps_cache (center_lng, center_lat, radius, city_month, services, result_data)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(lngKey, latKey, radius, cityMonth || null, servicesStr, JSON.stringify(resultData))
+    
+    console.log('数据已缓存')
+  } catch (err) {
+    console.error('保存缓存失败:', err)
+  }
+}
+
+/**
  * 获取授权Token
  */
 async function getAuthorization() {
@@ -244,8 +321,31 @@ router.post('/query', authenticate, async (req, res) => {
       return res.status(400).json({ message: '请至少选择一个服务' })
     }
     
-    // 检查运营商当前剩余配额
+    // 初始化数据库连接
     db = getDb()
+    
+    // 初始化缓存表（如果不存在）
+    initCacheTable(db)
+    
+    // 先检查是否有缓存数据
+    const servicesStr = Array.isArray(services) ? services.sort().join(',') : services
+    const cachedData = findCache(db, centerLng, centerLat, radius, cityMonth, services)
+    
+    if (cachedData) {
+      console.log('命中缓存，直接返回数据')
+      return res.json({
+        success: true,
+        fromCache: true,  // 标记来自缓存
+        wkt: buildCircleWkt(centerLng, centerLat, radius),
+        centerWgs: gcj02ToWgs84(centerLng, centerLat),
+        data: cachedData,
+        quotaUsed: 0,
+        remainingQuota: null,
+        message: '数据来自缓存，不消耗配额'
+      })
+    }
+    
+    // 无缓存，继续检查配额
     const quotaRecord = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
     available = quotaRecord?.remaining_quota || 0
     
@@ -330,6 +430,9 @@ router.post('/query', authenticate, async (req, res) => {
       // 仅在非空数据时扣减当前剩余配额（不是初始总配额）
       if (!isEmptyData) {
         db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
+        
+        // 保存到缓存
+        saveToCache(db, centerLng, centerLat, radius, cityMonth, services, result)
       }
     } catch (dbError) {
       console.error('记录配额使用失败:', dbError)
