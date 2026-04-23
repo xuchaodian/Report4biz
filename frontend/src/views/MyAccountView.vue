@@ -1033,52 +1033,23 @@ const formatArrayData = (data, serviceCode) => {
     return html
   }
   
-  // 如果是标签分布格式 {popu_type, tag_value, tag_name} - 合并为一张表
-  if (firstItem.popu_type !== undefined && firstItem.tag_value !== undefined) {
-    const typeNames = ['到访', '居住', '工作']
-    const groups = { '到访': [], '居住': [], '工作': [], '其他': [] }
-    
-    for (const item of data) {
-      if (!item || typeof item !== 'object') continue
-      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
-      const type = typeNames[typeIdx] || '其他'
-      if (!groups[type]) groups[type] = []
-      groups[type].push(item)
-    }
-    
-    // 创建标签到数值的映射
-    const tagMap = new Map()
-    for (const [type, items] of Object.entries(groups)) {
-      if (items.length === 0) continue
-      for (const item of items) {
-        const tagName = item.tag_name || '-'
-        if (!tagMap.has(tagName)) {
-          tagMap.set(tagName, { '到访': 0, '居住': 0, '工作': 0 })
-        }
-        tagMap.get(tagName)[type] = item.tag_value || 0
-      }
-    }
-    
-    // 按到访人数降序排序
-    const sortedTags = [...tagMap.entries()].sort((a, b) => b[1]['到访'] - a[1]['到访'])
-    
-    // 计算总计
-    const totals = { '到访': 0, '居住': 0, '工作': 0 }
-    for (const [, values] of sortedTags) {
-      totals['到访'] += values['到访']
-      totals['居住'] += values['居住']
-      totals['工作'] += values['工作']
-    }
-    
+    // 1002: 上网标签分布格式 {popu_type, tag_value, tag_name} - 按 tag_value 降序取前10
+  if (firstItem.tag_value !== undefined && firstItem.tag_name !== undefined) {
+    // 按 tag_value 降序排序，取前10
+    const sortedData = [...data]
+      .filter(item => item && typeof item === 'object' && item.tag_name && item.tag_value !== undefined)
+      .sort((a, b) => Number(b.tag_value) - Number(a.tag_value))
+      .slice(0, 10)
+
     let html = `<div class="pop-group">
       <table class="data-table cross-table"><thead><tr><th>标签</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
-    for (const [tagName, values] of sortedTags) {
-      html += `<tr><td>${tagName}</td><td class="num">${values['到访'].toLocaleString()}</td><td class="num">${values['居住'].toLocaleString()}</td><td class="num">${values['工作'].toLocaleString()}</td></tr>`
+    for (const item of sortedData) {
+      const value = Number(item.tag_value).toLocaleString()
+      html += `<tr><td>${item.tag_name}</td><td class="num">${value}</td><td class="num">0</td><td class="num">0</td></tr>`
     }
     html += '</tbody></table></div>'
     return html
   }
-  
   // 如果是每日人流量及停留时长格式 {day_type, day_visit, day_all, stay1, stay2, ...}
   if (firstItem.day_visit !== undefined && firstItem.day_all !== undefined && firstItem.stay1 !== undefined) {
     const dayTypes = { 0: '工作日', 1: '周末' }
@@ -1327,6 +1298,91 @@ const formatResultData = (data) => {
     if (key === '1001' && typeof value === 'object' && !Array.isArray(value)) {
       html += `<div class="detail-result">
         ${formatP0SData(value)}
+      </div>`
+      continue
+    }
+    
+    // 1006 每日人流量及停留时长 - 数组格式处理
+    if (key === '1006' && Array.isArray(value)) {
+      const stayLabelMap = {
+        'stay1': '停留<30分钟',
+        'stay2': '停留30-60分钟',
+        'stay3': '停留1-2小时',
+        'stay4': '停留2-4小时',
+        'stay5': '停留4小时以上'
+      };
+      
+      // 计算汇总数据
+      let totalDayVisit = 0, totalDayAll = 0;
+      let totalStay1 = 0, totalStay2 = 0, totalStay3 = 0, totalStay4 = 0, totalStay5 = 0;
+      let dayCount = value.length;
+      
+      value.forEach(item => {
+        totalDayVisit += item.day_visit || 0;
+        totalDayAll += item.day_all || 0;
+        totalStay1 += item.stay1 || 0;
+        totalStay2 += item.stay2 || 0;
+        totalStay3 += item.stay3 || 0;
+        totalStay4 += item.stay4 || 0;
+        totalStay5 += item.stay5 || 0;
+      });
+      
+      const avgLabelMap = {
+        'day_visit': '日均到访人次',
+        'day_all': '日均全量人次',
+        'stay1': '日均停留<30分钟',
+        'stay2': '日均停留30-60分钟',
+        'stay3': '日均停留1-2小时',
+        'stay4': '日均停留2-4小时',
+        'stay5': '日均停留4小时以上'
+      };
+      
+      const avgData = {
+        'day_visit': Math.round(totalDayVisit / dayCount),
+        'day_all': Math.round(totalDayAll / dayCount),
+        'stay1': Math.round(totalStay1 / dayCount),
+        'stay2': Math.round(totalStay2 / dayCount),
+        'stay3': Math.round(totalStay3 / dayCount),
+        'stay4': Math.round(totalStay4 / dayCount),
+        'stay5': Math.round(totalStay5 / dayCount)
+      };
+      
+      let summaryHtml = '<table class="data-table"><thead><tr><th>指标</th><th class="num">日均值</th><th class="num">月度累计</th></tr></thead><tbody>';
+      for (const [k, v] of Object.entries(avgData)) {
+        const label = avgLabelMap[k] || k;
+        const total = k === 'day_visit' ? totalDayVisit : 
+                      k === 'day_all' ? totalDayAll :
+                      k === 'stay1' ? totalStay1 :
+                      k === 'stay2' ? totalStay2 :
+                      k === 'stay3' ? totalStay3 :
+                      k === 'stay4' ? totalStay4 : totalStay5;
+        summaryHtml += `<tr><td>${label}</td><td class="num">${v.toLocaleString()}</td><td class="num">${total.toLocaleString()}</td></tr>`;
+      }
+      summaryHtml += '</tbody></table>';
+      
+      let detailHtml = '<table class="data-table" style="margin-top:10px;"><thead><tr><th>日期</th><th class="num">到访人次</th><th class="num">全量人次</th><th class="num">停留&lt;30m</th><th class="num">30-60m</th><th class="num">1-2h</th><th class="num">2-4h</th><th class="num">4h+</th></tr></thead><tbody>';
+      value.forEach(item => {
+        const dateStr = item.date ? `${item.date.slice(0,4)}-${item.date.slice(4,6)}-${item.date.slice(6,8)}` : '';
+        detailHtml += `<tr>
+          <td>${dateStr}</td>
+          <td class="num">${(item.day_visit || 0).toLocaleString()}</td>
+          <td class="num">${(item.day_all || 0).toLocaleString()}</td>
+          <td class="num">${(item.stay1 || 0).toLocaleString()}</td>
+          <td class="num">${(item.stay2 || 0).toLocaleString()}</td>
+          <td class="num">${(item.stay3 || 0).toLocaleString()}</td>
+          <td class="num">${(item.stay4 || 0).toLocaleString()}</td>
+          <td class="num">${(item.stay5 || 0).toLocaleString()}</td>
+        </tr>`;
+      });
+      detailHtml += '</tbody></table>';
+      
+      html += `<div class="detail-result">
+        <h4>📊 ${serviceName}（${dayCount}天）</h4>
+        <div style="font-size:11px;color:#909399;margin-bottom:8px;">数据范围：${value[0]?.date?.slice(0,4)}-${value[0]?.date?.slice(4,6)}-${value[0]?.date?.slice(6,8)} 至 ${value[value.length-1]?.date?.slice(0,4)}-${value[value.length-1]?.date?.slice(4,6)}-${value[value.length-1]?.date?.slice(6,8)}</div>
+        <h5 style="margin:8px 0 4px;">📈 日均汇总</h5>
+        ${summaryHtml}
+        <h5 style="margin:12px 0 4px;">📅 每日明细</h5>
+        ${detailHtml}
       </div>`
       continue
     }

@@ -387,7 +387,7 @@ async function loadPurchaseDetail(id) {
 }
 
 // 排除的服务列表（不在详情页显示）
-const excludeServices = ['1016', '1003', '1008', '1019']
+const excludeServices = ['1004', '1016', '1003', '1008', '1019']
 
 // 服务名称映射（与MyAccountView完全一致）
 const getServiceName = (code) => {
@@ -467,6 +467,27 @@ function formatResultData(data) {
         ${tableHtml}
       </div>`
       continue
+    }
+
+    // 1002 上网标签分布
+    if (key === '1002' && Array.isArray(value) && value.length > 0) {
+      // 按 tag_value 降序排序，取前10
+      const sorted = [...value]
+        .filter(row => row && typeof row === 'object' && row.tag_name && row.tag_value !== undefined)
+        .sort((a, b) => Number(b.tag_value) - Number(a.tag_value))
+        .slice(0, 10);
+      if (sorted.length > 0) {
+        html += `<div class="detail-result-item">
+          <div class="section-title">上网标签分布</div>
+          <table class="data-table cross-table">
+            <thead><tr><th>标签</th><th>到访</th><th>居住</th><th>工作</th></tr></thead>
+            <tbody>
+              ${sorted.map(r => `<tr><td>${r.tag_name}</td><td class="num">${Number(r.tag_value).toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      }
+      continue;
     }
 
     // 数组格式数据
@@ -597,71 +618,37 @@ function formatArrayData(data, serviceCode) {
   
   const firstItem = data[0]
   
-  // 1002: 居住/工作人口画像 {popu_type, pop_dwell, pop_work}
-  if (firstItem.popu_type !== undefined && firstItem.pop_dwell !== undefined) {
-    const typeNames = ['到访', '居住', '工作']
-    let totalDwell = 0, totalWork = 0
-    
-    let html = `<table class="data-table"><thead><tr><th>人群类型</th><th>居住人口</th><th>工作人口</th></tr></thead><tbody>`
-    for (const item of data) {
-      if (!item || typeof item !== 'object') continue
-      const typeIdx = typeof item.popu_type === 'number' ? item.popu_type : -1
-      const typeName = typeNames[typeIdx] || `类型${item.popu_type}`
-      const dwell = item.pop_dwell || 0
-      const work = item.pop_work || 0
-      totalDwell += dwell
-      totalWork += work
-      html += `<tr><td>${typeName}</td><td class="num">${dwell.toLocaleString()}</td><td class="num">${work.toLocaleString()}</td></tr>`
-    }
-    html += `<tr style="font-weight:bold;background:#f5f7fa;"><td>合计</td><td class="num">${totalDwell.toLocaleString()}</td><td class="num">${totalWork.toLocaleString()}</td></tr>`
-    html += '</tbody></table>'
-    return html
-  }
-  
-  // 1005: 到访人口时间段分布 {popu_type, time_range, visit_count, ...}
-  if (firstItem.time_range !== undefined || firstItem.hour_period !== undefined) {
-    // 优先按 time_range 分组，否则按 hour_period
-    const timeKey = firstItem.time_range !== undefined ? 'time_range' : 'hour_period'
-    const timeLabels = firstItem.time_range !== undefined ? {
-      '早高峰': '7-9点', '午间': '11-13点', '晚高峰': '17-19点', '夜间': '21-23点'
-    } : {}
-    
-    // 按时间段分组
-    const timeGroups = {}
-    for (const item of data) {
-      if (!item || typeof item !== 'object') continue
-      const time = item[timeKey] || '-'
-      if (!timeGroups[time]) timeGroups[time] = []
-      timeGroups[time].push(item)
-    }
-    
-    // 获取所有人群类型
-    const types = new Set()
-    for (const item of data) {
-      if (item.popu_type !== undefined) types.add(item.popu_type)
-    }
-    const typeNames = ['到访', '居住', '工作']
-    
-    // 生成表格
-    let html = `<table class="data-table"><thead><tr><th>时间段</th>`
-    for (const typeIdx of [...types]) {
-      html += `<th>${typeNames[typeIdx] || typeIdx}</th>`
-    }
-    html += `</tr></thead><tbody>`
-    
-    for (const [time, items] of Object.entries(timeGroups)) {
-      const label = timeLabels[time] || time
-      html += `<tr><td>${label}</td>`
-      for (const typeIdx of [...types]) {
-        const item = items.find(i => i.popu_type === typeIdx)
-        const val = item?.visit_count || 0
-        html += `<td class="num">${val.toLocaleString()}</td>`
+    // 1005: 每小时段人口流量 {day_type, hour_period, hour_all, hour_visit}
+    // 横向24行表格：时段、工作日到访人次、周末到访人次、工作日全量人次、周末全量人次
+    if (firstItem.day_type !== undefined && firstItem.hour_period !== undefined) {
+      // 按 day_type 和 hour_period 构建数据结构
+      const dataMap = {}
+      for (const item of data) {
+        if (!item || typeof item !== 'object') continue
+        const hour = item.hour_period
+        const dayType = item.day_type  // 0=工作日, 1=周末
+        if (hour === undefined) continue
+        if (!dataMap[hour]) {
+          dataMap[hour] = { 0: { visit: 0, all: 0 }, 1: { visit: 0, all: 0 } }
+        }
+        dataMap[hour][dayType] = {
+          visit: item.hour_visit || 0,
+          all: item.hour_all || 0
+        }
       }
-      html += '</tr>'
+
+      // 生成表格HTML
+      let html = '<table class="data-table"><thead><tr><th>时段</th><th class="num">工作日到访人次</th><th class="num">周末到访人次</th><th class="num">工作日全量人次</th><th class="num">周末全量人次</th></tr></thead><tbody>'
+      // 按小时排序
+      const hours = Object.keys(dataMap).map(Number).sort((a, b) => a - b)
+      for (const hour of hours) {
+        const workday = dataMap[hour][0] || { visit: 0, all: 0 }
+        const weekend = dataMap[hour][1] || { visit: 0, all: 0 }
+        html += `<tr><td>${hour}点</td><td class="num">${workday.visit.toLocaleString()}</td><td class="num">${weekend.visit.toLocaleString()}</td><td class="num">${workday.all.toLocaleString()}</td><td class="num">${weekend.all.toLocaleString()}</td></tr>`
+      }
+      html += '</tbody></table>'
+      return html
     }
-    html += '</tbody></table>'
-    return html
-  }
   
   // 1006: 到访频次分析 {popu_type, freq, visit_count}
   if (firstItem.freq !== undefined) {
@@ -826,7 +813,7 @@ async function executeQuery() {
       radius: radii[0],
       radii: radii,
       // 请求全部23个服务
-      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],
+      services: ['1001','1002','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],
       cityMonth: queryForm.value.cityMonth,
       quotaUsed: getQuotaToUse(),
       storeName: storeInfo.value.name,
