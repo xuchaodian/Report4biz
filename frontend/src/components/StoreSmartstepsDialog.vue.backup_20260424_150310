@@ -390,7 +390,7 @@ async function loadPurchaseDetail(id) {
 }
 
 // 排除的服务列表（不在详情页显示）
-const excludeServices = ['1004', '1016', '1003', '1008', '1019', '1002', '1017', '1018', '1021', '1022', '1023', '1020']
+const excludeServices = ['1004', '1016', '1003', '1008', '1019', '1002']
 
 // 服务名称映射（与MyAccountView完全一致）
 const getServiceName = (code) => {
@@ -816,565 +816,54 @@ function formatArrayData(data, serviceCode) {
     }
   }
 
-  // 1009: 消费水平（富裕指数） - 支持多种字段名：level/spendpower, pop_value/spendpower_value
+  // 1009: 消费水平（富裕指数） {level, pop_value, popu_type}
   // 消费力指数1-8，交叉表（到访/居住/工作）
-  if (serviceCode === '1009') {
-    // 确定字段名映射
-    const levelField = firstItem.level !== undefined ? 'level' : 
-                      firstItem.spendpower !== undefined ? 'spendpower' : null
-    const valueField = firstItem.pop_value !== undefined ? 'pop_value' : 
-                       firstItem.spendpower_value !== undefined ? 'spendpower_value' : null
-    const typeField = firstItem.popu_type !== undefined ? 'popu_type' : null
-    
-    if (levelField && valueField && typeField) {
-      // 按消费力指数等级分组，映射到访/居住/工作
-      const spendMap = {}
-      for (const item of data) {
-        const level = Number(item[levelField])
-        if (!spendMap[level]) {
-          spendMap[level] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        const popuType = Number(item[typeField])
-        const popValue = Number(item[valueField]) || 0
-        if (popuType === 0) {
-          spendMap[level]['到访'] = popValue
-        } else if (popuType === 1) {
-          spendMap[level]['居住'] = popValue
-        } else if (popuType === 2) {
-          spendMap[level]['工作'] = popValue
-        }
+  if (serviceCode === '1009' && firstItem.level !== undefined && firstItem.pop_value !== undefined && firstItem.popu_type !== undefined) {
+    // 按消费力指数等级分组，映射到访/居住/工作
+    const spendMap = {}
+    for (const item of data) {
+      const level = item.level
+      if (!spendMap[level]) {
+        spendMap[level] = { '到访': 0, '居住': 0, '工作': 0 }
       }
-
-      // 消费力指数中文标签（1-8）
-      const spendLabels = {
-        1: '消费力指数1（最低）',
-        2: '消费力指数2',
-        3: '消费力指数3',
-        4: '消费力指数4',
-        5: '消费力指数5',
-        6: '消费力指数6',
-        7: '消费力指数7',
-        8: '消费力指数8（最高）'
-      }
-
-      // 生成表格HTML - 确保显示1-8所有等级
-      let html = '<table class="data-table"><thead><tr><th>消费力指数</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-
-      // 强制显示1-8所有等级
-      for (let level = 1; level <= 8; level++) {
-        const dataRow = spendMap[level] || { '到访': 0, '居住': 0, '工作': 0 }
-        const label = spendLabels[level] || `消费力指数${level}`
-        html += `<tr><td>${label}</td><td class="num">${dataRow['到访'].toLocaleString()}</td><td class="num">${dataRow['居住'].toLocaleString()}</td><td class="num">${dataRow['工作'].toLocaleString()}</td></tr>`
-      }
-
-      html += '</tbody></table>'
-      return html
-    }
-    // 如果字段名不匹配，继续执行默认表格
-  }
-  
-  // 1010: 人口教育水平 - 去掉fname列，调整p0-p4列顺序和列名
-  if (serviceCode === '1010') {
-    // 检查是否有fname和p0-p4字段
-    const hasFname = firstItem.fname !== undefined
-    const hasP0 = firstItem.p0 !== undefined
-    const hasP1 = firstItem.p1 !== undefined
-    const hasP2 = firstItem.p2 !== undefined
-    const hasP3 = firstItem.p3 !== undefined
-    const hasP4 = firstItem.p4 !== undefined
-    
-    if (hasP0 && hasP1 && hasP2 && hasP3 && hasP4) {
-      // 定义正确的列顺序和中文标签
-      const columnOrder = [
-        { key: 'p0', label: '高中及以下' },
-        { key: 'p1', label: '大专' },
-        { key: 'p2', label: '本科' },
-        { key: 'p3', label: '硕士' },
-        { key: 'p4', label: '博士' }
-      ]
-      
-      // 生成表格HTML
-      let html = '<table class="data-table"><thead><tr><th>学历</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-      
-      // 遍历每一行数据（假设数据是按人群类型分组的）
-      // 我们需要按学历分组，而不是按人群类型
-      // 首先检查数据是否按popu_type分组
-      const hasPopuType = firstItem.popu_type !== undefined
-      
-      if (hasPopuType) {
-        // 数据按popu_type分组（0=到访,1=居住,2=工作）
-        const eduMap = {}
-        
-        for (const item of data) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          for (const col of columnOrder) {
-            const eduLevel = col.label
-            if (!eduMap[eduLevel]) {
-              eduMap[eduLevel] = { '到访': 0, '居住': 0, '工作': 0 }
-            }
-            eduMap[eduLevel][popuTypeLabel] = item[col.key] || 0
-          }
-        }
-        
-        // 生成表格行
-        for (const col of columnOrder) {
-          const eduLevel = col.label
-          const rowData = eduMap[eduLevel] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${eduLevel}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-      } else {
-        // 如果没有popu_type，假设每个数据项对应一个学历等级
-        // 按p0-p4顺序显示
-        for (const col of columnOrder) {
-          const item = data.find(d => d[col.key] !== undefined)
-          const value = item ? (item[col.key] || 0) : 0
-          html += `<tr><td>${col.label}</td><td class="num">${value.toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`
-        }
-      }
-      
-      html += '</tbody></table>'
-      return html
-    }
-  }
-  
-  // 1011: 人口行业分布 - p1-p10对应金融从业者到快递员
-  if (serviceCode === '1011') {
-    // 检查是否有p1-p10字段
-    let hasP1toP10 = true
-    for (let i = 1; i <= 10; i++) {
-      if (firstItem[`p${i}`] === undefined) {
-        hasP1toP10 = false
-        break
+      const popuType = item.popu_type
+      const popValue = item.pop_value || 0
+      if (popuType === 0) {
+        spendMap[level]['到访'] = popValue
+      } else if (popuType === 1) {
+        spendMap[level]['居住'] = popValue
+      } else if (popuType === 2) {
+        spendMap[level]['工作'] = popValue
       }
     }
     
-    if (hasP1toP10) {
-      // 行业标签映射
-      const industryLabels = {
-        p1: '金融从业者',
-        p2: '医务人员',
-        p3: '公务员&事业单位',
-        p4: '白领及一般职员',
-        p5: '工人及服务业人员',
-        p6: '教师',
-        p7: '农民及其他',
-        p8: '网约车司机',
-        p9: '外卖员',
-        p10: '快递员'
-      }
-      
-      // 检查是否有popu_type字段
-      const hasPopuType = firstItem.popu_type !== undefined
-      
-      if (hasPopuType) {
-        // 数据按popu_type分组（0=到访,1=居住,2=工作）
-        const industryMap = {}
-        
-        // 初始化行业映射
-        for (const key in industryLabels) {
-          industryMap[industryLabels[key]] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        
-        // 处理每个数据项
-        for (const item of data) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          // 累加每个行业的值
-          for (let i = 1; i <= 10; i++) {
-            const pKey = `p${i}`
-            const industryName = industryLabels[pKey]
-            const value = Number(item[pKey]) || 0
-            industryMap[industryName][popuTypeLabel] = value
-          }
-        }
-        
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>行业</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按指定顺序显示行业
-        const displayOrder = ['金融从业者', '医务人员', '公务员&事业单位', '白领及一般职员', '工人及服务业人员', '教师', '农民及其他', '网约车司机', '外卖员', '快递员']
-        
-        for (const industry of displayOrder) {
-          const rowData = industryMap[industry] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${industry}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      } else {
-        // 如果没有popu_type，假设每个数据项对应一个行业
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>行业</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按p1-p10顺序显示
-        for (let i = 1; i <= 10; i++) {
-          const pKey = `p${i}`
-          const industryName = industryLabels[pKey] || pKey
-          const item = data.find(d => d[pKey] !== undefined)
-          const value = item ? (Number(item[pKey]) || 0) : 0
-          html += `<tr><td>${industryName}</td><td class="num">${value.toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      }
-    }
-  }
-  
-  // 1012: 人生阶段分布 - p1-p3对应已婚已育、已婚未育、未婚未育
-  if (serviceCode === '1012') {
-    // 检查是否有p1-p3字段
-    let hasP1toP3 = true
-    for (let i = 1; i <= 3; i++) {
-      if (firstItem[`p${i}`] === undefined) {
-        hasP1toP3 = false
-        break
-      }
+    // 消费力指数中文标签
+    const spendLabels = {
+      1: '消费力指数1（最低）',
+      2: '消费力指数2',
+      3: '消费力指数3',
+      4: '消费力指数4',
+      5: '消费力指数5',
+      6: '消费力指数6',
+      7: '消费力指数7',
+      8: '消费力指数8（最高）'
     }
     
-    if (hasP1toP3) {
-      // 人生阶段标签映射
-      const lifeStageLabels = {
-        p1: '已婚已育',
-        p2: '已婚未育', 
-        p3: '未婚未育'
-      }
-      
-      // 检查是否有popu_type字段
-      const hasPopuType = firstItem.popu_type !== undefined
-      
-      if (hasPopuType) {
-        // 数据按popu_type分组（0=到访,1=居住,2=工作）
-        const stageMap = {}
-        
-        // 初始化人生阶段映射
-        for (const key in lifeStageLabels) {
-          stageMap[lifeStageLabels[key]] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        
-        // 处理每个数据项
-        for (const item of data) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          // 累加每个人生阶段的值
-          for (let i = 1; i <= 3; i++) {
-            const pKey = `p${i}`
-            const stageName = lifeStageLabels[pKey]
-            const value = Number(item[pKey]) || 0
-            stageMap[stageName][popuTypeLabel] = value
-          }
-        }
-        
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>人生阶段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按指定顺序显示人生阶段
-        const displayOrder = ['已婚已育', '已婚未育', '未婚未育']
-        
-        for (const stage of displayOrder) {
-          const rowData = stageMap[stage] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${stage}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      } else {
-        // 如果没有popu_type，假设每个数据项对应一个人生阶段
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>人生阶段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按p1-p3顺序显示
-        for (let i = 1; i <= 3; i++) {
-          const pKey = `p${i}`
-          const stageName = lifeStageLabels[pKey] || pKey
-          const item = data.find(d => d[pKey] !== undefined)
-          const value = item ? (Number(item[pKey]) || 0) : 0
-          html += `<tr><td>${stageName}</td><td class="num">${value.toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      }
-    }
-  }
-  
-  // 1013: 综合消费能力预测 - p1-p3对应消费水平高、中、低
-  if (serviceCode === '1013') {
-    // 检查是否有p1-p3字段
-    let hasP1toP3 = true
-    for (let i = 1; i <= 3; i++) {
-      if (firstItem[`p${i}`] === undefined) {
-        hasP1toP3 = false
-        break
-      }
+    // 按等级排序（1-8）
+    const sortedLevels = Object.keys(spendMap).map(Number).sort((a, b) => a - b)
+    
+    // 生成表格HTML
+    let html = '<table class="data-table"><thead><tr><th>消费力指数</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
+    
+    // 确保显示1-8所有等级，即使某些等级没有数据
+    for (let level = 1; level <= 8; level++) {
+      const dataRow = spendMap[level] || { '到访': 0, '居住': 0, '工作': 0 }
+      const label = spendLabels[level] || `消费力指数${level}`
+      html += `<tr><td>${label}</td><td class="num">${dataRow['到访'].toLocaleString()}</td><td class="num">${dataRow['居住'].toLocaleString()}</td><td class="num">${dataRow['工作'].toLocaleString()}</td></tr>`
     }
     
-    if (hasP1toP3) {
-      // 消费水平标签映射
-      const consumptionLabels = {
-        p1: '消费水平高',
-        p2: '消费水平中', 
-        p3: '消费水平低'
-      }
-      
-      // 检查是否有popu_type字段
-      const hasPopuType = firstItem.popu_type !== undefined
-      
-      if (hasPopuType) {
-        // 数据按popu_type分组（0=到访,1=居住,2=工作）
-        const levelMap = {}
-        
-        // 初始化消费水平映射
-        for (const key in consumptionLabels) {
-          levelMap[consumptionLabels[key]] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        
-        // 处理每个数据项
-        for (const item of data) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          // 累加每个消费水平的值
-          for (let i = 1; i <= 3; i++) {
-            const pKey = `p${i}`
-            const levelName = consumptionLabels[pKey]
-            const value = Number(item[pKey]) || 0
-            levelMap[levelName][popuTypeLabel] = value
-          }
-        }
-        
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按指定顺序显示消费水平
-        const displayOrder = ['消费水平高', '消费水平中', '消费水平低']
-        
-        for (const level of displayOrder) {
-          const rowData = levelMap[level] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${level}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      } else {
-        // 如果没有popu_type，假设每个数据项对应一个消费水平
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>消费能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按p1-p3顺序显示
-        for (let i = 1; i <= 3; i++) {
-          const pKey = `p${i}`
-          const levelName = consumptionLabels[pKey] || pKey
-          const item = data.find(d => d[pKey] !== undefined)
-          const value = item ? (Number(item[pKey]) || 0) : 0
-          html += `<tr><td>${levelName}</td><td class="num">${value.toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      }
-    }
-  }
-  
-  // 1014: 网购能力预测 - p1-p5对应网购能力高、中高、中、中低、低
-  if (serviceCode === '1014') {
-    // 检查是否有p1-p5字段
-    let hasP1toP5 = true
-    for (let i = 1; i <= 5; i++) {
-      if (firstItem[`p${i}`] === undefined) {
-        hasP1toP5 = false
-        break
-      }
-    }
-    
-    if (hasP1toP5) {
-      // 网购能力标签映射
-      const onlineShoppingLabels = {
-        p1: '网购能力高',
-        p2: '网购能力中高', 
-        p3: '网购能力中',
-        p4: '网购能力中低',
-        p5: '网购能力低'
-      }
-      
-      // 检查是否有popu_type字段
-      const hasPopuType = firstItem.popu_type !== undefined
-      
-      if (hasPopuType) {
-        // 数据按popu_type分组（0=到访,1=居住,2=工作）
-        const abilityMap = {}
-        
-        // 初始化网购能力映射
-        for (const key in onlineShoppingLabels) {
-          abilityMap[onlineShoppingLabels[key]] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        
-        // 处理每个数据项
-        for (const item of data) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          // 累加每个网购能力等级的值
-          for (let i = 1; i <= 5; i++) {
-            const pKey = `p${i}`
-            const abilityName = onlineShoppingLabels[pKey]
-            const value = Number(item[pKey]) || 0
-            abilityMap[abilityName][popuTypeLabel] = value
-          }
-        }
-        
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>网购能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按指定顺序显示网购能力等级
-        const displayOrder = ['网购能力高', '网购能力中高', '网购能力中', '网购能力中低', '网购能力低']
-        
-        for (const ability of displayOrder) {
-          const rowData = abilityMap[ability] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${ability}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      } else {
-        // 如果没有popu_type，假设每个数据项对应一个网购能力等级
-        // 生成表格HTML
-        let html = '<table class="data-table"><thead><tr><th>网购能力</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按p1-p5顺序显示
-        for (let i = 1; i <= 5; i++) {
-          const pKey = `p${i}`
-          const abilityName = onlineShoppingLabels[pKey] || pKey
-          const item = data.find(d => d[pKey] !== undefined)
-          const value = item ? (Number(item[pKey]) || 0) : 0
-          html += `<tr><td>${abilityName}</td><td class="num">${value.toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`
-        }
-        
-        html += '</tbody></table>'
-        return html
-      }
-    }
-  }
-  
-  // 1015: 资产预测（收入/有车/有房） - 拆分成3张表格
-  if (serviceCode === '1015') {
-    // 检查是否有fname字段（区分收入、有车、有房）
-    const hasFname = firstItem.fname !== undefined
-    // 检查是否有p1-p5字段（概率等级）
-    let hasP1toP5 = true
-    for (let i = 1; i <= 5; i++) {
-      if (firstItem[`p${i}`] === undefined) {
-        hasP1toP5 = false
-        break
-      }
-    }
-    // 检查是否有popu_type字段（人群类型）
-    const hasPopuType = firstItem.popu_type !== undefined
-    
-    if (hasP1toP5 && hasPopuType) {
-      // 概率等级标签映射
-      const probabilityLabels = {
-        p1: '预测概率高',
-        p2: '预测概率中高', 
-        p3: '预测概率中',
-        p4: '预测概率中低',
-        p5: '预测概率低'
-      }
-      
-      // 预测类型标签映射
-      const predictionTypeLabels = {
-        'income': '收入预测',
-        'car': '有车预测', 
-        'house': '有房预测'
-      }
-      
-      // 按fname分组（如果存在），否则按数据项顺序分组
-      let predictionGroups = {}
-      
-      if (hasFname) {
-        // 按fname分组
-        for (const item of data) {
-          const fname = item.fname
-          if (!predictionGroups[fname]) {
-            predictionGroups[fname] = []
-          }
-          predictionGroups[fname].push(item)
-        }
-      } else {
-        // 没有fname字段，假设数据项按顺序对应收入、有车、有房
-        // 但需要检查数据项数量
-        if (data.length >= 3) {
-          // 假设前三个数据项对应收入、有车、有房
-          predictionGroups = {
-            'income': [data[0]],
-            'car': [data[1]],
-            'house': [data[2]]
-          }
-        } else {
-          // 数据项不足，无法分组
-          predictionGroups = { 'default': data }
-        }
-      }
-      
-      // 生成三张表格的HTML
-      let html = ''
-      
-      // 按指定顺序显示预测类型：收入、有车、有房
-      const displayOrder = hasFname ? Object.keys(predictionGroups).sort() : ['income', 'car', 'house']
-      
-      for (const groupKey of displayOrder) {
-        const groupItems = predictionGroups[groupKey] || []
-        if (groupItems.length === 0) continue
-        
-        // 获取预测类型中文名称
-        const predictionName = predictionTypeLabels[groupKey] || groupKey
-        
-        // 为这个预测类型构建数据映射
-        const probMap = {}
-        
-        // 初始化概率等级映射
-        for (const key in probabilityLabels) {
-          probMap[probabilityLabels[key]] = { '到访': 0, '居住': 0, '工作': 0 }
-        }
-        
-        // 处理这个预测类型的每个数据项
-        for (const item of groupItems) {
-          const popuType = Number(item.popu_type)
-          const popuTypeLabel = popuType === 0 ? '到访' : popuType === 1 ? '居住' : '工作'
-          
-          // 累加每个概率等级的值
-          for (let i = 1; i <= 5; i++) {
-            const pKey = `p${i}`
-            const probName = probabilityLabels[pKey]
-            const value = Number(item[pKey]) || 0
-            probMap[probName][popuTypeLabel] = value
-          }
-        }
-        
-        // 生成这个预测类型的表格HTML
-        html += `<h4>${predictionName}</h4>`
-        html += '<table class="data-table"><thead><tr><th>概率等级</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>'
-        
-        // 按指定顺序显示概率等级：高、中高、中、中低、低
-        const probOrder = ['预测概率高', '预测概率中高', '预测概率中', '预测概率中低', '预测概率低']
-        
-        for (const prob of probOrder) {
-          const rowData = probMap[prob] || { '到访': 0, '居住': 0, '工作': 0 }
-          html += `<tr><td>${prob}</td><td class="num">${rowData['到访'].toLocaleString()}</td><td class="num">${rowData['居住'].toLocaleString()}</td><td class="num">${rowData['工作'].toLocaleString()}</td></tr>`
-        }
-        
-        html += '</tbody></table><br>'
-      }
-      
-      return html
-    } else {
-      // 如果缺少必要字段，回退到默认表格
-      // 继续执行默认表格逻辑
-    }
+    html += '</tbody></table>'
+    return html
   }
   
   // 默认：直接显示表格（限制前20行）
@@ -1457,12 +946,9 @@ function getFieldLabel(serviceCode, key) {
     '1007': { 'p1': '低消费', 'p2': '中低消费', 'p3': '中消费', 'p4': '中高消费', 'p5': '高消费' },
     '1009': { 'p1': '消费力指数1（最低）', 'p2': '消费力指数2', 'p3': '消费力指数3', 'p4': '消费力指数4', 'p5': '消费力指数5', 'p6': '消费力指数6', 'p7': '消费力指数7', 'p8': '消费力指数8（最高）' },
     '1011': { 'p1': '未婚', 'p2': '已婚' },
-    '1012': { 'p1': '已婚已育', 'p2': '已婚未育', 'p3': '未婚未育' },
+    '1012': { 'p1': '初中及以下', 'p2': '高中/中专', 'p3': '大专', 'p4': '本科', 'p5': '硕士', 'p6': '博士' },
     '1022': { 'p1': '低档', 'p2': '中低档', 'p3': '中档', 'p4': '中高档', 'p5': '高档' },
-    '1023': { 'p1': '无车', 'p2': '有车' },
-    '1013': { 'p1': '消费水平高', 'p2': '消费水平中', 'p3': '消费水平低' },
-    '1014': { 'p1': '网购能力高', 'p2': '网购能力中高', 'p3': '网购能力中', 'p4': '网购能力中低', 'p5': '网购能力低' },
-    '1015': { 'p1': '预测概率高', 'p2': '预测概率中高', 'p3': '预测概率中', 'p4': '预测概率中低', 'p5': '预测概率低' }
+    '1023': { 'p1': '无车', 'p2': '有车' }
   }
   
   const labels = serviceLabels[serviceCode]
@@ -1511,7 +997,7 @@ async function executeQuery() {
       radius: radii[0],
       radii: radii,
       // 请求全部23个服务
-      services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1019'],
+      services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023'],
       cityMonth: queryForm.value.cityMonth,
       quotaUsed: getQuotaToUse(),
       storeName: storeInfo.value.name,
@@ -1538,9 +1024,6 @@ function formatResult(data) {
   
   if (typeof result === 'object') {
     for (const [key, value] of Object.entries(result)) {
-      // 排除不需要显示的服务
-      if (excludeServices.includes(key)) continue
-      
       const label = getServiceName(key)
       
       // 根据数据类型格式化显示
