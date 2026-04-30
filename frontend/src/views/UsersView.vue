@@ -127,9 +127,13 @@
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isEdit" label="剩余次数">
-          <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="分配联通人口数据配额" style="width: 100%" />
-          <div class="quota-tip">剩余可分配次数: {{ quotaInfo.availableQuota }}</div>
+        <el-form-item v-if="isEdit" label="设置剩余次数">
+          <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
+          <div class="quota-tip">
+            <div>当前用户剩余次数: {{ form.quota }}</div>
+            <div>系统剩余可分配次数: {{ quotaInfo.availableQuota }}</div>
+            <div style="color: #67c23a; margin-top: 4px;">注意：输入的值将设置为用户新的剩余次数，系统会自动计算总配额</div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -398,8 +402,9 @@ const showAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
-  // 管理员账号的 quota 字段显示为 0（配额从 admin_quota 表管理）
-  const editQuota = row.role === 'admin' ? 0 : (row.quota ?? 0)
+  // 对于普通用户，显示剩余次数（remainingQuota），但编辑时输入的是要追加的配额
+  // 对于管理员账号，显示为 0（配额从 admin_quota 表管理）
+  const editQuota = row.role === 'admin' ? 0 : (row.remainingQuota ?? 0)
   Object.assign(form, {
     username: row.username,
     email: row.email,

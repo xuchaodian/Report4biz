@@ -12,18 +12,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
-  optimizeDeps: {
-    include: [
-      'vue',
-      'element-plus',
-      '@/components/StoreSmartstepsDialog.vue',
-      '@/components/SmartstepsPanel.vue'
-    ]
-  },
   build: {
-    commonjsOptions: {
-      include: [/node_modules/, /StoreSmartstepsDialog/, /SmartstepsPanel/]
-    },
     rollupOptions: {
       output: {
         manualChunks: (id) => {

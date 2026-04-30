@@ -1,0 +1,289 @@
+/**
+ * 人口统计工具函数
+ * 用于商圈人口分布分析和门店人口对比
+ */
+
+import * as turf from '@turf/turf'
+
+// 判断多边形是否与圆相交
+export const isPolygonIntersectsCircle = (geom, centerLat, centerLng, radius) => {
+  if (!geom) return false
+
+  try {
+    let coords = []
+    if (geom.type === 'Polygon') {
+      coords = geom.coordinates[0]
+    } else if (geom.type === 'MultiPolygon') {
+      coords = geom.coordinates[0][0]
+    } else {
+      console.log(`几何体类型不支持: ${geom.type}`)
+      return false
+    }
+
+    console.log(`=== 相交检测开始 ===`)
+    console.log(`中心点: (${centerLat}, ${centerLng}), 半径: ${radius}m`)
+    console.log(`多边形类型: ${geom.type}, 顶点数: ${coords.length}`)
+    
+    // 打印前3个顶点的坐标和距离（两种顺序）
+    for (let i = 0; i < Math.min(3, coords.length); i++) {
+      const c = coords[i]
+      // 正确顺序：纬度=c[1], 经度=c[0]
+      const distCorrect = getDistanceFromLatLng(centerLat, centerLng, c[1], c[0])
+      // 错误顺序：纬度=c[0], 经度=c[1]
+      const distWrong = getDistanceFromLatLng(centerLat, centerLng, c[0], c[1])
+      
+      console.log(`顶点${i}: GeoJSON [${c[0]}, ${c[1]}]`)
+      console.log(`  → 正确顺序(纬度${c[1]}, 经度${c[0]}): ${distCorrect.toFixed(1)}m`)
+      console.log(`  → 错误顺序(纬度${c[0]}, 经度${c[1]}): ${distWrong.toFixed(1)}m`)
+      console.log(`  → 坐标范围检查: 经度${c[0]} ${c[0] >= -180 && c[0] <= 180 ? '正常' : '异常'}, 纬度${c[1]} ${c[1] >= -90 && c[1] <= 90 ? '正常' : '异常'}`)
+    }
+
+    // 🔧 优化：记录顶点位置用于调试
+    let verticesInCircle = 0
+    let verticesOnCircleEdge = 0
+    
+    for (const c of coords) {
+      const dist = getDistanceFromLatLng(centerLat, centerLng, c[1], c[0])
+      if (dist <= radius) {
+        verticesInCircle++
+      } else if (dist <= radius * 1.1) { // 10%容差用于边缘检测
+        verticesOnCircleEdge++
+      }
+    }
+
+    // 调试信息：记录顶点分布
+    console.log(`顶点统计: 圆内${verticesInCircle}/${coords.length}, 边缘${verticesOnCircleEdge}/${coords.length}`)
+
+    // 检查圆心是否在多边形内
+    if (isPointInPolygon([centerLng, centerLat], coords)) {
+      console.log('圆心在多边形内，返回true')
+      return true
+    }
+
+    // 检查是否有顶点在圆内
+    for (const c of coords) {
+      const dist = getDistanceFromLatLng(centerLat, centerLng, c[1], c[0])
+      if (dist <= radius) {
+        console.log('顶点在圆内，返回true')
+        return true
+      }
+    }
+
+    // 检查圆是否与多边形边相交
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p1 = { lat: coords[i][1], lng: coords[i][0] }
+      const p2 = { lat: coords[i + 1][1], lng: coords[i + 1][0] }
+      if (circleIntersectsSegment(centerLat, centerLng, radius, p1, p2)) {
+        console.log('圆与边相交，返回true')
+        return true
+      }
+    }
+
+    // 备用检测：外接矩形与圆相交
+    const bbox = getPolygonBoundingBox(coords)
+    if (circleIntersectsBoundingBox(centerLat, centerLng, radius, bbox)) {
+      console.log('外接矩形与圆相交，返回true')
+      return true
+    }
+
+    console.log('无相交，返回false')
+    return false
+  } catch (e) {
+    console.error('相交检测失败:', e)
+    return false
+  }
+}
+
+// 获取多边形外接矩形
+const getPolygonBoundingBox = (coords) => {
+  let minLat = Infinity, maxLat = -Infinity
+  let minLng = Infinity, maxLng = -Infinity
+  
+  for (const c of coords) {
+    const lat = c[1]
+    const lng = c[0]
+    if (lat < minLat) minLat = lat
+    if (lat > maxLat) maxLat = lat
+    if (lng < minLng) minLng = lng
+    if (lng > maxLng) maxLng = lng
+  }
+  
+  return { minLat, maxLat, minLng, maxLng }
+}
+
+// 判断圆是否与外接矩形相交
+const circleIntersectsBoundingBox = (centerLat, centerLng, radius, bbox) => {
+  // 计算矩形中心
+  const rectCenterLat = (bbox.minLat + bbox.maxLat) / 2
+  const rectCenterLng = (bbox.minLng + bbox.maxLng) / 2
+  
+  // 计算矩形半宽高（米）
+  const rectHalfWidth = getDistanceFromLatLng(rectCenterLat, bbox.minLng, rectCenterLat, bbox.maxLng) / 2
+  const rectHalfHeight = getDistanceFromLatLng(bbox.minLat, rectCenterLng, bbox.maxLat, rectCenterLng) / 2
+  
+  // 计算圆心到矩形中心的距离
+  const dist = getDistanceFromLatLng(centerLat, centerLng, rectCenterLat, rectCenterLng)
+  
+  // 简单相交检测：圆心到矩形中心的距离 <= 半径 + 矩形对角线长度
+  const rectDiagonal = Math.sqrt(rectHalfWidth * rectHalfWidth + rectHalfHeight * rectHalfHeight)
+  return dist <= radius + rectDiagonal
+}
+
+// 判断点是否在多边形内（射线法）
+const isPointInPolygon = (point, polygon) => {
+  const [x, y] = point
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1]
+    const xj = polygon[j][0], yj = polygon[j][1]
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+// 计算两点间距离（米）- Haversine公式
+const getDistanceFromLatLng = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+// 圆与线段是否相交
+const circleIntersectsSegment = (centerLat, centerLng, radius, p1, p2) => {
+  const d = getDistanceFromLatLng(p1.lat, p1.lng, p2.lat, p2.lng)
+  if (d === 0) return getDistanceFromLatLng(centerLat, centerLng, p1.lat, p1.lng) <= radius
+
+  const t = Math.max(0, Math.min(1, (
+    (centerLng - p1.lng) * (p2.lng - p1.lng) +
+    (centerLat - p1.lat) * (p2.lat - p1.lat)
+  ) / (d * d)))
+
+  const closest = {
+    lat: p1.lat + t * (p2.lat - p1.lat),
+    lng: p1.lng + t * (p2.lng - p1.lng)
+  }
+
+  return getDistanceFromLatLng(centerLat, centerLng, closest.lat, closest.lng) <= radius
+}
+
+// 计算多边形与圆的交集面积占比（使用Turf.js精确几何计算）
+export const calculateIntersectionRatio = (geom, centerLat, centerLng, radius) => {
+  // 如果几何体无效，直接返回0
+  if (!geom || !geom.coordinates || geom.coordinates.length === 0) return 0
+  
+  try {
+    // 将GeoJSON几何体转换为Turf多边形
+    let turfPolygon
+    if (geom.type === 'Polygon') {
+      turfPolygon = turf.polygon(geom.coordinates)
+    } else if (geom.type === 'MultiPolygon') {
+      turfPolygon = turf.multiPolygon(geom.coordinates)
+    } else {
+      return 0
+    }
+    
+    // 创建圆心和半径表示的圆
+    const center = turf.point([centerLng, centerLat])
+    const options = { steps: 32, units: 'meters' }
+    const circle = turf.circle(center, radius, options)
+    
+    // 计算交集
+    const intersection = turf.intersect(turfPolygon, circle)
+    
+    if (!intersection) return 0
+    
+    // 计算面积比例
+    const polygonArea = turf.area(turfPolygon)
+    const intersectionArea = turf.area(intersection)
+    
+    return intersectionArea / polygonArea
+  } catch (e) {
+    console.error('交集面积计算失败:', e)
+    return 0
+  }
+}
+
+/**
+ * 计算指定半径内的人口数据
+ */
+export const calculatePopulationByRadius = async (centerLat, centerLng, radiusMeters, shapefiles) => {
+  const result = {
+    total: 0,
+    weightedTotal: 0,
+    matchingGrids: 0,
+    totalGrids: 0,
+    byField: {},
+    rawData: []
+  }
+
+  try {
+    // 这里需要获取shapefiles数据
+    // 实际实现中，shapefiles应该包含GeoJSON数据和字段信息
+    for (const sf of shapefiles) {
+      try {
+        const geojson = sf.geojson
+        const fieldName = sf.fieldName || 'value'
+        
+        const features = geojson.features || []
+        if (features.length === 0) continue
+
+        for (const feature of features) {
+          const geom = feature.geometry
+          if (!geom) continue
+
+          const props = feature.properties || {}
+          const rawValue = parseInt(props[fieldName]) || 0
+          result.totalGrids++
+
+          if (isPolygonIntersectsCircle(geom, centerLat, centerLng, radiusMeters)) {
+            const intersectionRatio = calculateIntersectionRatio(geom, centerLat, centerLng, radiusMeters)
+            const weightedValue = Math.round(rawValue * intersectionRatio)
+            
+            result.matchingGrids++
+            result.weightedTotal += weightedValue
+            result.rawData.push({
+              feature, value: weightedValue, originalValue: rawValue,
+              intersectionRatio, fieldName, shapefileName: sf.name, geom
+            })
+
+            // 记录所有数值字段
+  console.log('=== calculatePopulationByRadius 被调用 ===');
+  console.log('中心点:', centerLat, centerLng, '半径:', radiusMeters, 'm');
+  console.log('shapefiles 数量:', shapefiles ? shapefiles.length : 0);
+            for (const [key, val] of Object.entries(props)) {
+              if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
+                if (!result.byField[key]) {
+                  result.byField[key] = { total: 0, originalTotal: 0 }
+                }
+                const wv = Math.round(Number(val) * intersectionRatio)
+                result.byField[key].total += wv
+                result.byField[key].originalTotal += Number(val)
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`处理 ${sf.name} 失败:`, e)
+      }
+    }
+  } catch (e) {
+    console.error('人口统计计算失败:', e)
+  }
+
+  return result
+}
+
+/**
+ * 格式化数字显示
+ */
+export const formatNumber = (num) => {
+  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
+  return num.toLocaleString()
+}

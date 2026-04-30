@@ -1,6 +1,3 @@
-spawn ssh -o StrictHostKeyChecking=no root@47.103.216.151 cat /var/www/Report4biz/frontend/src/components/StoreSmartstepsDialog.vue
-
-root@47.103.216.151's password: 
 <template>
   <el-dialog
     v-model="dialogVisible"
@@ -22,7 +19,7 @@ root@47.103.216.151's password:
     <!-- 已购报表按钮 -->
     <div v-if="storePurchases.length > 0" class="history-section">
       <el-button type="warning" size="small" @click="showHistoryDialog">
-        ð 已购报表 ({{ storePurchases.length }})
+        📋 已购报表 ({{ storePurchases.length }})
       </el-button>
     </div>
     <div v-else class="history-section">
@@ -88,14 +85,24 @@ root@47.103.216.151's password:
       </div>
     </div>
 
-    <!-- 查询结果 -->
-    <div v-if="queryResult" class="result-section">
-      <div class="result-header">
-        <span class="result-title">ð 查询结果</span>
-        <el-button link @click="queryResult = null">清除</el-button>
+    <!-- 查询结果对话框 -->
+    <el-dialog
+      v-model="showQueryResultDialog"
+      :title="`${storeInfo?.name || ''} - 查询结果`"
+      width="800px"
+      draggable
+      append-to-body
+    >
+      <div v-if="queryResult" class="result-dialog-content">
+        <div class="result-dialog-data" v-html="formatResult(queryResult)"></div>
       </div>
-      <div class="result-data" v-html="formatResult(queryResult)"></div>
-    </div>
+      <div v-else class="no-result">
+        <p>暂无查询结果</p>
+      </div>
+      <template #footer>
+        <el-button @click="showQueryResultDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
@@ -129,7 +136,7 @@ root@47.103.216.151's password:
     </div>
     <template #footer>
       <el-button @click="showConfirmDialog = false">取消</el-button>
-      <el-button type="primary" @click="executeQuery" :loading="isLoading">
+      <el-button type="primary" @click="executeQuery($event)" :loading="isLoading">
         确认购买
       </el-button>
     </template>
@@ -189,7 +196,7 @@ root@47.103.216.151's password:
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
       </div>
       <div class="detail-result" v-if="resultData">
-        <h4>ð 人口概览</h4>
+        <h4>📊 人口概览</h4>
         <div class="result-grid" v-html="formatResultData(resultData)"></div>
       </div>
       <div v-else class="no-result">
@@ -235,6 +242,7 @@ const quotaInfo = ref(null)
 const isLoading = ref(false)
 const queryResult = ref(null)
 const showConfirmDialog = ref(false)
+const showQueryResultDialog = ref(false) // 新增：查询结果对话框
 
 // 门店购买履历
 const storePurchases = ref([])
@@ -507,7 +515,6 @@ function formatResultData(data) {
       html += `<div class="detail-result-item">
         <h4>${serviceName}</h4>
         ${formatOtherData(value, key)}
-
       </div>`
     } else if (typeof value === 'number') {
       html += `<div class="result-item-simple">
@@ -1494,33 +1501,246 @@ function handleQuery() {
   showConfirmDialog.value = true
 }
 
+// 生成模拟数据（用于测试，不消耗配额）
+function generateMockData() {
+  // 模拟API返回的数据结构
+  // 1001 人口基础属性 - 使用 formatP0SData 期望的字段名
+  const p0Sum = 15000
+  const pallSum = 45000
+  const p3Sum = 3000
+  const p4Sum = 2000
+  const p5Sum = 1000
+  const male0Sum = 8000
+  const female0Sum = 7000
+  const male1Sum = 6000
+  const female1Sum = 5000
+  const male2Sum = 4000
+  const female2Sum = 3000
+
+  // 年龄组字段 age0_0006, age1_0006, age2_0006 等
+  const ageGroups = [
+    ['0-6岁', '0006'], ['6-12岁', '0612'], ['12-15岁', '1215'], ['15-18岁', '1518'],
+    ['19-24岁', '1924'], ['25-29岁', '2529'], ['30-34岁', '3034'], ['35-39岁', '3539'],
+    ['40-44岁', '4044'], ['45-49岁', '4549'], ['50-54岁', '5054'], ['55-59岁', '5559'],
+    ['60-64岁', '6064'], ['65-69岁', '6569'], ['70岁+', '70up']
+  ]
+  const ageData = {}
+  for (const [label, code] of ageGroups) {
+    // 生成随机但合理的数据
+    ageData[`age0_${code}`] = Math.floor(Math.random() * 2000) + 500  // 到访
+    ageData[`age1_${code}`] = Math.floor(Math.random() * 1500) + 300  // 居住
+    ageData[`age2_${code}`] = Math.floor(Math.random() * 1000) + 200  // 工作
+  }
+
+  // 月出账金额字段 arpu0_50, arpu1_50, arpu2_50 等
+  const arpuGroups = [
+    ['50元以下', '50'], ['50-100元', '100'], ['100-150元', '150'],
+    ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
+  ]
+  const arpuData = {}
+  for (const [label, suffix] of arpuGroups) {
+    arpuData[`arpu0_${suffix}`] = Math.floor(Math.random() * 3000) + 1000  // 到访
+    arpuData[`arpu1_${suffix}`] = Math.floor(Math.random() * 2000) + 500   // 居住
+    arpuData[`arpu2_${suffix}`] = Math.floor(Math.random() * 1500) + 300   // 工作
+  }
+
+  // 1005 每小时段人口流量 - 使用用户提供的示例数据
+  const hourData = []
+  // 用户提供的正确表格数据（0-23点）
+  const workdayVisit = [5416, 4867, 4769, 4718, 4760, 4885, 5113, 5631, 5718, 5692, 5796, 6537, 7511, 7125, 6659, 6611, 7154, 8176, 9213, 9233, 8695, 7729, 6771, 5937]
+  const weekendVisit = [5251, 4739, 4596, 4550, 4531, 4510, 4719, 4998, 5326, 5743, 6462, 7140, 7838, 7748, 7570, 7598, 8068, 8924, 9696, 9440, 8637, 7605, 6679, 5872]
+  const workdayAll = [20894, 19623, 19851, 19613, 19300, 19471, 19910, 20755, 19877, 19840, 18532, 21048, 22640, 20267, 19754, 19389, 20578, 23056, 23359, 22687, 22717, 22113, 21543, 19907]
+  const weekendAll = [19954, 18946, 18970, 18963, 18632, 18712, 19028, 19305, 19740, 19541, 19938, 20807, 21719, 20992, 20095, 19888, 20665, 22105, 23196, 22720, 22287, 21544, 20944, 19336]
+  for (let hour = 0; hour < 24; hour++) {
+    // 工作日 (day_type = 0)
+    hourData.push({
+      hour_period: hour,
+      day_type: 0,
+      hour_visit: workdayVisit[hour],
+      hour_all: workdayAll[hour]
+    })
+    // 周末 (day_type = 1)
+    hourData.push({
+      hour_period: hour,
+      day_type: 1,
+      hour_visit: weekendVisit[hour],
+      hour_all: weekendAll[hour]
+    })
+  }
+
+  // 1006 每日人流量及停留时长 - 生成31天数据（20260301-20260331）
+  const dailyData1006 = []
+  // 使用用户提供的日均值
+  const dayVisitAvg = 38094
+  const dayAllAvg = 75279
+  const stay1Avg = 16309
+  const stay2Avg = 21191
+  const stay3Avg = 12830
+  const stay4Avg = 9101
+  const stay5Avg = 15846
+  
+  for (let day = 1; day <= 31; day++) {
+    const dateStr = `202603${day.toString().padStart(2, '0')}`
+    dailyData1006.push({
+      date: dateStr,
+      day_visit: dayVisitAvg,
+      day_all: dayAllAvg,
+      stay1: stay1Avg,
+      stay2: stay2Avg,
+      stay3: stay3Avg,
+      stay4: stay4Avg,
+      stay5: stay5Avg
+    })
+  }
+
+  // 1007 每月到达次数分布 - 生成单列表格数据
+  const monthlyReachData = [
+    { reach1: 148854, reach2: 77753, reach3: 24244, reach4: 8098, reach5: 29905 }
+  ]
+
+  return {
+    '1001': {
+      p0_sum: p0Sum,
+      pall_sum: pallSum,
+      p3_sum: p3Sum,
+      p4_sum: p4Sum,
+      p5_sum: p5Sum,
+      male0_sum: male0Sum,
+      female0_sum: female0Sum,
+      male1_sum: male1Sum,
+      female1_sum: female1Sum,
+      male2_sum: male2Sum,
+      female2_sum: female2Sum,
+      ...ageData,
+      ...arpuData
+    },
+    '1005': hourData,
+    '1006': dailyData1006,
+    '1007': monthlyReachData,
+    '1009': [
+      // 消费力指数1
+      { level: '1', pop_value: 1000, popu_type: 0 },
+      { level: '1', pop_value: 600, popu_type: 1 },
+      { level: '1', pop_value: 400, popu_type: 2 },
+      // 消费力指数2
+      { level: '2', pop_value: 1500, popu_type: 0 },
+      { level: '2', pop_value: 900, popu_type: 1 },
+      { level: '2', pop_value: 600, popu_type: 2 },
+      // 消费力指数3
+      { level: '3', pop_value: 2000, popu_type: 0 },
+      { level: '3', pop_value: 1200, popu_type: 1 },
+      { level: '3', pop_value: 800, popu_type: 2 },
+      // 消费力指数4
+      { level: '4', pop_value: 1800, popu_type: 0 },
+      { level: '4', pop_value: 1080, popu_type: 1 },
+      { level: '4', pop_value: 720, popu_type: 2 },
+      // 消费力指数5
+      { level: '5', pop_value: 1200, popu_type: 0 },
+      { level: '5', pop_value: 720, popu_type: 1 },
+      { level: '5', pop_value: 480, popu_type: 2 },
+      // 消费力指数6
+      { level: '6', pop_value: 800, popu_type: 0 },
+      { level: '6', pop_value: 480, popu_type: 1 },
+      { level: '6', pop_value: 320, popu_type: 2 },
+      // 消费力指数7
+      { level: '7', pop_value: 400, popu_type: 0 },
+      { level: '7', pop_value: 240, popu_type: 1 },
+      { level: '7', pop_value: 160, popu_type: 2 },
+      // 消费力指数8
+      { level: '8', pop_value: 200, popu_type: 0 },
+      { level: '8', pop_value: 120, popu_type: 1 },
+      { level: '8', pop_value: 80, popu_type: 2 }
+    ],
+    '1010': [
+      // 到访人口 (popu_type: 0)
+      { popu_type: 0, p0: 65387, p1: 2025, p2: 133910, p3: 18653, p4: 755 },
+      // 居住人口 (popu_type: 1)
+      { popu_type: 1, p0: 6523, p1: 0, p2: 12695, p3: 1874, p4: 82 },
+      // 工作人口 (popu_type: 2)
+      { popu_type: 2, p0: 2950, p1: 0, p2: 4973, p3: 417, p4: 208 }
+    ],
+    '1012': [
+      // 到访人口 (popu_type: 0)
+      { popu_type: 0, p1: 108403, p2: 33503, p3: 78824 },
+      // 居住人口 (popu_type: 1)
+      { popu_type: 1, p1: 9339, p2: 2225, p3: 9610 },
+      // 工作人口 (popu_type: 2)
+      { popu_type: 2, p1: 3914, p2: 1306, p3: 3328 }
+    ],
+    '1013': [
+      // 到访人口 (popu_type: 0)
+      { popu_type: 0, p1: 15432, p2: 103781, p3: 101517 },
+      // 居住人口 (popu_type: 1)
+      { popu_type: 1, p1: 1117, p2: 9070, p3: 10987 },
+      // 工作人口 (popu_type: 2)
+      { popu_type: 2, p1: 473, p2: 4413, p3: 3662 }
+    ],
+    '1011': [
+      // 人口行业分布 - 到访人口 (popu_type: 0)
+      { popu_type: 0, p1: 2604, p2: 3139, p3: 9482, p4: 36966, p5: 13206, p6: 33767, p7: 50043, p8: 54545, p9: 3643, p10: 13335 },
+      // 人口行业分布 - 居住人口 (popu_type: 1)
+      { popu_type: 1, p1: 414, p2: 410, p3: 2791, p4: 3248, p5: 1021, p6: 4206, p7: 5755, p8: 2247, p9: 305, p10: 777 },
+      // 人口行业分布 - 工作人口 (popu_type: 2)
+      { popu_type: 2, p1: 75, p2: 294, p3: 519, p4: 1306, p5: 770, p6: 1277, p7: 1617, p8: 1502, p9: 418, p10: 770 }
+    ],
+    '1015': [
+      // 收入预测 (fname: 'income')
+      { fname: 'income', popu_type: 0, p1: 33141, p2: 18566, p3: 38303, p4: 15755, p5: 114965 },
+      { fname: 'income', popu_type: 1, p1: 2142, p2: 1531, p3: 3508, p4: 1011, p5: 12982 },
+      { fname: 'income', popu_type: 2, p1: 705, p2: 686, p3: 1642, p4: 421, p5: 5094 },
+      // 有房预测 (fname: 'house')
+      { fname: 'house', popu_type: 0, p1: 13793, p2: 52521, p3: 26669, p4: 44704, p5: 83043 },
+      { fname: 'house', popu_type: 1, p1: 1557, p2: 5400, p3: 1450, p4: 4573, p5: 8194 },
+      { fname: 'house', popu_type: 2, p1: 663, p2: 1611, p3: 715, p4: 2325, p5: 3234 },
+      // 有车预测 (fname: 'car')
+      { fname: 'car', popu_type: 0, p1: 38034, p2: 78945, p3: 10645, p4: 23049, p5: 70057 },
+      { fname: 'car', popu_type: 1, p1: 3454, p2: 6535, p3: 1128, p4: 1222, p5: 8835 },
+      { fname: 'car', popu_type: 2, p1: 1196, p2: 2864, p3: 469, p4: 904, p5: 3115 }
+    ]
+  }
+}
+
 // 执行查询
-async function executeQuery() {
+async function executeQuery(event) {
   if (!storeInfo.value) return
 
   showConfirmDialog.value = false
   isLoading.value = true
   queryResult.value = null
 
-  try {
-    const radii = getRadiiInMeters()
-    
-    const res = await axios.post('/api/smartsteps/query', {
-      centerLng: storeInfo.value.longitude,
-      centerLat: storeInfo.value.latitude,
-      radius: radii[0],
-      radii: radii,
-      // 请求全部23个服务
-      services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1019'],
-      cityMonth: queryForm.value.cityMonth,
-      quotaUsed: getQuotaToUse(),
-      storeName: storeInfo.value.name,
-      storeType: storeInfo.value.store_type || '已开业'
-    })
+  // 检查是否按下了Shift键（测试模式）
+  const isTestMode = event && event.shiftKey
 
-    queryResult.value = res.data
-    ElMessage.success('查询成功!')
-    loadQuota()
+  try {
+    if (isTestMode) {
+      // 测试模式：使用模拟数据，不消耗配额
+      await new Promise(resolve => setTimeout(resolve, 800)) // 模拟网络延迟
+      queryResult.value = generateMockData()
+      ElMessage.success('测试模式：使用模拟数据（不消耗配额）')
+    } else {
+      // 正常模式：调用真实API
+      const radii = getRadiiInMeters()
+      
+      const res = await axios.post('/api/smartsteps/query', {
+        centerLng: storeInfo.value.longitude,
+        centerLat: storeInfo.value.latitude,
+        radius: radii[0],
+        radii: radii,
+        // 请求全部23个服务
+        services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1019'],
+        cityMonth: queryForm.value.cityMonth,
+        quotaUsed: getQuotaToUse(),
+        storeName: storeInfo.value.name,
+        storeType: storeInfo.value.store_type || '已开业'
+      })
+
+      queryResult.value = res.data
+      ElMessage.success('查询成功!')
+      loadQuota()
+    }
+    
+    // 显示查询结果对话框
+    showQueryResultDialog.value = true
   } catch (e) {
     console.error('查询失败:', e)
     ElMessage.error(e.response?.data?.message || '查询失败')
@@ -1529,47 +1749,16 @@ async function executeQuery() {
   }
 }
 
-// 格式化结果
+// 格式化结果 - 与已购报表弹窗样式一致
 function formatResult(data) {
-  if (!data || !data.data) return '<p>暂无数据</p>'
+  if (!data) return '<p>暂无数据</p>'
   
-  const result = data.data
-  let html = '<div class="result-grid">'
+  // 使用与已购报表弹窗相同的格式化函数
+  // 如果data包含data属性（查询结果结构），使用它
+  const resultData = data.data || data
   
-  if (typeof result === 'object') {
-    for (const [key, value] of Object.entries(result)) {
-      // 排除不需要显示的服务
-      if (excludeServices.includes(key)) continue
-      
-      const label = getServiceName(key)
-      
-      // 根据数据类型格式化显示
-      if (typeof value === 'object' && value !== null) {
-        // 对象类型，展开显示
-        let subHtml = ''
-        for (const [subKey, subVal] of Object.entries(value)) {
-          subHtml += `<div style="font-size:11px;padding:2px 0;border-bottom:1px dashed #eee;">
-            <span style="color:#999;">${subKey}:</span>
-            <span style="font-weight:normal;">${subVal}</span>
-          </div>`
-        }
-        html += `<div class="result-item result-object">
-          <span class="result-label">${label}</span>
-          <div class="result-object-content">${subHtml}</div>
-        </div>`
-      } else {
-        // 基本类型，直接显示
-        const val = formatValue(value)
-        html += `<div class="result-item">
-          <span class="result-label">${label}</span>
-          <span class="result-value">${val}</span>
-        </div>`
-      }
-    }
-  }
-  
-  html += '</div>'
-  return html || '<p>暂无数据</p>'
+  // 调用已购报表弹窗的格式化函数
+  return formatResultData(resultData)
 }
 
 // 关闭
@@ -1653,58 +1842,15 @@ watch(() => props.store, (newStore) => {
   color: #666;
 }
 
-.result-section {
-  margin-top: 15px;
-  padding: 10px;
-  background: #f9f9f9;
-  border-radius: 4px;
+.result-dialog-content {
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
-.result-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.result-title {
-  font-weight: bold;
-}
-
-.result-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.result-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  background: white;
-  border-radius: 4px;
-  border: 1px solid #eee;
-}
-
-.result-object {
-  flex-direction: column;
-  gap: 8px;
-}
-
-.result-object-content {
-  width: 100%;
-  padding: 8px;
-  background: #f8f8f8;
-  border-radius: 4px;
-}
-
-.result-label {
-  color: #666;
-}
-
-.result-value {
-  font-weight: bold;
-  color: #333;
+.no-result {
+  text-align: center;
+  padding: 30px;
+  color: #999;
 }
 
 .confirm-content {
@@ -1840,7 +1986,7 @@ watch(() => props.store, (newStore) => {
 }
 
 /* 表格样式 - 使用 :deep() 穿透 v-html */
-.detail-result :deep(.data-table) {
+.result-dialog-content :deep(.data-table) {
   width: 100%;
   border-collapse: collapse !important;
   margin: 8px 0;
@@ -1848,54 +1994,109 @@ watch(() => props.store, (newStore) => {
   border: 1px solid #ddd !important;
 }
 
-.detail-result :deep(.data-table th),
-.detail-result :deep(.data-table td) {
+.result-dialog-content :deep(.data-table th),
+.result-dialog-content :deep(.data-table td) {
   padding: 10px 12px;
   border: 1px solid #ddd !important;
 }
 
-.detail-result :deep(.data-table th) {
-  background: #f8f5fa;
-  color: #764ba2;
-  font-weight: 600;
+.result-dialog-content :deep(.data-table th) {
+  background: #f8f5fa !important;
+  color: #764ba2 !important;
+  font-weight: 600 !important;
 }
 
-.detail-result :deep(.data-table td) {
-  background: #fff;
-  color: #333;
+.result-dialog-content :deep(.data-table td) {
+  background: #fff !important;
+  color: #333 !important;
 }
 
-.detail-result :deep(.data-table tr:hover td) {
-  background: #f9f9ff;
+.result-dialog-content :deep(.data-table tr:hover td) {
+  background: #f9f9ff !important;
 }
 
-.detail-result :deep(.data-table td.num) {
-  text-align: right;
-  font-family: 'Monaco', 'Menlo', monospace;
+.result-dialog-content :deep(.data-table td.num) {
+  text-align: right !important;
+  font-family: 'Monaco', 'Menlo', monospace !important;
 }
 
-.detail-result :deep(.detail-result) {
+.result-dialog-content :deep(.detail-result) {
   margin-bottom: 16px;
 }
 
-.detail-result :deep(.detail-result h4) {
+.result-dialog-content :deep(.detail-result h4) {
   margin: 16px 0 10px 0;
   color: #333;
   font-size: 15px;
 }
 
-.detail-result :deep(.pop-group) {
+.result-dialog-content :deep(.pop-group) {
   margin-bottom: 16px;
 }
 
-.detail-result :deep(.group-header) {
+.result-dialog-content :deep(.group-header) {
   font-weight: 600;
   color: #764ba2;
   margin-bottom: 8px;
 }
 
-.detail-result :deep(.group-total) {
+.result-dialog-content :deep(.group-total) {
   float: right;
   color: #764ba2;
+}
+
+/* 已购报表弹窗表格样式 */
+.detail-content :deep(.data-table) {
+  width: 100%;
+  border-collapse: collapse !important;
+  margin: 8px 0;
+  font-size: 13px;
+  border: 1px solid #ddd !important;
+}
+
+.detail-content :deep(.data-table th),
+.detail-content :deep(.data-table td) {
+  padding: 10px 12px;
+  border: 1px solid #ddd !important;
+}
+
+.detail-content :deep(.data-table th) {
+  background: #f8f5fa !important;
+  color: #764ba2 !important;
+  font-weight: 600 !important;
+}
+
+.detail-content :deep(.data-table td) {
+  background: #fff !important;
+  color: #333 !important;
+}
+
+.detail-content :deep(.data-table tr:hover td) {
+  background: #f9f9ff !important;
+}
+
+.detail-content :deep(.data-table td.num) {
+  text-align: right !important;
+  font-family: 'Monaco', 'Menlo', monospace !important;
+}
+
+.detail-content :deep(.detail-result) {
+  margin-bottom: 16px;
+}
+
+.detail-content :deep(.detail-result h4) {
+  margin: 16px 0 10px 0;
+  color: #333;
+  font-size: 15px;
+}
+
+.detail-content :deep(.pop-group) {
+  margin-bottom: 16px;
+}
+
+.detail-content :deep(.group-header) {
+  font-weight: 600;
+  color: #764ba2;
+  margin-bottom: 8px;
 }
 </style>
