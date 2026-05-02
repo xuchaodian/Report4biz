@@ -198,28 +198,61 @@
     <!-- 查看结果对话框 -->
     <el-dialog
       v-model="detailDialogVisible"
-      :title="`📊 查询结果详情 - ${currentDetail?.store_name || '订单' + currentDetail?.id}`"
-      width="700px"
+      width="95%"
+      style="max-width:1400px"
+      top="2vh"
       draggable
+      class="detail-dialog"
     >
+      <template #header>
+        <div class="dialog-header-flex">
+          <span>📊 查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}</span>
+          <div class="dialog-header-actions">
+            <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight" :disabled="!resultData || insightLoading">
+              {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
+            </el-button>
+            <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
+              📄 导出PDF
+            </el-button>
+          </div>
+        </div>
+      </template>
       <div v-if="detailLoading" class="detail-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      <div v-else-if="currentDetail" class="detail-content">
-        <div class="detail-info">
-          <p><strong>订单ID:</strong> {{ currentDetail.id }}</p>
-          <p><strong>查询时间:</strong> {{ formatDate(currentDetail.created_at) }}</p>
-          <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
-          <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
-          <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+      <div v-else-if="currentDetail" class="detail-horizontal-layout" ref="pdfContentRef">
+        <!-- 左栏：信息 + 表格 -->
+        <div class="detail-left">
+          <div class="detail-info">
+            <p><strong>订单ID:</strong> {{ currentDetail.id }}</p>
+            <p><strong>查询时间:</strong> {{ formatDate(currentDetail.created_at) }}</p>
+            <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
+            <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
+            <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+          </div>
+          <!-- 数据洞察 -->
+          <div v-if="insights.length > 0" class="insight-section">
+            <h4 style="margin:0 0 10px;font-size:14px;color:#333;">📋 数据洞察</h4>
+            <div v-for="(item, idx) in insights" :key="idx" :class="['insight-item', 'insight-' + item.type]">
+              <span class="insight-icon">{{ item.type === 'positive' ? '✅' : item.type === 'warning' ? '⚠️' : '💡' }}</span>
+              <span class="insight-text">{{ item.text }}</span>
+            </div>
+          </div>
+          <div v-if="resultData" class="detail-result">
+            <div class="result-grid" v-html="formatResultData(resultData)"></div>
+          </div>
+          <div v-else class="no-result">
+            <p>暂无数据（该订单配额已返还）</p>
+          </div>
         </div>
-        <div class="detail-result" v-if="resultData">
-          <h4>📊 人口概览</h4>
-          <div class="result-grid" v-html="formatResultData(resultData)"></div>
-        </div>
-        <div v-else class="no-result">
-          <p>暂无数据（该订单配额已返还）</p>
+        <!-- 右栏：图表列表 -->
+        <div class="detail-right" v-if="chartList.length > 0">
+          <h4 style="margin:0 0 12px;font-size:15px;color:#333;">📈 数据可视化</h4>
+          <div v-for="item in chartList" :key="item.serviceCode" class="chart-card">
+            <h5 class="chart-title">{{ item.title }}</h5>
+            <div :ref="el => registerChartEl(el, item.chartKey)" class="chart-box"></div>
+          </div>
         </div>
       </div>
     </el-dialog>
@@ -227,7 +260,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import * as echarts from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -318,6 +352,22 @@ const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const currentDetail = ref(null)
 const resultData = ref(null)
+
+// 图表相关
+const chartList = ref([])
+const chartElMap = ref({})
+const chartInst = ref({})
+const pdfContentRef = ref(null)
+const insights = ref([])
+const insightLoading = ref(false)
+let chartResizeHandler = null
+
+// 注册图表DOM元素
+const registerChartEl = (el, serviceCode) => {
+  if (el) {
+    chartElMap.value[serviceCode] = el
+  }
+}
 
 const form = reactive({
   email: '',
@@ -429,11 +479,15 @@ const viewPurchaseDetail = async (row) => {
   detailLoading.value = true
   currentDetail.value = null
   resultData.value = null
+  chartList.value = []
+  disposeAllCharts()
   
   try {
     const { data } = await axios.get(`/api/purchase/${row.id}`)
     currentDetail.value = data
     resultData.value = data.result_data
+    // 填充图表列表
+    buildChartList(data.result_data)
     // 调试：输出 monthly_reach_count 的结构
     console.log('result_data keys:', data.result_data ? Object.keys(data.result_data) : 'null')
     if (data.result_data?.apiResult) {
@@ -454,6 +508,67 @@ const viewPurchaseDetail = async (row) => {
   } finally {
     detailLoading.value = false
   }
+}
+
+// 构建图表列表
+const buildChartList = (data) => {
+  if (!data) return
+  let apiResult = data
+  if (typeof apiResult === 'string') {
+    try { apiResult = JSON.parse(data) } catch (e) { return }
+  }
+  if (apiResult && apiResult.apiResult) {
+    apiResult = apiResult.apiResult
+  }
+  if (!apiResult || typeof apiResult !== 'object') return
+  
+  const list = []
+  for (const [key, value] of Object.entries(apiResult)) {
+    if (key === 'error') continue
+    if (excludeServices.includes(key)) continue
+    // 跳过空数据
+    if (value === null || value === undefined) continue
+    if (Array.isArray(value) && value.length === 0) continue
+    
+    // 1001 全量人口拆分为3张子图表
+    if (key === '1001') {
+      list.push({ serviceCode: '1001', chartKey: '1001-a', title: '全量人口 - 人口总数' })
+      list.push({ serviceCode: '1001', chartKey: '1001-b', title: '全量人口 - 居住+工作年龄分布' })
+      list.push({ serviceCode: '1001', chartKey: '1001-c', title: '全量人口 - 到访年龄分布' })
+      list.push({ serviceCode: '1001', chartKey: '1001-d', title: '全量人口 - 居住+工作性别分布' })
+    } else if (key === '1005') {
+      // 1005 每小时段流量拆分为2张子图表
+      list.push({ serviceCode: '1005', chartKey: '1005-a', title: '每小时段流量 - 到访' })
+      list.push({ serviceCode: '1005', chartKey: '1005-b', title: '每小时段流量 - 全量' })
+    } else if (key === '1006') {
+      // 1006 每日人流量拆分为2张子图表
+      list.push({ serviceCode: '1006', chartKey: '1006-a', title: '每日人流量 - 日均值' })
+      list.push({ serviceCode: '1006', chartKey: '1006-b', title: '每日人流量 - 月度累计' })
+    } else if (key === '1009') {
+      // 1009 消费水平拆分为2张子图表
+      list.push({ serviceCode: '1009', chartKey: '1009-a', title: '消费水平 - 居住+工作' })
+      list.push({ serviceCode: '1009', chartKey: '1009-b', title: '消费水平 - 到访' })
+    } else if (key === '1010') {
+      // 1010 教育水平拆分为2张子图表
+      list.push({ serviceCode: '1010', chartKey: '1010-a', title: '教育水平 - 居住+工作' })
+      list.push({ serviceCode: '1010', chartKey: '1010-b', title: '教育水平 - 到访' })
+    } else if (key === '1011') {
+      // 1011 行业分布拆分为2张子图表
+      list.push({ serviceCode: '1011', chartKey: '1011-a', title: '行业分布 - 居住+工作' })
+      list.push({ serviceCode: '1011', chartKey: '1011-b', title: '行业分布 - 到访' })
+    } else if (key === '1014') {
+      // 1014 网购能力预测 - 隐藏
+      continue
+    } else if (key === '1015') {
+      // 1015 资产预测拆分为3张子图表（到访/居住/工作）
+      list.push({ serviceCode: '1015', chartKey: '1015-a', title: '资产预测 - 到访' })
+      list.push({ serviceCode: '1015', chartKey: '1015-b', title: '资产预测 - 居住' })
+      list.push({ serviceCode: '1015', chartKey: '1015-c', title: '资产预测 - 工作' })
+    } else {
+      list.push({ serviceCode: key, chartKey: key, title: getServiceName(key) })
+    }
+  }
+  chartList.value = list
 }
 
 // 排除的服务列表（不显示在结果中）
@@ -1455,6 +1570,954 @@ const handleSubmit = async () => {
     loading.value = false
   }
 }
+
+// ====== 图表相关函数 ======
+
+// 监听图表列表变化，初始化图表
+watch(chartList, (newList) => {
+  if (newList.length > 0) {
+    nextTick(() => initAllCharts())
+  }
+})
+
+// 弹窗关闭时销毁图表
+watch(detailDialogVisible, (visible) => {
+  if (!visible) {
+    disposeAllCharts()
+    if (chartResizeHandler) {
+      window.removeEventListener('resize', chartResizeHandler)
+      chartResizeHandler = null
+    }
+  } else {
+    // 弹窗打开时注册 resize 监听
+    chartResizeHandler = () => {
+      Object.values(chartInst.value).forEach(c => c?.resize())
+    }
+    window.addEventListener('resize', chartResizeHandler)
+  }
+})
+
+// 销毁所有图表实例
+const disposeAllCharts = () => {
+  Object.values(chartInst.value).forEach(c => c?.dispose())
+  chartInst.value = {}
+  chartElMap.value = {}
+}
+
+// 初始化所有图表
+const initAllCharts = () => {
+  if (!resultData.value) return
+  
+  let apiResult = resultData.value
+  if (typeof apiResult === 'string') {
+    try { apiResult = JSON.parse(apiResult) } catch (e) { return }
+  }
+  if (apiResult && apiResult.apiResult) {
+    apiResult = apiResult.apiResult
+  }
+  if (!apiResult || typeof apiResult !== 'object') return
+
+  for (const item of chartList.value) {
+    const dom = chartElMap.value[item.chartKey]
+    if (!dom) continue
+    const rawData = apiResult[item.serviceCode]
+    if (!rawData) continue
+    
+    const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
+    if (!option) continue
+    
+    const chart = echarts.init(dom)
+    chart.setOption(option)
+    chartInst.value[item.chartKey] = chart
+  }
+}
+
+// 生成 ECharts 配置
+const buildChartOption = (code, data, chartKey) => {
+  // 1001 子图分发
+  if (code === '1001') {
+    if (chartKey === '1001-a') return buildOption1001_Totals(data)
+    if (chartKey === '1001-b') return buildOption1001_AgeLW(data)
+    if (chartKey === '1001-c') return buildOption1001_AgeV(data)
+    if (chartKey === '1001-d') return buildOption1001_Gender(data)
+    return null
+  }
+  // 1005 子图分发
+  if (code === '1005') {
+    if (chartKey === '1005-a') return buildOption1005_Visit(data)
+    if (chartKey === '1005-b') return buildOption1005_All(data)
+    return null
+  }
+  // 1006 子图分发
+  if (code === '1006') {
+    if (chartKey === '1006-a') return buildOption1006_Daily(data)
+    if (chartKey === '1006-b') return buildOption1006_Monthly(data)
+    return null
+  }
+  // 1009 子图分发
+  if (code === '1009') {
+    if (chartKey === '1009-a') return buildOption1009_LW(data)
+    if (chartKey === '1009-b') return buildOption1009_V(data)
+    return null
+  }
+  // 1010 子图分发
+  if (code === '1010') {
+    if (chartKey === '1010-a') return buildOption1010_LW(data)
+    if (chartKey === '1010-b') return buildOption1010_V(data)
+    return null
+  }
+  // 1011 子图分发
+  if (code === '1011') {
+    if (chartKey === '1011-a') return buildOption1011_LW(data)
+    if (chartKey === '1011-b') return buildOption1011_V(data)
+    return null
+  }
+  // 1015 子图分发
+  if (code === '1015') {
+    if (chartKey === '1015-a') return buildOption1015_Pop(data, 0, '到访')
+    if (chartKey === '1015-b') return buildOption1015_Pop(data, 1, '居住')
+    if (chartKey === '1015-c') return buildOption1015_Pop(data, 2, '工作')
+    return null
+  }
+  switch (code) {
+    case '1001': return null // 已在上面通过子图分发
+    case '1002': return buildOption1002(data)
+    case '1005': return null // 已在上面通过子图分发
+    case '1006': return null // 已在上面通过子图分发
+    case '1007': return buildOption1007(data)
+    case '1009': return null // 已在上面通过子图分发
+    case '1010': return null // 已在上面通过子图分发
+    case '1011': return null // 已在上面通过子图分发
+    case '1012': return buildOption1012(data)
+    case '1013': return buildOption1013(data)
+    case '1014': return null // 已隐藏
+    case '1015': return null // 已在上面通过子图分发
+    default: return null
+  }
+}
+
+// 从数据中通过正则匹配取值（大小写不敏感，兼容后缀数字）
+const findFieldValue = (data, pattern) => {
+  for (const [key, val] of Object.entries(data)) {
+    if (typeof val !== 'number') continue
+    if (pattern.test(key)) return val
+  }
+  return 0
+}
+
+// 1001-a 全量人口 - 人口总数水平柱状图（到访/居住/工作/外省到访/娱乐）
+const buildOption1001_Totals = (data) => {
+  if (!data || typeof data !== 'object') return null
+  const items = [
+    { label: '到访人口数', pattern: /^P0_SUM\d*$/i },
+    { label: '居住人口数', pattern: /^P1_SUM\d*$/i },
+    { label: '工作人口数', pattern: /^P2_SUM\d*$/i },
+    { label: '外省到访人口数', pattern: /^P3_SUM\d*$/i },
+    { label: '娱乐人数', pattern: /^P4_SUM\d*$/i }
+  ]
+  const values = items.map(item => findFieldValue(data, item.pattern))
+  if (values.every(v => v === 0)) return null
+  
+  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de']
+  const labels = items.map(i => i.label)
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '20%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: labels.reverse(), axisLabel: { fontSize: 12 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar',
+      data: values.reverse().map((v, i) => ({ 
+        value: v, 
+        itemStyle: { color: colors[labels.length - 1 - i] } 
+      })),
+      barMaxWidth: 36,
+      label: { 
+        show: true, position: 'right', 
+        formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(),
+        fontSize: 11, fontWeight: 'bold'
+      }
+    }]
+  }
+}
+
+// 年龄分组定义（复用）
+const ageGroups = [
+  { label: '6-15岁', keys: ['0006', '0612', '1215'] },
+  { label: '16-18岁', keys: ['1518'] },
+  { label: '19-24岁', keys: ['1924'] },
+  { label: '25-29岁', keys: ['2529'] },
+  { label: '30-34岁', keys: ['3034'] },
+  { label: '35-39岁', keys: ['3539'] },
+  { label: '40-44岁', keys: ['4044'] },
+  { label: '45-49岁', keys: ['4549'] },
+  { label: '50-54岁', keys: ['5054'] },
+  { label: '55-59岁', keys: ['5559'] },
+  { label: '60-64岁', keys: ['6064'] },
+  { label: '65-69岁', keys: ['6569'] },
+  { label: '70岁以上', keys: ['70up'] }
+]
+
+// 从数据中获取年龄字段值（兼容多种命名格式）
+const getAgeValue = (data, prefix, suffix) => {
+  const pattern = new RegExp(`^AGE${prefix}_${suffix}$`, 'i')
+  return findFieldValue(data, pattern)
+}
+
+// 1001-b 全量人口 - 居住+工作年龄分布（柱状图）
+const buildOption1001_AgeLW = (data) => {
+  if (!data || typeof data !== 'object') return null
+  const calcAge = (prefix) => ageGroups.map(g => {
+    return g.keys.reduce((sum, k) => sum + getAgeValue(data, prefix, k), 0)
+  })
+  const liveData = calcAge('1')
+  const workData = calcAge('2')
+  const labels = ageGroups.map(g => g.label)
+  if (liveData.every(v => v === 0) && workData.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['居住', '工作'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 35, fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [
+      { name: '居住', type: 'bar', data: liveData, itemStyle: { color: '#5470c6' }, barMaxWidth: 24 },
+      { name: '工作', type: 'bar', data: workData, itemStyle: { color: '#91cc75' }, barMaxWidth: 24 }
+    ]
+  }
+}
+
+// 1001-c 全量人口 - 到访年龄分布（柱状图）
+const buildOption1001_AgeV = (data) => {
+  if (!data || typeof data !== 'object') return null
+  const visitData = ageGroups.map(g => {
+    return g.keys.reduce((sum, k) => sum + getAgeValue(data, '0', k), 0)
+  })
+  const labels = ageGroups.map(g => g.label)
+  if (visitData.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '12%', bottom: '8%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 35, fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      name: '到访', type: 'bar', data: visitData,
+      itemStyle: { color: '#fac858' }, barMaxWidth: 40,
+      label: { show: true, position: 'top', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 9, rotate: 0 }
+    }]
+  }
+}
+
+// 1001-d 全量人口 - 居住+工作性别分布（垂直分组柱状图）
+const buildOption1001_Gender = (data) => {
+  if (!data || typeof data !== 'object') return null
+  const maleLive = findFieldValue(data, /^MALE1_SUM\d*$/i)
+  const maleWork = findFieldValue(data, /^MALE2_SUM\d*$/i)
+  const femaleLive = findFieldValue(data, /^FEMALE1_SUM\d*$/i)
+  const femaleWork = findFieldValue(data, /^FEMALE2_SUM\d*$/i)
+  if (maleLive === 0 && maleWork === 0 && femaleLive === 0 && femaleWork === 0) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['男', '女'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '14%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: ['居住', '工作'], axisLabel: { fontSize: 12 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [
+      { name: '男', type: 'bar', data: [maleLive, maleWork], itemStyle: { color: '#5470c6' }, barMaxWidth: 36,
+        label: { show: true, position: 'top', formatter: (p) => p.value.toLocaleString(), fontSize: 10 } },
+      { name: '女', type: 'bar', data: [femaleLive, femaleWork], itemStyle: { color: '#ee6666' }, barMaxWidth: 36,
+        label: { show: true, position: 'top', formatter: (p) => p.value.toLocaleString(), fontSize: 10 } }
+    ]
+  }
+}
+
+// 1002 上网标签分布 - 水平柱状图 Top10
+const buildOption1002 = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const sorted = [...data].sort((a, b) => (b.tag_value || 0) - (a.tag_value || 0)).slice(0, 10)
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '8%', bottom: '3%', top: '3%', containLabel: true },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: sorted.map(d => d.tag_name || '').reverse(), axisLabel: { fontSize: 10 } },
+    series: [{
+      type: 'bar',
+      data: sorted.map(d => d.tag_value || 0).reverse(),
+      itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+        { offset: 0, color: '#667eea' },
+        { offset: 1, color: '#764ba2' }
+      ]) }
+    }]
+  }
+}
+
+// 1005-a 每小时段人口流量 - 到访（双折线）
+const buildOption1005_Visit = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const weekdays = data.filter(d => d.day_type === 0)
+  const weekends = data.filter(d => d.day_type === 1)
+  const periods = [...new Set(data.map(d => d.hour_period))].sort((a, b) => Number(a) - Number(b))
+  const getData = (arr) => periods.map(p => {
+    const found = arr.find(d => d.hour_period === p)
+    return found ? (found.hour_visit || 0) : 0
+  })
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['工作日到访', '周末到访'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '18%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: periods.map(p => p + '点'), axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '工作日到访', type: 'line', smooth: true, data: getData(weekdays), itemStyle: { color: '#5470c6' }, areaStyle: { color: 'rgba(84,112,198,0.1)' } },
+      { name: '周末到访', type: 'line', smooth: true, data: getData(weekends), itemStyle: { color: '#91cc75' }, areaStyle: { color: 'rgba(145,204,117,0.1)' } }
+    ]
+  }
+}
+
+// 1005-b 每小时段人口流量 - 全量（双折线）
+const buildOption1005_All = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const weekdays = data.filter(d => d.day_type === 0)
+  const weekends = data.filter(d => d.day_type === 1)
+  const periods = [...new Set(data.map(d => d.hour_period))].sort((a, b) => Number(a) - Number(b))
+  const getData = (arr) => periods.map(p => {
+    const found = arr.find(d => d.hour_period === p)
+    return found ? (found.hour_all || 0) : 0
+  })
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['工作日全量', '周末全量'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '18%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: periods.map(p => p + '点'), axisLabel: { rotate: 45, fontSize: 10 } },
+    yAxis: { type: 'value' },
+    series: [
+      { name: '工作日全量', type: 'line', smooth: true, data: getData(weekdays), itemStyle: { color: '#ee6666' }, areaStyle: { color: 'rgba(238,102,102,0.1)' } },
+      { name: '周末全量', type: 'line', smooth: true, data: getData(weekends), itemStyle: { color: '#73c0de' }, areaStyle: { color: 'rgba(115,192,222,0.1)' } }
+    ]
+  }
+}
+
+// 1006-a 每日人流量 - 日均值（水平柱状图）
+const buildOption1006_Daily = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const dayCount = data.length
+  // 计算汇总
+  let totalDayVisit = 0, totalDayAll = 0;
+  let totalStay1 = 0, totalStay2 = 0, totalStay3 = 0, totalStay4 = 0, totalStay5 = 0;
+  data.forEach(item => {
+    totalDayVisit += item.day_visit || 0;
+    totalDayAll += item.day_all || 0;
+    totalStay1 += item.stay1 || 0;
+    totalStay2 += item.stay2 || 0;
+    totalStay3 += item.stay3 || 0;
+    totalStay4 += item.stay4 || 0;
+    totalStay5 += item.stay5 || 0;
+  });
+  const avgData = {
+    '日均到访人次': Math.round(totalDayVisit / dayCount),
+    '日均全量人次': Math.round(totalDayAll / dayCount),
+    '日均停留<30分钟': Math.round(totalStay1 / dayCount),
+    '日均停留30-60分钟': Math.round(totalStay2 / dayCount),
+    '日均停留1-2小时': Math.round(totalStay3 / dayCount),
+    '日均停留2-4小时': Math.round(totalStay4 / dayCount),
+    '日均停留4小时以上': Math.round(totalStay5 / dayCount)
+  };
+  if (Object.values(avgData).every(v => v === 0)) return null
+  
+  const labels = Object.keys(avgData).reverse()
+  const values = Object.values(avgData).reverse()
+  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452']
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '20%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: labels, axisLabel: { fontSize: 10 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar',
+      data: values.map((v, i) => ({ value: v, itemStyle: { color: colors[i % colors.length] } })),
+      barMaxWidth: 30,
+      label: { show: true, position: 'right', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 10 }
+    }]
+  }
+}
+
+// 1006-b 每日人流量 - 月度累计（垂直柱状图）
+const buildOption1006_Monthly = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  let totalDayVisit = 0, totalDayAll = 0;
+  let totalStay1 = 0, totalStay2 = 0, totalStay3 = 0, totalStay4 = 0, totalStay5 = 0;
+  data.forEach(item => {
+    totalDayVisit += item.day_visit || 0;
+    totalDayAll += item.day_all || 0;
+    totalStay1 += item.stay1 || 0;
+    totalStay2 += item.stay2 || 0;
+    totalStay3 += item.stay3 || 0;
+    totalStay4 += item.stay4 || 0;
+    totalStay5 += item.stay5 || 0;
+  });
+  const monthData = {
+    '月度到访人次': totalDayVisit,
+    '月度全量人次': totalDayAll,
+    '停留<30分钟': totalStay1,
+    '停留30-60分钟': totalStay2,
+    '停留1-2小时': totalStay3,
+    '停留2-4小时': totalStay4,
+    '停留4小时以上': totalStay5
+  };
+  if (Object.values(monthData).every(v => v === 0)) return null
+  
+  const labels = Object.keys(monthData)
+  const values = Object.values(monthData)
+  const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452']
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '4%', bottom: '14%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 25, fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar',
+      data: values.map((v, i) => ({ value: v, itemStyle: { color: colors[i % colors.length] } })),
+      barMaxWidth: 40,
+      label: { show: true, position: 'top', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 9 }
+    }]
+  }
+}
+
+// 1007 每月到达次数分布 - 水平柱状图
+const buildOption1007 = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  // 按数字排序 reach 字段
+  const reachKeys = Object.keys(data[0])
+    .filter(k => /^reach\d+$/i.test(k))
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/reach(\d+)/i)[1])
+      const numB = parseInt(b.match(/reach(\d+)/i)[1])
+      return numA - numB
+    })
+  if (reachKeys.length === 0) return null
+  
+  // reach 标签映射（与 formatArrayData 一致）
+  const reachLabels = {
+    1: '月驻留1次', 2: '月驻留2-4次', 3: '月驻留5-10次',
+    4: '月驻留11-20次', 5: '月驻留20次以上'
+  }
+  const categories = reachKeys.map(k => {
+    const num = parseInt(k.match(/reach(\d+)/i)[1])
+    return reachLabels[num] || k
+  })
+  const values = reachKeys.map(k => data.reduce((s, d) => s + (d[k] || 0), 0))
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '18%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: categories.reverse(), axisLabel: { fontSize: 11 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar', data: values.reverse(),
+      barMaxWidth: 30,
+      label: { show: true, position: 'right', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 10 },
+      itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+        { offset: 0, color: '#667eea' },
+        { offset: 1, color: '#764ba2' }
+      ]) }
+    }]
+  }
+}
+
+// 通用: 人群画像分组柱状图 (popu_type = 1/2 到访/居住，多个数值字段)
+const buildPopBarOption = (data, fieldLabels, fieldKeys, title) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const popTypes = ['1', '2']
+  const popLabels = ['到访', '居住']
+  
+  const series = popTypes.map((pt, idx) => ({
+    name: popLabels[idx],
+    type: 'bar',
+    data: fieldKeys.map(k => {
+      const found = data.find(d => String(d.popu_type) === pt)
+      return found ? (found[k] || 0) : 0
+    })
+  }))
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: popLabels, bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '18%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: fieldLabels, axisLabel: { rotate: 20, fontSize: 10 } },
+    yAxis: { type: 'value' },
+    series
+  }
+}
+
+// 1009-a 消费水平 - 居住+工作（垂直分组柱状图）
+const buildOption1009_LW = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  // popu_type: 0=到访, 1=居住, 2=工作（formatArrayData 第820-821行）
+  const spendLabels = { 1: '极低', 2: '低', 3: '中低', 4: '中等', 5: '中高', 6: '高', 7: '极高', 8: '超高' }
+  const levels = [...new Set(data.map(d => d.spendpower))].filter(v => v != null).sort((a, b) => a - b)
+  const getPopData = (popType) => levels.map(level => {
+    const found = data.find(d => d.popu_type === popType && d.spendpower === level)
+    return found ? (found.spendpower_value || 0) : 0
+  })
+  const liveData = getPopData(1) // 居住
+  const workData = getPopData(2) // 工作
+  const labels = levels.map(l => spendLabels[l] || `等级${l}`)
+  if (liveData.every(v => v === 0) && workData.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['居住', '工作'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 15, fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [
+      { name: '居住', type: 'bar', data: liveData, itemStyle: { color: '#5470c6' }, barMaxWidth: 24 },
+      { name: '工作', type: 'bar', data: workData, itemStyle: { color: '#91cc75' }, barMaxWidth: 24 }
+    ]
+  }
+}
+
+// 1009-b 消费水平 - 到访（水平柱状图，单色浅橙黄）
+const buildOption1009_V = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const spendLabels = { 1: '极低', 2: '低', 3: '中低', 4: '中等', 5: '中高', 6: '高', 7: '极高', 8: '超高' }
+  const visitItems = data.filter(d => d.popu_type === 0).sort((a, b) => (a.spendpower || 0) - (b.spendpower || 0))
+  if (visitItems.length === 0) return null
+  
+  const reversed = [...visitItems].reverse()
+  const labels = reversed.map(d => spendLabels[d.spendpower] || `等级${d.spendpower}`)
+  const values = reversed.map(d => d.spendpower_value || 0)
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '20%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar', data: values.map(v => ({ value: v })),
+      itemStyle: { color: '#e8a838' },
+      barMaxWidth: 30,
+      label: { show: true, position: 'right', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 10 }
+    }]
+  }
+}
+
+// 1010-a 教育水平 - 居住+工作（垂直分组柱状图）
+const buildOption1010_LW = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  // popu_type: 0=到访, 1=居住, 2=工作
+  const eduKeys = ['p0', 'p1', 'p2', 'p3', 'p4']
+  const eduLabels = ['高中及以下', '大专', '本科', '硕士', '博士']
+  const getPopData = (popType) => eduKeys.map(k => {
+    const found = data.find(d => d.popu_type === popType)
+    return found ? (found[k] || 0) : 0
+  })
+  const liveData = getPopData(1)
+  const workData = getPopData(2)
+  if (liveData.every(v => v === 0) && workData.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['居住', '工作'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: eduLabels, axisLabel: { fontSize: 11 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [
+      { name: '居住', type: 'bar', data: liveData, itemStyle: { color: '#5470c6' }, barMaxWidth: 28 },
+      { name: '工作', type: 'bar', data: workData, itemStyle: { color: '#91cc75' }, barMaxWidth: 28 }
+    ]
+  }
+}
+
+// 1010-b 教育水平 - 到访（水平柱状图，珊瑚粉单色）
+const buildOption1010_V = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const eduKeys = ['p0', 'p1', 'p2', 'p3', 'p4']
+  const eduLabels = ['高中及以下', '大专', '本科', '硕士', '博士']
+  const visitItem = data.find(d => d.popu_type === 0)
+  if (!visitItem) return null
+  const values = eduKeys.map(k => visitItem[k] || 0).reverse()
+  const labels = [...eduLabels].reverse()
+  if (values.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '20%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: labels, axisLabel: { fontSize: 11 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar', data: values.map(v => ({ value: v })),
+      itemStyle: { color: '#f08080' },
+      barMaxWidth: 30,
+      label: { show: true, position: 'right', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 10 }
+    }]
+  }
+}
+
+// 1011-a 行业分布 - 居住+工作（垂直分组柱状图）
+const buildOption1011_LW = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const pLabels = { p1:'金融从业者', p2:'医务人员', p3:'公务员&事业单位', p4:'白领及一般职员',
+    p5:'工人及服务业人员', p6:'教师', p7:'农民及其他', p8:'网约车司机', p9:'外卖员', p10:'快递员' }
+  const pKeys = ['p1','p2','p3','p4','p5','p6','p7','p8','p9','p10']
+  const labels = pKeys.map(k => pLabels[k])
+  const calcPop = (popType) => pKeys.map(k => {
+    return data.filter(d => d.popu_type === popType).reduce((s, d) => s + (d[k] || 0), 0)
+  })
+  const liveData = calcPop(1)
+  const workData = calcPop(2)
+  if (liveData.every(v => v === 0) && workData.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: ['居住', '工作'], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 25, fontSize: 9 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [
+      { name: '居住', type: 'bar', data: liveData, itemStyle: { color: '#5470c6' }, barMaxWidth: 20 },
+      { name: '工作', type: 'bar', data: workData, itemStyle: { color: '#91cc75' }, barMaxWidth: 20 }
+    ]
+  }
+}
+
+// 1011-b 行业分布 - 到访（水平柱状图，珊瑚橙单色）
+const buildOption1011_V = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const pLabels = { p1:'金融从业者', p2:'医务人员', p3:'公务员&事业单位', p4:'白领及一般职员',
+    p5:'工人及服务业人员', p6:'教师', p7:'农民及其他', p8:'网约车司机', p9:'外卖员', p10:'快递员' }
+  const pKeys = ['p1','p2','p3','p4','p5','p6','p7','p8','p9','p10']
+  const values = pKeys.map(k => data.filter(d => d.popu_type === 0).reduce((s, d) => s + (d[k] || 0), 0))
+  const labels = pKeys.map(k => pLabels[k]).reverse()
+  if (values.every(v => v === 0)) return null
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => {
+      const p = Array.isArray(params) ? params[0] : params
+      return `${p.name}<br/>${p.value.toLocaleString()} 人`
+    }},
+    grid: { left: '3%', right: '20%', bottom: '3%', top: '3%', containLabel: true },
+    yAxis: { type: 'category', data: labels.reverse(), axisLabel: { fontSize: 10 } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series: [{
+      type: 'bar', data: values.reverse().map(v => ({ value: v })),
+      itemStyle: { color: '#ff8c69' },
+      barMaxWidth: 24,
+      label: { show: true, position: 'right', formatter: (p) => p.value >= 10000 ? (p.value/10000).toFixed(1) + '万' : p.value.toLocaleString(), fontSize: 9 }
+    }]
+  }
+}
+
+// 1012 人生阶段分布 - 三饼并排（到访/居住/工作）
+const buildOption1012 = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const stageLabels = ['未婚单身', '未婚恋爱', '已婚']
+  const stageKeys = ['p1', 'p2', 'p3']
+  const colors = ['#5470c6', '#91cc75', '#fac858']
+  const typeLabels = ['到访', '居住', '工作']
+  
+  const getPieData = (popType) => {
+    const item = data.find(d => d.popu_type === popType)
+    if (!item) return null
+    const vals = stageKeys.map(k => item[k] || 0)
+    if (vals.every(v => v === 0)) return null
+    return stageKeys.map((k, i) => ({ name: stageLabels[i], value: item[k] || 0, itemStyle: { color: colors[i] } }))
+  }
+  const validTypes = [0, 1, 2].filter(pt => getPieData(pt) !== null)
+  if (validTypes.length === 0) return null
+  
+  // 根据有效饼图数量动态分配位置
+  const positions = validTypes.length === 1 ? [['50%', '50%']] :
+    validTypes.length === 2 ? [['30%', '50%'], ['70%', '50%']] :
+    [['18%', '50%'], ['50%', '50%'], ['82%', '50%']]
+  
+  return {
+    tooltip: { trigger: 'item', formatter: (p) => `${p.seriesName}<br/>${p.name}: ${p.value} (${(p.percent || 0).toFixed(1)}%)` },
+    title: validTypes.map((pt, idx) => ({
+      text: typeLabels[pt],
+      left: positions[idx][0],
+      top: '6%',
+      textAlign: 'center',
+      textStyle: { fontSize: 13, fontWeight: 'bold', color: '#333' }
+    })),
+    series: validTypes.map((pt, idx) => ({
+      name: typeLabels[pt],
+      type: 'pie', radius: ['20%', '40%'], center: positions[idx],
+      data: getPieData(pt),
+      label: { fontSize: 10, formatter: (p) => `${p.name}\n${(p.percent || 0).toFixed(1)}%` },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+    }))
+  }
+}
+
+// 1013 综合消费能力预测 - 三饼并排（到访/居住/工作）
+const buildOption1013 = (data) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const consumeLabels = ['低', '中', '高']
+  const consumeKeys = ['p1', 'p2', 'p3']
+  const colors = ['#ee6666', '#fac858', '#91cc75']
+  const typeLabels = ['到访', '居住', '工作']
+  
+  const getPieData = (popType) => {
+    const item = data.find(d => d.popu_type === popType)
+    if (!item) return null
+    const vals = consumeKeys.map(k => item[k] || 0)
+    if (vals.every(v => v === 0)) return null
+    return consumeKeys.map((k, i) => ({ name: consumeLabels[i], value: item[k] || 0, itemStyle: { color: colors[i] } }))
+  }
+  const validTypes = [0, 1, 2].filter(pt => getPieData(pt) !== null)
+  if (validTypes.length === 0) return null
+  
+  const positions = validTypes.length === 1 ? [['50%', '50%']] :
+    validTypes.length === 2 ? [['30%', '50%'], ['70%', '50%']] :
+    [['18%', '50%'], ['50%', '50%'], ['82%', '50%']]
+  
+  return {
+    tooltip: { trigger: 'item', formatter: (p) => `${p.seriesName}<br/>${p.name}: ${p.value} (${(p.percent || 0).toFixed(1)}%)` },
+    title: validTypes.map((pt, idx) => ({
+      text: typeLabels[pt],
+      left: positions[idx][0],
+      top: '6%',
+      textAlign: 'center',
+      textStyle: { fontSize: 13, fontWeight: 'bold', color: '#333' }
+    })),
+    series: validTypes.map((pt, idx) => ({
+      name: typeLabels[pt],
+      type: 'pie', radius: ['20%', '40%'], center: positions[idx],
+      data: getPieData(pt),
+      label: { fontSize: 10, formatter: (p) => `${p.name}\n${(p.percent || 0).toFixed(1)}%` },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+    }))
+  }
+}
+
+// 1014 网购能力预测 - 已隐藏
+
+// 1015 资产预测 - 按人群类型生成3张图表
+const buildOption1015_Pop = (data, popType, popLabel) => {
+  if (!Array.isArray(data) || data.length === 0) return null
+  const pLabels = { p1: '预测概率高', p2: '预测概率中高', p3: '预测概率中', p4: '预测概率中低', p5: '预测概率低' }
+  const pKeys = ['p1', 'p2', 'p3', 'p4', 'p5']
+  const assetLabels = ['收入预测', '有车预测', '有房预测']
+  
+  // 获取该人群的 fname 数据
+  const popItems = data.filter(d => d.popu_type === popType)
+  if (popItems.length === 0) return null
+  const fnames = [...new Set(popItems.map(d => d.fname))].filter(Boolean)
+  // 按标准顺序排列
+  const orderedFnames = assetLabels.filter(l => fnames.includes(l))
+  if (orderedFnames.length === 0) return null
+  
+  const series = orderedFnames.map((fname, idx) => {
+    const colors = ['#5470c6', '#91cc75', '#fac858']
+    const found = popItems.find(d => d.fname === fname)
+    return {
+      name: fname,
+      type: 'bar',
+      data: pKeys.map(k => (found ? (found[k] || 0) : 0)),
+      itemStyle: { color: colors[idx % colors.length] }
+    }
+  })
+  const xLabels = pKeys.map(k => pLabels[k])
+  
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { data: orderedFnames, bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '18%', top: '3%', containLabel: true },
+    xAxis: { type: 'category', data: xLabels, axisLabel: { rotate: 15, fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (v) => v >= 10000 ? (v/10000).toFixed(0) + '万' : v.toLocaleString() } },
+    series
+  }
+}
+
+// ====== 数据洞察 ======
+
+const handleDataInsight = async () => {
+  if (!resultData.value) return
+  insightLoading.value = true
+  insights.value = []
+  await nextTick()
+  
+  try {
+    let apiResult = resultData.value
+    if (typeof apiResult === 'string') apiResult = JSON.parse(apiResult)
+    if (apiResult?.apiResult) apiResult = apiResult.apiResult
+    if (!apiResult || typeof apiResult !== 'object') {
+      insights.value = [{ type: 'info', text: '暂无足够数据进行分析' }]
+      return
+    }
+    
+    const result = []
+    
+    // 1001 全量人口分析
+    if (apiResult['1001'] && typeof apiResult['1001'] === 'object') {
+      const d = apiResult['1001']
+      const v = (k) => findFieldValue(d, new RegExp('^' + k + '\\d*$', 'i'))
+      const visitPop = v('P0_SUM')
+      const livePop = v('P1_SUM')
+      const workPop = v('P2_SUM')
+      const outPop = v('P3_SUM')
+      
+      if (livePop > 0 || workPop > 0) {
+        const ratio = livePop / (workPop || 1)
+        if (ratio > 3) result.push({ type: 'positive', text: `🏠 商圈类型识别：居住人口是工作人口的${ratio.toFixed(1)}倍，属于居住型商圈，适合社区服务、生活配套类业态` })
+        else if (ratio < 0.5) result.push({ type: 'warning', text: `💼 商圈类型识别：工作人口是居住人口的${(1/ratio).toFixed(1)}倍，属于商务型商圈，适合快餐、便利类业态` })
+        else result.push({ type: 'info', text: `⚖️ 商圈类型识别：居住与工作人口相对均衡（${livePop.toLocaleString()} : ${workPop.toLocaleString()}），属于混合型商圈` })
+      }
+      if (outPop > livePop * 0.3) {
+        result.push({ type: 'info', text: `🚶 外部吸引力：外省到访人口占居住人口${(outPop/livePop*100).toFixed(0)}%，该区域有较强的跨区域吸引力` })
+      }
+      // 性别分析
+      const maleV = v('MALE0_SUM') + v('MALE1_SUM')
+      const femV = v('FEMALE0_SUM') + v('FEMALE1_SUM')
+      if (maleV + femV > 0) {
+        const mp = (maleV / (maleV + femV) * 100).toFixed(0)
+        result.push({ type: 'info', text: `👫 性别比例：男性 ${mp}% / 女性 ${(100-parseInt(mp))}%` })
+      }
+    }
+    
+    // 1005 小时段分析
+    if (Array.isArray(apiResult['1005']) && apiResult['1005'].length > 0) {
+      const data = apiResult['1005']
+      const weekdays = data.filter(d => d.day_type === 0)
+      if (weekdays.length > 0) {
+        const peak = [...weekdays].sort((a, b) => (b.hour_visit || 0) - (a.hour_visit || 0))[0]
+        if (peak) result.push({ type: 'positive', text: `⏰ 客流高峰：工作日的 ${peak.hour_period}点 到访人次最高（${peak.hour_visit?.toLocaleString() || 0}人），适合在此时段重点运营` })
+      }
+    }
+    
+    // 1010 教育水平
+    if (Array.isArray(apiResult['1010']) && apiResult['1010'].length > 0) {
+      const visit = apiResult['1010'].find(d => d.popu_type === 0)
+      if (visit) {
+        const total = (visit.p0||0)+(visit.p1||0)+(visit.p2||0)+(visit.p3||0)+(visit.p4||0)
+        if (total > 0) {
+          const college = ((visit.p2||0)+(visit.p3||0)+(visit.p4||0))/total*100
+          result.push({ type: college > 50 ? 'positive' : 'info',
+            text: `🎓 学历分析：本科及以上占比 ${college.toFixed(0)}%，客群${college > 50 ? '素质较高，适合中高端定位' : '以基础学历为主'}` })
+        }
+      }
+    }
+    
+    // 1009 消费水平
+    if (Array.isArray(apiResult['1009']) && apiResult['1009'].length > 0) {
+      const visit = apiResult['1009'].filter(d => d.popu_type === 0)
+      if (visit.length > 0) {
+        const total = visit.reduce((s, d) => s + (d.spendpower_value || 0), 0)
+        const high = visit.filter(d => d.spendpower >= 5).reduce((s, d) => s + (d.spendpower_value || 0), 0)
+        if (total > 0) {
+          const hp = high/total*100
+          result.push({ type: hp > 40 ? 'positive' : 'info',
+            text: `💰 消费力分析：中高消费人群占比 ${hp.toFixed(0)}%${hp > 40 ? '，消费潜力充足' : '，消费力偏保守'}` })
+        }
+      }
+    }
+    
+    // 1006 停留时长
+    if (Array.isArray(apiResult['1006']) && apiResult['1006'].length > 0) {
+      const data = apiResult['1006']
+      const totalStay = data.reduce((s, d) => s + (d.stay1||0)+(d.stay2||0)+(d.stay3||0)+(d.stay4||0)+(d.stay5||0), 0)
+      const longStay = data.reduce((s, d) => s + (d.stay4||0)+(d.stay5||0), 0)
+      if (totalStay > 0) {
+        const lp = longStay/totalStay*100
+        result.push({ type: lp > 30 ? 'positive' : 'info',
+          text: `⏳ 停留时长：${lp > 30 ? `${lp.toFixed(0)}%的顾客停留超过2小时，适合体验式消费业态` : '顾客以短时停留为主，适合快节奏消费业态'}` })
+      }
+    }
+    
+    // 1011 行业分布
+    if (Array.isArray(apiResult['1011']) && apiResult['1011'].length > 0) {
+      const visit = apiResult['1011'].filter(d => d.popu_type === 0)
+      if (visit.length > 0) {
+        const sectors = ['p1','p2','p3','p4','p5','p6','p7','p8','p9','p10']
+        const maxS = sectors.map(k => ({ key: k, val: visit.reduce((s,d) => s+(d[k]||0), 0) }))
+          .sort((a,b) => b.val - a.val)[0]
+        if (maxS && maxS.val > 0) {
+          const pLabels = {p1:'金融',p2:'医疗',p3:'公务员',p4:'白领',p5:'工人',p6:'教师',p7:'农民',p8:'网约车',p9:'外卖',p10:'快递'}
+          result.push({ type: 'info', text: `🧑‍💼 从业分析：到访人群中占比最高的行业是「${pLabels[maxS.key] || maxS.key}」` })
+        }
+      }
+    }
+    
+    if (result.length === 0) {
+      result.push({ type: 'info', text: '当前数据维度有限，无法生成有意义的分析建议' })
+    }
+    insights.value = result
+  } catch (e) {
+    console.error('数据分析失败:', e)
+    insights.value = [{ type: 'warning', text: '数据分析失败: ' + e.message }]
+  } finally {
+    insightLoading.value = false
+  }
+}
+
+// ====== PDF 导出 ======
+const handleExportPDF = async () => {
+  if (!pdfContentRef.value) return
+  try {
+    ElMessage.info('正在生成PDF，请稍候...')
+    // 确保所有图表已渲染
+    Object.values(chartInst.value).forEach(c => c?.resize())
+    await nextTick()
+    
+    const { default: html2canvas } = await import('html2canvas')
+    const { jsPDF } = await import('jspdf')
+    
+    const canvas = await html2canvas(pdfContentRef.value, {
+      useCORS: true,
+      scale: 2,       // 2倍清晰度，配合JPEG压缩控制文件大小
+      backgroundColor: '#ffffff',
+      logging: false
+    })
+    
+    // JPEG 6成质量 —— 图表/表格以纯色为主，压缩效率高
+    const imgData = canvas.toDataURL('image/jpeg', 0.6)
+    const imgWidth = 210 // A4 纵向宽度 210mm
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    
+    // 纵向单页，按内容高度自定义页面尺寸
+    const pdf = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: [imgWidth, imgHeight + 10] // +10mm 留白边
+    })
+    
+    pdf.addImage(imgData, 'JPEG', 0, 5, imgWidth, imgHeight)
+    
+    // 文件名：门店名称_半径_数据年月
+    const storeName = currentDetail.value?.store_name?.replace(/[/\\:]/g, '_') || '未知门店'
+    const radii = Array.isArray(currentDetail.value?.radii) 
+      ? currentDetail.value.radii.join('_') + '米' 
+      : (currentDetail.value?.radii || '未知') + '米'
+    const cityMonth = currentDetail.value?.city_month || '未知年月'
+    pdf.save(`${storeName}_${radii}_${cityMonth}.pdf`)
+    ElMessage.success('PDF 导出成功')
+  } catch (e) {
+    console.error('PDF导出失败:', e)
+    ElMessage.error('PDF导出失败: ' + e.message)
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -1622,12 +2685,10 @@ const handleSubmit = async () => {
   }
 }
 
-.detail-result {
-  h4 {
-    margin: 16px 0 12px 0;
-    color: #333;
-    font-size: 15px;
-  }
+.detail-result :deep(h4) {
+  margin: 16px 0 12px 0;
+  color: #333;
+  font-size: 15px;
 }
 
 .result-grid {
@@ -1808,5 +2869,129 @@ const handleSubmit = async () => {
 /* 资产表格表头颜色调整 */
 .asset-section :deep(.data-table th) {
   background: rgba(255, 255, 255, 0.6);
+}
+
+/* ====== 图表双栏布局 ====== */
+
+.detail-dialog {
+  .el-dialog__header {
+    padding-bottom: 8px;
+  }
+  .el-dialog__body {
+    padding: 12px 20px;
+  }
+}
+
+.dialog-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding-right: 10px;
+}
+
+.dialog-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 数据洞察按钮 - 珊瑚粉 */
+.btn-insight {
+  --el-button-bg-color: #f08080;
+  --el-button-border-color: #f08080;
+  --el-button-hover-bg-color: #e06060;
+  --el-button-hover-border-color: #e06060;
+  --el-button-active-bg-color: #d05050;
+  --el-button-active-border-color: #d05050;
+}
+
+/* 数据洞察样式 */
+.insight-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f9f8ff;
+  border: 1px solid #e8e0f0;
+  border-radius: 8px;
+}
+
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.insight-item:last-child { margin-bottom: 0; }
+
+.insight-positive {
+  background: #f0f9eb;
+  border-left: 3px solid #67c23a;
+}
+.insight-warning {
+  background: #fef0f0;
+  border-left: 3px solid #f56c6c;
+}
+.insight-info {
+  background: #ecf5ff;
+  border-left: 3px solid #409eff;
+}
+
+.insight-icon { flex-shrink: 0; font-size: 15px; }
+.insight-text { color: #333; }
+
+.detail-horizontal-layout {
+  display: flex;
+  gap: 20px;
+  min-height: 400px;
+}
+
+.detail-left {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.detail-right {
+  width: 520px;
+  flex-shrink: 0;
+  border-left: 1px solid #ebeef5;
+  padding-left: 20px;
+}
+
+.chart-card {
+  margin-bottom: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+  transition: box-shadow 0.2s;
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+}
+
+.chart-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #606266;
+  font-weight: 600;
+}
+
+.chart-box {
+  width: 100%;
+  height: 280px;
+}
+
+@media (max-width: 1100px) {
+  .detail-horizontal-layout {
+    flex-direction: column;
+  }
+  .detail-right {
+    width: 100%;
+    border-left: none;
+    padding-left: 0;
+  }
 }
 </style>
