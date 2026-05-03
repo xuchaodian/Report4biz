@@ -474,7 +474,9 @@
               <template #default="{ row }">
                 <span v-if="!r.exactRadiusMatch && row.field !== '圆内门店数' && row.field !== '圆内竞品数'" style="color: #f56c6c; font-size: 12px;">未购买</span>
                 <span v-else-if="row.values[idx] === '—'" style="color: #ccc;">—</span>
-                <span v-else :style="getCompareCellStyle(row.nums, idx)">{{ row.values[idx] }}</span>
+                <span v-else :style="{ color: getCompareCellStyle(row.nums, idx) }">
+                  {{ row.values[idx] }}<span v-if="row.maxIndex === idx && row.maxPct !== null" style="color: #e64545; font-size: 11px;">（{{ row.maxPct }}%）</span>
+                </span>
               </template>
             </el-table-column>
           </el-table>
@@ -1353,7 +1355,16 @@ const startStoreCompare = async () => {
       const nonNull = nums.filter(n => n !== null)
       const maxVal = nonNull.length > 0 ? Math.max(...nonNull) : null
       const maxIndex = maxVal !== null ? nums.indexOf(maxVal) : -1
-      return { field: fk.label, values, maxIndex, nums }
+      // 计算最高值比第二名高出的百分比
+      let maxPct = null
+      if (maxVal !== null) {
+        const sorted = [...nonNull].sort((a, b) => b - a)
+        const secondVal = sorted.length > 1 ? sorted[1] : null
+        if (secondVal !== null && secondVal > 0) {
+          maxPct = Math.round(((maxVal - secondVal) / secondVal) * 100)
+        }
+      }
+      return { field: fk.label, values, maxIndex, nums, maxPct }
     })
 
     storeCompareTableData.value = rows
@@ -1366,15 +1377,14 @@ const startStoreCompare = async () => {
   }
 }
 
-// 单元格样式：数值最高用红色字体，其余默认黑色
+// 单元格字体颜色：数值最高用红色，其余默认黑色
 function getCompareCellStyle(nums, idx) {
-  if (!nums || nums.length === 0) return { color: '#333' }
+  if (!nums || nums.length === 0) return '#333'
   const validNums = nums.map(n => Math.abs(Number(n) || 0))
   const maxVal = Math.max(...validNums)
   const minVal = Math.min(...validNums)
-  if (maxVal === minVal) return { color: '#333' }
-  const isMax = validNums[idx] >= maxVal
-  return { color: isMax ? '#e64545' : '#333' }
+  if (maxVal === minVal) return '#333'
+  return validNums[idx] >= maxVal ? '#e64545' : '#333'
 }
 </script>
 
