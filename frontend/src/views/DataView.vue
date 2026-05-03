@@ -3,6 +3,9 @@
     <div class="data-header">
       <h2>门店管理</h2>
       <div class="header-actions">
+        <el-button type="success" @click="showStoreCompareDialog">
+          <el-icon><DataAnalysis /></el-icon>门店对比
+        </el-button>
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加门店
         </el-button>
@@ -416,6 +419,81 @@
       </template>
     </el-dialog>
 
+    <!-- 门店对比对话框 -->
+    <el-dialog v-model="storeCompareVisible" :title="'半径' + storeCompareRadius + '公里门店对比'" width="900px" draggable :show-close="true" @close="storeCompareVisible = false">
+      <template v-if="storeCompareStep === 1">
+        <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 15px;">
+          <span style="font-size: 13px; color: #666;">分析半径：</span>
+          <el-input-number v-model="storeCompareRadius" :min="0.5" :max="10" :step="0.5" size="small" />
+          <span style="font-size: 12px; color: #999;">公里</span>
+          <span style="font-size: 12px; color: #999; margin-left: 5px;">（用于计算圆内门店与竞品数量）</span>
+        </div>
+        <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+          <el-input v-model="storeCompareKeyword" placeholder="输入门店名称搜索" style="width: 300px;" clearable>
+            <template #prefix><el-icon><Search /></el-icon></template>
+          </el-input>
+          <span style="font-size: 12px; color: #999;">请选择 2-5 家门店进行对比</span>
+        </div>
+        <div v-show="storeCompareSelected.length > 0" style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">已选择 ({{ storeCompareSelected.length }}/5)：</div>
+          <el-tag v-for="store in storeCompareSelected" :key="store.id" closable @close="removeStoreCompare(store)" style="margin-right: 8px; margin-bottom: 4px;">
+            {{ store.name }}
+          </el-tag>
+        </div>
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
+          <div v-for="store in storeCompareFiltered" :key="store.id"
+            style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
+            :style="{ background: storeCompareSelected.some(s => s.id === store.id) ? '#ecf5ff' : 'white' }"
+            @click="toggleStoreCompare(store)">
+            <el-button :type="storeCompareSelected.some(s => s.id === store.id) ? 'primary' : 'default'" size="small" style="margin-right: 12px;" @click.stop="toggleStoreCompare(store)">
+              {{ storeCompareSelected.some(s => s.id === store.id) ? '已选' : '选择' }}
+            </el-button>
+            <div>
+              <div style="font-size: 14px; font-weight: 500;">{{ store.name }}</div>
+              <div style="font-size: 12px; color: #999;">
+                {{ store.brand || '-' }} | {{ store.city || '-' }}{{ store.district ? ' ' + store.district : '' }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 8px; font-size: 12px; color: #999;">共 {{ storeCompareFiltered.length }} 家门店</div>
+      </template>
+
+      <template v-if="storeCompareStep === 2">
+        <div style="max-height: 550px; overflow-y: auto;">
+          <div v-if="storeCompareResults.length === 0" style="text-align:center;padding:40px;color:#999;">
+            暂无对比数据
+          </div>
+          <el-table v-else :data="storeCompareTableData" border stripe size="small" max-height="450">
+            <el-table-column label="指标" width="140" align="right">
+              <template #default="{ row }">
+                <span :style="{ fontWeight: row.maxIndex >= 0 ? 'bold' : 'normal' }">{{ row.field }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-for="(r, idx) in storeCompareResults" :key="r.id" :label="r.name" align="right">
+              <template #default="{ row }">
+                <span v-if="!r.exactRadiusMatch && row.field !== '圆内门店数' && row.field !== '圆内竞品数'" style="color: #f56c6c; font-size: 12px;">未购买</span>
+                <span v-else-if="row.values[idx] === '—'" style="color: #ccc;">—</span>
+                <span v-else :style="getCompareCellStyle(row.nums, idx)">{{ row.values[idx] }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="storeCompareRadiusMismatch" style="margin-top: 10px; padding: 12px; background: #fef0f0; border-radius: 4px; font-size: 13px; color: #f56c6c; border: 1px solid #fde2e2;">
+            <el-icon><WarningFilled /></el-icon> 您未购买设置半径（{{ storeCompareRadius }}公里）的联通人口数据，请重新选择半径或购买数据服务。
+          </div>
+          <div v-else-if="storeCompareHasMissing" style="margin-top: 10px; padding: 10px; background: #fdf6ec; border-radius: 4px; font-size: 12px; color: #e6a23c;">
+            <el-icon><WarningFilled /></el-icon> 部分门店缺少购买履历数据，显示为"—"。
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="storeCompareVisible = false">关闭</el-button>
+        <el-button v-if="storeCompareStep === 1" type="primary" :disabled="storeCompareSelected.length < 2" :loading="storeCompareLoading" @click="startStoreCompare">开始分析</el-button>
+        <el-button v-if="storeCompareStep === 2" @click="storeCompareStep = 1; storeCompareResults = []; storeCompareTableData = []">重新选择</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -429,9 +507,11 @@ import Papa from 'papaparse'
 import * as echarts from 'echarts'
 
 import { useMarkerStore } from '@/stores/marker'
+import { useCompetitorStore } from '@/stores/competitor'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
+const competitorStore = useCompetitorStore()
 
 // 门店购买次数映射 {门店名称: 购买次数}
 const storePurchaseCount = ref({})
@@ -1058,6 +1138,9 @@ onMounted(async () => {
   // 获取门店购买次数
   await fetchStorePurchaseCounts()
   console.log('✅ 购买次数获取完成')
+  // 获取竞品数据（用于门店对比中的圆内竞品统计）
+  await competitorStore.fetchCompetitors()
+  console.log('✅ 竞品数据加载完成')
 })
 
 // 获取所有门店的购买次数（批量查询，一次API调用）
@@ -1075,6 +1158,223 @@ async function fetchStorePurchaseCounts() {
 // 获取门店名称的星星数量
 function getStoreStars(storeName) {
   return storePurchaseCount.value[storeName] || 0
+}
+
+// ====== 门店对比 ======
+const storeCompareVisible = ref(false)
+const storeCompareStep = ref(1)
+const storeCompareKeyword = ref('')
+const storeCompareRadius = ref(2)
+const storeCompareLoading = ref(false)
+const storeCompareResults = ref([])
+const storeCompareTableData = ref([])
+const storeCompareSelected = ref([])
+
+// 筛选门店列表
+const storeCompareFiltered = computed(() => {
+  const kw = storeCompareKeyword.value.toLowerCase()
+  const selectedIds = new Set(storeCompareSelected.value.map(s => s.id))
+  const result = [...storeCompareSelected.value]
+  markerStore.markers.forEach(s => {
+    if (!selectedIds.has(s.id)) {
+      if (!kw || s.name?.toLowerCase().includes(kw) || s.brand?.toLowerCase().includes(kw)) {
+        result.push(s)
+      }
+    }
+  })
+  return result
+})
+
+const removeStoreCompare = (store) => {
+  storeCompareSelected.value = storeCompareSelected.value.filter(s => s.id !== store.id)
+}
+
+const toggleStoreCompare = (store) => {
+  const idx = storeCompareSelected.value.findIndex(s => s.id === store.id)
+  if (idx >= 0) {
+    storeCompareSelected.value = storeCompareSelected.value.filter((_, i) => i !== idx)
+  } else if (storeCompareSelected.value.length < 5) {
+    storeCompareSelected.value = [...storeCompareSelected.value, { ...store }]
+  }
+}
+
+const showStoreCompareDialog = () => {
+  storeCompareStep.value = 1
+  storeCompareKeyword.value = ''
+  storeCompareRadius.value = 2
+  storeCompareSelected.value = []
+  storeCompareResults.value = []
+  storeCompareTableData.value = []
+  storeCompareVisible.value = true
+}
+
+// 是否有门店缺少数据或半径不匹配
+const storeCompareHasMissing = computed(() => {
+  return storeCompareResults.value.some(r => r.pop === null && !r.exactRadiusMatch)
+})
+const storeCompareRadiusMismatch = computed(() => {
+  return storeCompareResults.value.some(r => r.exactRadiusMatch === false)
+})
+
+// 计算两点距离（Haversine公式）
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// 从 result_data 提取 1001 人口字段
+function extractPopData(resultData) {
+  if (!resultData) return null
+  let apiResult = resultData
+  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return null } }
+  if (apiResult?.apiResult) apiResult = apiResult.apiResult
+  const d = apiResult?.['1001']
+  if (!d || typeof d !== 'object') return null
+
+  const findField = (pattern) => {
+    for (const [k, v] of Object.entries(d)) {
+      if (typeof v === 'number' && pattern.test(k)) return v
+    }
+    return null
+  }
+  return {
+    visit: findField(/^P0_SUM\d*$/i),
+    live: findField(/^P1_SUM\d*$/i),
+    work: findField(/^P2_SUM\d*$/i),
+    out: findField(/^P3_SUM\d*$/i),
+    entertain: findField(/^P4_SUM\d*$/i)
+  }
+}
+
+// 计算圆内门店数和竞品数
+function countStoresInCircle(centerLat, centerLng, radiusM) {
+  const myCount = markerStore.markers.filter(s => {
+    if (s.latitude == null || s.longitude == null) return false
+    return calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= radiusM
+  }).length
+
+  const compCount = competitorStore.competitors.filter(c => {
+    if (c.latitude == null || c.longitude == null) return false
+    return calculateDistance(centerLat, centerLng, c.latitude, c.longitude) <= radiusM
+  }).length
+
+  return { myCount, compCount }
+}
+
+// 开始门店对比
+const startStoreCompare = async () => {
+  if (storeCompareSelected.value.length < 2) {
+    ElMessage.warning('请至少选择2家门店')
+    return
+  }
+  const stores = [...storeCompareSelected.value]
+  storeCompareLoading.value = true
+  storeCompareResults.value = []
+  storeCompareTableData.value = []
+
+  try {
+    const radiusM = storeCompareRadius.value * 1000
+    const results = []
+
+    for (const store of stores) {
+      const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(store.name)}`)
+      const purchases = res.data?.purchases || []
+
+      let matched = null
+      let exactRadiusMatch = false
+      for (const p of purchases) {
+        let pRadius = p.radius
+        try { pRadius = JSON.parse(p.radius) } catch (e) { }
+        const radii = Array.isArray(pRadius) ? pRadius : [pRadius]
+        const maxR = Math.max(...radii.map(r => Number(r) || 0))
+        // 先尝试精确匹配半径（容差500米）
+        if (Math.abs(maxR - radiusM) <= 500 || radii.some(r => Math.abs(Number(r) - radiusM) <= 500)) {
+          matched = p
+          exactRadiusMatch = true
+          break
+        }
+      }
+
+      const result = { id: store.id, name: store.name, brand: store.brand || '-', exactRadiusMatch }
+
+      // 不论是否有购买记录匹配，都先计算圆内门店/竞品数量
+      const counts = countStoresInCircle(store.latitude, store.longitude, radiusM)
+      result.myStoreCount = counts.myCount
+      result.compStoreCount = counts.compCount
+
+      // 获取 result_data：列表接口不返回该字段，需要调详情接口
+      let resultData = null
+      if (matched) {
+        try {
+          const detailRes = await axios.get(`/api/purchase/${matched.id}`)
+          resultData = detailRes.data?.result_data || null
+        } catch (e) {
+          console.warn('获取购买记录详情失败:', matched.id, e)
+        }
+      }
+
+      if (resultData) {
+        const popData = extractPopData(resultData)
+        result.pop = popData || {}
+      } else {
+        result.pop = null
+      }
+
+      results.push(result)
+    }
+
+    storeCompareResults.value = results
+
+    const fieldKeys = [
+      { key: 'visit', label: '到访人口数' },
+      { key: 'live', label: '居住人口数' },
+      { key: 'work', label: '工作人口数' },
+      { key: 'out', label: '外省到访人口数' },
+      { key: 'entertain', label: '娱乐人数' },
+      { key: '_myCount', label: '圆内门店数' },
+      { key: '_compCount', label: '圆内竞品数' },
+    ]
+
+    const rows = fieldKeys.map(fk => {
+      const values = results.map(r => {
+        if (fk.key === '_myCount') return r.myStoreCount?.toLocaleString() || '0'
+        if (fk.key === '_compCount') return r.compStoreCount?.toLocaleString() || '0'
+        return r.pop ? (r.pop[fk.key]?.toLocaleString() || '—') : '—'
+      })
+      const nums = values.map(v => {
+        const n = Number(String(v).replace(/,/g, ''))
+        return isNaN(n) ? null : n
+      })
+      const nonNull = nums.filter(n => n !== null)
+      const maxVal = nonNull.length > 0 ? Math.max(...nonNull) : null
+      const maxIndex = maxVal !== null ? nums.indexOf(maxVal) : -1
+      return { field: fk.label, values, maxIndex, nums }
+    })
+
+    storeCompareTableData.value = rows
+    storeCompareStep.value = 2
+  } catch (e) {
+    console.error('门店对比分析失败:', e)
+    ElMessage.error('对比分析失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    storeCompareLoading.value = false
+  }
+}
+
+// 单元格样式：数值最高用红色字体，其余默认黑色
+function getCompareCellStyle(nums, idx) {
+  if (!nums || nums.length === 0) return { color: '#333' }
+  const validNums = nums.map(n => Math.abs(Number(n) || 0))
+  const maxVal = Math.max(...validNums)
+  const minVal = Math.min(...validNums)
+  if (maxVal === minVal) return { color: '#333' }
+  const isMax = validNums[idx] >= maxVal
+  return { color: isMax ? '#e64545' : '#333' }
 }
 </script>
 

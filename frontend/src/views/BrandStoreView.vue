@@ -577,6 +577,7 @@ async function fetchStorePurchaseCounts() {
 function getStoreStars(storeName) {
   return storePurchaseCount.value[storeName] || 0
 }
+
 </script>
 
 <style lang="scss" scoped>

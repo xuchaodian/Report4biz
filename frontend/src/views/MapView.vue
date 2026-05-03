@@ -1060,6 +1060,9 @@ const analyzeCircleStores = () => {
   circleAnalysisParams.center = { lat: centerLat, lng: centerLng }
   circleAnalysisParams.radius = radiusInMeters
 
+  // 关闭圆形设置对话框
+  circleDialogVisible.value = false
+  
   circleAnalysisVisible.value = true
 }
 
@@ -1383,6 +1386,20 @@ const openStoreSmartsteps = (storeId) => {
     longitude: store.longitude
   }
   storeSmartstepsVisible.value = true
+}
+
+// 门店popup"竞品分布"按钮 - 以门店坐标为圆心分析周边竞品
+const openStoreCompetitors = (lat, lng) => {
+  if (!map) return
+  businessCircleExpanded.value = false
+  circleDialogMode.value = 'stores'
+  circleForm.center = { lat, lng }
+  circleForm.centerText = `${lng.toFixed(6)}, ${lat.toFixed(6)}`
+  circleForm.radius = 2
+  circleForm.radius2 = null
+  circleForm.radius3 = null
+  circleForm.unit = 'km'
+  circleDialogVisible.value = true
 }
 
 // 检查门店是否有购买履历
@@ -2825,9 +2842,10 @@ const loadMarkers = async () => {
         ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
         <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
-          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #f56c6c; color: white; border: none; border-radius: 4px;">删除</button>
-          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #ff8800; color: white; border: none; border-radius: 4px;">人口分布</button>
-          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #764ba2; color: white; border: none; border-radius: 4px;">联通人口</button>
+          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
+          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
+          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
         </div>
       </div>
     `)
@@ -5765,67 +5783,6 @@ const startPopulationCompare = async () => {
   }
 }
 
-// 计算热力图单元格颜色（使用分位数分级，确保颜色分布均匀）
-const getHeatmapCellStyle = (nums, idx, maxIdx) => {
-  if (!nums || nums.length === 0) {
-    return { background: '#f5f5f5', color: '#333' }
-  }
-
-  // 过滤无效值
-  const validNums = nums.map(n => Math.abs(Number(n) || 0))
-  const maxVal = Math.max(...validNums)
-  const minVal = Math.min(...validNums)
-  const range = maxVal - minVal
-
-  if (range === 0) {
-    // 所有值相同，返回中等颜色
-    return { background: '#ffffbf', color: '#333' }
-  }
-
-  // 归一化到 0-1
-  const normalized = (validNums[idx] - minVal) / range
-
-  // 使用蓝-绿-黄-橙-红 配色方案
-  // #2b83f6 (蓝) → #abdda4 (绿) → #ffffbf (黄) → #fdae61 (橙) → #d7191c (红)
-  const colors = [
-    { pos: 0, r: 43, g: 131, b: 246 },    // 蓝
-    { pos: 0.25, r: 171, g: 221, b: 164 }, // 绿
-    { pos: 0.5, r: 255, g: 255, b: 191 },  // 黄
-    { pos: 0.75, r: 253, g: 174, b: 97 },  // 橙
-    { pos: 1, r: 215, g: 25, b: 28 }       // 红
-  ]
-
-  // 找到对应的颜色区间
-  let c1, c2, t
-  for (let i = 0; i < colors.length - 1; i++) {
-    if (normalized >= colors[i].pos && normalized <= colors[i + 1].pos) {
-      c1 = colors[i]
-      c2 = colors[i + 1]
-      t = (normalized - c1.pos) / (c2.pos - c1.pos)
-      break
-    }
-  }
-
-  if (!c1) {
-    c1 = colors[0]
-    c2 = colors[0]
-    t = 0
-  }
-
-  // 线性插值
-  const r = Math.round(c1.r + (c2.r - c1.r) * t)
-  const g = Math.round(c1.g + (c2.g - c1.g) * t)
-  const b = Math.round(c1.b + (c2.b - c1.b) * t)
-
-  // 文字颜色：浅色背景用深色字，深色背景用白色字
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000
-  const textColor = brightness > 150 ? '#333' : '#fff'
-
-  return {
-    background: `rgb(${r}, ${g}, ${b})`,
-    color: textColor
-  }
-}
 
 // 渲染柱状图（仅2家门店时使用）
 const renderBarChart = () => {
@@ -5924,6 +5881,7 @@ onMounted(() => {
   window.deleteMarkerExternal = deleteMarker
   window.openStorePopulationDistribution = openStorePopulationDistribution
   window.openStoreSmartsteps = openStoreSmartsteps
+  window.openStoreCompetitors = openStoreCompetitors
   window.storeHasPurchaseHistory = storeHasPurchaseHistory
 
   // 暴露Shapefile检索结果显示函数
@@ -5992,6 +5950,7 @@ onUnmounted(() => {
   delete window.deleteMarkerExternal
   delete window.openStorePopulationDistribution
   delete window.openStoreSmartsteps
+  delete window.openStoreCompetitors
   delete window.handleShapefileQueryFromGlobal
 })
 </script>
