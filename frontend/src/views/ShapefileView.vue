@@ -333,23 +333,45 @@ const openQueryDialog = async (row) => {
   currentFile.value = row
   conditions.value = []
   queryResult.value = { total: 0, matched: 0, features: [] }
-  queryDialogVisible.value = true
 
-  // 获取数值字段列表
+  // 先获取数值字段列表，再打开对话框
   try {
     const response = await fetch(`${baseURL}/api/shapefiles/${row.id}/fields`, {
       headers: uploadHeaders
     })
     const result = await response.json()
     if (result.success && result.data) {
-      numericFields.value = result.data.numericFields || []
-      if (numericFields.value.length === 0) {
-        ElMessage.warning('该文件中未检测到数值字段')
+      // 过滤掉 RecID、OBJECTID、FID 等系统字段
+      const excludeFields = ['recid', 'objectid', 'fid', 'objectid_1']
+      let fields = (result.data.numericFields || []).filter(f =>
+        !excludeFields.includes(f.toLowerCase())
+      )
+      // 如果 API 返回空，尝试从文件列表的 field_names 中获取
+      if (fields.length === 0 && row.field_names && row.field_names.length > 0) {
+        fields = row.field_names.filter(f =>
+          !excludeFields.includes(f.toLowerCase())
+        )
       }
+      numericFields.value = fields
+    } else {
+      // API 失败时从 fileList 取字段
+      numericFields.value = (row.field_names || []).filter(f =>
+        !['recid', 'objectid', 'fid', 'objectid_1'].includes(f.toLowerCase())
+      )
     }
   } catch (error) {
     console.error('获取字段列表失败:', error)
-    ElMessage.error('获取字段信息失败')
+    // 网络错误时从 fileList 取字段
+    numericFields.value = (row.field_names || []).filter(f =>
+      !['recid', 'objectid', 'fid', 'objectid_1'].includes(f.toLowerCase())
+    )
+  }
+
+  // 字段加载完成后再打开对话框
+  queryDialogVisible.value = true
+
+  if (numericFields.value.length === 0) {
+    ElMessage.warning('该文件中未检测到数值字段')
   }
 }
 
@@ -365,8 +387,10 @@ const addCondition = () => {
     ElMessage.warning('该文件没有可用的数值字段')
     return
   }
+  // 默认选择"常住人口"（如果存在），否则选择第一个字段
+  const defaultField = numericFields.value.includes('常住人口') ? '常住人口' : numericFields.value[0]
   conditions.value.push({
-    field: numericFields.value[0],
+    field: defaultField,
     operator: '>',
     value: null
   })

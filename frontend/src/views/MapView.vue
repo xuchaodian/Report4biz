@@ -5953,6 +5953,22 @@ onUnmounted(() => {
   delete window.openStoreCompetitors
   delete window.handleShapefileQueryFromGlobal
 })
+
+// 热力图单元格样式（常住人口对比使用）
+function getHeatmapCellStyle(nums, idx) {
+  if (!nums || nums.length === 0) return { background: '#f5f5f5', color: '#333' }
+  const validNums = nums.map(n => Math.abs(Number(n) || 0))
+  const maxVal = Math.max(...validNums)
+  const minVal = Math.min(...validNums)
+  const range = maxVal - minVal
+  if (range === 0) return { background: '#e0e0e0', color: '#333' }
+  const normalized = (validNums[idx] - minVal) / range
+  const r = Math.round(43 + (215 - 43) * normalized)
+  const g = Math.round(131 + (25 - 131) * normalized)
+  const b = Math.round(246 + (28 - 246) * normalized)
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return { background: `rgb(${r}, ${g}, ${b})`, color: brightness > 150 ? '#333' : '#fff' }
+}
 </script>
 
 <style lang="scss" scoped>

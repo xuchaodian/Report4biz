@@ -464,18 +464,18 @@
           <div v-if="storeCompareResults.length === 0" style="text-align:center;padding:40px;color:#999;">
             暂无对比数据
           </div>
-          <el-table v-else :data="storeCompareTableData" border stripe size="small" max-height="450">
+          <el-table v-else :data="storeCompareTableData" border stripe size="small" max-height="450" :header-cell-style="{ fontWeight: 'bold', color: '#333', background: '#fdf6ec', fontSize: '14px' }">
             <el-table-column label="指标" width="140" align="right">
               <template #default="{ row }">
-                <span :style="{ fontWeight: row.maxIndex >= 0 ? 'bold' : 'normal' }">{{ row.field }}</span>
+                <span style="font-weight: bold; font-size: 14px;">{{ row.field }}</span>
               </template>
             </el-table-column>
             <el-table-column v-for="(r, idx) in storeCompareResults" :key="r.id" :label="r.name" align="right">
               <template #default="{ row }">
                 <span v-if="!r.exactRadiusMatch && row.field !== '圆内门店数' && row.field !== '圆内竞品数'" style="color: #f56c6c; font-size: 12px;">未购买</span>
                 <span v-else-if="row.values[idx] === '—'" style="color: #ccc;">—</span>
-                <span v-else :style="{ color: getCompareCellStyle(row.nums, idx) }">
-                  {{ row.values[idx] }}<span v-if="row.maxIndex === idx && row.maxPct !== null" style="color: #e64545; font-size: 11px;">（{{ row.maxPct }}%）</span>
+                <span v-else :style="{ color: getCompareCellStyle(row.nums, idx), fontWeight: 'bold', fontSize: '14px' }">
+                  {{ row.values[idx] }}<span v-if="isTwoStoreCompare && row.maxIndex === idx && row.maxPct !== null && row.field !== '圆内门店数' && row.field !== '圆内竞品数'" style="color: #e64545; font-size: 12px; font-weight: bold;">（{{ row.maxPct }}%）</span>
                 </span>
               </template>
             </el-table-column>
@@ -1253,10 +1253,11 @@ function extractPopData(resultData) {
   }
 }
 
-// 计算圆内门店数和竞品数
-function countStoresInCircle(centerLat, centerLng, radiusM) {
+// 计算圆内门店数（排除当前门店）和竞品数
+function countStoresInCircle(centerLat, centerLng, radiusM, excludeStoreId) {
   const myCount = markerStore.markers.filter(s => {
     if (s.latitude == null || s.longitude == null) return false
+    if (s.id === excludeStoreId) return false // 排除当前门店自身
     return calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= radiusM
   }).length
 
@@ -1301,11 +1302,12 @@ const startStoreCompare = async () => {
           break
         }
       }
+      console.log(`[门店对比] ${store.name}: 半径匹配=${exactRadiusMatch}, 购买记录数=${purchases.length}, radiusM=${radiusM}`)
 
       const result = { id: store.id, name: store.name, brand: store.brand || '-', exactRadiusMatch }
 
-      // 不论是否有购买记录匹配，都先计算圆内门店/竞品数量
-      const counts = countStoresInCircle(store.latitude, store.longitude, radiusM)
+      // 不论是否有购买记录匹配，都先计算圆内门店/竞品数量（排除当前门店自身）
+      const counts = countStoresInCircle(store.latitude, store.longitude, radiusM, store.id)
       result.myStoreCount = counts.myCount
       result.compStoreCount = counts.compCount
 
@@ -1326,11 +1328,13 @@ const startStoreCompare = async () => {
       } else {
         result.pop = null
       }
+      console.log(`[门店对比] ${store.name}: pop=${JSON.stringify(result.pop)}, exactRadiusMatch=${result.exactRadiusMatch}, myCount=${result.myStoreCount}`)
 
       results.push(result)
     }
 
     storeCompareResults.value = results
+    console.log(`[门店对比] 结果数=${results.length}, useHeatmapStyle应当是 ${results.length >= 3}`)
 
     const fieldKeys = [
       { key: 'visit', label: '到访人口数' },
@@ -1377,7 +1381,7 @@ const startStoreCompare = async () => {
   }
 }
 
-// 单元格字体颜色：数值最高用红色，其余默认黑色
+// 单元格字体颜色：数值最高用红色，其余默认黑色（仅2家门店时使用）
 function getCompareCellStyle(nums, idx) {
   if (!nums || nums.length === 0) return '#333'
   const validNums = nums.map(n => Math.abs(Number(n) || 0))
@@ -1386,6 +1390,8 @@ function getCompareCellStyle(nums, idx) {
   if (maxVal === minVal) return '#333'
   return validNums[idx] >= maxVal ? '#e64545' : '#333'
 }
+const isTwoStoreCompare = computed(() => storeCompareResults.value.length === 2)
+// cache-bust: v1
 </script>
 
 <style lang="scss" scoped>
