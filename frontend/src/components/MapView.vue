@@ -5612,6 +5612,15 @@ onMounted(() => {
     }
   }
 
+  // 门店对比导航（AI助手使用）
+  window.__navigateToData = () => {
+    router.push({ path: '/data', query: { t: Date.now() } })
+  }
+  window.__pendingStoreCompare = (storeIds, radius) => {
+    window.__pendingCompareStores = { storeIds, radius }
+    router.push({ path: '/data', query: { t: Date.now() } })
+  }
+
   // 等待DOM渲染完成后初始化地图
   nextTick(async () => {
     // 先加载品牌图标
@@ -5671,6 +5680,8 @@ onUnmounted(() => {
   delete window.openStorePopulationDistribution
   delete window.openStoreSmartsteps
   delete window.handleShapefileQueryFromGlobal
+  delete window.__navigateToData
+  delete window.__pendingStoreCompare
 })
 </script>
 

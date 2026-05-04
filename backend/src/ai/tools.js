@@ -245,6 +245,29 @@ const comparePopulation = {
   }
 }
 
+const compareStores = {
+  type: 'function',
+  function: {
+    name: 'compare_stores',
+    description: '对多家门店进行购买履历对比分析，对比到访人口、居住人口、工作人口等指标。用户说"对比门店A和门店B的购买数据"、"门店对比"、"对比XX和YY的客流"、"比较两家店的数据"等时调用此工具。需要2-5家门店。跳转到数据管理页面进行对比操作。',
+    parameters: {
+      type: 'object',
+      required: ['store_keywords'],
+      properties: {
+        store_keywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '门店名称列表，如["吴泾宝龙广场店", "成都世茂广场店"]，支持2-5家门店'
+        },
+        radius: {
+          type: 'number',
+          description: '分析半径（公里），默认2公里，范围0.5~10'
+        }
+      }
+    }
+  }
+}
+
 // ===== 统计查询类工具 =====
 
 const queryStats = {
@@ -292,7 +315,8 @@ export const tools = [
   poiPolygonSearch,
   poiTextSearch,
   storePopulationDistribution,
-  comparePopulation
+  comparePopulation,
+  compareStores
 ]
 
 /**

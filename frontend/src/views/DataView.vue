@@ -1143,6 +1143,23 @@ onMounted(async () => {
   // 获取竞品数据（用于门店对比中的圆内竞品统计）
   await competitorStore.fetchCompetitors()
   console.log('✅ 竞品数据加载完成')
+
+  // 检测 AI 助手传递的门店对比请求
+  if (window.__pendingCompareStores) {
+    const { storeIds, radius } = window.__pendingCompareStores
+    window.__pendingCompareStores = null
+    // 查找门店并打开对比
+    const stores = markerStore.markers.filter(m => storeIds.includes(m.id))
+    if (stores.length >= 2) {
+      storeCompareSelected.value = stores
+      storeCompareRadius.value = radius || 2
+      // 短暂延迟后打开对话框，确保DOM已渲染
+      setTimeout(() => {
+        storeCompareVisible.value = true
+        storeCompareStep.value = 1
+      }, 500)
+    }
+  }
 })
 
 // 获取所有门店的购买次数（批量查询，一次API调用）

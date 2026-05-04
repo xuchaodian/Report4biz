@@ -415,6 +415,65 @@ export async function executeTool(name, args, ctx) {
       }
     }
 
+    // ===== 门店对比（购买履历数据对比） =====
+    case 'compare_stores': {
+      const { store_keywords = [], radius = 2 } = args
+
+      if (store_keywords.length < 2) {
+        return { success: false, message: '门店对比至少需要2家门店，请提供更多门店名称' }
+      }
+      if (store_keywords.length > 5) {
+        return { success: false, message: '门店对比最多支持5家门店，请减少门店数量' }
+      }
+
+      const allMarkers = markerStore.markers
+      if (!allMarkers || allMarkers.length === 0) {
+        return { success: false, message: '暂无门店数据，请先加载门店' }
+      }
+
+      const matchedStores = []
+      const notFound = []
+      for (const kw of store_keywords) {
+        const keyword = kw.toLowerCase()
+        const found = allMarkers.filter(m =>
+          m.name?.toLowerCase().includes(keyword) ||
+          m.address?.toLowerCase().includes(keyword)
+        )
+        if (found.length > 0) {
+          matchedStores.push(found[0])
+        } else {
+          notFound.push(kw)
+        }
+      }
+
+      if (matchedStores.length < 2) {
+        return {
+          success: false,
+          message: notFound.length > 0
+            ? `只找到1家门店，无法对比。未找到：${notFound.join('、')}`
+            : '匹配到的门店不足2家，无法进行对比'
+        }
+      }
+
+      // 将匹配的门店ID存入全局变量，然后跳转到数据管理页面
+      const storeIds = matchedStores.map(s => s.id)
+      if (typeof window.__pendingStoreCompare === 'function') {
+        window.__pendingStoreCompare(storeIds, radius)
+      } else {
+        // 如果没有全局函数，通过路由跳转传递
+        window.__pendingCompareStores = { storeIds, radius }
+        // 使用router导航 - 通过window暴露
+        if (typeof window.__navigateToData === 'function') {
+          window.__navigateToData()
+        }
+      }
+
+      return {
+        success: true,
+        message: `已准备好 ${matchedStores.length} 家门店：${matchedStores.map(s => s.name).join('、')}。正在前往数据管理页面...`
+      }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -499,6 +558,11 @@ export function getActionDescription(name, args) {
       const storeList = Array.isArray(args.store_keywords) ? args.store_keywords.join('、') : args.store_keywords
       const radiusText = args.radius ? `${args.radius}公里` : '2公里'
       return `人口对比分析：对比 ${storeList}（半径 ${radiusText}）`
+    }
+    case 'compare_stores': {
+      const storeList2 = Array.isArray(args.store_keywords) ? args.store_keywords.join('、') : args.store_keywords
+      const radiusText2 = args.radius ? `${args.radius}公里` : '2公里'
+      return `门店购买数据对比：对比 ${storeList2}（半径 ${radiusText2}）`
     }
     default:
       return name

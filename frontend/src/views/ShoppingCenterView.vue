@@ -3,6 +3,9 @@
     <div class="data-header">
       <h2>购物中心</h2>
       <div class="header-actions">
+        <el-button type="success" @click="openShoppingCenterCompare">
+          <el-icon><DataAnalysis /></el-icon>商场常住人口
+        </el-button>
         <el-button v-if="userStore.isAdmin" type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加
         </el-button>
@@ -92,7 +95,6 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column v-if="userStore.isAdmin" type="selection" width="45" reserve-selection />
-        <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="store_category" label="分类" width="110" />
         <el-table-column prop="city" label="城市" width="90" />
@@ -248,16 +250,105 @@
         <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>
       </template>
     </el-dialog>
+
+    <!-- 人口对比对话框 -->
+    <el-dialog v-model="compareVisible" title="商场常住人口对比" width="900px" draggable :show-close="true">
+      <div v-if="compareStep === 1">
+        <el-form label-width="100px" style="margin-bottom: 16px;">
+          <el-form-item label="分析半径">
+            <el-input-number v-model="compareRadius" :min="0.5" :max="10" :step="0.5" />
+            <span style="margin-left: 8px;">公里</span>
+          </el-form-item>
+        </el-form>
+        <el-alert type="info" :closable="false" style="margin-bottom: 12px">
+          <template #title>请选择 2-5 家购物中心进行人口对比分析</template>
+        </el-alert>
+        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <el-input v-model="compareSearchKeyword" placeholder="输入购物中心名称搜索" style="width: 300px;" clearable>
+            <template #prefix><el-icon><Search /></el-icon></template>
+          </el-input>
+        </div>
+        <div v-show="compareSelectedList.length > 0" style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 6px;">已选择 ({{ compareSelectedList.length }}/5)：</div>
+          <el-tag v-for="s in compareSelectedList" :key="s.id" closable @close="removeCompareItem(s)" style="margin-right: 8px; margin-bottom: 4px;">
+            {{ s.name }}
+          </el-tag>
+        </div>
+        <div style="max-height: 280px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
+          <div v-for="item in filteredCompareList" :key="item.id"
+            style="display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ebeef5; cursor: pointer;"
+            :style="{ background: compareSelectedList.some(s => s.id === item.id) ? '#ecf5ff' : 'white' }"
+            @click="toggleCompareItem(item)">
+            <el-button :type="compareSelectedList.some(s => s.id === item.id) ? 'primary' : 'default'" size="small" style="margin-right: 12px;" @click.stop="toggleCompareItem(item)">
+              {{ compareSelectedList.some(s => s.id === item.id) ? '已选' : '选择' }}
+            </el-button>
+            <div style="flex: 1;">
+              <div style="font-weight: 500;">{{ item.name }}</div>
+              <div style="font-size: 12px; color: #999;">{{ item.city }} {{ item.district }} | {{ item.store_category || '-' }}</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 8px; font-size: 12px; color: #999;">共 {{ filteredCompareList.length }} 家购物中心</div>
+      </div>
+
+      <div v-if="compareStep === 2" style="max-height: 600px; overflow-y: auto;">
+        <div v-if="compareResults.length === 2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <div style="flex: 1;">
+            <el-table :data="compareTableData" border stripe size="small" max-height="400">
+              <el-table-column prop="field" label="字段" width="120" fixed />
+              <el-table-column v-for="(r, idx) in compareResults" :key="r.id" :label="r.name" align="right">
+                <template #default="{ row }">
+                  <span :style="{ color: row.maxIndex === idx ? '#f56c6c' : '#333', fontWeight: row.maxIndex === idx ? 'bold' : 'normal' }">
+                    {{ row.values[idx] }}
+                  </span>
+                  <span v-if="row.diffs[idx]" style="color: #909399; font-size: 11px; margin-left: 4px;">{{ row.diffs[idx] }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div style="width: 450px; height: 400px;" ref="chartRef"></div>
+        </div>
+        <div v-else style="margin-bottom: 16px;">
+          <div style="display: flex; gap: 16px;">
+            <div style="flex: 1;">
+              <el-table :data="compareTableData" border stripe size="small" max-height="400">
+                <el-table-column prop="field" label="字段" width="120" fixed />
+                <el-table-column v-for="(r, idx) in compareResults" :key="r.id" :label="r.name" align="center">
+                  <template #default="{ row }">
+                    <div :style="getHeatmapCellStyle(row.nums, idx)" style="padding: 4px 8px; border-radius: 4px; font-weight: 500;">
+                      {{ row.values[idx] }}
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div style="width: 120px; padding: 20px 10px;">
+              <div style="font-size: 12px; color: #666; margin-bottom: 8px; text-align: center;">数值大小</div>
+              <div style="width: 100%; height: 200px; border-radius: 4px; overflow: hidden; background: linear-gradient(to bottom, #d7191c, #fdae61, #ffffbf, #abdda4, #2b83f6);"></div>
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: #666; margin-top: 4px;"><span>高</span><span>低</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="compareVisible = false">关闭</el-button>
+        <el-button v-if="compareStep === 1" type="primary" :disabled="compareSelectedList.length < 2" :loading="compareLoading" @click="startCompare">开始分析</el-button>
+        <el-button v-if="compareStep === 2" @click="compareStep = 1">重新选择</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, DataAnalysis, WarningFilled } from '@element-plus/icons-vue'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
+import { formatNumber } from '@/utils/populationStats'
+import * as echarts from 'echarts'
 
 const userStore = useUserStore()
 const store = useShoppingCenterStore()
@@ -527,6 +618,205 @@ onMounted(() => {
   store.clearFilters()
   store.setVisibleIds(null)  // 重置地图图层显示
 })
+
+// ===== 商场常住人口对比 =====
+const compareVisible = ref(false)
+const compareStep = ref(1)
+const compareSearchKeyword = ref('')
+const compareRadius = ref(2)
+const compareLoading = ref(false)
+const compareResults = ref([])
+const compareTableData = ref([])
+const chartRef = ref(null)
+let compareChart = null
+const compareSelectedList = ref([])
+
+const filteredCompareList = computed(() => {
+  const kw = compareSearchKeyword.value.toLowerCase()
+  const selectedIds = new Set(compareSelectedList.value.map(s => s.id))
+  const result = [...compareSelectedList.value]
+  store.shoppingCenters.forEach(m => {
+    if (!selectedIds.has(m.id)) {
+      if (!kw || m.name?.toLowerCase().includes(kw) || m.brand?.toLowerCase().includes(kw)) {
+        result.push(m)
+      }
+    }
+  })
+  return result
+})
+
+const removeCompareItem = (item) => {
+  compareSelectedList.value = compareSelectedList.value.filter(s => s.id !== item.id)
+}
+
+const toggleCompareItem = (item) => {
+  const idx = compareSelectedList.value.findIndex(s => s.id === item.id)
+  if (idx >= 0) {
+    compareSelectedList.value = compareSelectedList.value.filter((_, i) => i !== idx)
+  } else if (compareSelectedList.value.length < 5) {
+    compareSelectedList.value = [...compareSelectedList.value, { ...item }]
+  }
+}
+
+const openShoppingCenterCompare = () => {
+  compareStep.value = 1
+  compareSearchKeyword.value = ''
+  compareRadius.value = 2
+  compareSelectedList.value = []
+  compareResults.value = []
+  compareTableData.value = []
+  compareVisible.value = true
+}
+
+const startCompare = async () => {
+  if (compareSelectedList.value.length < 2) {
+    ElMessage.warning('请至少选择2家购物中心')
+    return
+  }
+  const items = [...compareSelectedList.value]
+  compareLoading.value = true
+  compareResults.value = []
+  compareTableData.value = []
+
+  try {
+    const userId = localStorage.getItem('userId') || 1
+    const listRes = await fetch(`/api/shapefiles`, { headers: { 'x-user-id': userId } })
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+
+    if (shapefiles.length === 0) {
+      ElMessage.warning('没有找到上传的shp数据文件')
+      compareLoading.value = false
+      return
+    }
+
+    const radiusMeters = compareRadius.value * 1000
+    const results = []
+
+    for (const item of items) {
+      const lat = item.latitude
+      const lng = item.longitude
+      if (!lat || !lng) { ElMessage.warning(`"${item.name}" 缺少坐标`); continue }
+
+      // === 从 MapView 复制城市提取 + shapefile 匹配逻辑 ===
+      const extractCityFromStore = (s) => {
+        if (s.city && s.city.trim()) return s.city.trim()
+        const cityMatch = s.name?.match(/^([\u4e00-\u9fa5]+)/)
+        if (cityMatch) return cityMatch[1]
+        return null
+      }
+      const findShapefileForCity = (cityName, allSf) => {
+        if (!cityName) return allSf[0]
+        let matched = allSf.find(sf => sf.city === cityName)
+        if (matched) return matched
+        matched = allSf.find(sf =>
+          (sf.city && sf.city.includes(cityName)) || (cityName.includes(sf.city))
+        )
+        if (matched) return matched
+        console.warn(`未找到城市[${cityName}]对应的shapefile，使用第一个: ${allSf[0].name}`)
+        return allSf[0]
+      }
+
+      const storeCity = extractCityFromStore(item)
+      const targetSf = findShapefileForCity(storeCity, shapefiles)
+
+      const sfRes = await fetch(`/api/shapefiles/${targetSf.id}`, { headers: { 'x-user-id': userId } })
+      const sfData = await sfRes.json()
+      const geojson = sfData.data?.geojson || sfData.geojson
+
+      let statField = null
+      if (geojson?.features?.length > 0) {
+        const props = geojson.features[0].properties || {}
+        for (const [key, val] of Object.entries(props)) {
+          if (key !== 'RecID') {
+            const numVal = Number(val)
+            if (!isNaN(numVal) && Number.isInteger(numVal)) { statField = key; break }
+          }
+        }
+      }
+
+      if (!statField) { ElMessage.warning(`"${item.name}" 对应的数据文件未找到有效统计字段`); continue }
+
+      const res = await fetch('/api/shapefiles/calculate-population', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ lat, lng, radius: radiusMeters, fieldName: statField, city: targetSf.city })
+      })
+      if (!res.ok) throw new Error(`API错误: ${res.status}`)
+      const apiResult = await res.json()
+      console.log(`[人口对比] ${item.name}: total=${apiResult.data.total}, count=${apiResult.data.count}, fields=${Object.keys(apiResult.data.allFields || {})}`)
+      results.push({
+        ...item, city: storeCity, shapefileName: targetSf.name,
+        total: apiResult.data.total, statField,
+        allFields: apiResult.data.allFields
+      })
+    }
+
+    if (results.length < 2) { ElMessage.warning('有效购物中心数量不足'); compareLoading.value = false; return }
+
+    compareResults.value = results
+    const primaryField = results[0].statField
+    const excludeFields = ['RecID', 'recid', 'FID', 'fid', 'id', 'ID', 'OBJECTID', 'Shape_Area', 'Shape_Length']
+    const fieldNames = [primaryField, ...Object.keys(results[0].allFields || {}).filter(k => k !== primaryField && !excludeFields.includes(k))]
+
+    compareTableData.value = fieldNames.map(field => {
+      const values = results.map(r => field === r.statField ? formatNumber(r.total) : formatNumber(r.allFields?.[field] || 0))
+      const nums = results.map(r => field === r.statField ? r.total : (r.allFields?.[field] || 0))
+      const maxVal = Math.max(...nums)
+      const maxIndex = nums.indexOf(maxVal)
+      const diffs = nums.map((v, i) => i === maxIndex ? '' : '-' + formatNumber(Math.abs(v - maxVal)))
+      return { field, values, nums, maxIndex, diffs }
+    })
+
+    compareStep.value = 2
+    if (results.length === 2) { await nextTick(); renderCompareChart() }
+
+  } catch (e) {
+    console.error('人口对比分析失败:', e)
+    ElMessage.error('分析失败：' + e.message)
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+const renderCompareChart = () => {
+  if (!chartRef.value || compareResults.value.length !== 2) return
+  if (compareChart) compareChart.dispose()
+  compareChart = echarts.init(chartRef.value)
+  const [r1, r2] = compareResults.value
+  const uniqueFields = [...new Set(compareResults.value.flatMap(r => [r.statField, ...Object.keys(r.allFields || {})]))].filter(f => f !== 'RecID')
+
+  compareChart.setOption({
+    title: { text: `${r1.name} vs ${r2.name}`, left: 'center', textStyle: { fontSize: 14, fontWeight: 'bold' } },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => { let r = `<b>${params[0].axisValue}</b><br/>`; params.forEach(p => { r += `${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b><br/>` }); return r } },
+    legend: { data: [r1.name, r2.name], bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+    xAxis: { type: 'category', data: uniqueFields, axisLabel: { rotate: 15, fontSize: 11 } },
+    yAxis: { type: 'value', axisLabel: { formatter: (val) => val >= 10000 ? (val / 10000) + '万' : val } },
+    series: [
+      { name: r1.name, type: 'bar', barGap: '5%', itemStyle: { color: '#409EFF' }, data: uniqueFields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)), label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 } },
+      { name: r2.name, type: 'bar', barGap: '5%', itemStyle: { color: '#67C23A' }, data: uniqueFields.map(f => f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)), label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 } }
+    ]
+  })
+}
+
+function getHeatmapCellStyle(nums, idx) {
+  if (!nums || nums.length === 0) return { background: '#f5f5f5', color: '#333' }
+  const validNums = nums.map(n => Math.abs(Number(n) || 0))
+  const maxVal = Math.max(...validNums)
+  const minVal = Math.min(...validNums)
+  const range = maxVal - minVal
+  if (range === 0) return { background: '#e0e0e0', color: '#333' }
+  const normalized = (validNums[idx] - minVal) / range
+  const r = Math.round(43 + (215 - 43) * normalized)
+  const g = Math.round(131 + (25 - 131) * normalized)
+  const b = Math.round(246 + (28 - 246) * normalized)
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return { background: `rgb(${r}, ${g}, ${b})`, color: brightness > 150 ? '#333' : '#fff' }
+}
+
+// 窗口resize时重绘图表
+window.addEventListener('resize', () => { if (compareChart) compareChart.resize() })
 </script>
 
 <style lang="scss" scoped>

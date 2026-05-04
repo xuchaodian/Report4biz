@@ -77,7 +77,6 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column v-if="userStore.isAdmin" type="selection" width="45" reserve-selection />
-        <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
             <span style="display: flex; align-items: center; gap: 5px;">
