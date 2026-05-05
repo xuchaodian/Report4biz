@@ -4,7 +4,7 @@
       <h2>购物中心</h2>
       <div class="header-actions">
         <el-button type="success" @click="openShoppingCenterCompare">
-          <el-icon><DataAnalysis /></el-icon>商场常住人口
+          <el-icon><DataAnalysis /></el-icon>常住人口对比
         </el-button>
         <el-button v-if="userStore.isAdmin" type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加

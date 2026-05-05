@@ -268,6 +268,23 @@ const compareStores = {
   }
 }
 
+const storeRanking = {
+  type: 'function',
+  function: {
+    name: 'store_ranking',
+    description: '对全部门店进行人口数据排名，按"到访人口数""居住人口数""工作人口数"三个指标分别显示前10名和后10名。用户说"门店排名"、"门店排行"、"排名"、"哪些门店到访人口最多"、"门店人口排名"等时调用此工具。跳转到数据管理页面查看排名结果。',
+    parameters: {
+      type: 'object',
+      properties: {
+        radius: {
+          type: 'number',
+          description: '分析半径（公里），默认2公里，范围0.5~10。如用户未指定半径则使用默认值。'
+        }
+      }
+    }
+  }
+}
+
 // ===== 统计查询类工具 =====
 
 const queryStats = {
@@ -316,7 +333,8 @@ export const tools = [
   poiTextSearch,
   storePopulationDistribution,
   comparePopulation,
-  compareStores
+  compareStores,
+  storeRanking
 ]
 
 /**

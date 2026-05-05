@@ -37,6 +37,7 @@ router.post('/chat', authenticate, async (req, res) => {
 - 门店人口分布：store_population_distribution（用户提到"XX门店人口分布"、"分析XX商圈人口"时调用）
 - 人口对比分析：compare_population（用户提到"对比门店A和门店B的人口"、"哪些门店周边人口更多"、"对比XX和YY"时调用，需要2-5家门店）
 - 门店购买数据对比：compare_stores（用户提到"门店对比"、"对比门店A和门店B的购买履历"、"对比客流"、"对比数据"时调用，跳转到数据管理页面进行对比操作，需要2-5家门店）
+- 门店人口数据排名：store_ranking（用户提到"排名"、"门店排名"、"门店排行"、"到访人口最多"、"人口排名"时调用，按到访、居住、工作人口数分别显示前10和后10名）
 
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}

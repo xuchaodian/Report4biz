@@ -3,6 +3,9 @@
     <div class="data-header">
       <h2>门店管理</h2>
       <div class="header-actions">
+        <el-button type="warning" @click="showStoreRankingDialog">
+          <el-icon><TrendCharts /></el-icon>门店排名
+        </el-button>
         <el-button type="success" @click="showStoreCompareDialog">
           <el-icon><DataAnalysis /></el-icon>门店对比
         </el-button>
@@ -496,6 +499,54 @@
       </template>
     </el-dialog>
 
+    <!-- 门店排名对话框 -->
+    <el-dialog v-model="rankingVisible" title="门店排名" width="750px" draggable :show-close="true" @close="rankingVisible = false">
+      <div v-if="!rankingDone">
+        <el-form label-width="120px" style="margin-bottom: 16px;">
+          <el-form-item label="选择半径">
+            <el-select v-model="rankingRadius" placeholder="请选择分析半径" style="width: 200px;">
+              <el-option v-for="r in rankingRadiusOptions" :key="r" :label="r + '公里'" :value="r" />
+            </el-select>
+            <span style="margin-left: 10px; font-size: 12px; color: #999;">从购买履历中读取</span>
+          </el-form-item>
+        </el-form>
+        <div v-if="rankingLoading" style="text-align: center; padding: 40px;">
+          <el-icon class="is-loading" style="font-size: 32px;"><Loading /></el-icon>
+          <p style="margin-top: 12px; color: #666;">正在计算门店排名...</p>
+        </div>
+      </div>
+
+      <div v-if="rankingDone" style="max-height: 550px; overflow-y: auto;">
+        <div v-for="(group, gIdx) in rankingResults" :key="gIdx" style="margin-bottom: 20px;">
+          <div style="font-size: 15px; font-weight: bold; color: #333; margin-bottom: 10px; padding: 8px 12px; background: #f5f7fa; border-radius: 4px;">
+            {{ group.title }}
+          </div>
+          <div style="display: flex; gap: 16px;">
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: bold; color: #e64545; margin-bottom: 6px; text-align: center;">前10</div>
+              <div v-for="(s, sIdx) in group.top10" :key="s.name" style="display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px;">
+                <span><span style="color: #999; margin-right: 6px;">{{ sIdx + 1 }}</span>{{ s.name }}</span>
+                <span style="font-weight: bold; color: #e64545;">{{ s.value.toLocaleString() }}</span>
+              </div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font-size: 13px; font-weight: bold; color: #409eff; margin-bottom: 6px; text-align: center;">后10</div>
+              <div v-for="(s, sIdx) in group.bottom10" :key="s.name" style="display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px;">
+                <span><span style="color: #999; margin-right: 6px;">{{ sIdx + 1 }}</span>{{ s.name }}</span>
+                <span style="font-weight: bold; color: #409eff;">{{ s.value.toLocaleString() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="rankingVisible = false">关闭</el-button>
+        <el-button v-if="!rankingDone" type="primary" :disabled="!rankingRadius || rankingLoading" :loading="rankingLoading" @click="startRanking">开始排名</el-button>
+        <el-button v-if="rankingDone" @click="resetRanking">重新选择</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -503,7 +554,7 @@
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
 import * as echarts from 'echarts'
@@ -1160,6 +1211,16 @@ onMounted(async () => {
       }, 500)
     }
   }
+
+  // 检测 AI 助手传递的门店排名请求
+  if (window.__pendingStoreRanking) {
+    const { radius } = window.__pendingStoreRanking
+    window.__pendingStoreRanking = null
+    setTimeout(() => {
+      showStoreRankingDialog()
+      if (radius) rankingRadius.value = radius
+    }, 500)
+  }
 })
 
 // 获取所有门店的购买次数（批量查询，一次API调用）
@@ -1408,6 +1469,123 @@ function getCompareCellStyle(nums, idx) {
   return validNums[idx] >= maxVal ? '#e64545' : '#333'
 }
 const isTwoStoreCompare = computed(() => storeCompareResults.value.length === 2)
+
+// ====== 门店排名 ======
+const rankingVisible = ref(false)
+const rankingRadius = ref(null)
+const rankingRadiusOptions = ref([])
+const rankingLoading = ref(false)
+const rankingDone = ref(false)
+const rankingResults = ref([])
+
+const showStoreRankingDialog = () => {
+  rankingRadius.value = null
+  rankingRadiusOptions.value = []
+  rankingLoading.value = false
+  rankingDone.value = false
+  rankingResults.value = []
+  rankingVisible.value = true
+  // 异步读取半径选项
+  nextTick(() => loadRankingRadiusOptions())
+}
+
+// 从购买履历中读取所有可用半径
+const loadRankingRadiusOptions = async () => {
+  try {
+    const res = await axios.get('/api/purchase/store-counts')
+    const counts = res.data.counts || {}
+    const storeNames = Object.keys(counts)
+    const radiusSet = new Set()
+    for (const name of storeNames.slice(0, 50)) {
+      try {
+        const r = await axios.get(`/api/purchase/by-store/${encodeURIComponent(name)}`)
+        for (const p of (r.data?.purchases || [])) {
+          let pr = p.radius
+          try { pr = JSON.parse(pr) } catch (e) {}
+          const radii = Array.isArray(pr) ? pr : [pr]
+          radii.forEach(rd => { const n = Number(rd); if (n > 0) radiusSet.add(n) })
+        }
+      } catch (e) {}
+    }
+    rankingRadiusOptions.value = [...radiusSet].sort((a, b) => a - b).map(r => Math.round(r / 100) / 10)
+  } catch (e) {
+    console.error('获取半径选项失败:', e)
+  }
+}
+
+const startRanking = async () => {
+  if (!rankingRadius.value) { ElMessage.warning('请选择分析半径'); return }
+  rankingLoading.value = true
+  rankingDone.value = false
+
+  try {
+    const radiusM = rankingRadius.value * 1000
+    const allMarkers = markerStore.markers
+    const results = []
+
+    // 并发获取所有门店的购买数据
+    const batchSize = 5
+    for (let i = 0; i < allMarkers.length; i += batchSize) {
+      const batch = allMarkers.slice(i, i + batchSize)
+      const batchResults = await Promise.all(batch.map(async (store) => {
+        try {
+          const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(store.name)}`)
+          const purchases = res.data?.purchases || []
+          // 匹配半径
+          let matched = null
+          for (const p of purchases) {
+            let pr = p.radius
+            try { pr = JSON.parse(pr) } catch (e) {}
+            const radii = Array.isArray(pr) ? pr : [pr]
+            if (radii.some(r => Math.abs(Number(r) - radiusM) <= 500)) { matched = p; break }
+          }
+          if (!matched) return null
+          // 获取详情（含 result_data）
+          const detailRes = await axios.get(`/api/purchase/${matched.id}`)
+          const resultData = detailRes.data?.result_data
+          if (!resultData) return null
+          const pop = extractPopData(resultData)
+          if (!pop) return null
+          return { name: store.name, visit: pop.visit || 0, live: pop.live || 0, work: pop.work || 0 }
+        } catch (e) { return null }
+      }))
+      results.push(...batchResults.filter(Boolean))
+    }
+
+    if (results.length === 0) {
+      ElMessage.warning('未找到有有效人口数据的门店')
+      rankingLoading.value = false
+      return
+    }
+
+    // 排序并取前10/后10
+    const sortBy = (field) => [...results].sort((a, b) => b[field] - a[field])
+
+    const top10 = (arr) => arr.slice(0, Math.min(10, arr.length))
+    const bottom10 = (arr) => arr.slice(-Math.min(10, arr.length)).reverse()
+
+    const rankVisit = sortBy('visit')
+    const rankLive = sortBy('live')
+    const rankWork = sortBy('work')
+
+    rankingResults.value = [
+      { title: '到访人口数', top10: top10(rankVisit).map(s => ({ name: s.name, value: s.visit })), bottom10: bottom10(rankVisit).map(s => ({ name: s.name, value: s.visit })) },
+      { title: '居住人口数', top10: top10(rankLive).map(s => ({ name: s.name, value: s.live })), bottom10: bottom10(rankLive).map(s => ({ name: s.name, value: s.live })) },
+      { title: '工作人口数', top10: top10(rankWork).map(s => ({ name: s.name, value: s.work })), bottom10: bottom10(rankWork).map(s => ({ name: s.name, value: s.work })) }
+    ]
+    rankingDone.value = true
+  } catch (e) {
+    console.error('门店排名失败:', e)
+    ElMessage.error('排名失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    rankingLoading.value = false
+  }
+}
+
+const resetRanking = () => {
+  rankingDone.value = false
+  rankingResults.value = []
+}
 // cache-bust: v1
 </script>
 

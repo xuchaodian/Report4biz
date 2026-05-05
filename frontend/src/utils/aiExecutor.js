@@ -474,6 +474,19 @@ export async function executeTool(name, args, ctx) {
       }
     }
 
+    // ===== 门店排名 =====
+    case 'store_ranking': {
+      const { radius = 2 } = args
+      window.__pendingStoreRanking = { radius }
+      if (typeof window.__navigateToData === 'function') {
+        window.__navigateToData()
+      }
+      return {
+        success: true,
+        message: `正在前往数据管理页面查看门店排名（半径 ${radius} 公里）...`
+      }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -563,6 +576,10 @@ export function getActionDescription(name, args) {
       const storeList2 = Array.isArray(args.store_keywords) ? args.store_keywords.join('、') : args.store_keywords
       const radiusText2 = args.radius ? `${args.radius}公里` : '2公里'
       return `门店购买数据对比：对比 ${storeList2}（半径 ${radiusText2}）`
+    }
+    case 'store_ranking': {
+      const radiusText3 = args.radius ? `${args.radius}公里` : '2公里'
+      return `门店人口数据排名（半径 ${radiusText3}）`
     }
     default:
       return name
