@@ -92,7 +92,37 @@
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
         <el-table-column prop="address" label="地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="description" label="备注" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="industry" label="行业分类" width="110" show-overflow-tooltip />
+        <el-table-column prop="price" label="价格" width="80">
+          <template #default="{ row }">
+            <span>{{ row.price ? '¥' + row.price : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="rating" label="星级" width="70">
+          <template #default="{ row }">
+            <span>{{ row.rating ? row.rating + '⭐' : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="reviews" label="评论数" width="85">
+          <template #default="{ row }">
+            <span>{{ row.reviews ? row.reviews.toLocaleString() : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="taste_score" label="口味" width="65">
+          <template #default="{ row }">
+            <span>{{ row.taste_score ? row.taste_score : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="environment_score" label="环境" width="65">
+          <template #default="{ row }">
+            <span>{{ row.environment_score ? row.environment_score : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="service_score" label="服务" width="65">
+          <template #default="{ row }">
+            <span>{{ row.service_score ? row.service_score : '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="handleEdit(row)">
@@ -124,7 +154,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEdit ? '编辑竞品' : '添加竞品'"
-      width="600px"
+      width="680px"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
         <el-row :gutter="20">
@@ -197,6 +227,52 @@
           </el-col>
         </el-row>
 
+        <el-divider content-position="left">评分信息</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="行业分类" prop="industry">
+              <el-input v-model="form.industry" placeholder="如: 快餐/奶茶" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="价格(元)" prop="price">
+              <el-input-number v-model="form.price" :min="0" :max="99999" :precision="2" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="星级" prop="rating">
+              <el-input-number v-model="form.rating" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="评论数" prop="reviews">
+              <el-input-number v-model="form.reviews" :min="0" :max="999999" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="口味" prop="taste_score">
+              <el-input-number v-model="form.taste_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="环境" prop="environment_score">
+              <el-input-number v-model="form.environment_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="服务" prop="service_score">
+              <el-input-number v-model="form.service_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
@@ -219,6 +295,13 @@
           <li>city - 城市</li>
           <li>district - 区县</li>
           <li>address - 地址</li>
+          <li>industry - 行业分类</li>
+          <li>price - 价格</li>
+          <li>rating - 星级</li>
+          <li>reviews - 评论数</li>
+          <li>taste_score - 口味</li>
+          <li>environment_score - 环境</li>
+          <li>service_score - 服务</li>
           <li>description - 备注</li>
           <li>latitude - 纬度（必填）</li>
           <li>longitude - 经度（必填）</li>
@@ -337,7 +420,14 @@ const form = reactive({
   address: '',
   description: '',
   latitude: 39.9042,
-  longitude: 116.4074
+  longitude: 116.4074,
+  industry: '',
+  price: 0,
+  rating: 0,
+  reviews: 0,
+  taste_score: 0,
+  environment_score: 0,
+  service_score: 0
 })
 
 const rules = {
@@ -424,7 +514,9 @@ const showAddDialog = () => {
   Object.assign(form, {
     store_code: '', brand: '', name: '', store_category: '',
     status: '正常', city: '', district: '', address: '',
-    description: '', latitude: 39.9042, longitude: 116.4074
+    description: '', latitude: 39.9042, longitude: 116.4074,
+    industry: '', price: 0, rating: 0, reviews: 0,
+    taste_score: 0, environment_score: 0, service_score: 0
   })
   dialogVisible.value = true
 }
@@ -443,7 +535,14 @@ const handleEdit = (row) => {
     address: row.address || '',
     description: row.description || '',
     latitude: row.latitude,
-    longitude: row.longitude
+    longitude: row.longitude,
+    industry: row.industry || '',
+    price: row.price || 0,
+    rating: row.rating || 0,
+    reviews: row.reviews || 0,
+    taste_score: row.taste_score || 0,
+    environment_score: row.environment_score || 0,
+    service_score: row.service_score || 0
   })
   dialogVisible.value = true
 }
@@ -565,9 +664,9 @@ const handleExport = async () => {
 }
 
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,store_category,city,district,address,description,latitude,longitude
-COMP001,瑞幸咖啡,瑞幸咖啡国贸店,写字楼店,北京市,朝阳区,国贸大厦,竞品门店,39.9088,116.4610
-COMP002,瑞幸咖啡,瑞幸咖啡中关村店,商场店,北京市,海淀区,中关村大街1号,写字楼门店,39.9830,116.3120`
+  const template = `store_code,brand,name,store_category,city,district,address,industry,price,rating,reviews,taste_score,environment_score,service_score,description,latitude,longitude
+COMP001,瑞幸咖啡,瑞幸咖啡国贸店,写字楼店,北京市,朝阳区,国贸大厦,咖啡,32,4.5,1280,4.3,4.1,4.2,竞品门店,39.9088,116.4610
+COMP002,瑞幸咖啡,瑞幸咖啡中关村店,商场店,北京市,海淀区,中关村大街1号,咖啡,28,4.3,980,4.1,4.0,4.0,写字楼门店,39.9830,116.3120`
   const blob = new Blob([template], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

@@ -180,9 +180,19 @@
   <el-dialog
     v-model="showHistoryDetailDialog"
     :title="currentDetail?.store_name || storeInfo?.name || '订单' + currentDetail?.id"
-    width="700px"
+    width="800px"
     draggable
   >
+    <template #header>
+      <div class="dialog-header-flex">
+        <span>📊 查询结果详情 - {{ currentDetail?.store_name || storeInfo?.name || '' }}</span>
+        <div class="dialog-header-actions">
+          <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight">
+            {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
+          </el-button>
+        </div>
+      </div>
+    </template>
     <div v-if="detailLoading" class="detail-loading">
       <el-icon class="is-loading"><Loading /></el-icon>
       <span>加载中...</span>
@@ -194,6 +204,14 @@
         <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
         <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+      </div>
+      <!-- 数据洞察 -->
+      <div v-if="insights.length > 0" class="insight-section">
+        <h4>📋 数据洞察</h4>
+        <div v-for="(item, idx) in insights" :key="idx" :class="['insight-item', 'insight-' + item.type]">
+          <span class="insight-icon">{{ item.type === 'positive' ? '✅' : item.type === 'warning' ? '⚠️' : '💡' }}</span>
+          <span class="insight-text">{{ item.text }}</span>
+        </div>
       </div>
       <div class="detail-result" v-if="resultData">
         <h4>📊 人口概览</h4>
@@ -254,6 +272,10 @@ const showHistoryDetailDialog = ref(false)
 const detailLoading = ref(false)
 const currentDetail = ref(null)
 const resultData = ref(null)
+
+// 数据洞察
+const insights = ref([])
+const insightLoading = ref(false)
 
 // 计算属性
 const canQuery = computed(() => {
@@ -382,6 +404,7 @@ async function loadPurchaseDetail(id) {
   detailLoading.value = true
   currentDetail.value = null
   resultData.value = null
+  insights.value = []
 
   try {
     const { data } = await axios.get(`/api/purchase/${id}`)
@@ -1767,6 +1790,163 @@ function onClose() {
   emit('close')
 }
 
+// 从数据中通过正则匹配取值（handleDataInsight 依赖）
+const findFieldValue = (data, pattern) => {
+  for (const [key, val] of Object.entries(data)) {
+    if (typeof val !== 'number') continue
+    if (pattern.test(key)) return val
+  }
+  return 0
+}
+
+// ====== 数据洞察函数 ======
+
+// 处理数据洞察
+const handleDataInsight = async () => {
+  if (!resultData.value) {
+    ElMessage.info('暂无数据可供分析')
+    return
+  }
+  insightLoading.value = true
+  insights.value = []
+
+  try {
+    let data = resultData.value
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data) } catch (e) { data = null }
+    }
+    if (data && data.apiResult) {
+      data = data.apiResult
+    }
+    if (!data || typeof data !== 'object') {
+      insights.value = [{ type: 'info', text: '暂无足够数据进行分析' }]
+      return
+    }
+
+    const result = []
+
+    // 1001 全量人口分析
+    if (data['1001'] && typeof data['1001'] === 'object') {
+      const p0 = findFieldValue(data['1001'], /^P0_SUM\d*$/i)
+      const p1 = findFieldValue(data['1001'], /^P1_SUM\d*$/i)
+      const p2 = findFieldValue(data['1001'], /^P2_SUM\d*$/i)
+      const p3 = findFieldValue(data['1001'], /^P3_SUM\d*$/i)
+      const total = p0 + p1 + p2 + p3
+      if (total > 0) {
+        const liveRatio = Math.round((p1 / total) * 100)
+        const workRatio = Math.round((p2 / total) * 100)
+        const outPopRatio = Math.round((p3 / total) * 100)
+        const male0 = findFieldValue(data['1001'], /^MALE0_SUM\d*$/i)
+        const female0 = findFieldValue(data['1001'], /^FEMALE0_SUM\d*$/i)
+        if (liveRatio > 40) {
+          result.push({ type: 'positive', text: `居住人口占比 ${liveRatio}%，该区域为高密度居住区，适合面向居民的生活服务类业态` })
+        } else if (workRatio > 40) {
+          result.push({ type: 'positive', text: `工作人口占比 ${workRatio}%，该区域为商务办公区，适合面向白领的餐饮/零售业态` })
+        } else {
+          result.push({ type: 'info', text: `居住人口 ${liveRatio}% / 工作人口 ${workRatio}%，属于混合型商圈` })
+        }
+        if (outPopRatio > 15) {
+          result.push({ type: 'warning', text: `外省到访人口占比 ${outPopRatio}%，区域跨省吸引力较强` })
+        }
+        if (male0 > 0 && female0 > 0) {
+          const genderRatio = Math.round((male0 / female0) * 100)
+          if (genderRatio > 120) {
+            result.push({ type: 'info', text: `男性到访比例 ${genderRatio}%，以男性客流为主` })
+          } else if (genderRatio < 80) {
+            result.push({ type: 'info', text: `女性到访比例 ${Math.round((female0 / male0) * 100)}%，以女性客流为主` })
+          }
+        }
+      }
+    }
+
+    // 1005 小时段分析
+    if (data['1005'] && Array.isArray(data['1005']) && data['1005'].length > 0) {
+      const weekdays = data['1005'].filter(d => d.day_type === 0)
+      if (weekdays.length > 0) {
+        const peak = weekdays.reduce((max, d) => (d.hour_visit || 0) > (max.hour_visit || 0) ? d : max, weekdays[0])
+        if (peak) {
+          result.push({ type: 'positive', text: `工作日客流高峰在 ${peak.hour_period} 点，建议在该时段加大推广力度` })
+        }
+      }
+    }
+
+    // 1010 教育水平分析
+    if (data['1010'] && Array.isArray(data['1010']) && data['1010'].length > 0) {
+      const visit = data['1010'].find(d => String(d.popu_type) === '0')
+      if (visit) {
+        const p2 = visit.p2 || 0; const p3 = visit.p3 || 0; const p4 = visit.p4 || 0
+        const college = p2 + p3 + p4
+        const total = (visit.p0 || 0) + (visit.p1 || 0) + college
+        if (total > 0) {
+          const collegeRatio = Math.round((college / total) * 100)
+          if (collegeRatio > 50) {
+            result.push({ type: 'positive', text: `本科及以上学历占比 ${collegeRatio}%，高学历人群集聚区域` })
+          } else if (collegeRatio > 30) {
+            result.push({ type: 'info', text: `本科及以上学历占比 ${collegeRatio}%，教育水平中等偏上` })
+          }
+        }
+      }
+    }
+
+    // 1009 消费水平分析
+    if (data['1009'] && Array.isArray(data['1009']) && data['1009'].length > 0) {
+      const highSpend = data['1009'].filter(d => Number(d.level) >= 6 && String(d.popu_type) === '0')
+      const totalSpend = data['1009'].filter(d => String(d.popu_type) === '0')
+      if (totalSpend.length > 0) {
+        const highTotal = highSpend.reduce((s, d) => s + (Number(d.pop_value) || 0), 0)
+        const totalVal = totalSpend.reduce((s, d) => s + (Number(d.pop_value) || 0), 0)
+        if (totalVal > 0) {
+          const highRatio = Math.round((highTotal / totalVal) * 100)
+          if (highRatio > 30) {
+            result.push({ type: 'positive', text: `高消费人群（指数6-8）占比 ${highRatio}%，消费力强劲` })
+          }
+        }
+      }
+    }
+
+    // 1006 停留时长分析
+    if (data['1006'] && Array.isArray(data['1006']) && data['1006'].length > 0) {
+      let stayLong = 0, stayTotal = 0
+      data['1006'].forEach(d => {
+        stayTotal += (d.stay1 || 0) + (d.stay2 || 0) + (d.stay3 || 0) + (d.stay4 || 0) + (d.stay5 || 0)
+        stayLong += (d.stay4 || 0) + (d.stay5 || 0)
+      })
+      if (stayTotal > 0) {
+        const longStayRatio = Math.round((stayLong / stayTotal) * 100)
+        if (longStayRatio > 40) {
+          result.push({ type: 'positive', text: `长时间停留（2小时以上）占比 ${longStayRatio}%，属于高粘性客流` })
+        } else if (longStayRatio > 20) {
+          result.push({ type: 'info', text: `长时间停留（2小时以上）占比 ${longStayRatio}%，客流粘性中等` })
+        }
+      }
+    }
+
+    // 1011 行业分布分析
+    if (data['1011'] && Array.isArray(data['1011']) && data['1011'].length > 0) {
+      const visit = data['1011'].find(d => String(d.popu_type) === '0')
+      if (visit) {
+        const industryLabels = ['金融从业者', '医务人员', '公务员&事业单位', '白领及一般职员', '工人及服务业人员', '教师', '农民及其他', '网约车司机', '外卖员', '快递员']
+        const industryKeys = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']
+        let maxVal = 0, maxIdx = -1
+        industryKeys.forEach((k, i) => {
+          const val = Number(visit[k]) || 0
+          if (val > maxVal) { maxVal = val; maxIdx = i }
+        })
+        if (maxIdx >= 0) {
+          result.push({ type: 'info', text: `到访人群中占比最高的行业为"${industryLabels[maxIdx]}"` })
+        }
+      }
+    }
+
+    insights.value = result.length > 0 ? result : [{ type: 'info', text: '暂无足够数据进行分析' }]
+  } catch (e) {
+    console.error('数据洞察分析失败:', e)
+    insights.value = [{ type: 'info', text: '数据分析时发生错误，请稍后重试' }]
+  } finally {
+    insightLoading.value = false
+  }
+}
+
 // 监听store变化
 // 监听 store 变化，初始化门店信息
 watch(() => props.store, (newStore) => {
@@ -2099,4 +2279,85 @@ watch(() => props.store, (newStore) => {
   color: #764ba2;
   margin-bottom: 8px;
 }
+
+/* ====== 数据洞察样式（从 MyAccountView 移植）====== */
+
+.dialog-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dialog-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-insight {
+  --el-button-bg-color: #f08080;
+  --el-button-border-color: #f08080;
+  --el-button-hover-bg-color: #e06060;
+  --el-button-hover-border-color: #e06060;
+  --el-button-active-bg-color: #d05050;
+  --el-button-active-border-color: #d05050;
+}
+
+/* 洞察区域 */
+.insight-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f9f8ff;
+  border: 1px solid #e8e0f0;
+  border-radius: 8px;
+}
+
+.insight-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.insight-item:last-child {
+  margin-bottom: 0;
+}
+
+.insight-positive {
+  background: #f0f9eb;
+  border-left: 3px solid #67c23a;
+}
+
+.insight-warning {
+  background: #fef0f0;
+  border-left: 3px solid #f56c6c;
+}
+
+.insight-info {
+  background: #ecf5ff;
+  border-left: 3px solid #409eff;
+}
+
+.insight-icon {
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.insight-text {
+  color: #333;
+}
+
 </style>

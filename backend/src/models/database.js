@@ -154,6 +154,14 @@ export async function initDatabase() {
   try {
     db.run(`ALTER TABLE competitors ADD COLUMN store_category TEXT`)
   } catch (e) { /* 列已存在，忽略 */ }
+  // 迁移：添加竞品评分字段
+  try { db.run(`ALTER TABLE competitors ADD COLUMN industry TEXT`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN price REAL DEFAULT 0`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN rating REAL DEFAULT 0`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN reviews INTEGER DEFAULT 0`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN taste_score REAL DEFAULT 0`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN environment_score REAL DEFAULT 0`) } catch (e) {}
+  try { db.run(`ALTER TABLE competitors ADD COLUMN service_score REAL DEFAULT 0`) } catch (e) {}
   // 迁移：移除旧列（SQLite 不支持 DROP COLUMN，只忽略即可，不影响功能）
 
   // 创建竞品门店索引

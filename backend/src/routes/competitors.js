@@ -49,7 +49,8 @@ router.post('/', authenticate, (req, res) => {
       store_code, brand, name, store_type, store_category,
       city, district, address,
       description,
-      latitude, longitude, status, icon_color
+      latitude, longitude, status, icon_color,
+      industry, price, rating, reviews, taste_score, environment_score, service_score
     } = req.body
 
     if (!name || latitude === undefined || longitude === undefined) {
@@ -63,13 +64,15 @@ router.post('/', authenticate, (req, res) => {
         city, district, address,
         description,
         latitude, longitude, status, icon_color, user_id,
+        industry, price, rating, reviews, taste_score, environment_score, service_score,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       store_code || '', brand || '', name, store_type || '竞品', store_category || '',
       city || '', district || '', address || '',
       description || '',
-      latitude, longitude, status || '正常', icon_color || '#f56c6c', req.user.id
+      latitude, longitude, status || '正常', icon_color || '#f56c6c', req.user.id,
+      industry || '', price || 0, rating || 0, reviews || 0, taste_score || 0, environment_score || 0, service_score || 0
     )
 
     const competitor = db.prepare('SELECT * FROM competitors WHERE id = ?').get(result.lastInsertRowid)
@@ -91,7 +94,8 @@ router.put('/:id', authenticate, (req, res) => {
       store_code, brand, name, store_type, store_category,
       city, district, address,
       description,
-      latitude, longitude, status, icon_color
+      latitude, longitude, status, icon_color,
+      industry, price, rating, reviews, taste_score, environment_score, service_score
     } = req.body
 
     const db = getDb()
@@ -108,6 +112,7 @@ router.put('/:id', authenticate, (req, res) => {
         city = ?, district = ?, address = ?,
         description = ?,
         latitude = ?, longitude = ?, status = ?, icon_color = ?,
+        industry = ?, price = ?, rating = ?, reviews = ?, taste_score = ?, environment_score = ?, service_score = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -124,6 +129,13 @@ router.put('/:id', authenticate, (req, res) => {
       longitude ?? existingCompetitor.longitude,
       status ?? existingCompetitor.status,
       icon_color ?? existingCompetitor.icon_color,
+      industry ?? existingCompetitor.industry,
+      price ?? existingCompetitor.price,
+      rating ?? existingCompetitor.rating,
+      reviews ?? existingCompetitor.reviews,
+      taste_score ?? existingCompetitor.taste_score,
+      environment_score ?? existingCompetitor.environment_score,
+      service_score ?? existingCompetitor.service_score,
       req.params.id
     )
 
@@ -231,8 +243,9 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               city, district, address,
               description,
               latitude, longitude, status, icon_color, user_id,
+              industry, price, rating, reviews, taste_score, environment_score, service_score,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `).run(
             row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
             row.city || '', row.district || '', row.address || '',
@@ -240,7 +253,10 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             parseFloat(row.latitude), parseFloat(row.longitude),
             row.status || '正常',
             row.icon_color || '#f56c6c',
-            req.user.id
+            req.user.id,
+            row.industry || '', parseFloat(row.price) || 0, parseFloat(row.rating) || 0,
+            parseInt(row.reviews) || 0, parseFloat(row.taste_score) || 0,
+            parseFloat(row.environment_score) || 0, parseFloat(row.service_score) || 0
           )
 
           const competitor = db.prepare('SELECT * FROM competitors WHERE id = ?').get(result.lastInsertRowid)
