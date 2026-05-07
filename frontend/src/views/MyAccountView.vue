@@ -214,6 +214,9 @@
             <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
               📄 导出PDF
             </el-button>
+            <el-button type="success" size="small" @click="handleExportExcel" :disabled="detailLoading || !currentDetail">
+              📊 导出Excel
+            </el-button>
           </div>
         </div>
       </template>
@@ -2516,6 +2519,39 @@ const handleExportPDF = async () => {
   } catch (e) {
     console.error('PDF导出失败:', e)
     ElMessage.error('PDF导出失败: ' + e.message)
+  }
+}
+
+// 导出Excel
+const handleExportExcel = async () => {
+  if (!currentDetail.value) {
+    ElMessage.info('暂无数据可导出')
+    return
+  }
+  try {
+    ElMessage.info('正在生成Excel报表...')
+    const response = await axios.get(`/api/purchase/${currentDetail.value.id}/export-excel`, {
+      responseType: 'blob'
+    })
+    // 从Content-Disposition头获取文件名
+    const disposition = response.headers['content-disposition']
+    let fileName = `${currentDetail.value.store_name || '门店'}_${currentDetail.value.city_month || ''}_商圈数据.xlsx`
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+      if (match) {
+        fileName = decodeURIComponent(match[1])
+      }
+    }
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('Excel导出成功')
+  } catch (e) {
+    console.error('导出Excel失败:', e)
+    ElMessage.error(e.response?.data?.message || '导出Excel失败')
   }
 }
 </script>

@@ -53,6 +53,9 @@
               <el-dropdown-item command="brands">
                 <el-icon><Setting /></el-icon>设置图标
               </el-dropdown-item>
+              <el-dropdown-item v-if="userStore.isAdmin" command="template">
+                <el-icon><Upload /></el-icon>设置模板
+              </el-dropdown-item>
               <el-dropdown-item command="purchase">
                 <el-icon><Document /></el-icon>购买履历
               </el-dropdown-item>
@@ -69,18 +72,75 @@
     <main class="main-content">
       <router-view />
     </main>
+
+    <!-- 上传模板对话框 -->
+    <el-dialog v-model="templateDialogVisible" title="上传Excel报表模板" width="500px">
+      <div class="template-upload-tips">
+        <p>请上传 .xlsx 格式的Excel报表模板文件，该模板将用于门店购买数据的Excel导出。</p>
+        <p style="margin-top:8px;color:#999;font-size:12px;">上传后将覆盖现有模板，建议先下载当前模板备份。</p>
+      </div>
+      <el-upload
+        ref="uploadRef"
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx"
+        :on-change="handleTemplateFileChange"
+        drag
+      >
+        <el-icon class="el-icon--upload"><Upload /></el-icon>
+        <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
+        <template #tip>
+          <div class="el-upload__tip">仅支持 .xlsx 格式，最大10MB</div>
+        </template>
+      </el-upload>
+      <template #footer>
+        <el-button @click="templateDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="templateUploading" @click="handleTemplateUpload">确定上传</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload } from '@element-plus/icons-vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+// 模板上传
+const templateDialogVisible = ref(false)
+const templateUploading = ref(false)
+const uploadRef = ref(null)
+const templateFile = ref(null)
+
+const handleTemplateFileChange = (file) => {
+  templateFile.value = file.raw
+}
+
+const handleTemplateUpload = async () => {
+  if (!templateFile.value) {
+    ElMessage.warning('请选择文件')
+    return
+  }
+  templateUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', templateFile.value)
+    const { data } = await axios.post('/api/template/upload', formData)
+    ElMessage.success(data.message || '模板上传成功')
+    templateDialogVisible.value = false
+    templateFile.value = null
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '上传失败')
+  } finally {
+    templateUploading.value = false
+  }
+}
 
 onMounted(() => {
   userStore.fetchUser()
@@ -91,6 +151,8 @@ const handleCommand = async (command) => {
     router.push('/account')
   } else if (command === 'brands') {
     router.push('/brands')
+  } else if (command === 'template') {
+    templateDialogVisible.value = true
   } else if (command === 'purchase') {
     // 跳转到个人中心并自动打开购买履历
     router.push('/account?openHistory=true')
@@ -191,5 +253,13 @@ const handleCommand = async (command) => {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+.template-upload-tips {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  p { margin: 0; font-size: 14px; color: #666; }
 }
 </style>

@@ -1,6 +1,15 @@
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { exec } from 'child_process'
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 const router = express.Router()
 
@@ -365,6 +374,59 @@ router.delete('/:id', authenticate, (req, res) => {
     console.error('删除记录失败:', error)
     res.status(500).json({ message: '删除失败' })
   }
+})
+
+// 导出Excel报表（使用Python+openpyxl，保留图表）
+router.get('/:id/export-excel', authenticate, (req, res) => {
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const outputPath = join(os.tmpdir(), `export_${req.params.id}_${Date.now()}.xlsx`)
+
+  // 检查模板
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
+  }
+
+  // 调用Python脚本
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  const cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+
+  exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('导出Excel执行错误:', error.message)
+      return res.status(500).json({ message: '导出失败: ' + error.message })
+    }
+
+    // 解析Python输出
+    try {
+      // 找到最后一行JSON输出
+      const lines = stdout.trim().split('\n')
+      const jsonLine = lines.filter(l => l.trim().startsWith('{')).pop() || '{}'
+      const result = JSON.parse(jsonLine)
+      if (result.error) {
+        return res.status(500).json({ message: result.error })
+      }
+
+      // 读取生成的文件并发送
+      if (!fs.existsSync(outputPath)) {
+        return res.status(500).json({ message: '导出失败: 输出文件未生成' })
+      }
+
+      const fileName = result.filename || `${req.params.id}.xlsx`
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+      const fileStream = fs.createReadStream(outputPath)
+      fileStream.pipe(res)
+      fileStream.on('end', () => {
+        // 清理临时文件
+        fs.unlink(outputPath, () => {})
+      })
+    } catch (e) {
+      console.error('解析Python输出失败:', stdout)
+      res.status(500).json({ message: '导出失败: ' + e.message })
+    }
+  })
 })
 
 export default router

@@ -151,6 +151,24 @@ router.put('/:id', authenticate, (req, res) => {
   }
 })
 
+// 清空所有竞品门店（普通用户清除自己的，管理员清除所有）
+// 注意：clear-all 必须放在 /:id 之前，否则会被当作id参数
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    let result
+    if (req.user.role === 'admin') {
+      result = db.prepare('DELETE FROM competitors').run()
+    } else {
+      result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
+    }
+    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空竞品错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 删除竞品门店
 router.delete('/:id', authenticate, (req, res) => {
   try {
@@ -201,23 +219,6 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
-// 清空所有竞品门店（普通用户清除自己的，管理员清除所有）
-router.delete('/clear-all', authenticate, (req, res) => {
-  try {
-    const db = getDb()
-    let result
-    if (req.user.role === 'admin') {
-      result = db.prepare('DELETE FROM competitors').run()
-    } else {
-      result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
-    }
-    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
-  } catch (error) {
-    console.error('清空竞品错误:', error)
-    res.status(500).json({ message: '清空失败' })
-  }
-})
-
 // 导入竞品门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -231,13 +232,12 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const db = getDb()
-        const imported = []
+        try {
+          const db = getDb()
+          let importCount = 0
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
-
-          const result = db.prepare(`
+          // 预编译INSERT语句
+          const insertStmt = db.prepare(`
             INSERT INTO competitors (
               store_code, brand, name, store_type, store_category,
               city, district, address,
@@ -246,31 +246,51 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               industry, price, rating, reviews, taste_score, environment_score, service_score,
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
-            row.city || '', row.district || '', row.address || '',
-            row.description || '',
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#f56c6c',
-            req.user.id,
-            row.industry || '', parseFloat(row.price) || 0, parseFloat(row.rating) || 0,
-            parseInt(row.reviews) || 0, parseFloat(row.taste_score) || 0,
-            parseFloat(row.environment_score) || 0, parseFloat(row.service_score) || 0
-          )
+          `)
 
-          const competitor = db.prepare('SELECT * FROM competitors WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(competitor)
+          // sql.js 自动提交，逐行插入（事务在sql.js中可能不稳定）
+          let errorRow = null
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
+            try {
+              insertStmt.run(
+                row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
+                row.city || '', row.district || '', row.address || '',
+                row.description || '',
+                parseFloat(row.latitude), parseFloat(row.longitude),
+                row.status || '正常',
+                row.icon_color || '#f56c6c',
+                req.user.id,
+                row.industry || '', parseFloat(row.price) || 0, parseFloat(row.rating) || 0,
+                parseInt(row.reviews) || 0, parseFloat(row.taste_score) || 0,
+                parseFloat(row.environment_score) || 0, parseFloat(row.service_score) || 0
+              )
+              importCount++
+            } catch (rowError) {
+              errorRow = { index: importCount, name: row.name, error: rowError.message }
+              console.error('导入单行失败:', errorRow)
+              // 继续导入其他行
+            }
+          }
+
+          // 删除上传的文件
+          try { fs.unlinkSync(req.file.path) } catch (e) {}
+
+          // 只返回数量，不返回完整数据（大数据量时序列化可能超时）
+          res.json({
+            message: `成功导入 ${importCount} 条数据${errorRow ? '（部分行失败）' : ''}`,
+            count: importCount
+          })
+        } catch (innerError) {
+          console.error('导入处理错误:', innerError)
+          try { fs.unlinkSync(req.file.path) } catch (e) {}
+          return res.status(500).json({ message: '导入失败: ' + innerError.message })
         }
-
-        // 删除上传的文件
-        fs.unlinkSync(req.file.path)
-
-        res.json({
-          message: `成功导入 ${imported.length} 条数据`,
-          count: imported.length,
-          imported
-        })
+      },
+      error: (parseError) => {
+        console.error('CSV解析错误:', parseError)
+        try { fs.unlinkSync(req.file.path) } catch (e) {}
+        return res.status(500).json({ message: 'CSV解析失败: ' + parseError.message })
       }
     })
   } catch (error) {

@@ -95,13 +95,13 @@ export const useCompetitorStore = defineStore('competitor', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const { data } = await axios.post(`${API_URL}/competitors/import`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        this.competitors = [...this.competitors, ...data.imported]
+        const { data } = await axios.post(`${API_URL}/competitors/import`, formData)
         return { success: true, count: data.count }
       } catch (error) {
-        return { success: false, message: error.response?.data?.message || '导入失败' }
+        console.error('导入异常详情:', error)
+        console.error('  response:', error.response?.status, error.response?.data)
+        console.error('  message:', error.message)
+        return { success: false, message: error.response?.data?.message || error.message || '导入失败' }
       }
     },
     

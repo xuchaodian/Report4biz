@@ -17,6 +17,7 @@ import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
 import smartstepsRoutes from './routes/smartsteps.js'
 import purchaseRoutes from './routes/purchase.js'
+import templateRoutes from './routes/template.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -55,6 +56,7 @@ async function start() {
     app.use('/api/poi', poiRoutes)
     app.use('/api/smartsteps', smartstepsRoutes)
     app.use('/api/purchase', purchaseRoutes)
+    app.use('/api/template', templateRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {
