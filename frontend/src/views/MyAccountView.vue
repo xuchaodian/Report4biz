@@ -260,8 +260,8 @@
       </div>
     </el-dialog>
   </div>
-  <!-- 隐藏地图容器（用于导出竞品地图截图） - 放在页面可见位置但透明 -->
-  <div ref="hiddenMapRef" style="position:fixed;top:100px;left:50%;transform:translateX(-50%);width:700px;height:500px;opacity:0.001;z-index:-1;pointer-events:none;"></div>
+  <!-- 隐藏地图容器（用于导出竞品地图截图） - 导出时会短暂可见后隐藏 -->
+  <div ref="hiddenMapRef" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:500px;z-index:9999;visibility:hidden;"></div>
 </template>
 
 <script setup>
@@ -2573,11 +2573,11 @@ const initHiddenMap = (lat, lng, zoom = 14) => {
     touchZoom: false,
     keyboard: false
   })
-  // 添加高德底图
-  hiddenTileLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
-    subdomains: [1, 2, 3, 4],
+  // 添加OSM底图（支持CORS，html2canvas可截图）
+  hiddenTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 18,
-    minZoom: 3
+    minZoom: 3,
+    attribution: '&copy; OpenStreetMap'
   }).addTo(hiddenMapInstance)
   // 触发尺寸修正
   hiddenMapInstance.invalidateSize()
@@ -2649,13 +2649,16 @@ const captureHiddenMap = async () => {
     return null
   }
 
+  // 让地图可见以确保浏览器渲染瓦片
+  container.style.visibility = 'visible'
+  hiddenMapInstance.invalidateSize()
+
   // 等tile层加载
   await new Promise(resolve => {
-    const timer = setTimeout(resolve, 4000)
-    const onTile = () => { clearTimeout(timer); resolve() }
-    hiddenMapInstance.once('tileload', onTile)
-    // 如果2秒内没有瓦片事件也继续
-    hiddenMapInstance.once('load', () => { clearTimeout(timer); resolve() })
+    const timer = setTimeout(resolve, 3000)
+    hiddenMapInstance.once('tileload', () => { clearTimeout(timer); resolve() })
+    // 如果地图已经loaded也立即继续
+    hiddenMapInstance.whenReady(() => {})
   })
 
   const { default: html2canvas } = await import('html2canvas')
@@ -2667,15 +2670,18 @@ const captureHiddenMap = async () => {
     logging: false
   })
 
+  // 重新隐藏地图
+  container.style.visibility = 'hidden'
+
   // 快速验证截图内容
   const ctx = canvas.getContext('2d')
   const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data
-  // 中间像素如果纯白(255,255,255)说明截图失败
   if (pixel[0] === 255 && pixel[1] === 255 && pixel[2] === 255) {
     console.warn('[导出截图] 截图内容为空白')
     return null
   }
 
+  console.log('[导出截图] 截图成功, 尺寸:', canvas.width, 'x', canvas.height)
   return canvas.toDataURL('image/jpeg', 0.7)
 }
 
