@@ -77,9 +77,7 @@ export const useShoppingCenterStore = defineStore('shoppingCenter', {
     async importShoppingCenters(file) {
       const formData = new FormData()
       formData.append('file', file)
-      const data = await api.post('/shopping-centers/import', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
+      const data = await api.post('/shopping-centers/import', formData)
       return data
     },
 

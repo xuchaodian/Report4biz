@@ -248,12 +248,12 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           `)
 
-          // sql.js 自动提交，逐行插入（事务在sql.js中可能不稳定）
+          // 使用 runNoSave 避免每行都写盘，末尾一次性保存
           let errorRow = null
           for (const row of results.data) {
             if (!row.name || !row.latitude || !row.longitude) continue
             try {
-              insertStmt.run(
+              insertStmt.runNoSave(
                 row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
                 row.city || '', row.district || '', row.address || '',
                 row.description || '',
@@ -269,9 +269,10 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             } catch (rowError) {
               errorRow = { index: importCount, name: row.name, error: rowError.message }
               console.error('导入单行失败:', errorRow)
-              // 继续导入其他行
             }
           }
+          // 一次性保存数据库到磁盘
+          db.saveDatabase()
 
           // 删除上传的文件
           try { fs.unlinkSync(req.file.path) } catch (e) {}

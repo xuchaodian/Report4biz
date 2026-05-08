@@ -146,6 +146,21 @@ router.put('/:id', authenticate, (req, res) => {
   }
 })
 
+// 清空所有品牌门店（仅管理员）注意：必须在 /:id 之前
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可清空品牌门店' })
+    }
+    const db = getDb()
+    const result = db.prepare('DELETE FROM brand_stores').run()
+    res.json({ success: true, message: `已清空 ${result.changes} 条品牌门店数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空品牌门店错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 删除品牌门店（仅管理员可操作）
 router.delete('/:id', authenticate, (req, res) => {
   try {
@@ -193,21 +208,6 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
-// 清空所有品牌门店（仅管理员）
-router.delete('/clear-all', authenticate, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, message: '仅管理员可清空品牌门店' })
-    }
-    const db = getDb()
-    const result = db.prepare('DELETE FROM brand_stores').run()
-    res.json({ success: true, message: `已清空 ${result.changes} 条品牌门店数据`, count: result.changes })
-  } catch (error) {
-    console.error('清空品牌门店错误:', error)
-    res.status(500).json({ message: '清空失败' })
-  }
-})
-
 // 导入品牌门店（仅管理员可操作，共享数据）
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -225,13 +225,12 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const db = getDb()
-        const imported = []
+        try {
+          const db = getDb()
+          let importCount = 0
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
-
-          const result = db.prepare(`
+          // 预编译INSERT
+          const insertStmt = db.prepare(`
             INSERT INTO brand_stores (
               user_id, store_code, brand, name, store_type, store_category,
               city, district, address,
@@ -239,27 +238,39 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               latitude, longitude, status, icon_color,
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            req.user.id, row.store_code || '', row.brand || '', row.name, row.store_type || '品牌', row.store_category || '',
-            row.city || '', row.district || '', row.address || '',
-            row.description || '',
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#409eff'
-          )
+          `)
 
-          const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(brandStore)
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
+            insertStmt.runNoSave(
+              req.user.id, row.store_code || '', row.brand || '', row.name, row.store_type || '品牌', row.store_category || '',
+              row.city || '', row.district || '', row.address || '',
+              row.description || '',
+              parseFloat(row.latitude), parseFloat(row.longitude),
+              row.status || '正常',
+              row.icon_color || '#409eff'
+            )
+            importCount++
+          }
+
+          db.saveDatabase()
+          try { fs.unlinkSync(req.file.path) } catch (e) {}
+
+          res.json({
+            success: true,
+            message: `成功导入 ${importCount} 条数据`,
+            count: importCount
+          })
+        } catch (innerError) {
+          console.error('导入处理错误:', innerError)
+          try { fs.unlinkSync(req.file.path) } catch (e) {}
+          res.status(500).json({ success: false, message: '导入失败: ' + innerError.message })
         }
-
-        fs.unlinkSync(req.file.path)
-
-        res.json({
-          success: true,
-          message: `成功导入 ${imported.length} 条数据`,
-          count: imported.length,
-          imported
-        })
+      },
+      error: (parseError) => {
+        console.error('CSV解析错误:', parseError)
+        try { fs.unlinkSync(req.file.path) } catch (e) {}
+        res.status(500).json({ success: false, message: 'CSV解析失败: ' + parseError.message })
       }
     })
   } catch (error) {

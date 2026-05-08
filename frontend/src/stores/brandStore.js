@@ -81,9 +81,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
     async importBrandStores(file) {
       const formData = new FormData()
       formData.append('file', file)
-      const data = await api.post('/brand-stores/import', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
+      const data = await api.post('/brand-stores/import', formData)
       return data
     },
 

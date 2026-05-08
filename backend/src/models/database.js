@@ -438,7 +438,12 @@ export function getDb() {
     exec: (sql) => {
       return db.exec(sql)
     },
-    
+
+    // 手动保存数据库到磁盘（默认每行INSERT自动保存，批量操作时可手动调用）
+    saveDatabase: () => {
+      saveDatabase()
+    },
+
     // 执行单行查询
     prepare: (sql) => ({
       get: (...params) => {
@@ -453,10 +458,19 @@ export function getDb() {
         return undefined
       },
       
-      // 执行插入/更新/删除
+      // 执行插入/更新/删除（自动保存）
       run: (...params) => {
         db.run(sql, params)
         saveDatabase()
+        return {
+          lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0,
+          changes: db.getRowsModified()
+        }
+      },
+
+      // 执行插入/更新/删除（不自动保存，用于批量操作后手动保存）
+      runNoSave: (...params) => {
+        db.run(sql, params)
         return {
           lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0,
           changes: db.getRowsModified()
