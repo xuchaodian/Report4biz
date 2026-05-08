@@ -260,8 +260,8 @@
       </div>
     </el-dialog>
   </div>
-  <!-- 隐藏地图容器（用于导出竞品地图截图） -->
-  <div ref="hiddenMapRef" style="position:fixed;left:-9999px;top:0;width:700px;height:500px;z-index:-1;"></div>
+  <!-- 隐藏地图容器（用于导出竞品地图截图） - 放在页面可见位置但透明 -->
+  <div ref="hiddenMapRef" style="position:fixed;top:100px;left:50%;transform:translateX(-50%);width:700px;height:500px;opacity:0.001;z-index:-1;pointer-events:none;"></div>
 </template>
 
 <script setup>
@@ -2641,59 +2641,42 @@ const renderCircleOnHiddenMap = (centerLat, centerLng, radius, competitors) => {
 const captureHiddenMap = async () => {
   const container = hiddenMapRef.value
   if (!container) {
-    console.warn('hiddenMapRef为空，无法截图')
+    console.warn('[导出截图] hiddenMapRef为空，无法截图')
     return null
   }
   if (!hiddenMapInstance) {
-    console.warn('hiddenMapInstance未初始化，无法截图')
+    console.warn('[导出截图] hiddenMapInstance未初始化，无法截图')
     return null
   }
 
-  // 等待地图瓦片加载
+  // 等tile层加载
   await new Promise(resolve => {
-    let loaded = false
-    const onLoad = () => { loaded = true }
-    hiddenMapInstance.on('tileload', onLoad)
-    // 保险：最迟3秒后继续
-    setTimeout(() => {
-      hiddenMapInstance.off('tileload', onLoad)
-      resolve()
-    }, 3000)
-    // 如果已经加载过了，立即继续
-    setTimeout(() => {
-      if (!loaded) {
-        loaded = true
-        hiddenMapInstance.off('tileload', onLoad)
-        resolve()
-      }
-    }, 500)
+    const timer = setTimeout(resolve, 4000)
+    const onTile = () => { clearTimeout(timer); resolve() }
+    hiddenMapInstance.once('tileload', onTile)
+    // 如果2秒内没有瓦片事件也继续
+    hiddenMapInstance.once('load', () => { clearTimeout(timer); resolve() })
   })
 
   const { default: html2canvas } = await import('html2canvas')
   const canvas = await html2canvas(container, {
     useCORS: true,
     allowTaint: false,
-    scale: 2,
+    scale: 1.5,
     backgroundColor: '#ffffff',
     logging: false
   })
 
-  // 验证截图不为空
+  // 快速验证截图内容
   const ctx = canvas.getContext('2d')
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-  let hasContent = false
-  for (let i = 0; i < imageData.data.length; i += 40) {
-    if (imageData.data[i] !== 255 || imageData.data[i + 1] !== 255 || imageData.data[i + 2] !== 255) {
-      hasContent = true
-      break
-    }
-  }
-  if (!hasContent) {
-    console.warn('截图内容为空白')
+  const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data
+  // 中间像素如果纯白(255,255,255)说明截图失败
+  if (pixel[0] === 255 && pixel[1] === 255 && pixel[2] === 255) {
+    console.warn('[导出截图] 截图内容为空白')
     return null
   }
 
-  return canvas.toDataURL('image/jpeg', 0.85)
+  return canvas.toDataURL('image/jpeg', 0.7)
 }
 
 const destroyHiddenMap = () => {
