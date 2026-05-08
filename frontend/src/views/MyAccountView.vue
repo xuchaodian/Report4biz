@@ -260,13 +260,17 @@
       </div>
     </el-dialog>
   </div>
+  <!-- 隐藏地图容器（用于导出竞品地图截图） -->
+  <div ref="hiddenMapRef" style="position:fixed;left:-9999px;top:0;width:700px;height:500px;z-index:-1;"></div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -365,6 +369,29 @@ const insights = ref([])
 const insightLoading = ref(false)
 let chartResizeHandler = null
 
+// 隐藏地图相关（用于导出竞品地图截图）
+const hiddenMapRef = ref(null)
+let hiddenMapInstance = null
+let hiddenTileLayer = null
+let hiddenCircleGroup = null
+
+// 品牌色映射（同MapView）
+const compBrandColors = {
+  '大米先生': '#e6a23c',
+  '谷田稻香': '#f56c6c',
+  '吉野家': '#409eff',
+  '老乡鸡': '#67c23a',
+  '米村拌饭': '#9c27b0',
+  '其他': '#ff9800'
+}
+const getCompBrandColor = (brand) => {
+  if (!brand) return compBrandColors['其他']
+  for (const key in compBrandColors) {
+    if (brand.includes(key) || key.includes(brand)) return compBrandColors[key]
+  }
+  return compBrandColors['其他']
+}
+
 // 注册图表DOM元素
 const registerChartEl = (el, serviceCode) => {
   if (el) {
@@ -432,6 +459,11 @@ onMounted(async () => {
       router.replace({ query: {} })
     }, 500)
   }
+})
+
+// 组件销毁时清理隐藏地图
+onUnmounted(() => {
+  destroyHiddenMap()
 })
 
 // 刷新配额
@@ -2522,18 +2554,153 @@ const handleExportPDF = async () => {
   }
 }
 
-// 导出Excel
+// ====== 隐藏地图（用于竞品地图截图） ======
+const initHiddenMap = (lat, lng, zoom = 14) => {
+  destroyHiddenMap()
+  if (!hiddenMapRef.value) return null
+  hiddenMapInstance = L.map(hiddenMapRef.value, {
+    center: [lat, lng],
+    zoom,
+    zoomControl: false,
+    attributionControl: false,
+    dragging: false,
+    scrollWheelZoom: false,
+    doubleClickZoom: false,
+    touchZoom: false,
+    keyboard: false
+  })
+  // 添加高德底图
+  hiddenTileLayer = L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+    subdomains: [1, 2, 3, 4],
+    maxZoom: 18,
+    minZoom: 3
+  }).addTo(hiddenMapInstance)
+  // 触发尺寸修正
+  setTimeout(() => { hiddenMapInstance?.invalidateSize() }, 100)
+  return hiddenMapInstance
+}
+
+const renderCircleOnHiddenMap = (centerLat, centerLng, radius, competitors) => {
+  if (!hiddenMapInstance) return
+
+  if (hiddenCircleGroup) {
+    hiddenCircleGroup.clearLayers()
+  } else {
+    hiddenCircleGroup = L.layerGroup().addTo(hiddenMapInstance)
+  }
+
+  // 红色半透明半径圆
+  const circle = L.circle([centerLat, centerLng], {
+    radius,
+    color: '#f56c6c',
+    fillColor: '#f56c6c',
+    fillOpacity: 0.2,
+    weight: 2
+  })
+  hiddenCircleGroup.addLayer(circle)
+
+  // 圆心标记
+  const centerMarker = L.marker([centerLat, centerLng], {
+    icon: L.divIcon({
+      className: '',
+      html: '<div style="background:#fff;color:#f56c6c;width:14px;height:14px;border:2px solid #f56c6c;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    })
+  })
+  hiddenCircleGroup.addLayer(centerMarker)
+
+  // 竞品标记
+  competitors.forEach(c => {
+    const color = getCompBrandColor(c.brand)
+    const marker = L.marker([c.latitude, c.longitude], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:11px;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">C</div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      })
+    })
+    marker.bindTooltip(`${c.brand} ${c.name}`, { direction: 'top', offset: [0, -12] })
+    hiddenCircleGroup.addLayer(marker)
+  })
+
+  // 自适应视图
+  const allPoints = [[centerLat, centerLng], ...competitors.map(c => [c.latitude, c.longitude])]
+  if (allPoints.length > 1) {
+    hiddenMapInstance.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] })
+  } else {
+    hiddenMapInstance.setView([centerLat, centerLng], 14)
+  }
+}
+
+const captureHiddenMap = async () => {
+  if (!hiddenMapRef.value) return null
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  const { default: html2canvas } = await import('html2canvas')
+  const canvas = await html2canvas(hiddenMapRef.value, {
+    useCORS: true,
+    allowTaint: false,
+    scale: 2,
+    backgroundColor: '#ffffff',
+    logging: false
+  })
+  return canvas.toDataURL('image/png')
+}
+
+const destroyHiddenMap = () => {
+  if (hiddenCircleGroup) {
+    hiddenCircleGroup.clearLayers()
+    hiddenCircleGroup = null
+  }
+  if (hiddenMapInstance) {
+    hiddenMapInstance.remove()
+    hiddenMapInstance = null
+  }
+  hiddenTileLayer = null
+}
+
+// 导出Excel（含竞品地图截图）
 const handleExportExcel = async () => {
   if (!currentDetail.value) {
     ElMessage.info('暂无数据可导出')
     return
   }
   try {
-    ElMessage.info('正在生成Excel报表...')
-    const response = await axios.get(`/api/purchase/${currentDetail.value.id}/export-excel`, {
-      responseType: 'blob'
-    })
-    // 从Content-Disposition头获取文件名
+    ElMessage.info('正在生成Excel报表，请稍候...')
+    const id = currentDetail.value.id
+
+    // 1. 获取竞品地图数据
+    let screenshot = null
+    try {
+      const mapDataResp = await axios.get(`/api/purchase/${id}/competitors-for-map`)
+      const mapData = mapDataResp.data
+
+      // 2. 初始化隐藏地图并渲染
+      initHiddenMap(mapData.center.lat, mapData.center.lng, 13)
+      renderCircleOnHiddenMap(mapData.center.lat, mapData.center.lng, mapData.radius, mapData.competitors)
+
+      // 3. 截图
+      screenshot = await captureHiddenMap()
+    } catch (mapErr) {
+      console.warn('竞品地图截图失败，回退到普通导出:', mapErr)
+    } finally {
+      destroyHiddenMap()
+    }
+
+    // 4. 调用导出API（带截图→新POST接口；回退→原GET接口）
+    let response
+    if (screenshot) {
+      response = await axios.post(`/api/purchase/${id}/export-map-excel`, { screenshot }, {
+        responseType: 'blob'
+      })
+    } else {
+      response = await axios.get(`/api/purchase/${id}/export-excel`, {
+        responseType: 'blob'
+      })
+    }
+
+    // 5. 下载文件
     const disposition = response.headers['content-disposition']
     let fileName = `${currentDetail.value.store_name || '门店'}_${currentDetail.value.city_month || ''}_商圈数据.xlsx`
     if (disposition) {

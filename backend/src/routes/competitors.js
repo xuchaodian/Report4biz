@@ -2,8 +2,11 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
+import path from 'path'
+import os from 'os'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import ExcelJS from 'exceljs'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
@@ -334,6 +337,184 @@ router.get('/query/bounds', authenticate, (req, res) => {
   } catch (error) {
     console.error('空间查询错误:', error)
     res.status(500).json({ message: '查询失败' })
+  }
+})
+
+// 导出竞品地图Excel（含地图截图）
+router.post('/export-map-excel', authenticate, async (req, res) => {
+  try {
+    const { screenshot, center, radius, myStores, competitors } = req.body
+
+    if (!screenshot || !center || !radius) {
+      return res.status(400).json({ message: '缺少必要参数（screenshot, center, radius）' })
+    }
+
+    // 解码base64截图
+    const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '')
+    const imageBuffer = Buffer.from(base64Data, 'base64')
+
+    // 创建Workbook
+    const workbook = new ExcelJS.Workbook()
+    workbook.creator = 'Report4biz'
+    workbook.created = new Date()
+
+    // 设置颜色主题
+    const headerColor = { argb: 'FFF56C6C' }     // 红色标题背景
+    const headerFgColor = { argb: 'FFFFFFFF' }    // 白色标题文字
+    const subHeaderColor = { argb: 'FFF0F0F0' }   // 浅灰表头背景
+    const borderStyle = {
+      top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      left: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      right: { style: 'thin', color: { argb: 'FFCCCCCC' } }
+    }
+
+    // ==================== Sheet 1: 竞品地图（截图） ====================
+    const mapSheet = workbook.addWorksheet('竞品地图')
+
+    // 插入截图图片
+    const imageId = workbook.addImage({
+      buffer: imageBuffer,
+      extension: 'png'
+    })
+    mapSheet.addImage(imageId, {
+      tl: { col: 1, row: 1 },
+      ext: { width: 700, height: 500 }
+    })
+
+    // 设置列宽和行高适配图片
+    mapSheet.getColumn(1).width = 8
+    mapSheet.getColumn(2).width = 80
+    // 在地图图片下方添加标题信息
+    const radiusText = radius >= 1000 ? `${(radius / 1000)}公里` : `${radius}米`
+    mapSheet.getCell('A30').value = `分析中心: ${center.name || `${center.lat.toFixed(6)}, ${center.lng.toFixed(6)}`}`
+    mapSheet.getCell('A30').font = { bold: true, size: 12, color: { argb: 'FF333333' } }
+    mapSheet.getCell('A31').value = `分析半径: ${radiusText}`
+    mapSheet.getCell('A31').font = { size: 11, color: { argb: 'FF666666' } }
+    const storeCount = (myStores || []).length
+    const compCount = (competitors || []).length
+    mapSheet.getCell('A32').value = `圈内门店: 我的门店 ${storeCount} 家 / 竞品门店 ${compCount} 家`
+    mapSheet.getCell('A32').font = { size: 11, color: { argb: 'FF666666' } }
+
+    // ==================== Sheet 2: 竞品门店 ====================
+    const compSheet = workbook.addWorksheet('竞品门店')
+
+    // 标题行
+    const compTitleRow = compSheet.addRow(['竞品门店明细'])
+    compSheet.mergeCells(`A${compTitleRow.number}:E${compTitleRow.number}`)
+    compTitleRow.getCell(1).font = { bold: true, size: 14, color: headerFgColor }
+    compTitleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: headerColor }
+    compTitleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
+    compTitleRow.height = 30
+
+    // 空行
+    compSheet.addRow([])
+
+    // 表头
+    const compHeaderRow = compSheet.addRow(['序号', '品牌', '门店名称', '地址', '距圆心距离'])
+    compHeaderRow.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FF333333' }, size: 11 }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: subHeaderColor }
+      cell.border = borderStyle
+      cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    })
+    compHeaderRow.height = 25
+
+    // 数据行
+    ;(competitors || []).forEach((store, index) => {
+      const distText = store.distance < 1000
+        ? `${store.distance.toFixed(0)}米`
+        : `${(store.distance / 1000).toFixed(2)}公里`
+      const row = compSheet.addRow([
+        index + 1,
+        store.brand || '-',
+        store.name || '-',
+        store.address || '-',
+        distText
+      ])
+      row.eachCell(cell => {
+        cell.border = borderStyle
+        cell.alignment = { vertical: 'middle' }
+      })
+      row.height = 22
+    })
+
+    // 列宽
+    compSheet.getColumn(1).width = 8
+    compSheet.getColumn(2).width = 18
+    compSheet.getColumn(3).width = 30
+    compSheet.getColumn(4).width = 40
+    compSheet.getColumn(5).width = 18
+
+    // ==================== Sheet 3: 我的门店 ====================
+    const storeSheet = workbook.addWorksheet('我的门店')
+
+    // 标题行
+    const storeTitleRow = storeSheet.addRow(['我的门店明细'])
+    storeSheet.mergeCells(`A${storeTitleRow.number}:E${storeTitleRow.number}`)
+    storeTitleRow.getCell(1).font = { bold: true, size: 14, color: headerFgColor }
+    storeTitleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF409EFF' } }
+    storeTitleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
+    storeTitleRow.height = 30
+
+    // 空行
+    storeSheet.addRow([])
+
+    // 表头
+    const storeHeaderRow = storeSheet.addRow(['序号', '品牌', '门店名称', '地址', '距圆心距离'])
+    storeHeaderRow.eachCell(cell => {
+      cell.font = { bold: true, color: { argb: 'FF333333' }, size: 11 }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: subHeaderColor }
+      cell.border = borderStyle
+      cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    })
+    storeHeaderRow.height = 25
+
+    // 数据行
+    ;(myStores || []).forEach((store, index) => {
+      const distText = store.distance < 1000
+        ? `${store.distance.toFixed(0)}米`
+        : `${(store.distance / 1000).toFixed(2)}公里`
+      const row = storeSheet.addRow([
+        index + 1,
+        store.brand || '-',
+        store.name || '-',
+        store.address || '-',
+        distText
+      ])
+      row.eachCell(cell => {
+        cell.border = borderStyle
+        cell.alignment = { vertical: 'middle' }
+      })
+      row.height = 22
+    })
+
+    // 列宽
+    storeSheet.getColumn(1).width = 8
+    storeSheet.getColumn(2).width = 18
+    storeSheet.getColumn(3).width = 30
+    storeSheet.getColumn(4).width = 40
+    storeSheet.getColumn(5).width = 18
+
+    // 生成文件
+    const fileName = `竞品地图分析_${center.name || '未知'}_${Date.now()}.xlsx`
+    const outputDir = os.tmpdir()
+    const outputPath = path.join(outputDir, fileName)
+
+    await workbook.xlsx.writeFile(outputPath)
+
+    // 发送文件
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+    const fileStream = fs.createReadStream(outputPath)
+    fileStream.pipe(res)
+    fileStream.on('end', () => {
+      fs.unlink(outputPath, () => {})
+    })
+  } catch (error) {
+    console.error('导出竞品地图Excel错误:', error)
+    res.status(500).json({ message: '导出失败: ' + error.message })
   }
 })
 

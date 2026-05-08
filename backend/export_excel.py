@@ -6,7 +6,11 @@ Excel报表导出脚本 - 从SQLite读取购买数据，用openpyxl填充模板�
 import sys
 import json
 import sqlite3
-from openpyxl import load_workbook
+import os
+from openpyxl import load_workbook, styles
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils import get_column_letter
+from io import BytesIO
 
 def main():
     if len(sys.argv) < 6:
@@ -19,15 +23,16 @@ def main():
     purchase_id = int(sys.argv[4])
     user_id = int(sys.argv[5])
 
+    import math
+
     try:
-        # 从数据库读取购买记录
+        # 从数据库读取购买记录（保持连接打开供后续查询竞品使用）
         db = sqlite3.connect(db_path)
         db.row_factory = sqlite3.Row
         row = db.execute(
             "SELECT * FROM purchases WHERE id = ? AND user_id = ?",
             (purchase_id, user_id)
         ).fetchone()
-        db.close()
 
         if not row:
             print(json.dumps({"error": "记录不存在"}))
@@ -37,6 +42,8 @@ def main():
         store_name = row.get('store_name', '门店')
         radius = row.get('radius', 500)
         city_month = row.get('city_month', '')
+        center_lat = row.get('center_lat', 0)
+        center_lng = row.get('center_lng', 0)
 
         # 解析 result_data
         result_data = row.get('result_data')
@@ -146,6 +153,93 @@ def main():
                 field_name = str(cell.value or '').strip().lower()
                 if field_name and field_name in field_map:
                     ws.cell(row=cell.row, column=5).value = field_map[field_name]
+
+        # ===== 3. 竞品列表（中心3km范围内） =====
+        if '竞品列表' in wb.sheetnames:
+            ws = wb['竞品列表']
+
+            # 查询当前用户的竞品门店
+            competitors = db.execute(
+                "SELECT * FROM competitors WHERE user_id = ?",
+                (user_id,)
+            ).fetchall()
+
+            # Haversine 公式计算距离（米）
+            def haversine(lat1, lng1, lat2, lng2):
+                R = 6371000  # 地球半径（米）
+                phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                delta_phi = math.radians(lat2 - lat1)
+                delta_lambda = math.radians(lng2 - lng1)
+                a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
+                return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+            # 计算距离并筛选3km内
+            nearby = []
+            for comp in competitors:
+                comp = dict(comp)
+                dist = haversine(center_lat, center_lng, comp['latitude'], comp['longitude'])
+                if dist <= 3000:  # 3km内
+                    comp['distance'] = round(dist, 1)
+                    nearby.append(comp)
+
+            # 按距离排序
+            nearby.sort(key=lambda c: c['distance'])
+
+            # 列映射：A=店名, B=地址, C=分类, D=价格, E=星级, F=评论数, G=口味, H=环境, I=服务, J=距离
+            row_idx = 4  # 从第4行开始输出
+            for comp in nearby:
+                ws.cell(row=row_idx, column=1, value=comp.get('name', ''))
+                ws.cell(row=row_idx, column=2, value=comp.get('address', ''))
+                ws.cell(row=row_idx, column=3, value=comp.get('store_category', ''))
+                ws.cell(row=row_idx, column=4, value=comp.get('price', 0))
+                ws.cell(row=row_idx, column=5, value=comp.get('rating', 0))
+                ws.cell(row=row_idx, column=6, value=int(comp.get('reviews', 0)))
+                ws.cell(row=row_idx, column=7, value=comp.get('taste_score', 0))
+                ws.cell(row=row_idx, column=8, value=comp.get('environment_score', 0))
+                ws.cell(row=row_idx, column=9, value=comp.get('service_score', 0))
+                ws.cell(row=row_idx, column=10, value=round(comp['distance']))
+                row_idx += 1
+
+        # 关闭数据库
+        db.close()
+
+        # ===== 4. 竞品地图（如有截图） =====
+        screenshot_path = sys.argv[6] if len(sys.argv) >= 7 else None
+        if screenshot_path and os.path.exists(screenshot_path):
+            try:
+                # 创建或获取"竞品地图"sheet
+                sheet_name = '竞品地图'
+                if sheet_name in wb.sheetnames:
+                    ws_map = wb[sheet_name]
+                    # 清除旧内容
+                    for row in ws_map.iter_rows():
+                        for cell in row:
+                            cell.value = None
+                else:
+                    ws_map = wb.create_sheet(sheet_name)
+
+                # 标题
+                ws_map['A1'] = f'竞品分布地图 - {store_name}'
+                ws_map['A1'].font = styles.Font(bold=True, size=14, color='333333')
+
+                # 摘要信息（A2行）
+                ws_map['A2'] = f'分析中心: {store_name}  |  半径: {radius_str}  |  圈内竞品: {len(nearby) if "nearby" in dir() else 0}家'
+
+                # 插入截图到A3
+                img = XLImage(screenshot_path)
+                # 限制图片宽高以适应Excel视图
+                img.width = 600
+                img.height = 400
+                ws_map.add_image(img, 'A3')
+
+                # 设置列宽和行高
+                ws_map.column_dimensions['A'].width = 15
+                ws_map.column_dimensions['B'].width = 75
+
+                # 清理截图文件
+                os.remove(screenshot_path)
+            except Exception as e_img:
+                print(f'[WARN] 嵌入竞品地图截图失败: {e_img}', file=sys.stderr)
 
         # 保存
         wb.save(output_path)

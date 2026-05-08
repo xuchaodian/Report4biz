@@ -603,8 +603,12 @@
       </div>
       <template #footer>
         <el-button @click="closeAnalysisDialog">关闭</el-button>
+        <el-button type="success" :loading="exportMapLoading" @click="handleExportMapExcel">
+          <el-icon><Download /></el-icon>导出Excel
+        </el-button>
         <el-button type="primary" @click="showCircleOnMap">显示地图</el-button>
-      </template>    </el-dialog>
+      </template>
+    </el-dialog>
 
     <!-- 人口对比对话框 -->
     <el-dialog v-model="populationCompareVisible" title="人口对比分析" width="900px" draggable :show-close="true">
@@ -800,7 +804,8 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
+  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close,
+  Download
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -926,6 +931,8 @@ const circleAnalysisData = reactive({
   competitorStoresFull: []
 })
 const circleAnalysisTitle = ref('圆形内门店分析')
+const circleAnalysisStoreName = ref('')
+const exportMapLoading = ref(false)
 
 // 商圈人口分布相关
 let populationLayerGroup = null  // 人口分布图层组
@@ -1389,8 +1396,9 @@ const openStoreSmartsteps = (storeId) => {
 }
 
 // 门店popup"竞品分布"按钮 - 以门店坐标为圆心分析周边竞品
-const openStoreCompetitors = (lat, lng) => {
+const openStoreCompetitors = (storeName, lat, lng) => {
   if (!map) return
+  circleAnalysisStoreName.value = storeName || ''
   businessCircleExpanded.value = false
   circleDialogMode.value = 'stores'
   circleForm.center = { lat, lng }
@@ -2493,6 +2501,109 @@ const showCircleOnMap = () => {
   ElMessage.success('已在地图上显示分析结果')
 }
 
+// 导出竞品地图Excel（含截图）
+const handleExportMapExcel = async () => {
+  if (!map || !circleAnalysisParams.center) {
+    ElMessage.warning('请先点击"显示地图"')
+    return
+  }
+  if (!analysisCircleLayer) {
+    // 确保地图已渲染分析图层
+    showCircleOnMap()
+    await nextTick()
+  }
+  exportMapLoading.value = true
+  try {
+    ElMessage.info('正在生成截图...')
+
+    // 确保地图呈现分析图层
+    if (!analysisCircleLayer || !map.hasLayer(analysisCircleLayer)) {
+      showCircleOnMap()
+      await nextTick()
+    }
+
+    // 等待地图瓦片加载
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    // 使用html2canvas截图
+    const { default: html2canvas } = await import('html2canvas')
+    const mapEl = document.getElementById('map')
+    if (!mapEl) {
+      throw new Error('地图容器不存在')
+    }
+
+    const canvas = await html2canvas(mapEl, {
+      useCORS: true,
+      allowTaint: false,
+      scale: 2,
+      backgroundColor: '#ffffff',
+      logging: false
+    })
+
+    const screenshot = canvas.toDataURL('image/png')
+
+    // 组装请求数据
+    const radiusText = circleAnalysisParams.radius >= 1000
+      ? `${(circleAnalysisParams.radius / 1000)}km`
+      : `${circleAnalysisParams.radius}m`
+
+    const requestData = {
+      screenshot,
+      center: {
+        name: circleAnalysisStoreName.value || `${circleAnalysisParams.center.lat.toFixed(6)}, ${circleAnalysisParams.center.lng.toFixed(6)}`,
+        lat: circleAnalysisParams.center.lat,
+        lng: circleAnalysisParams.center.lng
+      },
+      radius: circleAnalysisParams.radius,
+      myStores: circleAnalysisData.myStoresFull.map(s => ({
+        name: s.name,
+        brand: s.brand || '',
+        address: s.address || '',
+        latitude: s.latitude,
+        longitude: s.longitude,
+        distance: s.distance || 0
+      })),
+      competitors: circleAnalysisData.competitorStoresFull.map(s => ({
+        name: s.name,
+        brand: s.brand || '',
+        address: s.address || '',
+        latitude: s.latitude,
+        longitude: s.longitude,
+        distance: s.distance || 0
+      }))
+    }
+
+    ElMessage.info('正在生成Excel...')
+    const response = await axios.post('/api/competitors/export-map-excel', requestData, {
+      responseType: 'blob'
+    })
+
+    // 下载文件
+    const disposition = response.headers['content-disposition']
+    let fileName = `竞品地图分析_${circleAnalysisStoreName.value || '未知'}_${Date.now()}.xlsx`
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+      if (match) {
+        fileName = decodeURIComponent(match[1])
+      }
+    }
+
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success('竞品地图Excel导出成功')
+  } catch (e) {
+    console.error('导出竞品地图Excel失败:', e)
+    ElMessage.error('导出失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    exportMapLoading.value = false
+  }
+}
+
 // 图标样式选项
 const markerStyleOptions = [
   { value: 'store', label: '店铺', icon: '🏪' },
@@ -2844,7 +2955,7 @@ const loadMarkers = async () => {
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
           <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
           <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
-          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+          <button id="comp-btn-${markerData.id}" onclick="window.openStoreCompetitors('${(markerData.name||'').replace(/'/g, "\\\\'")}', ${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
           <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
         </div>
       </div>
@@ -4502,6 +4613,17 @@ const handleShapefileQuery = (event) => {
 
     // 创建图层组
     shapefileQueryLayer = L.layerGroup()
+
+    // 立即根据GeoJSON调整地图视图，不等分批渲染完成
+    try {
+      const geoLayer = L.geoJSON(features)
+      const bounds = geoLayer.getBounds()
+      if (bounds && bounds.isValid && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50] })
+      }
+    } catch (e) {
+      console.error('[Shapefile Query] 初始定位失败:', e)
+    }
 
     // 使用递归分批处理，每批10个，避免阻塞
     const BATCH_SIZE = 10
