@@ -239,7 +239,7 @@ def main():
                 # 清理截图文件
                 os.remove(screenshot_path)
             except Exception as e_img:
-                print(f'[WARN] 嵌入竞品地图截图失败: {e_img}', file=sys.stderr)
+                print(f'[EXPORT_WARN] 嵌入竞品地图截图失败: {e_img}')
 
         # 保存
         wb.save(output_path)

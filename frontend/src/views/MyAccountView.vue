@@ -2557,8 +2557,12 @@ const handleExportPDF = async () => {
 // ====== 隐藏地图（用于竞品地图截图） ======
 const initHiddenMap = (lat, lng, zoom = 14) => {
   destroyHiddenMap()
-  if (!hiddenMapRef.value) return null
-  hiddenMapInstance = L.map(hiddenMapRef.value, {
+  const container = hiddenMapRef.value
+  if (!container) {
+    console.warn('隐藏地图容器不存在')
+    return null
+  }
+  hiddenMapInstance = L.map(container, {
     center: [lat, lng],
     zoom,
     zoomControl: false,
@@ -2576,7 +2580,7 @@ const initHiddenMap = (lat, lng, zoom = 14) => {
     minZoom: 3
   }).addTo(hiddenMapInstance)
   // 触发尺寸修正
-  setTimeout(() => { hiddenMapInstance?.invalidateSize() }, 100)
+  hiddenMapInstance.invalidateSize()
   return hiddenMapInstance
 }
 
@@ -2635,17 +2639,61 @@ const renderCircleOnHiddenMap = (centerLat, centerLng, radius, competitors) => {
 }
 
 const captureHiddenMap = async () => {
-  if (!hiddenMapRef.value) return null
-  await new Promise(resolve => setTimeout(resolve, 2000))
+  const container = hiddenMapRef.value
+  if (!container) {
+    console.warn('hiddenMapRef为空，无法截图')
+    return null
+  }
+  if (!hiddenMapInstance) {
+    console.warn('hiddenMapInstance未初始化，无法截图')
+    return null
+  }
+
+  // 等待地图瓦片加载
+  await new Promise(resolve => {
+    let loaded = false
+    const onLoad = () => { loaded = true }
+    hiddenMapInstance.on('tileload', onLoad)
+    // 保险：最迟3秒后继续
+    setTimeout(() => {
+      hiddenMapInstance.off('tileload', onLoad)
+      resolve()
+    }, 3000)
+    // 如果已经加载过了，立即继续
+    setTimeout(() => {
+      if (!loaded) {
+        loaded = true
+        hiddenMapInstance.off('tileload', onLoad)
+        resolve()
+      }
+    }, 500)
+  })
+
   const { default: html2canvas } = await import('html2canvas')
-  const canvas = await html2canvas(hiddenMapRef.value, {
+  const canvas = await html2canvas(container, {
     useCORS: true,
     allowTaint: false,
     scale: 2,
     backgroundColor: '#ffffff',
     logging: false
   })
-  return canvas.toDataURL('image/png')
+
+  // 验证截图不为空
+  const ctx = canvas.getContext('2d')
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  let hasContent = false
+  for (let i = 0; i < imageData.data.length; i += 40) {
+    if (imageData.data[i] !== 255 || imageData.data[i + 1] !== 255 || imageData.data[i + 2] !== 255) {
+      hasContent = true
+      break
+    }
+  }
+  if (!hasContent) {
+    console.warn('截图内容为空白')
+    return null
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.85)
 }
 
 const destroyHiddenMap = () => {
