@@ -58,8 +58,8 @@ def main():
             radii_list = radius
         else:
             radii_list = [radius]
-        radius_km = radii_list[0] / 1000 if radii_list else 0.5
-        radius_str = f"{radius_km}km"
+        radius_km = 3.0
+        radius_str = "3km"
 
         # 打开模板
         wb = load_workbook(template_path)
@@ -203,46 +203,34 @@ def main():
         # 关闭数据库
         db.close()
 
-        # ===== 4. 竞品地图（如有截图） =====
-        screenshot_path = sys.argv[6] if len(sys.argv) >= 7 else None
-        if screenshot_path and os.path.exists(screenshot_path):
+        # ===== 4. 竞品地图 + 购物中心地图（如有截图） =====
+        comp_screenshot = sys.argv[6] if len(sys.argv) >= 7 else None
+        shop_screenshot = sys.argv[7] if len(sys.argv) >= 8 else None
+
+        # 通用函数：在指定sheet的A3插入截图
+        def embed_screenshot(sheet_name, file_path, img_w=1200, img_h=786):
+            if not file_path or not os.path.exists(file_path):
+                return
             try:
-                # 创建或获取"竞品地图"sheet
-                sheet_name = '竞品地图'
-                if sheet_name in wb.sheetnames:
-                    ws_map = wb[sheet_name]
-                    # 清除旧内容
-                    for row in ws_map.iter_rows():
-                        for cell in row:
-                            cell.value = None
-                else:
-                    ws_map = wb.create_sheet(sheet_name)
+                ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+                img = XLImage(file_path)
+                img.width = img_w
+                img.height = img_h
+                ws.add_image(img, 'A3')
+            except Exception as e:
+                print(f'[EXPORT_WARN] {sheet_name}截图嵌入失败: {e}')
 
-                # 标题
-                ws_map['A1'] = f'竞品分布地图 - {store_name}'
-                ws_map['A1'].font = styles.Font(bold=True, size=14, color='333333')
-
-                # 摘要信息（A2行）
-                ws_map['A2'] = f'分析中心: {store_name}  |  半径: {radius_str}  |  圈内竞品: {len(nearby) if "nearby" in dir() else 0}家'
-
-                # 插入截图到A3
-                img = XLImage(screenshot_path)
-                # 限制图片宽高以适应Excel视图
-                img.width = 600
-                img.height = 400
-                ws_map.add_image(img, 'A3')
-
-                # 设置列宽和行高
-                ws_map.column_dimensions['A'].width = 15
-                ws_map.column_dimensions['B'].width = 75
-
-                # 清理截图文件
-                os.remove(screenshot_path)
-            except Exception as e_img:
-                print(f'[EXPORT_WARN] 嵌入竞品地图截图失败: {e_img}')
+        embed_screenshot('竞品地图', comp_screenshot, 1200, 786)
+        embed_screenshot('购物中心地图', shop_screenshot, 1200, 786)
 
         # 保存
         wb.save(output_path)
+
+        # 保存完成后清理截图文件
+        for fp in [comp_screenshot, shop_screenshot]:
+            if fp and os.path.exists(fp):
+                try: os.remove(fp)
+                except: pass
 
         # 输出文件名信息（给Node.js使用）
         file_name = f"{store_name}_{radius_str}_{city_month}.xlsx"

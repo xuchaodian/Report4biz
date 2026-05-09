@@ -35,3 +35,4 @@ database/
 
 # 上传文件
 uploads/
+__pycache__/

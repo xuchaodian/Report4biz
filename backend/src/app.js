@@ -18,6 +18,7 @@ import poiRoutes from './routes/poi.js'
 import smartstepsRoutes from './routes/smartsteps.js'
 import purchaseRoutes from './routes/purchase.js'
 import templateRoutes from './routes/template.js'
+import tileProxyRoutes from './routes/tile-proxy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -57,6 +58,7 @@ async function start() {
     app.use('/api/smartsteps', smartstepsRoutes)
     app.use('/api/purchase', purchaseRoutes)
     app.use('/api/template', templateRoutes)
+    app.use('/api/tile-proxy', tileProxyRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

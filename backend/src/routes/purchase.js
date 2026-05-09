@@ -393,20 +393,7 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
 
     const centerLat = purchase.center_lat
     const centerLng = purchase.center_lng
-    const radius = purchase.radius || 500
-
-    // 解析半径
-    let radiusInMeters = 3000 // 默认3km
-    if (typeof radius === 'string') {
-      try {
-        const radiiList = JSON.parse(radius)
-        radiusInMeters = radiiList[0] || 3000
-      } catch (e) {
-        radiusInMeters = parseInt(radius) || 3000
-      }
-    } else if (typeof radius === 'number') {
-      radiusInMeters = radius
-    }
+    const radiusInMeters = 3000 // 固定3km
 
     // Haversine 函数
     const haversine = (lat1, lng1, lat2, lng2) => {
@@ -452,11 +439,66 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
   }
 })
 
+// 获取购买记录中心点3km内的购物中心（用于"购物中心地图"截图）
+router.get('/:id/shopping-centers-for-map', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+
+    const purchase = db.prepare(`
+      SELECT * FROM purchases WHERE id = ? AND user_id = ? AND status = 'active'
+    `).get(id, req.user.id)
+
+    if (!purchase) {
+      return res.status(404).json({ message: '记录不存在' })
+    }
+
+    const centerLat = purchase.center_lat
+    const centerLng = purchase.center_lng
+    const radiusInMeters = 3000
+
+    const haversine = (lat1, lng1, lat2, lng2) => {
+      const R = 6371000
+      const phi1 = lat1 * Math.PI / 180
+      const phi2 = lat2 * Math.PI / 180
+      const deltaPhi = (lat2 - lat1) * Math.PI / 180
+      const deltaLambda = (lng2 - lng1) * Math.PI / 180
+      const a = Math.sin(deltaPhi/2)**2 + Math.cos(phi1)*Math.cos(phi2)*Math.sin(deltaLambda/2)**2
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    }
+
+    const centers = db.prepare(`SELECT * FROM shopping_centers`).all()
+
+    const nearby = centers
+      .map(c => ({
+        id: c.id,
+        name: c.name,
+        address: c.address || '',
+        latitude: c.latitude,
+        longitude: c.longitude,
+        icon_color: c.icon_color || '#67c23a',
+        status: c.status || '正常',
+        distance: Math.round(haversine(centerLat, centerLng, c.latitude, c.longitude))
+      }))
+      .filter(c => c.distance <= radiusInMeters)
+      .sort((a, b) => a.distance - b.distance)
+
+    res.json({
+      center: { lat: centerLat, lng: centerLng, name: purchase.store_name || '' },
+      radius: radiusInMeters,
+      centers: nearby
+    })
+  } catch (error) {
+    console.error('获取购物中心地图数据失败:', error)
+    res.status(500).json({ message: '获取失败: ' + error.message })
+  }
+})
+
 // 导出Excel报表（使用Python+openpyxl，保留图表）
 router.get('/:id/export-excel', authenticate, (req, res) => {
   const dbPath = join(__dirname, '../../database/webgis.db')
   const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
-  const outputPath = join(os.tmpdir(), `export_${req.params.id}_${Date.now()}.xlsx`)
+  const outputPath = join(__dirname, '../../uploads/screenshots', `export_${req.params.id}_${Date.now()}.xlsx`)
 
   // 检查模板
   if (!fs.existsSync(templatePath)) {
@@ -505,43 +547,56 @@ router.get('/:id/export-excel', authenticate, (req, res) => {
   })
 })
 
-// 导出Excel报表（带竞品地图截图）
+// 导出Excel报表（带竞品地图截图 + 购物中心地图截图）
 router.post('/:id/export-map-excel', authenticate, async (req, res) => {
-  const { screenshot } = req.body
+  const { competitorScreenshot, shoppingCenterScreenshot } = req.body
   const dbPath = join(__dirname, '../../database/webgis.db')
   const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
-  const outputPath = join(os.tmpdir(), `export_map_${req.params.id}_${Date.now()}.xlsx`)
+  const outputPath = join(__dirname, '../../uploads/screenshots', `export_${req.params.id}_${Date.now()}.xlsx`)
 
   // 检查模板
   if (!fs.existsSync(templatePath)) {
     return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
   }
 
-  // 保存截图为临时文件
-  let screenshotPath = null
-  if (screenshot) {
+  const screenshotDir = join(__dirname, '../../uploads/screenshots')
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
+
+  // 保存两个截图为临时文件
+  const saveScreenshot = (base64Str, prefix) => {
+    if (!base64Str) return null
     try {
-      const base64Data = screenshot.replace(/^data:image\/\w+;base64,/, '')
-      const imageBuffer = Buffer.from(base64Data, 'base64')
-      screenshotPath = join(os.tmpdir(), `screenshot_${req.params.id}_${Date.now()}.png`)
-      fs.writeFileSync(screenshotPath, imageBuffer)
+      const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, '')
+      const buf = Buffer.from(base64Data, 'base64')
+      if (buf.length < 100) return null
+      const fpath = join(screenshotDir, `${prefix}_${req.params.id}_${Date.now()}.png`)
+      fs.writeFileSync(fpath, buf)
+      console.log(`[导出截图] 已保存 ${prefix}: ${fpath} (${buf.length}字节)`)
+      return fpath
     } catch (e) {
-      console.error('保存截图失败:', e)
+      console.error(`[导出截图] 保存${prefix}失败:`, e)
+      return null
     }
   }
 
-  // 调用Python脚本
+  const compPath = saveScreenshot(competitorScreenshot, 'competitor')
+  const shopPath = saveScreenshot(shoppingCenterScreenshot, 'shopping')
+
+  // 调用Python脚本（传两个截图路径）
   const scriptPath = join(__dirname, '../../export_excel.py')
   let cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
-  if (screenshotPath) {
-    cmd += ` "${screenshotPath}"`
-  }
+  if (compPath) cmd += ` "${compPath}"`
+  if (shopPath) cmd += ` "${shopPath}"`
+  console.log(`[导出截图] 执行命令: ${cmd}`)
 
   exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
-    // 清理截图临时文件
-    if (screenshotPath) {
-      try { fs.unlinkSync(screenshotPath) } catch (e) {}
-    }
+    console.log(`[导出截图] Python stdout: ${stdout}`)
+    if (stderr) console.log(`[导出截图] Python stderr: ${stderr}`)
+
+    // 清理两个截图文件
+    const cleanUp = (fp) => { if (fp) try { fs.unlinkSync(fp) } catch (e) {} }
+    cleanUp(compPath)
+    cleanUp(shopPath)
 
     if (error) {
       console.error('导出Excel执行错误:', error.message)

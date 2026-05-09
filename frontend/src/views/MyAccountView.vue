@@ -260,8 +260,6 @@
       </div>
     </el-dialog>
   </div>
-  <!-- 隐藏地图容器（用于导出竞品地图截图） - 导出时会短暂可见后隐藏 -->
-  <div ref="hiddenMapRef" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:500px;z-index:9999;visibility:hidden;"></div>
 </template>
 
 <script setup>
@@ -269,8 +267,6 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from
 import * as echarts from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -369,11 +365,8 @@ const insights = ref([])
 const insightLoading = ref(false)
 let chartResizeHandler = null
 
-// 隐藏地图相关（用于导出竞品地图截图）
-const hiddenMapRef = ref(null)
-let hiddenMapInstance = null
-let hiddenTileLayer = null
-let hiddenCircleGroup = null
+// Canvas 地图截图缓存参数（用于导出竞品地图）
+const lastMapParams = ref(null)
 
 // 品牌色映射（同MapView）
 const compBrandColors = {
@@ -459,11 +452,6 @@ onMounted(async () => {
       router.replace({ query: {} })
     }, 500)
   }
-})
-
-// 组件销毁时清理隐藏地图
-onUnmounted(() => {
-  destroyHiddenMap()
 })
 
 // 刷新配额
@@ -2554,147 +2542,395 @@ const handleExportPDF = async () => {
   }
 }
 
-// ====== 隐藏地图（用于竞品地图截图） ======
-const initHiddenMap = (lat, lng, zoom = 14) => {
-  destroyHiddenMap()
-  const container = hiddenMapRef.value
-  if (!container) {
-    console.warn('隐藏地图容器不存在')
-    return null
-  }
-  hiddenMapInstance = L.map(container, {
-    center: [lat, lng],
-    zoom,
-    zoomControl: false,
-    attributionControl: false,
-    dragging: false,
-    scrollWheelZoom: false,
-    doubleClickZoom: false,
-    touchZoom: false,
-    keyboard: false
-  })
-  // 添加OSM底图（支持CORS，html2canvas可截图）
-  hiddenTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18,
-    minZoom: 3,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(hiddenMapInstance)
-  // 触发尺寸修正
-  hiddenMapInstance.invalidateSize()
-  return hiddenMapInstance
+// ====== 纯 Canvas 绘制地图截图（替代 Leaflet + html2canvas） ======
+
+// 经纬度 → 瓦片坐标（与 Leaflet/OSM 一致）
+const latLngToTileMeters = (lat, lng, zoom) => {
+  const n = Math.pow(2, zoom)
+  const x = ((lng + 180) / 360 * n)
+  const latRad = lat * Math.PI / 180
+  const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n
+  return { x, y }
 }
 
-const renderCircleOnHiddenMap = (centerLat, centerLng, radius, competitors) => {
-  if (!hiddenMapInstance) return
+// 共享的图钉绘制函数
+const drawPin = (ctx, x, y, color, label) => {
+  const pinH = 44  // 图钉总高度
+  const headR = 13 // 头部圆半径
 
-  if (hiddenCircleGroup) {
-    hiddenCircleGroup.clearLayers()
-  } else {
-    hiddenCircleGroup = L.layerGroup().addTo(hiddenMapInstance)
+  // 图钉形状：圆头 + 尖底
+  ctx.save()
+  
+  // 主图钉形状（带阴影）
+  ctx.shadowColor = 'rgba(0,0,0,0.25)'
+  ctx.shadowBlur = 4
+  ctx.shadowOffsetY = 2
+
+  // 绘制圆头
+  ctx.beginPath()
+  ctx.arc(x, y - pinH / 2 + headR, headR, 0, Math.PI * 2)
+  ctx.fillStyle = color
+  ctx.fill()
+
+  // 绘制尖底
+  ctx.beginPath()
+  ctx.moveTo(x - headR + 2, y - pinH / 2 + headR)
+  ctx.lineTo(x + headR - 2, y - pinH / 2 + headR)
+  ctx.lineTo(x, y + pinH / 2)
+  ctx.closePath()
+  ctx.fillStyle = color
+  ctx.fill()
+
+  // 高光
+  ctx.shadowColor = 'transparent'
+  ctx.beginPath()
+  ctx.arc(x - 2, y - pinH / 2 + headR - 2, 3, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'
+  ctx.fill()
+
+  // 白色描边
+  ctx.beginPath()
+  ctx.arc(x, y - pinH / 2 + headR, headR, 0, Math.PI * 2)
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(x - headR + 2, y - pinH / 2 + headR)
+  ctx.lineTo(x + headR - 2, y - pinH / 2 + headR)
+  ctx.lineTo(x, y + pinH / 2)
+  ctx.closePath()
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 2
+  ctx.stroke()
+
+  // 首字母
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 12px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label ? label.charAt(0).toUpperCase() : 'C', x, y - pinH / 2 + headR)
+
+  ctx.restore()
+}
+
+// 纯 Canvas 渲染竞品地图截图
+const captureMapToCanvas = async (centerLat, centerLng, radiusMeters, competitors, zoom = 14) => {
+  // 2倍画布尺寸
+  const CANVAS_W = 1420
+  const CANVAS_H = 930
+  const TILE_SIZE = 256
+
+  // 半径固定输出3km
+  const DISPLAY_RADIUS = 3000
+
+  // 直接用zoom 14（覆盖3km范围，画面比例合适）
+  const metersPerPixel = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, zoom)
+
+  // 创建 canvas
+  const canvas = document.createElement('canvas')
+  canvas.width = CANVAS_W
+  canvas.height = CANVAS_H
+  const ctx = canvas.getContext('2d')
+
+  // 白色背景
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+  // 中心点的瓦片坐标（像素级）
+  const center = latLngToTileMeters(centerLat, centerLng, zoom)
+  const centerPxX = center.x * TILE_SIZE
+  const centerPxY = center.y * TILE_SIZE
+  const halfW = CANVAS_W / 2
+  const halfH = CANVAS_H / 2
+
+  // 计算可见瓦片范围
+  const minTileX = Math.floor((centerPxX - halfW) / TILE_SIZE)
+  const maxTileX = Math.floor((centerPxX + CANVAS_W - halfW - 1) / TILE_SIZE)
+  const minTileY = Math.floor((centerPxY - halfH) / TILE_SIZE)
+  const maxTileY = Math.floor((centerPxY + CANVAS_H - halfH - 1) / TILE_SIZE)
+  const n = Math.pow(2, zoom)
+
+  // 加载瓦片
+  const tiles = []
+  for (let tx = minTileX; tx <= maxTileX; tx++) {
+    for (let ty = minTileY; ty <= maxTileY; ty++) {
+      const wtX = ((tx % n) + n) % n
+      const wtY = ((ty % n) + n) % n
+
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      const loadPromise = new Promise(r => { img.onload = () => r(true); img.onerror = () => r(false) })
+      img.src = `/api/tile-proxy/${zoom}/${wtX}/${wtY}.png`
+
+      const drawX = Math.round(tx * TILE_SIZE - centerPxX + halfW)
+      const drawY = Math.round(ty * TILE_SIZE - centerPxY + halfH)
+      tiles.push({ img, drawX, drawY, loaded: loadPromise })
+    }
   }
 
-  // 红色半透明半径圆
-  const circle = L.circle([centerLat, centerLng], {
-    radius,
-    color: '#f56c6c',
-    fillColor: '#f56c6c',
-    fillOpacity: 0.2,
-    weight: 2
-  })
-  hiddenCircleGroup.addLayer(circle)
+  // 等待所有瓦片加载（最多 6 秒）
+  await Promise.race([
+    Promise.all(tiles.map(t => t.loaded)),
+    new Promise(r => setTimeout(r, 6000))
+  ])
+
+  // 绘制瓦片（灰色滤镜，与系统内高德地图灰色样式一致）
+  ctx.filter = 'grayscale(100%) brightness(1.05)'
+  for (const tile of tiles) {
+    try { ctx.drawImage(tile.img, tile.drawX, tile.drawY, TILE_SIZE, TILE_SIZE) } catch (e) {}
+  }
+  ctx.filter = 'none'
+
+  // === 绘制竞品元素 ===
+
+  // 半径圆（固定3km）
+  const radiusPx = DISPLAY_RADIUS / metersPerPixel
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, radiusPx, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(245, 108, 108, 0.12)'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
+
+  // 半径文字标注
+  ctx.fillStyle = '#f56c6c'
+  ctx.font = 'bold 26px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const labelR = radiusPx + 40
+  ctx.fillText('3km', halfW + labelR, halfH)
+
+  // 圆心标记（红白圆点）
+  const dotR = 12
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, dotR, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
+
+  // 绘制图钉图标（使用共享函数）
+  // (drawPin 已提取为外层共享函数)
+
+  // 竞品图钉（带品牌标签防重叠）
+  const drawnLabels = []  // 已绘制的标签区域 {x, y, w, h}
+  for (const comp of competitors) {
+    const compPos = latLngToTileMeters(comp.latitude, comp.longitude, zoom)
+    const compPxX = (compPos.x - center.x) * TILE_SIZE + halfW
+    const compPxY = (compPos.y - center.y) * TILE_SIZE + halfH
+
+    if (compPxX < -80 || compPxX > CANVAS_W + 80 || compPxY < -80 || compPxY > CANVAS_H + 80) continue
+
+    const color = getCompBrandColor(comp.brand || '')
+    const labelText = comp.brand || ''
+
+    // 先画图钉本体（不画标签）
+    drawPin(ctx, compPxX, compPxY, color, '')
+    // 图钉内的首字母
+    const pinH = 44, headR = 13
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 14px Arial'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(labelText ? labelText.charAt(0).toUpperCase() : 'C', compPxX, compPxY - pinH / 2 + headR)
+
+    // 绘制品牌标签（带防重叠检测）
+    if (labelText) {
+      ctx.font = 'bold 14px Arial'
+      const textW = ctx.measureText(labelText).width
+      const labelX = compPxX
+      const labelY = compPxY - pinH / 2 - 4  // 图钉上方
+
+      // 检测是否与已有标签重叠
+      let overlaps = false
+      for (const existing of drawnLabels) {
+        const gap = 10
+        if (Math.abs(labelX - existing.x) < (textW / 2 + existing.w / 2 + gap) &&
+            Math.abs(labelY - existing.y) < (16 + gap)) {
+          overlaps = true
+          break
+        }
+      }
+
+      if (!overlaps) {
+        drawnLabels.push({ x: labelX, y: labelY, w: textW, h: 16 })
+        ctx.fillStyle = '#333333'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(labelText, labelX, labelY)
+      }
+    }
+  }
+
+  // 图例
+  const legendY = CANVAS_H - 80
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.fillRect(20, legendY, 320, 55)
+  ctx.strokeStyle = '#dddddd'
+  ctx.lineWidth = 1
+  ctx.strokeRect(20, legendY, 320, 55)
+  ctx.fillStyle = '#555555'
+  ctx.font = '20px Arial'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('● 红圈 = 半径 3km', 30, legendY + 18)
+  ctx.fillStyle = '#f56c6c'
+  ctx.fillText('● 红色圆点 = 圆心', 30, legendY + 42)
+  ctx.fillStyle = getCompBrandColor('')
+  ctx.fillText(`● 图钉 = 竞品门店 (${competitors.length}家)`, 190, legendY + 42)
+
+  // JPEG质量（0.5平衡清晰度和文件大小）
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
+  console.log('[导出截图] Canvas渲染成功, base64长度:', dataUrl.length, '竞品数:', competitors.length)
+  return dataUrl
+}
+
+// 购物中心地图截图
+const captureShoppingCenterMap = async (centerLat, centerLng, centers, zoom = 14) => {
+  const CANVAS_W = 1420
+  const CANVAS_H = 930
+  const TILE_SIZE = 256
+  const DISPLAY_RADIUS = 3000
+
+  const metersPerPixel = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, zoom)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = CANVAS_W
+  canvas.height = CANVAS_H
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+  const center = latLngToTileMeters(centerLat, centerLng, zoom)
+  const centerPxX = center.x * TILE_SIZE
+  const centerPxY = center.y * TILE_SIZE
+  const halfW = CANVAS_W / 2
+  const halfH = CANVAS_H / 2
+
+  const minTileX = Math.floor((centerPxX - halfW) / TILE_SIZE)
+  const maxTileX = Math.floor((centerPxX + CANVAS_W - halfW - 1) / TILE_SIZE)
+  const minTileY = Math.floor((centerPxY - halfH) / TILE_SIZE)
+  const maxTileY = Math.floor((centerPxY + CANVAS_H - halfH - 1) / TILE_SIZE)
+  const n = Math.pow(2, zoom)
+
+  const tiles = []
+  for (let tx = minTileX; tx <= maxTileX; tx++) {
+    for (let ty = minTileY; ty <= maxTileY; ty++) {
+      const wtX = ((tx % n) + n) % n
+      const wtY = ((ty % n) + n) % n
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      const loadPromise = new Promise(r => { img.onload = () => r(true); img.onerror = () => r(false) })
+      img.src = `/api/tile-proxy/${zoom}/${wtX}/${wtY}.png`
+      const drawX = Math.round(tx * TILE_SIZE - centerPxX + halfW)
+      const drawY = Math.round(ty * TILE_SIZE - centerPxY + halfH)
+      tiles.push({ img, drawX, drawY, loaded: loadPromise })
+    }
+  }
+
+  await Promise.race([
+    Promise.all(tiles.map(t => t.loaded)),
+    new Promise(r => setTimeout(r, 6000))
+  ])
+
+  // 灰色地图
+  ctx.filter = 'grayscale(100%) brightness(1.05)'
+  for (const tile of tiles) {
+    try { ctx.drawImage(tile.img, tile.drawX, tile.drawY, TILE_SIZE, TILE_SIZE) } catch (e) {}
+  }
+  ctx.filter = 'none'
+
+  // 半径圆
+  const radiusPx = DISPLAY_RADIUS / metersPerPixel
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, radiusPx, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(245, 108, 108, 0.12)'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
 
   // 圆心标记
-  const centerMarker = L.marker([centerLat, centerLng], {
-    icon: L.divIcon({
-      className: '',
-      html: '<div style="background:#fff;color:#f56c6c;width:14px;height:14px;border:2px solid #f56c6c;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.3);"></div>',
-      iconSize: [14, 14],
-      iconAnchor: [7, 7]
-    })
-  })
-  hiddenCircleGroup.addLayer(centerMarker)
+  const dotR = 12
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, dotR, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
 
-  // 竞品标记
-  competitors.forEach(c => {
-    const color = getCompBrandColor(c.brand)
-    const marker = L.marker([c.latitude, c.longitude], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${color};color:#fff;font-size:11px;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">C</div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
-      })
-    })
-    marker.bindTooltip(`${c.brand} ${c.name}`, { direction: 'top', offset: [0, -12] })
-    hiddenCircleGroup.addLayer(marker)
-  })
+  // 购物中心标记 - 绿色图钉（与竞品地图样式一致）
+  const drawnLabels = []
+  for (const sc of centers) {
+    const pos = latLngToTileMeters(sc.latitude, sc.longitude, zoom)
+    const px = (pos.x - center.x) * TILE_SIZE + halfW
+    const py = (pos.y - center.y) * TILE_SIZE + halfH
 
-  // 自适应视图
-  const allPoints = [[centerLat, centerLng], ...competitors.map(c => [c.latitude, c.longitude])]
-  if (allPoints.length > 1) {
-    hiddenMapInstance.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] })
-  } else {
-    hiddenMapInstance.setView([centerLat, centerLng], 14)
+    if (px < -80 || px > CANVAS_W + 80 || py < -80 || py > CANVAS_H + 80) continue
+
+    const color = '#67c23a'
+    const labelText = sc.name || ''
+
+    // 画绿色图钉
+    drawPin(ctx, px, py, color, labelText)
+
+    // 名称标签（防重叠）
+    const pinH = 44
+    ctx.font = 'bold 13px Arial'
+    const textW = ctx.measureText(labelText).width
+    const lx = px
+    const ly = py - pinH / 2 - 4  // 图钉上方
+
+    let overlaps = false
+    for (const e of drawnLabels) {
+      if (Math.abs(lx - e.x) < (textW / 2 + e.w / 2 + 10) && Math.abs(ly - e.y) < (16 + 10)) {
+        overlaps = true; break
+      }
+    }
+    if (!overlaps && labelText) {
+      drawnLabels.push({ x: lx, y: ly, w: textW, h: 16 })
+      ctx.fillStyle = '#333333'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(labelText, lx, ly)
+    }
   }
+
+  // 图例
+  const legendY = CANVAS_H - 80
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.fillRect(20, legendY, 320, 55)
+  ctx.strokeStyle = '#dddddd'
+  ctx.lineWidth = 1
+  ctx.strokeRect(20, legendY, 320, 55)
+  ctx.fillStyle = '#555555'
+  ctx.font = '20px Arial'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('● 红圈 = 半径 3km', 30, legendY + 18)
+  ctx.fillStyle = '#f56c6c'
+  ctx.fillText('● 红色圆点 = 圆心', 30, legendY + 42)
+  ctx.fillStyle = '#67c23a'
+  ctx.fillText(`● 绿色图钉 = 购物中心 (${centers.length}家)`, 190, legendY + 42)
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
+  console.log('[导出截图] 购物中心Canvas渲染成功, base64长度:', dataUrl.length, '购物中心数:', centers.length)
+  return dataUrl
 }
 
+// 包装函数（兼容旧调用方式）
 const captureHiddenMap = async () => {
-  const container = hiddenMapRef.value
-  if (!container) {
-    console.warn('[导出截图] hiddenMapRef为空，无法截图')
+  if (!lastMapParams.value) {
+    console.warn('[导出截图] 无渲染参数')
     return null
   }
-  if (!hiddenMapInstance) {
-    console.warn('[导出截图] hiddenMapInstance未初始化，无法截图')
-    return null
-  }
-
-  // 让地图可见以确保浏览器渲染瓦片
-  container.style.visibility = 'visible'
-  hiddenMapInstance.invalidateSize()
-
-  // 等tile层加载
-  await new Promise(resolve => {
-    const timer = setTimeout(resolve, 3000)
-    hiddenMapInstance.once('tileload', () => { clearTimeout(timer); resolve() })
-    // 如果地图已经loaded也立即继续
-    hiddenMapInstance.whenReady(() => {})
-  })
-
-  const { default: html2canvas } = await import('html2canvas')
-  const canvas = await html2canvas(container, {
-    useCORS: true,
-    allowTaint: false,
-    scale: 1.5,
-    backgroundColor: '#ffffff',
-    logging: false
-  })
-
-  // 重新隐藏地图
-  container.style.visibility = 'hidden'
-
-  // 快速验证截图内容
-  const ctx = canvas.getContext('2d')
-  const pixel = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data
-  if (pixel[0] === 255 && pixel[1] === 255 && pixel[2] === 255) {
-    console.warn('[导出截图] 截图内容为空白')
-    return null
-  }
-
-  console.log('[导出截图] 截图成功, 尺寸:', canvas.width, 'x', canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.7)
-}
-
-const destroyHiddenMap = () => {
-  if (hiddenCircleGroup) {
-    hiddenCircleGroup.clearLayers()
-    hiddenCircleGroup = null
-  }
-  if (hiddenMapInstance) {
-    hiddenMapInstance.remove()
-    hiddenMapInstance = null
-  }
-  hiddenTileLayer = null
+  const { centerLat, centerLng, radius, competitors } = lastMapParams.value
+  return captureMapToCanvas(centerLat, centerLng, radius, competitors, 14)
 }
 
 // 导出Excel（含竞品地图截图）
@@ -2707,31 +2943,64 @@ const handleExportExcel = async () => {
     ElMessage.info('正在生成Excel报表，请稍候...')
     const id = currentDetail.value.id
 
-    // 1. 获取竞品地图数据
-    let screenshot = null
+    // 1. 获取竞品和购物中心数据
+    let competitorScreenshot = null
+    let shoppingCenterScreenshot = null
+    let centerLat = null
+    let centerLng = null
+
     try {
-      const mapDataResp = await axios.get(`/api/purchase/${id}/competitors-for-map`)
-      const mapData = mapDataResp.data
+      // 并发请求两个API
+      const [compResp, shopResp] = await Promise.all([
+        axios.get(`/api/purchase/${id}/competitors-for-map`),
+        axios.get(`/api/purchase/${id}/shopping-centers-for-map`)
+      ])
+      const mapData = compResp.data
+      const shopData = shopResp.data
+      centerLat = mapData.center.lat
+      centerLng = mapData.center.lng
 
-      // 2. 初始化隐藏地图并渲染
-      initHiddenMap(mapData.center.lat, mapData.center.lng, 13)
-      renderCircleOnHiddenMap(mapData.center.lat, mapData.center.lng, mapData.radius, mapData.competitors)
+      // 缓存竞品渲染参数
+      lastMapParams.value = {
+        centerLat, centerLng,
+        radius: mapData.radius,
+        competitors: mapData.competitors
+      }
 
-      // 3. 截图
-      screenshot = await captureHiddenMap()
+      // 渲染竞品地图截图
+      if (mapData.competitors && mapData.competitors.length > 0) {
+        competitorScreenshot = await captureMapToCanvas(centerLat, centerLng, 3000, mapData.competitors, 14)
+      } else {
+        competitorScreenshot = await captureMapToCanvas(centerLat, centerLng, 3000, [], 14)
+      }
+      console.log('✅ 竞品地图截图:', competitorScreenshot ? competitorScreenshot.length + '字节' : '失败')
+
+      // 渲染购物中心地图截图（独立try-catch，不影响竞品）
+      try {
+        const centerList = (shopData.centers && Array.isArray(shopData.centers)) ? shopData.centers : []
+        shoppingCenterScreenshot = await captureShoppingCenterMap(centerLat, centerLng, centerList, 14)
+      } catch (scErr) {
+        console.warn('购物中心截图失败:', scErr)
+      }
+      console.log('✅ 购物中心地图截图:', shoppingCenterScreenshot ? shoppingCenterScreenshot.length + '字节' : '无数据')
     } catch (mapErr) {
-      console.warn('竞品地图截图失败，回退到普通导出:', mapErr)
-    } finally {
-      destroyHiddenMap()
+      console.warn('地图数据获取失败:', mapErr)
     }
 
     // 4. 调用导出API（带截图→新POST接口；回退→原GET接口）
     let response
-    if (screenshot) {
-      response = await axios.post(`/api/purchase/${id}/export-map-excel`, { screenshot }, {
+    if (competitorScreenshot || shoppingCenterScreenshot) {
+      console.log('[导出] 发送带截图的POST请求...')
+      response = await axios.post(`/api/purchase/${id}/export-map-excel`, {
+        competitorScreenshot,
+        shoppingCenterScreenshot
+      }, {
         responseType: 'blob'
       })
+      console.log('[导出] POST请求成功')
     } else {
+      console.log('[导出] 回退到普通GET导出')
+      ElMessage.info('地图截图生成失败，将使用普通报表导出')
       response = await axios.get(`/api/purchase/${id}/export-excel`, {
         responseType: 'blob'
       })
