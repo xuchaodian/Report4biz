@@ -25,6 +25,15 @@ def main():
 
     import math
 
+    # Haversine 公式计算距离（米）
+    def haversine(lat1, lng1, lat2, lng2):
+        R = 6371000
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lng2 - lng1)
+        a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
     try:
         # 从数据库读取购买记录（保持连接打开供后续查询竞品使用）
         db = sqlite3.connect(db_path)
@@ -164,15 +173,6 @@ def main():
                 (user_id,)
             ).fetchall()
 
-            # Haversine 公式计算距离（米）
-            def haversine(lat1, lng1, lat2, lng2):
-                R = 6371000  # 地球半径（米）
-                phi1, phi2 = math.radians(lat1), math.radians(lat2)
-                delta_phi = math.radians(lat2 - lat1)
-                delta_lambda = math.radians(lng2 - lng1)
-                a = math.sin(delta_phi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(delta_lambda/2)**2
-                return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-
             # 计算距离并筛选3km内
             nearby = []
             for comp in competitors:
@@ -199,6 +199,44 @@ def main():
                 ws.cell(row=row_idx, column=9, value=comp.get('service_score', 0))
                 ws.cell(row=row_idx, column=10, value=round(comp['distance']))
                 row_idx += 1
+
+        # ===== 3.5 购物中心列表（中心3km范围内） =====
+        if '购物中心列表' in wb.sheetnames:
+            ws_shopping = wb['购物中心列表']
+        else:
+            ws_shopping = wb.create_sheet('购物中心列表')
+            ws_shopping['A3'] = '名称'
+            ws_shopping['B3'] = '地址'
+            ws_shopping['C3'] = '星级'
+            ws_shopping['D3'] = '评论数'
+            ws_shopping['E3'] = '榜单'
+            ws_shopping['F3'] = '距离(米)'
+
+        # 查询购物中心（不过滤user_id，与前端API /shopping-centers-for-map 行为一致）
+        shopping_centers = db.execute(
+            "SELECT * FROM shopping_centers"
+        ).fetchall()
+
+        # 计算距离并筛选3km内
+        nearby_centers = []
+        for sc in shopping_centers:
+            sc = dict(sc)
+            dist = haversine(center_lat, center_lng, sc['latitude'], sc['longitude'])
+            if dist <= 3000:
+                sc['distance'] = round(dist, 1)
+                nearby_centers.append(sc)
+
+        nearby_centers.sort(key=lambda c: c['distance'])
+
+        row_idx = 4
+        for sc in nearby_centers:
+            ws_shopping.cell(row=row_idx, column=1, value=sc.get('name', ''))
+            ws_shopping.cell(row=row_idx, column=2, value=sc.get('address', ''))
+            ws_shopping.cell(row=row_idx, column=3, value=sc.get('stars', ''))
+            ws_shopping.cell(row=row_idx, column=4, value=sc.get('comments', 0))
+            ws_shopping.cell(row=row_idx, column=5, value=sc.get('rank_info', ''))
+            ws_shopping.cell(row=row_idx, column=6, value=round(sc['distance']))
+            row_idx += 1
 
         # 关闭数据库
         db.close()
