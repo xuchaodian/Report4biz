@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Excel报表导出脚本 - 从SQLite读取购买数据，用openpyxl填充模板，保存到输出文件
-用法: python3 export_excel.py <template_path> <output_path> <db_path> <purchase_id> <user_id>
+用法: python3 export_excel.py <template_path> <output_path> <db_path> <purchase_id> <user_id> [comp_screenshot] [shop_screenshot] [map_screenshot]
 """
 import sys
 import json
@@ -67,8 +67,9 @@ def main():
             radii_list = radius
         else:
             radii_list = [radius]
-        radius_km = 3.0
-        radius_str = "3km"
+        actual_radius_meters = radii_list[0] if radii_list else 3000
+        radius_km = actual_radius_meters / 1000
+        radius_str = f"{actual_radius_meters}米" if actual_radius_meters < 1000 else f"{radius_km}km"
 
         # 打开模板
         wb = load_workbook(template_path)
@@ -241,9 +242,10 @@ def main():
         # 关闭数据库
         db.close()
 
-        # ===== 4. 竞品地图 + 购物中心地图（如有截图） =====
+        # ===== 4. 地图 + 竞品地图 + 购物中心地图（如有截图） =====
         comp_screenshot = sys.argv[6] if len(sys.argv) >= 7 else None
         shop_screenshot = sys.argv[7] if len(sys.argv) >= 8 else None
+        map_screenshot = sys.argv[8] if len(sys.argv) >= 9 else None
 
         # 通用函数：在指定sheet的A3插入截图
         def embed_screenshot(sheet_name, file_path, img_w=1200, img_h=786):
@@ -260,12 +262,13 @@ def main():
 
         embed_screenshot('竞品地图', comp_screenshot, 1200, 786)
         embed_screenshot('购物中心地图', shop_screenshot, 1200, 786)
+        embed_screenshot('地图', map_screenshot, 1200, 786)
 
         # 保存
         wb.save(output_path)
 
         # 保存完成后清理截图文件
-        for fp in [comp_screenshot, shop_screenshot]:
+        for fp in [comp_screenshot, shop_screenshot, map_screenshot]:
             if fp and os.path.exists(fp):
                 try: os.remove(fp)
                 except: pass

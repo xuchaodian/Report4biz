@@ -549,7 +549,7 @@ router.get('/:id/export-excel', authenticate, (req, res) => {
 
 // 导出Excel报表（带竞品地图截图 + 购物中心地图截图）
 router.post('/:id/export-map-excel', authenticate, async (req, res) => {
-  const { competitorScreenshot, shoppingCenterScreenshot } = req.body
+  const { competitorScreenshot, shoppingCenterScreenshot, mapScreenshot } = req.body
   const dbPath = join(__dirname, '../../database/webgis.db')
   const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
   const outputPath = join(__dirname, '../../uploads/screenshots', `export_${req.params.id}_${Date.now()}.xlsx`)
@@ -581,22 +581,25 @@ router.post('/:id/export-map-excel', authenticate, async (req, res) => {
 
   const compPath = saveScreenshot(competitorScreenshot, 'competitor')
   const shopPath = saveScreenshot(shoppingCenterScreenshot, 'shopping')
+  const mapPath = saveScreenshot(mapScreenshot, 'map')
 
-  // 调用Python脚本（传两个截图路径）
+  // 调用Python脚本（传截图路径）
   const scriptPath = join(__dirname, '../../export_excel.py')
   let cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
   if (compPath) cmd += ` "${compPath}"`
   if (shopPath) cmd += ` "${shopPath}"`
+  if (mapPath) cmd += ` "${mapPath}"`
   console.log(`[导出截图] 执行命令: ${cmd}`)
 
   exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
     console.log(`[导出截图] Python stdout: ${stdout}`)
     if (stderr) console.log(`[导出截图] Python stderr: ${stderr}`)
 
-    // 清理两个截图文件
+    // 清理截图文件
     const cleanUp = (fp) => { if (fp) try { fs.unlinkSync(fp) } catch (e) {} }
     cleanUp(compPath)
     cleanUp(shopPath)
+    cleanUp(mapPath)
 
     if (error) {
       console.error('导出Excel执行错误:', error.message)
@@ -628,6 +631,86 @@ router.post('/:id/export-map-excel', authenticate, async (req, res) => {
       console.error('解析Python输出失败:', stdout)
       res.status(500).json({ message: '导出失败: ' + e.message })
     }
+  })
+})
+
+// 导出PDF报表：生成Excel后转换为PDF
+router.post('/:id/export-pdf-report', authenticate, async (req, res) => {
+  const { competitorScreenshot, shoppingCenterScreenshot, mapScreenshot } = req.body
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const ts = Date.now()
+  const excelPath = join(__dirname, '../../uploads/screenshots', `pdf_export_${req.params.id}_${ts}.xlsx`)
+  const pdfPath = join(__dirname, '../../uploads/screenshots', `pdf_export_${req.params.id}_${ts}.pdf`)
+
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在' })
+  }
+
+  const screenshotDir = join(__dirname, '../../uploads/screenshots')
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
+
+  const saveScreenshot = (base64Str, prefix) => {
+    if (!base64Str) return null
+    try {
+      const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, '')
+      const buf = Buffer.from(base64Data, 'base64')
+      if (buf.length < 100) return null
+      const fpath = join(screenshotDir, `${prefix}_${req.params.id}_${ts}.png`)
+      fs.writeFileSync(fpath, buf)
+      return fpath
+    } catch (e) {
+      return null
+    }
+  }
+
+  const compPath = saveScreenshot(competitorScreenshot, 'competitor')
+  const shopPath = saveScreenshot(shoppingCenterScreenshot, 'shopping')
+  const mapPath = saveScreenshot(mapScreenshot, 'map')
+
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  let cmd = `python3 "${scriptPath}" "${templatePath}" "${excelPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  if (compPath) cmd += ` "${compPath}"`
+  if (shopPath) cmd += ` "${shopPath}"`
+  if (mapPath) cmd += ` "${mapPath}"`
+
+  const cleanUp = (fp) => { if (fp) try { fs.unlinkSync(fp) } catch (e) {} }
+
+  exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    cleanUp(compPath)
+    cleanUp(shopPath)
+    cleanUp(mapPath)
+
+    if (error) {
+      cleanUp(excelPath)
+      return res.status(500).json({ message: 'Excel生成失败: ' + error.message })
+    }
+
+    // 用LibreOffice将Excel转为PDF
+    const pdfCmd = `libreoffice --headless --convert-to pdf --outdir "${screenshotDir}" "${excelPath}"`
+    exec(pdfCmd, { timeout: 30000 }, (pdfErr, pdfStdout, pdfStderr) => {
+      cleanUp(excelPath)
+
+      if (pdfErr) {
+        console.error('PDF转换失败:', pdfErr.message)
+        return res.status(500).json({ message: 'PDF转换失败: ' + pdfErr.message })
+      }
+
+      if (!fs.existsSync(pdfPath)) {
+        return res.status(500).json({ message: 'PDF文件未生成' })
+      }
+
+      const storeName = req.body.filename || '报表'
+      const fileName = `${storeName}.pdf`
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+      const fileStream = fs.createReadStream(pdfPath)
+      fileStream.pipe(res)
+      fileStream.on('end', () => {
+        cleanUp(pdfPath)
+      })
+    })
   })
 })
 

@@ -212,11 +212,19 @@
               {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
             </el-button>
             <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
-              📄 导出PDF
+              📄 PDF速览
             </el-button>
-            <el-button type="success" size="small" @click="handleExportExcel" :disabled="detailLoading || !currentDetail">
-              📊 导出Excel
-            </el-button>
+            <el-dropdown @command="handleExportDropdown" :disabled="detailLoading || !currentDetail" trigger="click">
+              <el-button type="success" size="small">
+                📊 导出报表<el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="excel">📊 导出Excel</el-dropdown-item>
+                  <el-dropdown-item command="pdf">📄 导出PDF</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
       </template>
@@ -268,7 +276,7 @@ import * as echarts from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location, Search, Close } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { FIELD_LABELS } from './field_labels'
 
@@ -2495,6 +2503,96 @@ const handleDataInsight = async () => {
   }
 }
 
+// 导出报表下拉菜单处理
+const handleExportDropdown = (command) => {
+  if (command === 'excel') {
+    handleExportExcel()
+  } else if (command === 'pdf') {
+    handleExportPDFAsReport()
+  }
+}
+
+// 导出报表PDF：后端生成Excel后再用LibreOffice转为PDF
+const handleExportPDFAsReport = async () => {
+  if (!currentDetail.value) {
+    ElMessage.info('暂无数据可导出')
+    return
+  }
+  try {
+    ElMessage.info('正在生成报表PDF，请稍候...')
+    const id = currentDetail.value.id
+
+    // 1. 获取地图数据和截图（同导出Excel）
+    let competitorScreenshot = null
+    let shoppingCenterScreenshot = null
+    let mapScreenshot = null
+    let centerLat = null
+    let centerLng = null
+    let actualRadius = 3000
+
+    try {
+      const [compResp, shopResp] = await Promise.all([
+        axios.get(`/api/purchase/${id}/competitors-for-map`),
+        axios.get(`/api/purchase/${id}/shopping-centers-for-map`)
+      ])
+      const mapData = compResp.data
+      const shopData = shopResp.data
+      centerLat = mapData.center.lat
+      centerLng = mapData.center.lng
+      actualRadius = Array.isArray(currentDetail.value.radii) ? currentDetail.value.radii[0] : 3000
+
+      if (mapData.competitors && mapData.competitors.length > 0) {
+        competitorScreenshot = await captureMapToCanvas(centerLat, centerLng, 3000, mapData.competitors, 14)
+      } else {
+        competitorScreenshot = await captureMapToCanvas(centerLat, centerLng, 3000, [], 14)
+      }
+
+      try {
+        const centerList = (shopData.centers && Array.isArray(shopData.centers)) ? shopData.centers : []
+        shoppingCenterScreenshot = await captureShoppingCenterMap(centerLat, centerLng, centerList, 14)
+      } catch (scErr) { console.warn('购物中心截图失败:', scErr) }
+
+      try {
+        mapScreenshot = await captureMapOnlyCanvas(centerLat, centerLng, actualRadius)
+      } catch (mErr) { console.warn('地图截图失败:', mErr) }
+    } catch (mapErr) {
+      console.warn('地图数据获取失败:', mapErr)
+    }
+
+    // 生成文件名用半径字符串
+    const radiiStr = Array.isArray(currentDetail.value?.radii) 
+      ? currentDetail.value.radii.join('_') + '米' 
+      : (currentDetail.value?.radii || '未知') + '米'
+
+    // 2. 调用PDF导出API（后端生成Excel后转为PDF）
+    const response = await axios.post(`/api/purchase/${id}/export-pdf-report`, {
+      competitorScreenshot,
+      shoppingCenterScreenshot,
+      mapScreenshot,
+      filename: `${currentDetail.value.store_name || '门店'}_${radiiStr}_${currentDetail.value.city_month || ''}_报表`
+    }, { responseType: 'blob' })
+
+    // 3. 下载PDF
+    const disposition = response.headers['content-disposition']
+    let pdfName = `${currentDetail.value.store_name || '门店'}_${radiiStr}_${currentDetail.value.city_month || ''}_报表.pdf`
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+      if (match) pdfName = decodeURIComponent(match[1])
+    }
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = pdfName
+    link.click()
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success('报表PDF导出成功')
+  } catch (e) {
+    console.error('报表PDF导出失败:', e)
+    ElMessage.error('报表PDF导出失败: ' + (e.response?.data?.message || e.message))
+  }
+}
+
 // ====== PDF 导出 ======
 const handleExportPDF = async () => {
   if (!pdfContentRef.value) return
@@ -2788,6 +2886,115 @@ const captureMapToCanvas = async (centerLat, centerLng, radiusMeters, competitor
   return dataUrl
 }
 
+// 纯 Canvas 渲染地图截图（仅门店位置+半径，无竞品/购物中心）
+const captureMapOnlyCanvas = async (centerLat, centerLng, radiusMeters) => {
+  const CANVAS_W = 1420
+  const CANVAS_H = 930
+  const TILE_SIZE = 256
+
+  // 计算合适的zoom：让半径圈占画布较小边约30%（确保完整显示）
+  const minDim = Math.min(CANVAS_W, CANVAS_H)  // 930
+  const targetRatio = 0.30
+  const targetRadiusPx = minDim * targetRatio
+  const targetZoom = Math.log2(156543.03 * Math.cos(centerLat * Math.PI / 180) * targetRadiusPx / radiusMeters)
+  const zoom = Math.min(18, Math.max(12, Math.floor(targetZoom)))
+  const metersPerPixel = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, zoom)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = CANVAS_W
+  canvas.height = CANVAS_H
+  const ctx = canvas.getContext('2d')
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
+  const center = latLngToTileMeters(centerLat, centerLng, zoom)
+  const centerPxX = center.x * TILE_SIZE
+  const centerPxY = center.y * TILE_SIZE
+  const halfW = CANVAS_W / 2
+  const halfH = CANVAS_H / 2
+
+  // 计算可见瓦片范围
+  const minTileX = Math.floor((centerPxX - halfW) / TILE_SIZE)
+  const maxTileX = Math.floor((centerPxX + CANVAS_W - halfW - 1) / TILE_SIZE)
+  const minTileY = Math.floor((centerPxY - halfH) / TILE_SIZE)
+  const maxTileY = Math.floor((centerPxY + CANVAS_H - halfH - 1) / TILE_SIZE)
+  const n = Math.pow(2, zoom)
+
+  const tiles = []
+  for (let tx = minTileX; tx <= maxTileX; tx++) {
+    for (let ty = minTileY; ty <= maxTileY; ty++) {
+      const wtX = ((tx % n) + n) % n
+      const wtY = ((ty % n) + n) % n
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      const loadPromise = new Promise(r => { img.onload = () => r(true); img.onerror = () => r(false) })
+      img.src = `/api/tile-proxy/${zoom}/${wtX}/${wtY}.png`
+      const drawX = Math.round(tx * TILE_SIZE - centerPxX + halfW)
+      const drawY = Math.round(ty * TILE_SIZE - centerPxY + halfH)
+      tiles.push({ img, drawX, drawY, loaded: loadPromise })
+    }
+  }
+
+  await Promise.race([
+    Promise.all(tiles.map(t => t.loaded)),
+    new Promise(r => setTimeout(r, 6000))
+  ])
+
+  // 灰色地图
+  ctx.filter = 'grayscale(100%) brightness(1.05)'
+  for (const tile of tiles) {
+    try { ctx.drawImage(tile.img, tile.drawX, tile.drawY, TILE_SIZE, TILE_SIZE) } catch (e) {}
+  }
+  ctx.filter = 'none'
+
+  // 半径圆
+  const radiusPx = radiusMeters / metersPerPixel
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, radiusPx, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(245, 108, 108, 0.12)'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
+
+  // 半径文字标注
+  const radiusKm = (radiusMeters / 1000).toFixed(1)
+  ctx.fillStyle = '#f56c6c'
+  ctx.font = 'bold 26px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const labelR = radiusPx + 40
+  ctx.fillText(`${radiusKm}km`, halfW + labelR, halfH)
+
+  // 圆心标记（红白圆点）
+  const dotR = 12
+  ctx.beginPath()
+  ctx.arc(halfW, halfH, dotR, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+  ctx.strokeStyle = '#f56c6c'
+  ctx.lineWidth = 4
+  ctx.stroke()
+
+  // 图例
+  const legendY = CANVAS_H - 80
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'
+  ctx.fillRect(20, legendY, 280, 40)
+  ctx.strokeStyle = '#dddddd'
+  ctx.lineWidth = 1
+  ctx.strokeRect(20, legendY, 280, 40)
+  ctx.fillStyle = '#555555'
+  ctx.font = '20px Arial'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(`● 红圈 = 半径 ${radiusKm}km`, 30, legendY + 20)
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
+  console.log('[导出截图] 地图Canvas渲染成功, base64长度:', dataUrl.length, 'radius:', radiusMeters, 'zoom:', zoom)
+  return dataUrl
+}
+
 // 购物中心地图截图
 const captureShoppingCenterMap = async (centerLat, centerLng, centers, zoom = 14) => {
   const CANVAS_W = 1420
@@ -2946,6 +3153,7 @@ const handleExportExcel = async () => {
     // 1. 获取竞品和购物中心数据
     let competitorScreenshot = null
     let shoppingCenterScreenshot = null
+    let mapScreenshot = null
     let centerLat = null
     let centerLng = null
 
@@ -2983,6 +3191,15 @@ const handleExportExcel = async () => {
         console.warn('购物中心截图失败:', scErr)
       }
       console.log('✅ 购物中心地图截图:', shoppingCenterScreenshot ? shoppingCenterScreenshot.length + '字节' : '无数据')
+
+      // 渲染地图截图（仅门店位置+半径，使用购买履历的实际半径）
+      try {
+        const actualRadius = Array.isArray(currentDetail.value.radii) ? currentDetail.value.radii[0] : 3000
+        mapScreenshot = await captureMapOnlyCanvas(centerLat, centerLng, actualRadius)
+      } catch (mapErr) {
+        console.warn('地图截图失败:', mapErr)
+      }
+      console.log('✅ 地图截图:', mapScreenshot ? mapScreenshot.length + '字节' : '无数据')
     } catch (mapErr) {
       console.warn('地图数据获取失败:', mapErr)
     }
@@ -2993,7 +3210,8 @@ const handleExportExcel = async () => {
       console.log('[导出] 发送带截图的POST请求...')
       response = await axios.post(`/api/purchase/${id}/export-map-excel`, {
         competitorScreenshot,
-        shoppingCenterScreenshot
+        shoppingCenterScreenshot,
+        mapScreenshot
       }, {
         responseType: 'blob'
       })

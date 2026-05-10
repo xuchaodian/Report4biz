@@ -378,6 +378,14 @@
         </el-upload>
       </div>
 
+      <!-- 解析进度 -->
+      <div v-if="geocodeParsing" style="text-align:center;padding:40px 0;">
+        <el-progress :percentage="geocodeProgress" :stroke-width="20" :text-inside="true" striped striped-flow />
+        <p style="color:#909399;margin-top:12px;font-size:14px;">
+          正在解析地址（{{ geocodeTotal > 0 ? Math.round(geocodeProgress / 100 * geocodeTotal) : 0 }}/{{ geocodeTotal }}）...
+        </p>
+      </div>
+
       <!-- 步骤2：预览解析结果 -->
       <div v-if="geocodeStep === 2">
         <el-alert type="success" :closable="false" style="margin-bottom: 12px">
@@ -409,8 +417,8 @@
       </div>
 
       <template #footer>
-        <el-button v-if="geocodeStep === 1" @click="geocodeDialogVisible = false">取消</el-button>
-        <el-button v-if="geocodeStep === 1" type="primary" :disabled="!geocodeCsvFile" :loading="geocodeParsing" @click="handleParseGeocode">
+        <el-button v-if="geocodeStep === 1 && !geocodeParsing" @click="geocodeDialogVisible = false">取消</el-button>
+        <el-button v-if="geocodeStep === 1 && !geocodeParsing" type="primary" :disabled="!geocodeCsvFile" @click="handleParseGeocode">
           解析地址
         </el-button>
         <template v-if="geocodeStep === 2">
@@ -1000,6 +1008,8 @@ const geocodeParsing = ref(false)
 const geocodeImporting = ref(false)
 const geocodeResults = ref([])        // 解析结果列表
 const geocodeSuccessCount = computed(() => geocodeResults.value.filter(r => r.success).length)
+const geocodeProgress = ref(0)         // 进度 0-100
+const geocodeTotal = ref(0)            // 总条数
 
 // 原始CSV数据（保留所有列，用于导入）
 let geocodeRawData = []
@@ -1024,6 +1034,7 @@ const handleParseGeocode = async () => {
   }
 
   geocodeParsing.value = true
+  geocodeProgress.value = 0
   geocodeResults.value = []
   geocodeRawData = []
 
@@ -1031,8 +1042,6 @@ const handleParseGeocode = async () => {
     // 1. 自动识别编码：先尝试 UTF-8，若检测到乱码则改用 GBK
     const buffer = await geocodeCsvFile.value.arrayBuffer()
     let text = new TextDecoder('utf-8').decode(buffer)
-    // 检测 UTF-8 乱码：U+FFFD 是 UTF-8 解码失败的替换字符，连续出现说明原本是 GBK
-    // 注意：不要用 /[\x80-\xff]{3,}/ 检测连续高字节，因为中文 UTF-8 本身就是连续高字节
     const seemsGarbled = (text.match(/\ufffd/g) || []).length >= 2
     if (seemsGarbled) {
       text = new TextDecoder('gbk').decode(buffer)
@@ -1061,27 +1070,68 @@ const handleParseGeocode = async () => {
       return
     }
 
-    // 3. 批量调用地理编码
-    const result = await markerStore.batchGeocode(addresses)
+    // 3. 逐条调用地理编码（每条更新进度）
+    const total = addresses.length
+    geocodeTotal.value = total
+    const allResults = []
 
-    if (!result.success) {
-      ElMessage.error(result.message)
-      geocodeParsing.value = false
-      return
+    for (let i = 0; i < total; i++) {
+      const item = addresses[i]
+      const result = await markerStore.batchGeocode([item])
+
+      if (result.success && result.results && result.results.length > 0) {
+        const r = result.results[0]
+        allResults.push({
+          ...r,
+          ...Object.fromEntries(
+            Object.entries(geocodeRawData[i] || {})
+              .filter(([k]) => !['name', 'address', 'city', 'district'].includes(k))
+          )
+        })
+      } else {
+        allResults.push({
+          name: item.name,
+          address: item.address,
+          city: item.city,
+          district: item.district,
+          success: false,
+          error: result.message || '解析失败'
+        })
+      }
+
+      // 逐条更新进度
+      geocodeProgress.value = Math.round((i + 1) / total * 100)
+      geocodeResults.value = [...allResults]
     }
 
-    // 4. 合并结果：将地理编码结果与原始数据合并
-    geocodeResults.value = result.results.map((r, i) => ({
-      ...r,
-      // 保留原始CSV的其他字段
-      ...Object.fromEntries(
-        Object.entries(geocodeRawData[i] || {})
-          .filter(([k]) => !['name', 'address', 'city', 'district'].includes(k))
-      )
-    }))
+    // 4. 完成，弹出询问对话框
+    const successCount = allResults.filter(r => r.success).length
+    geocodeResults.value = allResults
+    geocodeProgress.value = 100
+    geocodeParsing.value = false
 
-    geocodeStep.value = 2
-    ElMessage.success(`解析完成！成功 ${geocodeSuccessCount.value} 条`)
+    ElMessageBox.confirm(
+      `解析完成！共 ${total} 条，成功 <b>${successCount}</b> 条，失败 <b>${total - successCount}</b> 条。<br><br>是否直接添加到门店库？`,
+      '地址解析完成',
+      {
+        confirmButtonText: '导入到门店库',
+        cancelButtonText: '导出CSV',
+        type: 'success',
+        dangerouslyUseHTMLString: true,
+        showCancelButton: true,
+        distinguishCancelAndClose: true
+      }
+    ).then(() => {
+      // 确认 → 导入门店库
+      handleGeocodeImport()
+    }).catch((action) => {
+      if (action === 'cancel') {
+        // 取消 → 导出CSV
+        handleGeocodeExport()
+      }
+      // close → 不操作，留在预览界面
+    })
+
   } catch (err) {
     console.error(err)
     ElMessage.error('解析失败：' + err.message)
