@@ -476,7 +476,7 @@
             暂无对比数据
           </div>
           <el-table v-else :data="storeCompareTableData" border stripe size="small" max-height="450" :header-cell-style="{ fontWeight: 'bold', color: '#333', background: '#fdf6ec', fontSize: '14px' }">
-            <el-table-column label="指标" width="140" align="right">
+            <el-table-column label="指标" width="200" show-overflow-tooltip align="right">
               <template #default="{ row }">
                 <span style="font-weight: bold; font-size: 14px;">{{ row.field }}</span>
               </template>
@@ -1357,7 +1357,7 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// 从 result_data 提取 1001 人口字段
+// 从 result_data 提取 1001 人口字段（含年龄维度）
 function extractPopData(resultData) {
   if (!resultData) return null
   let apiResult = resultData
@@ -1377,8 +1377,32 @@ function extractPopData(resultData) {
     live: findField(/^P1_SUM\d*$/i),
     work: findField(/^P2_SUM\d*$/i),
     out: findField(/^P3_SUM\d*$/i),
-    entertain: findField(/^P4_SUM\d*$/i)
+    entertain: findField(/^P4_SUM\d*$/i),
+    age0_1924: d['age0_1924'] ?? null,
+    age1_1924: d['age1_1924'] ?? null,
+    age2_1924: d['age2_1924'] ?? null
   }
+}
+
+// 从 result_data 提取 1005 小时段数据
+function extractHourData(resultData) {
+  if (!resultData) return {}
+  let apiResult = resultData
+  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return {} } }
+  if (apiResult?.apiResult) apiResult = apiResult.apiResult
+  const list = apiResult?.['1005']
+  if (!Array.isArray(list)) return {}
+
+  const data = {}
+  for (const item of list) {
+    const dt = item.day_type ?? 0
+    const hp = item.hour_period
+    if (hp != null) {
+      data[`hour${dt}_${hp}_visit`] = item.hour_visit ?? 0
+      data[`hour${dt}_${hp}_all`] = item.hour_all ?? 0
+    }
+  }
+  return data
 }
 
 // 计算圆内门店数（排除当前门店）和竞品数
@@ -1452,9 +1476,12 @@ const startStoreCompare = async () => {
 
       if (resultData) {
         const popData = extractPopData(resultData)
+        const hourData = extractHourData(resultData)
         result.pop = popData || {}
+        result.hour = hourData
       } else {
         result.pop = null
+        result.hour = {}
       }
       console.log(`[门店对比] ${store.name}: pop=${JSON.stringify(result.pop)}, exactRadiusMatch=${result.exactRadiusMatch}, myCount=${result.myStoreCount}`)
 
@@ -1470,6 +1497,22 @@ const startStoreCompare = async () => {
       { key: 'work', label: '工作人口数' },
       { key: 'out', label: '外省到访人口数' },
       { key: 'entertain', label: '娱乐人数' },
+      { key: 'age0_1924', label: '19-24岁到访人口数' },
+      { key: 'age1_1924', label: '19-24岁居住人口数' },
+      { key: 'age2_1924', label: '19-24岁工作人口数' },
+      // 11点-13点、17点-19点时段的到访人次
+      { key: 'hour0_11_visit', label: '11点工作日到访人次' },
+      { key: 'hour0_12_visit', label: '12点工作日到访人次' },
+      { key: 'hour0_13_visit', label: '13点工作日到访人次' },
+      { key: 'hour0_17_visit', label: '17点工作日到访人次' },
+      { key: 'hour0_18_visit', label: '18点工作日到访人次' },
+      { key: 'hour0_19_visit', label: '19点工作日到访人次' },
+      { key: 'hour1_11_visit', label: '11点周末到访人次' },
+      { key: 'hour1_12_visit', label: '12点周末到访人次' },
+      { key: 'hour1_13_visit', label: '13点周末到访人次' },
+      { key: 'hour1_17_visit', label: '17点周末到访人次' },
+      { key: 'hour1_18_visit', label: '18点周末到访人次' },
+      { key: 'hour1_19_visit', label: '19点周末到访人次' },
       { key: '_myCount', label: '圆内门店数' },
       { key: '_compCount', label: '圆内竞品数' },
     ]
@@ -1478,6 +1521,11 @@ const startStoreCompare = async () => {
       const values = results.map(r => {
         if (fk.key === '_myCount') return r.myStoreCount?.toLocaleString() || '0'
         if (fk.key === '_compCount') return r.compStoreCount?.toLocaleString() || '0'
+        // hour 前缀的从 hour 提取，其余从 pop 提取
+        if (fk.key.startsWith('hour') || fk.key.startsWith('age')) {
+          const hourVal = r.hour?.[fk.key]
+          return hourVal != null ? Number(hourVal).toLocaleString() : (r.pop?.[fk.key] != null ? Number(r.pop[fk.key]).toLocaleString() : '—')
+        }
         return r.pop ? (r.pop[fk.key]?.toLocaleString() || '—') : '—'
       })
       const nums = values.map(v => {
