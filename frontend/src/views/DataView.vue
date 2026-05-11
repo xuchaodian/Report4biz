@@ -73,6 +73,14 @@
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
+      <el-select v-model="filterStoreStatus" placeholder="按门店状态" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="s in storeStatusList" :key="s" :label="s" :value="s" />
+      </el-select>
+
+      <el-select v-model="filterMallType" placeholder="按商场类型" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="m in mallTypeList" :key="m" :label="m" :value="m" />
+      </el-select>
+
       <span class="统计">共 {{ filteredMarkers.length }} 条数据</span>
       <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
         <el-icon><Close /></el-icon>清除筛选
@@ -109,14 +117,19 @@
         </el-table-column>
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
+        <el-table-column prop="store_status" label="门店状态" width="100" align="center">
+          <template #default="{ row }">{{ row.store_status || row.status || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="area_manager" label="区域经理" width="100" show-overflow-tooltip />
-        <el-table-column prop="phone1" label="电话1" width="120" />
         <el-table-column prop="store_manager" label="店长" width="80" />
-        <el-table-column prop="area" label="面积" width="80" align="right">
-          <template #default="{ row }">{{ row.area ? row.area + '㎡' : '-' }}</template>
+        <el-table-column prop="store_area" label="面积" width="80" align="right">
+          <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : row.area ? row.area + '㎡' : '-' }}</template>
         </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="mall_type" label="商场类型" width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.mall_type || row.contact_person || '-' }}</template>
         </el-table-column>
         <el-table-column prop="store_category" label="门店区分" width="100" align="center">
           <template #default="{ row }">{{ row.store_category || '-' }}</template>
@@ -250,8 +263,8 @@
 
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="面积(㎡)" prop="area">
-              <el-input-number v-model="form.area" :min="0" style="width: 100%" />
+            <el-form-item label="面积(㎡)" prop="store_area">
+              <el-input-number v-model="form.store_area" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -260,8 +273,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="租金(元/月)" prop="rent">
-              <el-input-number v-model="form.rent" :min="0" style="width: 100%" />
+            <el-form-item label="门幅面积" prop="frontage">
+              <el-input-number v-model="form.frontage" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -275,18 +288,26 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="联系人" prop="contact_person">
-              <el-input v-model="form.contact_person" placeholder="业主/联系人" />
+            <el-form-item label="门店状态" prop="store_status">
+              <el-input v-model="form.store_status" placeholder="门店状态" />
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="联系电话" prop="contact_phone">
-              <el-input v-model="form.contact_phone" placeholder="联系电话" />
+            <el-form-item label="商场类型" prop="mall_type">
+              <el-input v-model="form.mall_type" placeholder="商场类型" />
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="商圈类型" prop="trade_area_type">
+              <el-input v-model="form.trade_area_type" placeholder="商圈类型" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="经度" prop="longitude">
               <el-input-number v-model="form.longitude" :precision="6" :step="0.001" :min="-180" :max="180" style="width: 100%" />
@@ -585,6 +606,8 @@ const filterCity = ref('')
 const filterDistrict = ref('')
 const filterStoreCategory = ref('')
 const filterBrand = ref('')
+const filterStoreStatus = ref('')
+const filterMallType = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -596,6 +619,8 @@ watch(() => markerStore.filters, (newFilters) => {
   filterDistrict.value = newFilters.filterDistrict
   filterStoreCategory.value = newFilters.filterStoreCategory
   filterBrand.value = newFilters.filterBrand
+  filterStoreStatus.value = newFilters.filterStoreStatus
+  filterMallType.value = newFilters.filterMallType
 }, { deep: true })
 
 // 同步筛选条件到 store（持久化）
@@ -606,13 +631,15 @@ const syncFiltersToStore = () => {
     filterCity: filterCity.value,
     filterDistrict: filterDistrict.value,
     filterStoreCategory: filterStoreCategory.value,
-    filterBrand: filterBrand.value
+    filterBrand: filterBrand.value,
+    filterStoreStatus: filterStoreStatus.value,
+    filterMallType: filterMallType.value
   })
 }
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value
+  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value || filterMallType.value
 })
 
 // 弹窗状态
@@ -656,11 +683,17 @@ const form = reactive({
   open_date: '',
   business_hours: '',
   area: null,
+  store_area: null,
   seats: null,
   rent: null,
+  frontage: null,
   store_category: '',
+  status: '',
+  store_status: '',
   contact_person: '',
   contact_phone: '',
+  mall_type: '',
+  trade_area_type: '',
   description: '',
   latitude: 39.9042,
   longitude: 116.4074
@@ -696,6 +729,18 @@ const brandList = computed(() => {
   return brands.sort()
 })
 
+// 门店状态列表
+const storeStatusList = computed(() => {
+  const statuses = [...new Set(markerStore.markers.map(m => m.store_status || m.status).filter(Boolean))]
+  return statuses.sort()
+})
+
+// 商场类型列表
+const mallTypeList = computed(() => {
+  const types = [...new Set(markerStore.markers.map(m => m.mall_type || m.contact_person).filter(Boolean))]
+  return types.sort()
+})
+
 // 筛选后的数据
 const filteredMarkers = computed(() => {
   return markerStore.markers.filter(marker => {
@@ -708,7 +753,9 @@ const filteredMarkers = computed(() => {
     const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
     const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
     const matchBrand = !filterBrand.value || marker.brand === filterBrand.value
-    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand
+    const matchStoreStatus = !filterStoreStatus.value || (marker.store_status || marker.status) === filterStoreStatus.value
+    const matchMallType = !filterMallType.value || (marker.mall_type || marker.contact_person) === filterMallType.value
+    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand && matchStoreStatus && matchMallType
   })
 })
 
@@ -741,7 +788,7 @@ const handleSearch = () => {
 // 同步可见ID到地图
 const syncVisibleIds = () => {
   const hasFilter = searchKeyword.value || filterStoreType.value || filterCity.value ||
-    filterDistrict.value || filterStoreCategory.value || filterBrand.value
+    filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value || filterMallType.value
   if (!hasFilter) {
     markerStore.setVisibleIds(null)  // 无筛选 → 显示全部
   } else {
@@ -758,6 +805,8 @@ const handleClearFilters = () => {
   filterDistrict.value = ''
   filterStoreCategory.value = ''
   filterBrand.value = ''
+  filterStoreStatus.value = ''
+  filterMallType.value = ''
   markerStore.clearFilters()
   currentPage.value = 1
 }
@@ -781,11 +830,17 @@ const showAddDialog = () => {
     open_date: '',
     business_hours: '',
     area: null,
+    store_area: null,
     seats: null,
     rent: null,
+    frontage: null,
     store_category: '',
+    status: '',
+    store_status: '',
     contact_person: '',
     contact_phone: '',
+    mall_type: '',
+    trade_area_type: '',
     description: '',
     latitude: 39.9042,
     longitude: 116.4074
@@ -812,11 +867,17 @@ const handleEdit = (row) => {
     open_date: row.open_date || '',
     business_hours: row.business_hours || '',
     area: row.area || null,
+    store_area: row.store_area || row.area || null,
     seats: row.seats || null,
     rent: row.rent || null,
+    frontage: row.frontage || row.rent || null,
     store_category: row.store_category || '',
+    status: row.status || '',
+    store_status: row.store_status || row.status || '',
     contact_person: row.contact_person || '',
     contact_phone: row.contact_phone || '',
+    mall_type: row.mall_type || row.contact_person || '',
+    trade_area_type: row.trade_area_type || row.contact_phone || '',
     description: row.description || '',
     latitude: row.latitude,
     longitude: row.longitude
@@ -986,9 +1047,9 @@ const handleExport = async () => {
 
 // 下载模板
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,area,seats,rent,store_category,contact_person,contact_phone,latitude,longitude,description
-BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,李明,13800138001,王芳,13800138002,国贸大厦一层,2023-01-15,07:00-22:00,200,80,50000,直营,张总,13900139001,39.9088,116.4610,CBD核心区
-BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13800138001,,,,,180,70,42000,加盟,陈总,13900139003,39.9965,116.4710,重点跟进`
+  const template = `store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,latitude,longitude,description
+BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,李明,13800138001,王芳,13800138002,国贸大厦一层,2023-01-15,07:00-22:00,200,80,50000,直营,正常,商场,核心商圈,39.9088,116.4610,CBD核心区
+BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13800138001,,,,,180,70,42000,加盟,重点跟进,商场,次级商圈,39.9965,116.4710,重点跟进`
   const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -1192,11 +1253,15 @@ const handleGeocodeImport = async () => {
         store_manager: item.store_manager || '',
         phone2: item.phone2 || '',
         area: item.area ? Number(item.area) : null,
+        store_area: item.store_area ? Number(item.store_area) : (item.area ? Number(item.area) : null),
         seats: item.seats ? Number(item.seats) : null,
         rent: item.rent ? Number(item.rent) : null,
+        frontage: item.frontage ? Number(item.frontage) : (item.rent ? Number(item.rent) : null),
         store_category: item.store_category || '',
         contact_person: item.contact_person || '',
         contact_phone: item.contact_phone || '',
+        mall_type: item.mall_type || item.contact_person || '',
+        trade_area_type: item.trade_area_type || item.contact_phone || '',
         open_date: item.open_date || '',
         business_hours: item.business_hours || '',
         description: item.description || ''

@@ -130,13 +130,7 @@ router.post('/', authenticate, (req, res) => {
       `).get(brand.trim())
 
       if (existing) {
-        // 如果已存在的图标不是当前用户上传的，普通用户不能替换
-        if (!isAdmin && existing.user_id !== userId) {
-          fs.unlinkSync(req.file.path)
-          return res.status(403).json({ success: false, message: '该品牌图标由管理员设置，您无法替换' })
-        }
-        
-        // 删除旧文件
+        // 删除旧文件（无论谁上传的，都允许替换）
         const oldPath = path.join(uploadDir, existing.filename)
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath)

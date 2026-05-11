@@ -96,15 +96,19 @@ export async function initDatabase() {
       area REAL,
       seats INTEGER,
       rent REAL,
+      frontage REAL,         -- 门幅面积
       store_category TEXT,
       -- 联系信息
       contact_person TEXT,
       contact_phone TEXT,
+      mall_type TEXT,        -- 商场类型
+      trade_area_type TEXT,  -- 商圈类型
       description TEXT,
       -- 系统字段
       latitude REAL NOT NULL,
       longitude REAL NOT NULL,
       status TEXT DEFAULT '正常',
+      store_status TEXT DEFAULT '',  -- 门店状态
       icon_color TEXT DEFAULT '#409eff',
       user_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -405,14 +409,14 @@ export async function initDatabase() {
         INSERT INTO markers (
           store_code, brand, name, store_type, city, district, area_manager, phone1,
           store_manager, phone2, address, open_date, business_hours, area, seats,
-          rent, store_category, contact_person, contact_phone, description,
-          latitude, longitude, status, icon_color
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          rent, frontage, store_category, contact_person, contact_phone, mall_type, trade_area_type, description,
+          latitude, longitude, status, store_status, icon_color
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         m.store_code, m.brand, m.name, m.store_type, m.city, m.district, m.area_manager, m.phone1,
         m.store_manager, m.phone2, m.address, m.open_date, m.business_hours, m.area, m.seats,
-        m.rent, m.store_category, m.contact_person, m.contact_phone, m.description,
-        m.latitude, m.longitude, m.status, m.icon_color
+        m.rent, m.rent, m.store_category, m.contact_person, m.contact_phone, m.contact_person, m.contact_phone, m.description,
+        m.latitude, m.longitude, m.status, m.status, m.icon_color
       ])
     }
     console.log(`已插入 ${sampleStores.length} 条示例门店数据`)
@@ -430,6 +434,11 @@ export function saveDatabase() {
     const buffer = Buffer.from(data)
     fs.writeFileSync(dbPath, buffer)
   }
+}
+
+// 获取原始数据库实例（用于需要事务或批量操作的场景）
+export function getRawDb() {
+  return db
 }
 
 export function getDb() {
