@@ -711,9 +711,10 @@ const cityList = computed(() => {
   return cities.sort()
 })
 
-// 区县列表
+// 区县列表（联动城市）
 const districtList = computed(() => {
-  const districts = [...new Set(markerStore.markers.map(m => m.district).filter(Boolean))]
+  const city = filterCity.value
+  const districts = [...new Set(markerStore.markers.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))]
   return districts.sort()
 })
 
