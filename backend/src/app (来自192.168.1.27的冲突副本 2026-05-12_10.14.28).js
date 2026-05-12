@@ -17,6 +17,8 @@ import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
 import smartstepsRoutes from './routes/smartsteps.js'
 import purchaseRoutes from './routes/purchase.js'
+import templateRoutes from './routes/template.js'
+import tileProxyRoutes from './routes/tile-proxy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -29,7 +31,7 @@ app.set('trust proxy', true)
 
 // 中间件
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
 // 静态文件服务 - 品牌图标上传目录
@@ -55,6 +57,8 @@ async function start() {
     app.use('/api/poi', poiRoutes)
     app.use('/api/smartsteps', smartstepsRoutes)
     app.use('/api/purchase', purchaseRoutes)
+    app.use('/api/template', templateRoutes)
+    app.use('/api/tile-proxy', tileProxyRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

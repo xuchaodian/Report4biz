@@ -124,14 +124,13 @@ router.post('/', authenticate, (req, res) => {
         }
       }
 
-      // 每个用户的品牌图标相互独立
-      // 管理员上传的图标对所有用户可见，普通用户上传的仅自己可见
+      // 检查是否已存在该品牌且是当前用户上传的图标，存在则替换
       const existing = db.prepare(`
-        SELECT id, filename, user_id FROM brand_icons WHERE brand = ? AND user_id = ?
-      `).get(brand.trim(), userId)
+        SELECT id, filename, user_id FROM brand_icons WHERE brand = ?
+      `).get(brand.trim())
 
       if (existing) {
-        // 删除旧文件
+        // 删除旧文件（无论谁上传的，都允许替换）
         const oldPath = path.join(uploadDir, existing.filename)
         if (fs.existsSync(oldPath)) {
           fs.unlinkSync(oldPath)

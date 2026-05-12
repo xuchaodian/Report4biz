@@ -96,15 +96,19 @@ export async function initDatabase() {
       area REAL,
       seats INTEGER,
       rent REAL,
+      frontage REAL,         -- 门幅面积
       store_category TEXT,
       -- 联系信息
       contact_person TEXT,
       contact_phone TEXT,
+      mall_type TEXT,        -- 商场类型
+      trade_area_type TEXT,  -- 商圈类型
       description TEXT,
       -- 系统字段
       latitude REAL NOT NULL,
       longitude REAL NOT NULL,
       status TEXT DEFAULT '正常',
+      store_status TEXT DEFAULT '',  -- 门店状态
       icon_color TEXT DEFAULT '#409eff',
       user_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -405,14 +409,14 @@ export async function initDatabase() {
         INSERT INTO markers (
           store_code, brand, name, store_type, city, district, area_manager, phone1,
           store_manager, phone2, address, open_date, business_hours, area, seats,
-          rent, store_category, contact_person, contact_phone, description,
-          latitude, longitude, status, icon_color
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          rent, frontage, store_category, contact_person, contact_phone, mall_type, trade_area_type, description,
+          latitude, longitude, status, store_status, icon_color
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         m.store_code, m.brand, m.name, m.store_type, m.city, m.district, m.area_manager, m.phone1,
         m.store_manager, m.phone2, m.address, m.open_date, m.business_hours, m.area, m.seats,
-        m.rent, m.store_category, m.contact_person, m.contact_phone, m.description,
-        m.latitude, m.longitude, m.status, m.icon_color
+        m.rent, m.rent, m.store_category, m.contact_person, m.contact_phone, m.contact_person, m.contact_phone, m.description,
+        m.latitude, m.longitude, m.status, m.status, m.icon_color
       ])
     }
     console.log(`已插入 ${sampleStores.length} 条示例门店数据`)
@@ -432,13 +436,23 @@ export function saveDatabase() {
   }
 }
 
+// 获取原始数据库实例（用于需要事务或批量操作的场景）
+export function getRawDb() {
+  return db
+}
+
 export function getDb() {
   return {
     // 执行查询并返回结果
     exec: (sql) => {
       return db.exec(sql)
     },
-    
+
+    // 手动保存数据库到磁盘（默认每行INSERT自动保存，批量操作时可手动调用）
+    saveDatabase: () => {
+      saveDatabase()
+    },
+
     // 执行单行查询
     prepare: (sql) => ({
       get: (...params) => {
@@ -453,10 +467,19 @@ export function getDb() {
         return undefined
       },
       
-      // 执行插入/更新/删除
+      // 执行插入/更新/删除（自动保存）
       run: (...params) => {
         db.run(sql, params)
         saveDatabase()
+        return {
+          lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0,
+          changes: db.getRowsModified()
+        }
+      },
+
+      // 执行插入/更新/删除（不自动保存，用于批量操作后手动保存）
+      runNoSave: (...params) => {
+        db.run(sql, params)
         return {
           lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0,
           changes: db.getRowsModified()

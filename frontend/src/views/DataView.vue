@@ -31,6 +31,13 @@
         >
           <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
         </el-button>
+        <el-button
+          v-if="selectedRows.length > 0"
+          type="primary"
+          @click="showBatchSmartstepsDialog = true"
+        >
+          <el-icon><DataAnalysis /></el-icon>批量购买({{ selectedRows.length }})
+        </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
         </el-button>
@@ -576,6 +583,14 @@
       </template>
     </el-dialog>
 
+    <!-- 批量购买对话框 -->
+    <BatchSmartstepsDialog
+      :visible="showBatchSmartstepsDialog"
+      :stores="selectedRows"
+      @update:visible="showBatchSmartstepsDialog = $event"
+      @close="showBatchSmartstepsDialog = false"
+    />
+
   </div>
 </template>
 
@@ -583,6 +598,7 @@
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
@@ -653,6 +669,7 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
+const showBatchSmartstepsDialog = ref(false)
 
 
 
