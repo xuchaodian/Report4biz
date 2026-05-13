@@ -15,6 +15,12 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/shared/purchase',
+    name: 'SharedPurchase',
+    component: () => import('@/views/SharedPurchaseView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/',
     component: () => import('@/views/MainLayout.vue'),
     meta: { requiresAuth: true },

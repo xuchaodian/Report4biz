@@ -482,6 +482,7 @@ const handleClearAll = async () => {
 
 const handleImport = () => {
   uploadFile.value = null
+  uploadRef.value?.clearFiles()
   importDialogVisible.value = true
 }
 const handleFileChange = (file) => { uploadFile.value = file.raw }

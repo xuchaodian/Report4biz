@@ -214,9 +214,6 @@
             <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
               📄 PDF速览
             </el-button>
-            <el-button type="warning" size="small" @click="handleShareToWeChat" :disabled="detailLoading || !currentDetail">
-              💬 微信分享
-            </el-button>
             <el-dropdown @command="handleExportDropdown" :disabled="detailLoading || !currentDetail" trigger="click">
               <el-button type="success" size="small">
                 📊 导出报表<el-icon><ArrowDown /></el-icon>
@@ -269,33 +266,6 @@
           </div>
         </div>
       </div>
-    </el-dialog>
-
-    <!-- 微信分享预览对话框 -->
-    <el-dialog
-      v-model="shareDialogVisible"
-      title="💬 微信分享"
-      width="420px"
-      :close-on-click-modal="true"
-      class="share-dialog"
-    >
-      <div class="share-preview" v-if="shareImageData">
-        <img :src="shareImageData" alt="分享图片" style="width: 100%; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
-      </div>
-      <p class="share-hint">
-        📌 长按图片保存到相册，即可分享到微信
-      </p>
-      <template #footer>
-        <div class="share-actions">
-          <el-button type="primary" @click="copyImageToClipboard">
-            📋 复制图片
-          </el-button>
-          <el-button @click="downloadShareImage">
-            📥 保存图片
-          </el-button>
-        </div>
-        <p class="share-tip">电脑端：复制图片后到微信按 Ctrl+V 粘贴发送</p>
-      </template>
     </el-dialog>
   </div>
 </template>
@@ -2670,59 +2640,6 @@ const handleExportPDF = async () => {
   }
 }
 
-// ====== 微信分享 ======
-const shareDialogVisible = ref(false)
-const shareImageData = ref(null)
-
-const handleShareToWeChat = async () => {
-  if (!pdfContentRef.value) return
-  ElMessage.info('正在生成分享图片...')
-  try {
-    const { default: html2canvas } = await import('html2canvas')
-    const canvas = await html2canvas(pdfContentRef.value, {
-      useCORS: true,
-      scale: 2,
-      backgroundColor: '#ffffff',
-      logging: false
-    })
-    shareImageData.value = canvas.toDataURL('image/png')
-    shareDialogVisible.value = true
-  } catch (e) {
-    console.error('生成分享图片失败:', e)
-    ElMessage.error('生成分享图片失败: ' + e.message)
-  }
-}
-
-const copyImageToClipboard = async () => {
-  if (!shareImageData.value) return
-  try {
-    // Base64 → Blob
-    const res = await fetch(shareImageData.value)
-    const blob = await res.blob()
-    await navigator.clipboard.write([
-      new ClipboardItem({ 'image/png': blob })
-    ])
-    ElMessage.success({
-      message: '✅ 图片已复制，请到微信电脑版按 Ctrl+V 粘贴发送',
-      duration: 5000
-    })
-  } catch (e) {
-    console.error('复制图片失败:', e)
-    ElMessage.error('复制图片失败，请尝试保存后再分享')
-  }
-}
-
-const downloadShareImage = () => {
-  if (!shareImageData.value) return
-  const link = document.createElement('a')
-  const storeName = (currentDetail.value?.store_name || '数据').replace(/[/\\:]/g, '_')
-  link.download = storeName + '_联通人口数据.png'
-  link.href = shareImageData.value
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
 // ====== 纯 Canvas 绘制地图截图（替代 Leaflet + html2canvas） ======
 
 // 经纬度 → 瓦片坐标（与 Leaflet/OSM 一致）
@@ -3803,35 +3720,5 @@ const handleExportExcel = async () => {
     border-left: none;
     padding-left: 0;
   }
-}
-
-/* ====== 微信分享弹窗 ====== */
-.share-dialog {
-  :deep(.el-dialog__body) {
-    max-height: 70vh;
-    overflow-y: auto;
-  }
-}
-.share-preview {
-  padding: 0;
-  text-align: center;
-}
-.share-hint {
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  margin: 12px 0 0;
-}
-.share-actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-.share-tip {
-  text-align: center;
-  color: #bbb;
-  font-size: 11px;
-  margin: 0;
 }
 </style>

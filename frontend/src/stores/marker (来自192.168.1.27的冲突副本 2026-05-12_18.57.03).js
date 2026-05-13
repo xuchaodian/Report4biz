@@ -20,7 +20,9 @@ export const useMarkerStore = defineStore('marker', {
       filterCity: '',
       filterDistrict: '',
       filterStoreCategory: '',
-      filterBrand: ''
+      filterBrand: '',
+      filterStoreStatus: '',
+      filterMallType: ''
     }
   }),
   
@@ -97,7 +99,8 @@ export const useMarkerStore = defineStore('marker', {
         const { data } = await axios.post(`${API_URL}/markers/import`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
-        this.markers = [...this.markers, ...data.imported]
+        // 导入完成后重新拉取完整列表，确保数据同步
+        await this.fetchMarkers()
         return { success: true, count: data.count }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '导入失败' }
@@ -141,7 +144,9 @@ export const useMarkerStore = defineStore('marker', {
         filterCity: '',
         filterDistrict: '',
         filterStoreCategory: '',
-        filterBrand: ''
+        filterBrand: '',
+        filterStoreStatus: '',
+        filterMallType: ''
       }
       this.visibleIds = null
     }

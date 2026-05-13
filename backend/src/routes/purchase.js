@@ -1,8 +1,10 @@
 import express from 'express'
+import crypto from 'crypto'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
+const SHARE_SECRET = 'Report4biz_share_2026'
 
 /**
  * 获取用户配额信息
@@ -335,6 +337,72 @@ router.get('/:id', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取详情失败:', error)
     res.status(500).json({ message: '获取详情失败' })
+  }
+})
+
+/**
+ * 生成分享Token（需登录）
+ */
+router.get('/:id/share-token', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+    const purchase = db.prepare(`SELECT id FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    if (!purchase) return res.status(404).json({ message: '记录不存在' })
+    
+    const hash = crypto.createHmac('sha256', SHARE_SECRET).update(String(id)).digest('hex').slice(0, 16)
+    const shareUrl = `${req.protocol}://${req.get('host')}/shared/purchase?id=${id}&token=${hash}`
+    res.json({ shareUrl, token: hash })
+  } catch (error) {
+    console.error('生成分享token失败:', error)
+    res.status(500).json({ message: '生成分享链接失败' })
+  }
+})
+
+/**
+ * 公开分享接口（使用Token验证，免登录）
+ */
+router.get('/shared/:id', (req, res) => {
+  try {
+    const { id } = req.params
+    const { token } = req.query
+    if (!token) return res.status(403).json({ message: '缺少访问令牌' })
+    
+    const hash = crypto.createHmac('sha256', SHARE_SECRET).update(String(id)).digest('hex').slice(0, 16)
+    if (hash !== token) return res.status(403).json({ message: '访问令牌无效' })
+    
+    const db = getDb()
+    const purchase = db.prepare(`
+      SELECT id, store_name, store_type, center_lng, center_lat, radius, city_month, quota_used, created_at, result_data, status
+      FROM purchases WHERE id = ? AND status = 'active'
+    `).get(id)
+    
+    if (!purchase) return res.status(404).json({ message: '记录不存在或已失效' })
+    
+    // 解析半径
+    let radii = []
+    try { radii = JSON.parse(purchase.radius) } catch (e) { radii = [purchase.radius] }
+    
+    // 解析result_data(脱敏处理 - 只保留聚合数据)
+    let resultData = null
+    if (purchase.result_data) {
+      try { resultData = JSON.parse(purchase.result_data) } catch (e) { resultData = null }
+    }
+    
+    res.json({
+      purchase: {
+        id: purchase.id,
+        store_name: purchase.store_name,
+        store_type: purchase.store_type,
+        radii,
+        city_month: purchase.city_month,
+        created_at: purchase.created_at,
+        result_data: resultData
+      }
+    })
+  } catch (error) {
+    console.error('获取分享数据失败:', error)
+    res.status(500).json({ message: '获取数据失败' })
   }
 })
 

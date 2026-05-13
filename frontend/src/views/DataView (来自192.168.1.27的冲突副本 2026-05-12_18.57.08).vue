@@ -31,6 +31,13 @@
         >
           <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
         </el-button>
+        <el-button
+          v-if="selectedRows.length > 0"
+          type="primary"
+          @click="showBatchSmartstepsDialog = true"
+        >
+          <el-icon><DataAnalysis /></el-icon>批量购买({{ selectedRows.length }})
+        </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
         </el-button>
@@ -73,6 +80,14 @@
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
+      <el-select v-model="filterStoreStatus" placeholder="按门店状态" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="s in storeStatusList" :key="s" :label="s" :value="s" />
+      </el-select>
+
+      <el-select v-model="filterMallType" placeholder="按商场类型" style="width: 130px" clearable @change="handleSearch">
+        <el-option v-for="m in mallTypeList" :key="m" :label="m" :value="m" />
+      </el-select>
+
       <span class="统计">共 {{ filteredMarkers.length }} 条数据</span>
       <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
         <el-icon><Close /></el-icon>清除筛选
@@ -109,14 +124,19 @@
         </el-table-column>
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
+        <el-table-column prop="store_status" label="门店状态" width="100" align="center">
+          <template #default="{ row }">{{ row.store_status || row.status || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="area_manager" label="区域经理" width="100" show-overflow-tooltip />
-        <el-table-column prop="phone1" label="电话1" width="120" />
         <el-table-column prop="store_manager" label="店长" width="80" />
-        <el-table-column prop="area" label="面积" width="80" align="right">
-          <template #default="{ row }">{{ row.area ? row.area + '㎡' : '-' }}</template>
+        <el-table-column prop="store_area" label="面积" width="80" align="right">
+          <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : row.area ? row.area + '㎡' : '-' }}</template>
         </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="mall_type" label="商场类型" width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.mall_type || row.contact_person || '-' }}</template>
         </el-table-column>
         <el-table-column prop="store_category" label="门店区分" width="100" align="center">
           <template #default="{ row }">{{ row.store_category || '-' }}</template>
@@ -250,8 +270,8 @@
 
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="面积(㎡)" prop="area">
-              <el-input-number v-model="form.area" :min="0" style="width: 100%" />
+            <el-form-item label="面积(㎡)" prop="store_area">
+              <el-input-number v-model="form.store_area" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -260,8 +280,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="租金(元/月)" prop="rent">
-              <el-input-number v-model="form.rent" :min="0" style="width: 100%" />
+            <el-form-item label="门幅面积" prop="frontage">
+              <el-input-number v-model="form.frontage" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -275,18 +295,26 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="联系人" prop="contact_person">
-              <el-input v-model="form.contact_person" placeholder="业主/联系人" />
+            <el-form-item label="门店状态" prop="store_status">
+              <el-input v-model="form.store_status" placeholder="门店状态" />
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="联系电话" prop="contact_phone">
-              <el-input v-model="form.contact_phone" placeholder="联系电话" />
+            <el-form-item label="商场类型" prop="mall_type">
+              <el-input v-model="form.mall_type" placeholder="商场类型" />
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="商圈类型" prop="trade_area_type">
+              <el-input v-model="form.trade_area_type" placeholder="商圈类型" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="经度" prop="longitude">
               <el-input-number v-model="form.longitude" :precision="6" :step="0.001" :min="-180" :max="180" style="width: 100%" />
@@ -378,6 +406,14 @@
         </el-upload>
       </div>
 
+      <!-- 解析进度 -->
+      <div v-if="geocodeParsing" style="text-align:center;padding:40px 0;">
+        <el-progress :percentage="geocodeProgress" :stroke-width="20" :text-inside="true" striped striped-flow />
+        <p style="color:#909399;margin-top:12px;font-size:14px;">
+          正在解析地址（{{ geocodeTotal > 0 ? Math.round(geocodeProgress / 100 * geocodeTotal) : 0 }}/{{ geocodeTotal }}）...
+        </p>
+      </div>
+
       <!-- 步骤2：预览解析结果 -->
       <div v-if="geocodeStep === 2">
         <el-alert type="success" :closable="false" style="margin-bottom: 12px">
@@ -409,8 +445,8 @@
       </div>
 
       <template #footer>
-        <el-button v-if="geocodeStep === 1" @click="geocodeDialogVisible = false">取消</el-button>
-        <el-button v-if="geocodeStep === 1" type="primary" :disabled="!geocodeCsvFile" :loading="geocodeParsing" @click="handleParseGeocode">
+        <el-button v-if="geocodeStep === 1 && !geocodeParsing" @click="geocodeDialogVisible = false">取消</el-button>
+        <el-button v-if="geocodeStep === 1 && !geocodeParsing" type="primary" :disabled="!geocodeCsvFile" @click="handleParseGeocode">
           解析地址
         </el-button>
         <template v-if="geocodeStep === 2">
@@ -468,7 +504,7 @@
             暂无对比数据
           </div>
           <el-table v-else :data="storeCompareTableData" border stripe size="small" max-height="450" :header-cell-style="{ fontWeight: 'bold', color: '#333', background: '#fdf6ec', fontSize: '14px' }">
-            <el-table-column label="指标" width="140" align="right">
+            <el-table-column label="指标" width="200" show-overflow-tooltip align="right">
               <template #default="{ row }">
                 <span style="font-weight: bold; font-size: 14px;">{{ row.field }}</span>
               </template>
@@ -547,6 +583,14 @@
       </template>
     </el-dialog>
 
+    <!-- 批量购买对话框 -->
+    <BatchSmartstepsDialog
+      :visible="showBatchSmartstepsDialog"
+      :stores="selectedRows"
+      @update:visible="showBatchSmartstepsDialog = $event"
+      @close="showBatchSmartstepsDialog = false"
+    />
+
   </div>
 </template>
 
@@ -554,6 +598,7 @@
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
@@ -577,6 +622,8 @@ const filterCity = ref('')
 const filterDistrict = ref('')
 const filterStoreCategory = ref('')
 const filterBrand = ref('')
+const filterStoreStatus = ref('')
+const filterMallType = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -588,6 +635,8 @@ watch(() => markerStore.filters, (newFilters) => {
   filterDistrict.value = newFilters.filterDistrict
   filterStoreCategory.value = newFilters.filterStoreCategory
   filterBrand.value = newFilters.filterBrand
+  filterStoreStatus.value = newFilters.filterStoreStatus
+  filterMallType.value = newFilters.filterMallType
 }, { deep: true })
 
 // 同步筛选条件到 store（持久化）
@@ -598,13 +647,15 @@ const syncFiltersToStore = () => {
     filterCity: filterCity.value,
     filterDistrict: filterDistrict.value,
     filterStoreCategory: filterStoreCategory.value,
-    filterBrand: filterBrand.value
+    filterBrand: filterBrand.value,
+    filterStoreStatus: filterStoreStatus.value,
+    filterMallType: filterMallType.value
   })
 }
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value
+  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value || filterMallType.value
 })
 
 // 弹窗状态
@@ -618,6 +669,7 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
+const showBatchSmartstepsDialog = ref(false)
 
 
 
@@ -648,11 +700,17 @@ const form = reactive({
   open_date: '',
   business_hours: '',
   area: null,
+  store_area: null,
   seats: null,
   rent: null,
+  frontage: null,
   store_category: '',
+  status: '',
+  store_status: '',
   contact_person: '',
   contact_phone: '',
+  mall_type: '',
+  trade_area_type: '',
   description: '',
   latitude: 39.9042,
   longitude: 116.4074
@@ -670,9 +728,10 @@ const cityList = computed(() => {
   return cities.sort()
 })
 
-// 区县列表
+// 区县列表（联动城市）
 const districtList = computed(() => {
-  const districts = [...new Set(markerStore.markers.map(m => m.district).filter(Boolean))]
+  const city = filterCity.value
+  const districts = [...new Set(markerStore.markers.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))]
   return districts.sort()
 })
 
@@ -688,6 +747,18 @@ const brandList = computed(() => {
   return brands.sort()
 })
 
+// 门店状态列表
+const storeStatusList = computed(() => {
+  const statuses = [...new Set(markerStore.markers.map(m => m.store_status || m.status).filter(Boolean))]
+  return statuses.sort()
+})
+
+// 商场类型列表
+const mallTypeList = computed(() => {
+  const types = [...new Set(markerStore.markers.map(m => m.mall_type || m.contact_person).filter(Boolean))]
+  return types.sort()
+})
+
 // 筛选后的数据
 const filteredMarkers = computed(() => {
   return markerStore.markers.filter(marker => {
@@ -700,7 +771,9 @@ const filteredMarkers = computed(() => {
     const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
     const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
     const matchBrand = !filterBrand.value || marker.brand === filterBrand.value
-    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand
+    const matchStoreStatus = !filterStoreStatus.value || (marker.store_status || marker.status) === filterStoreStatus.value
+    const matchMallType = !filterMallType.value || (marker.mall_type || marker.contact_person) === filterMallType.value
+    return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand && matchStoreStatus && matchMallType
   })
 })
 
@@ -733,7 +806,7 @@ const handleSearch = () => {
 // 同步可见ID到地图
 const syncVisibleIds = () => {
   const hasFilter = searchKeyword.value || filterStoreType.value || filterCity.value ||
-    filterDistrict.value || filterStoreCategory.value || filterBrand.value
+    filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value || filterMallType.value
   if (!hasFilter) {
     markerStore.setVisibleIds(null)  // 无筛选 → 显示全部
   } else {
@@ -750,6 +823,8 @@ const handleClearFilters = () => {
   filterDistrict.value = ''
   filterStoreCategory.value = ''
   filterBrand.value = ''
+  filterStoreStatus.value = ''
+  filterMallType.value = ''
   markerStore.clearFilters()
   currentPage.value = 1
 }
@@ -773,11 +848,17 @@ const showAddDialog = () => {
     open_date: '',
     business_hours: '',
     area: null,
+    store_area: null,
     seats: null,
     rent: null,
+    frontage: null,
     store_category: '',
+    status: '',
+    store_status: '',
     contact_person: '',
     contact_phone: '',
+    mall_type: '',
+    trade_area_type: '',
     description: '',
     latitude: 39.9042,
     longitude: 116.4074
@@ -804,11 +885,17 @@ const handleEdit = (row) => {
     open_date: row.open_date || '',
     business_hours: row.business_hours || '',
     area: row.area || null,
+    store_area: row.store_area || row.area || null,
     seats: row.seats || null,
     rent: row.rent || null,
+    frontage: row.frontage || row.rent || null,
     store_category: row.store_category || '',
+    status: row.status || '',
+    store_status: row.store_status || row.status || '',
     contact_person: row.contact_person || '',
     contact_phone: row.contact_phone || '',
+    mall_type: row.mall_type || row.contact_person || '',
+    trade_area_type: row.trade_area_type || row.contact_phone || '',
     description: row.description || '',
     latitude: row.latitude,
     longitude: row.longitude
@@ -978,9 +1065,9 @@ const handleExport = async () => {
 
 // 下载模板
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,area,seats,rent,store_category,contact_person,contact_phone,latitude,longitude,description
-BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,李明,13800138001,王芳,13800138002,国贸大厦一层,2023-01-15,07:00-22:00,200,80,50000,直营,张总,13900139001,39.9088,116.4610,CBD核心区
-BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13800138001,,,,,180,70,42000,加盟,陈总,13900139003,39.9965,116.4710,重点跟进`
+  const template = `store_code,brand,name,store_type,city,district,area_manager,phone1,store_manager,phone2,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,latitude,longitude,description
+BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,李明,13800138001,王芳,13800138002,国贸大厦一层,2023-01-15,07:00-22:00,200,80,50000,直营,正常,商场,核心商圈,39.9088,116.4610,CBD核心区
+BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,李明,13800138001,,,,,180,70,42000,加盟,重点跟进,商场,次级商圈,39.9965,116.4710,重点跟进`
   const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -1000,6 +1087,8 @@ const geocodeParsing = ref(false)
 const geocodeImporting = ref(false)
 const geocodeResults = ref([])        // 解析结果列表
 const geocodeSuccessCount = computed(() => geocodeResults.value.filter(r => r.success).length)
+const geocodeProgress = ref(0)         // 进度 0-100
+const geocodeTotal = ref(0)            // 总条数
 
 // 原始CSV数据（保留所有列，用于导入）
 let geocodeRawData = []
@@ -1024,6 +1113,7 @@ const handleParseGeocode = async () => {
   }
 
   geocodeParsing.value = true
+  geocodeProgress.value = 0
   geocodeResults.value = []
   geocodeRawData = []
 
@@ -1031,8 +1121,6 @@ const handleParseGeocode = async () => {
     // 1. 自动识别编码：先尝试 UTF-8，若检测到乱码则改用 GBK
     const buffer = await geocodeCsvFile.value.arrayBuffer()
     let text = new TextDecoder('utf-8').decode(buffer)
-    // 检测 UTF-8 乱码：U+FFFD 是 UTF-8 解码失败的替换字符，连续出现说明原本是 GBK
-    // 注意：不要用 /[\x80-\xff]{3,}/ 检测连续高字节，因为中文 UTF-8 本身就是连续高字节
     const seemsGarbled = (text.match(/\ufffd/g) || []).length >= 2
     if (seemsGarbled) {
       text = new TextDecoder('gbk').decode(buffer)
@@ -1061,27 +1149,68 @@ const handleParseGeocode = async () => {
       return
     }
 
-    // 3. 批量调用地理编码
-    const result = await markerStore.batchGeocode(addresses)
+    // 3. 逐条调用地理编码（每条更新进度）
+    const total = addresses.length
+    geocodeTotal.value = total
+    const allResults = []
 
-    if (!result.success) {
-      ElMessage.error(result.message)
-      geocodeParsing.value = false
-      return
+    for (let i = 0; i < total; i++) {
+      const item = addresses[i]
+      const result = await markerStore.batchGeocode([item])
+
+      if (result.success && result.results && result.results.length > 0) {
+        const r = result.results[0]
+        allResults.push({
+          ...r,
+          ...Object.fromEntries(
+            Object.entries(geocodeRawData[i] || {})
+              .filter(([k]) => !['name', 'address', 'city', 'district'].includes(k))
+          )
+        })
+      } else {
+        allResults.push({
+          name: item.name,
+          address: item.address,
+          city: item.city,
+          district: item.district,
+          success: false,
+          error: result.message || '解析失败'
+        })
+      }
+
+      // 逐条更新进度
+      geocodeProgress.value = Math.round((i + 1) / total * 100)
+      geocodeResults.value = [...allResults]
     }
 
-    // 4. 合并结果：将地理编码结果与原始数据合并
-    geocodeResults.value = result.results.map((r, i) => ({
-      ...r,
-      // 保留原始CSV的其他字段
-      ...Object.fromEntries(
-        Object.entries(geocodeRawData[i] || {})
-          .filter(([k]) => !['name', 'address', 'city', 'district'].includes(k))
-      )
-    }))
+    // 4. 完成，弹出询问对话框
+    const successCount = allResults.filter(r => r.success).length
+    geocodeResults.value = allResults
+    geocodeProgress.value = 100
+    geocodeParsing.value = false
 
-    geocodeStep.value = 2
-    ElMessage.success(`解析完成！成功 ${geocodeSuccessCount.value} 条`)
+    ElMessageBox.confirm(
+      `解析完成！共 ${total} 条，成功 <b>${successCount}</b> 条，失败 <b>${total - successCount}</b> 条。<br><br>是否直接添加到门店库？`,
+      '地址解析完成',
+      {
+        confirmButtonText: '导入到门店库',
+        cancelButtonText: '导出CSV',
+        type: 'success',
+        dangerouslyUseHTMLString: true,
+        showCancelButton: true,
+        distinguishCancelAndClose: true
+      }
+    ).then(() => {
+      // 确认 → 导入门店库
+      handleGeocodeImport()
+    }).catch((action) => {
+      if (action === 'cancel') {
+        // 取消 → 导出CSV
+        handleGeocodeExport()
+      }
+      // close → 不操作，留在预览界面
+    })
+
   } catch (err) {
     console.error(err)
     ElMessage.error('解析失败：' + err.message)
@@ -1142,11 +1271,15 @@ const handleGeocodeImport = async () => {
         store_manager: item.store_manager || '',
         phone2: item.phone2 || '',
         area: item.area ? Number(item.area) : null,
+        store_area: item.store_area ? Number(item.store_area) : (item.area ? Number(item.area) : null),
         seats: item.seats ? Number(item.seats) : null,
         rent: item.rent ? Number(item.rent) : null,
+        frontage: item.frontage ? Number(item.frontage) : (item.rent ? Number(item.rent) : null),
         store_category: item.store_category || '',
         contact_person: item.contact_person || '',
         contact_phone: item.contact_phone || '',
+        mall_type: item.mall_type || item.contact_person || '',
+        trade_area_type: item.trade_area_type || item.contact_phone || '',
         open_date: item.open_date || '',
         business_hours: item.business_hours || '',
         description: item.description || ''
@@ -1307,7 +1440,7 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// 从 result_data 提取 1001 人口字段
+// 从 result_data 提取 1001 人口字段（含年龄维度）
 function extractPopData(resultData) {
   if (!resultData) return null
   let apiResult = resultData
@@ -1327,8 +1460,32 @@ function extractPopData(resultData) {
     live: findField(/^P1_SUM\d*$/i),
     work: findField(/^P2_SUM\d*$/i),
     out: findField(/^P3_SUM\d*$/i),
-    entertain: findField(/^P4_SUM\d*$/i)
+    entertain: findField(/^P4_SUM\d*$/i),
+    age0_1924: d['age0_1924'] ?? null,
+    age1_1924: d['age1_1924'] ?? null,
+    age2_1924: d['age2_1924'] ?? null
   }
+}
+
+// 从 result_data 提取 1005 小时段数据
+function extractHourData(resultData) {
+  if (!resultData) return {}
+  let apiResult = resultData
+  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return {} } }
+  if (apiResult?.apiResult) apiResult = apiResult.apiResult
+  const list = apiResult?.['1005']
+  if (!Array.isArray(list)) return {}
+
+  const data = {}
+  for (const item of list) {
+    const dt = item.day_type ?? 0
+    const hp = item.hour_period
+    if (hp != null) {
+      data[`hour${dt}_${hp}_visit`] = item.hour_visit ?? 0
+      data[`hour${dt}_${hp}_all`] = item.hour_all ?? 0
+    }
+  }
+  return data
 }
 
 // 计算圆内门店数（排除当前门店）和竞品数
@@ -1402,9 +1559,12 @@ const startStoreCompare = async () => {
 
       if (resultData) {
         const popData = extractPopData(resultData)
+        const hourData = extractHourData(resultData)
         result.pop = popData || {}
+        result.hour = hourData
       } else {
         result.pop = null
+        result.hour = {}
       }
       console.log(`[门店对比] ${store.name}: pop=${JSON.stringify(result.pop)}, exactRadiusMatch=${result.exactRadiusMatch}, myCount=${result.myStoreCount}`)
 
@@ -1420,6 +1580,22 @@ const startStoreCompare = async () => {
       { key: 'work', label: '工作人口数' },
       { key: 'out', label: '外省到访人口数' },
       { key: 'entertain', label: '娱乐人数' },
+      { key: 'age0_1924', label: '19-24岁到访人口数' },
+      { key: 'age1_1924', label: '19-24岁居住人口数' },
+      { key: 'age2_1924', label: '19-24岁工作人口数' },
+      // 11点-13点、17点-19点时段的到访人次
+      { key: 'hour0_11_visit', label: '11点工作日到访人次' },
+      { key: 'hour0_12_visit', label: '12点工作日到访人次' },
+      { key: 'hour0_13_visit', label: '13点工作日到访人次' },
+      { key: 'hour0_17_visit', label: '17点工作日到访人次' },
+      { key: 'hour0_18_visit', label: '18点工作日到访人次' },
+      { key: 'hour0_19_visit', label: '19点工作日到访人次' },
+      { key: 'hour1_11_visit', label: '11点周末到访人次' },
+      { key: 'hour1_12_visit', label: '12点周末到访人次' },
+      { key: 'hour1_13_visit', label: '13点周末到访人次' },
+      { key: 'hour1_17_visit', label: '17点周末到访人次' },
+      { key: 'hour1_18_visit', label: '18点周末到访人次' },
+      { key: 'hour1_19_visit', label: '19点周末到访人次' },
       { key: '_myCount', label: '圆内门店数' },
       { key: '_compCount', label: '圆内竞品数' },
     ]
@@ -1428,6 +1604,11 @@ const startStoreCompare = async () => {
       const values = results.map(r => {
         if (fk.key === '_myCount') return r.myStoreCount?.toLocaleString() || '0'
         if (fk.key === '_compCount') return r.compStoreCount?.toLocaleString() || '0'
+        // hour 前缀的从 hour 提取，其余从 pop 提取
+        if (fk.key.startsWith('hour') || fk.key.startsWith('age')) {
+          const hourVal = r.hour?.[fk.key]
+          return hourVal != null ? Number(hourVal).toLocaleString() : (r.pop?.[fk.key] != null ? Number(r.pop[fk.key]).toLocaleString() : '—')
+        }
         return r.pop ? (r.pop[fk.key]?.toLocaleString() || '—') : '—'
       })
       const nums = values.map(v => {
