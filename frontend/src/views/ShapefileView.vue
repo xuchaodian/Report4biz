@@ -152,10 +152,18 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="queryDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="executeQuery" :loading="queryLoading">
-            执行检索
-          </el-button>
+          <div class="dialog-footer-left" v-if="queryResult.matched > 0">
+            <el-tag type="success" size="default">匹配 {{ queryResult.matched }} / {{ queryResult.total }} 个要素</el-tag>
+            <el-button type="primary" size="default" @click="showOnMap" style="margin-left: 10px;">
+              <el-icon><MapLocation /></el-icon>显示地图
+            </el-button>
+          </div>
+          <div class="dialog-footer-right">
+            <el-button @click="queryDialogVisible = false">关闭</el-button>
+            <el-button type="primary" @click="executeQuery" :loading="queryLoading">
+              执行检索
+            </el-button>
+          </div>
         </div>
       </template>
     </el-dialog>
@@ -429,8 +437,6 @@ const executeQuery = async () => {
     
     if (result.success) {
       queryResult.value = result.data
-      resultDialogVisible.value = true
-      queryDialogVisible.value = false
       
       if (result.data.matched === 0) {
         ElMessage.info('没有匹配的数据')
@@ -472,16 +478,21 @@ const showOnMap = () => {
     name: currentFile.value.name,
     geojson: geojson,
     matched: queryResult.value.matched,
-    displayFields: displayFields  // 只显示这些字段的值
+    displayFields: displayFields
   }
 
-  // 先跳转到地图页面
+  // 跳转到地图页面
+  queryDialogVisible.value = false
   router.push('/')
 
-  // 延迟关闭对话框，避免干扰页面跳转
-  setTimeout(() => {
-    resultDialogVisible.value = false
-  }, 100)
+  // 启动轮询：等待地图准备好后处理显示（最长10秒）
+  let pollTimer = setInterval(() => {
+    const fn = window.handleShapefileQueryFromGlobal
+    if (fn && fn()) {
+      clearInterval(pollTimer)
+    }
+  }, 500)
+  setTimeout(() => { clearInterval(pollTimer) }, 10000)
 }
 
 onMounted(() => {
@@ -658,7 +669,17 @@ onMounted(() => {
 
 .dialog-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.dialog-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog-footer-right {
+  display: flex;
   gap: 12px;
 }
 

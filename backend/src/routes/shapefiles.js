@@ -144,7 +144,7 @@ router.get('/', (req, res) => {
   }
 })
 
-// 获取单个 Shapefile 的 GeoJSON 数据
+// 获取单个 Shapefile 的 GeoJSON 数据（普通用户可访问管理员共享的文件）
 router.get('/:id', (req, res) => {
   try {
     const db = getDb()
@@ -152,7 +152,7 @@ router.get('/:id', (req, res) => {
     const userId = req.headers['x-user-id'] || 1
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND user_id = ?`
+      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
     ).get(id, userId)
 
     if (!row) {
@@ -228,9 +228,9 @@ router.post('/:id/query', (req, res) => {
     const userId = req.headers['x-user-id'] || 1
     const { conditions } = req.body
 
-    // 获取 Shapefile 数据
+    // 获取 Shapefile 数据（普通用户可访问管理员共享的文件）
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND user_id = ?`
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
     ).get(id, userId)
 
     if (!row) {
@@ -320,7 +320,7 @@ router.get('/:id/fields', (req, res) => {
     const userId = req.headers['x-user-id'] || 1
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND user_id = ?`
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
     ).get(id, userId)
 
     if (!row) {

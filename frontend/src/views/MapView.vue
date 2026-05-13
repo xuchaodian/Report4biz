@@ -4500,8 +4500,8 @@ const handleShapefileQuery = (event) => {
     shapefileProcessing = true
     ElMessage.info(`正在加载 ${features.length} 个要素...`)
 
-    // 创建图层组
-    shapefileQueryLayer = L.layerGroup()
+    // 创建图层组（必须用 featureGroup 才能调用 getBounds）
+    shapefileQueryLayer = L.featureGroup()
 
     // 使用递归分批处理，每批10个，避免阻塞
     const BATCH_SIZE = 10
@@ -4532,10 +4532,12 @@ const handleShapefileQuery = (event) => {
         // 调整视图
         setTimeout(() => {
           try {
-            if (map && shapefileQueryLayer && shapefileQueryLayer.getLayers().length > 0) {
+            if (map && shapefileQueryLayer) {
               const bounds = shapefileQueryLayer.getBounds()
               if (bounds && bounds.isValid && bounds.isValid()) {
-                map.fitBounds(bounds, { padding: [50, 50] })
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 })
+              } else {
+                console.warn('[Shapefile Query] bounds无效')
               }
             }
           } catch (e) {
@@ -5887,9 +5889,17 @@ onMounted(() => {
   // 暴露Shapefile检索结果显示函数
   window.handleShapefileQueryFromGlobal = () => {
     if (window.shapefileQueryResult) {
-      handleShapefileQuery({ detail: window.shapefileQueryResult })
-      delete window.shapefileQueryResult
+      console.log('[Shapefile Query] 全局触发, map存在:', !!map)
+      if (map) {
+        handleShapefileQuery({ detail: window.shapefileQueryResult })
+        delete window.shapefileQueryResult
+        return true
+      } else {
+        console.log('[Shapefile Query] 地图未就绪，等待...')
+        return false
+      }
     }
+    return false
   }
 
   // 等待DOM渲染完成后初始化地图
@@ -5952,6 +5962,7 @@ onUnmounted(() => {
   delete window.openStoreSmartsteps
   delete window.openStoreCompetitors
   delete window.handleShapefileQueryFromGlobal
+  shapefileProcessing = false
 })
 
 // 热力图单元格样式（常住人口对比使用）
