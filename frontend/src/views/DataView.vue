@@ -271,11 +271,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="门店状态" prop="store_status">
-              <el-select v-model="form.store_status" placeholder="请选择" style="width: 100%">
-                <el-option label="正常" value="正常" />
-                <el-option label="闭店" value="闭店" />
-                <el-option label="停业" value="停业" />
-              </el-select>
+              <el-input v-model="form.store_status" placeholder="门店状态" />
             </el-form-item>
           </el-col>
         </el-row>

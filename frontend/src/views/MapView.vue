@@ -480,11 +480,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="门店状态" prop="store_status">
-              <el-select v-model="markerForm.store_status" placeholder="请选择" style="width: 100%">
-                <el-option label="正常" value="正常" />
-                <el-option label="闭店" value="闭店" />
-                <el-option label="停业" value="停业" />
-              </el-select>
+              <el-input v-model="markerForm.store_status" placeholder="门店状态" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -1431,6 +1427,50 @@ const openStoreCompetitors = (lat, lng) => {
   circleForm.radius3 = null
   circleForm.unit = 'km'
   circleDialogVisible.value = true
+}
+
+// ====== 共用门店弹窗HTML（三处统一，改一处即全部生效） ======
+function getStorePopupHtml(markerData) {
+  return `
+    <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
+      <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
+      <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
+      <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
+      <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
+      <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
+      <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
+      ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
+      ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
+      ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
+      ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
+      ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
+      ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
+      <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
+        <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
+        <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
+        <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
+        <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+      </div>
+    </div>`
+}
+
+// 为门店标记添加购买履历检查
+function addStorePopupHistoryCheck(marker, storeName) {
+  marker.on('popupopen', async () => {
+    try {
+      const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(storeName)}`)
+      const hasHistory = (res.data?.purchases || []).length > 0
+      if (hasHistory) {
+        const titleEl = marker.getPopup().getElement()?.querySelector('h4')
+        if (titleEl && !titleEl.querySelector('.star-icon')) {
+          titleEl.innerHTML = `<span class="star-icon" title="该门店有购买记录">⭐</span> ` + titleEl.innerHTML
+        }
+      }
+    } catch (e) {
+      // 忽略购买履历查询失败
+    }
+  })
 }
 
 // 检查门店是否有购买履历
@@ -2862,40 +2902,10 @@ const loadMarkers = async () => {
       draggable: true
     })
 
-    marker.bindPopup(`
-      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
-        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
-        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
-        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
-        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
-        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
-        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
-        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
-        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
-        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
-        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
-          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
-          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
-          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
-          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
-        </div>
-      </div>
-    `)
+    marker.bindPopup(getStorePopupHtml(markerData))
 
     // popup打开时检查是否有购买履历并更新显示
-    marker.on('popupopen', async () => {
-      const hasHistory = await storeHasPurchaseHistory(markerData.name)
-      if (hasHistory) {
-        const titleEl = marker.getPopup().getElement()?.querySelector('h4')
-        if (titleEl && !titleEl.querySelector('.star-icon')) {
-          titleEl.innerHTML = `<span class="star-icon" title="该门店有购买记录">⭐</span> ` + titleEl.innerHTML
-        }
-      }
-    })
+    addStorePopupHistoryCheck(marker, markerData.name)
 
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
@@ -2954,29 +2964,7 @@ const loadMarkers = async () => {
       ? createBrandImageIcon(brandIconUrl)
       : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
-    marker.bindPopup(`
-      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
-        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
-        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
-        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
-        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
-        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
-        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
-        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
-        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
-        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
-        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
-          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
-          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
-          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
-          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
-        </div>
-      </div>
-    `)
+    marker.bindPopup(getStorePopupHtml(markerData))
     markerClusterGroup.addLayer(marker)
   })
 
@@ -3129,29 +3117,7 @@ const reloadBusinessLayer = () => {
       ? createBrandImageIcon(brandIconUrl)
       : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
-    marker.bindPopup(`
-      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
-        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
-        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
-        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
-        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
-        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
-        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
-        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
-        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
-        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
-        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
-        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
-          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
-          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
-          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
-          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
-        </div>
-      </div>
-    `)
+    marker.bindPopup(getStorePopupHtml(markerData))
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
       L.DomEvent.stopPropagation(e)
