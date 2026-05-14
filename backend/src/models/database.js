@@ -439,6 +439,16 @@ export function getDb() {
       return db.exec(sql)
     },
     
+    // 执行SQL但不触发磁盘保存（用于批量操作）
+    execNoSave: (sql) => {
+      return db.exec(sql)
+    },
+    
+    // 强制保存到磁盘
+    saveNow: () => {
+      saveDatabase()
+    },
+    
     // 执行单行查询
     prepare: (sql) => ({
       get: (...params) => {

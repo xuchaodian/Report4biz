@@ -94,14 +94,17 @@ export const useMarkerStore = defineStore('marker', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await axios.post(`${API_URL}/markers/import`, formData)
+        const response = await axios.post(`${API_URL}/markers/import`, formData, { timeout: 300000 })
         const { data } = response
         // 重新从服务器拉取完整列表（后端不返回 imported 数组）
         await this.fetchMarkers()
         return { success: true, count: data.count || 0 }
       } catch (error) {
-        console.error('[导入] 捕获异常:', error.message, error.response?.data)
-        return { success: false, message: error.response?.data?.message || '导入失败' }
+        console.error('[导入] 捕获异常:', error.message, error.response?.data || error.code)
+        if (error.code === 'ECONNABORTED') {
+          return { success: false, message: '导入超时，请重试（数据可能已导入，刷新页面查看）' }
+        }
+        return { success: false, message: error.response?.data?.message || error.message || '导入失败' }
       }
     },
     

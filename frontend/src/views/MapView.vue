@@ -218,6 +218,28 @@
           </template>
         </el-input>
       </div>
+      <div class="store-search-filters">
+        <el-select v-model="locFilterStoreType" placeholder="门店类型" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option label="已开业" value="已开业" />
+          <el-option label="重点候选" value="重点候选" />
+          <el-option label="一般候选" value="一般候选" />
+        </el-select>
+        <el-select v-model="locFilterCity" placeholder="城市" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option v-for="c in locCityList" :key="c" :label="c" :value="c" />
+        </el-select>
+        <el-select v-model="locFilterDistrict" placeholder="区县" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option v-for="d in locDistrictList" :key="d" :label="d" :value="d" />
+        </el-select>
+        <el-select v-model="locFilterBrand" placeholder="品牌" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option v-for="b in locBrandList" :key="b" :label="b" :value="b" />
+        </el-select>
+        <el-select v-model="locFilterStoreStatus" placeholder="门店状态" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option v-for="s in locStoreStatusList" :key="s" :label="s" :value="s" />
+        </el-select>
+        <el-select v-model="locFilterMallType" placeholder="商场类型" style="width: 110px" size="small" clearable @change="onStoreSearch">
+          <el-option v-for="m in locMallTypeList" :key="m" :label="m" :value="m" />
+        </el-select>
+      </div>
       <div class="store-search-list">
         <div
           v-if="storeSearchResults.length === 0"
@@ -432,8 +454,8 @@
 
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="面积(㎡)" prop="area">
-              <el-input-number v-model="markerForm.area" :min="0" style="width: 100%" />
+            <el-form-item label="面积(㎡)" prop="store_area">
+              <el-input-number v-model="markerForm.store_area" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -442,8 +464,8 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="租金(元/月)" prop="rent">
-              <el-input-number v-model="markerForm.rent" :min="0" style="width: 100%" />
+            <el-form-item label="门幅面积" prop="frontage">
+              <el-input-number v-model="markerForm.frontage" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -457,16 +479,25 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="联系人" prop="contact_person">
-              <el-input v-model="markerForm.contact_person" placeholder="业主/联系人" />
+            <el-form-item label="门店状态" prop="store_status">
+              <el-select v-model="markerForm.store_status" placeholder="请选择" style="width: 100%">
+                <el-option label="正常" value="正常" />
+                <el-option label="闭店" value="闭店" />
+                <el-option label="停业" value="停业" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="联系电话" prop="contact_phone">
-              <el-input v-model="markerForm.contact_phone" placeholder="联系电话" />
+            <el-form-item label="商场类型" prop="mall_type">
+              <el-input v-model="markerForm.mall_type" placeholder="商场类型" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="商圈类型" prop="trade_area_type">
+              <el-input v-model="markerForm.trade_area_type" placeholder="商圈类型" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -2528,13 +2559,13 @@ const markerForm = reactive({
   // 经营信息
   open_date: '',
   business_hours: '',
-  area: null,
+  store_area: null,
   seats: null,
-  rent: null,
+  frontage: null,
   store_category: '',
-  // 联系信息
-  contact_person: '',
-  contact_phone: '',
+  store_status: '',
+  mall_type: '',
+  trade_area_type: '',
   description: '',
   // 系统字段
   latitude: 0,
@@ -2832,26 +2863,25 @@ const loadMarkers = async () => {
     })
 
     marker.bindPopup(`
-      <div style="min-width: 220px; font-size: 13px;">
+      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
         <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
         <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
         <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
-        <p style="margin: 4px 0;"><strong>门店区分:</strong> <span style="color: ${markerData.store_category === '社区店' ? '#909399' : markerData.store_category === '临街店' ? '#67c23a' : markerData.store_category === '商场店' ? '#f56c6c' : markerData.store_category === '写字楼店' ? '#409eff' : markerData.store_category === '交通枢纽店' ? '#e6a23c' : markerData.store_category === '校园店' ? '#9c27b0' : markerData.store_category === '景区店' ? '#ff9800' : markerData.store_category === '专业市场店' ? '#00bcd4' : '#333'}">${markerData.store_category || '-'}</span></p>
-        <p style="margin: 4px 0;"><strong>地址:</strong> ${(markerData.city || '') + (markerData.district || '') + (markerData.address || '-')}</p>
-        <p style="margin: 4px 0;"><strong>区域经理:</strong> ${markerData.area_manager || '-'} ${markerData.phone1 || ''}</p>
-        <p style="margin: 4px 0;"><strong>店长:</strong> ${markerData.store_manager || '-'} ${markerData.phone2 || ''}</p>
-        ${markerData.area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.area}㎡</p>` : ''}
+        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
+        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
         ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
-        ${markerData.rent ? `<p style="margin: 4px 0;"><strong>租金:</strong> ¥${markerData.rent.toLocaleString()}/月</p>` : ''}
+        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
         ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
         ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
         ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
         <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
           <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
           <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
+          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
           <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
           <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
-          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
         </div>
       </div>
     `)
@@ -2924,7 +2954,29 @@ const loadMarkers = async () => {
       ? createBrandImageIcon(brandIconUrl)
       : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
-    marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
+    marker.bindPopup(`
+      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
+        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
+        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
+        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
+        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
+        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
+        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
+        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
+        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
+        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
+          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
+          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
+          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
+          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+        </div>
+      </div>
+    `)
     markerClusterGroup.addLayer(marker)
   })
 
@@ -2971,7 +3023,17 @@ const buildAllStoreCluster = () => {
         const brandIconUrl = brandIconMap.value[m.brand]
         const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(getStoreTypeColor(m.store_type), 'dot', 1.2)
         const marker = L.marker([m.latitude, m.longitude], { icon })
-        marker.bindPopup(`<b>我的门店</b><br/>${m.brand || ''} ${m.name}<br/>${(m.city || '') + (m.district || '') + (m.address || '-')}`)
+        marker.bindPopup(`
+          <div style="min-width: 200px; font-size: 13px;">
+            <h4 style="margin: 0 0 6px 0; color: #333;">${m.brand || ''} ${m.name}</h4>
+            <p style="margin: 3px 0;"><strong>类型:</strong> ${m.store_type || '-'}</p>
+            <p style="margin: 3px 0;"><strong>门店状态:</strong> ${m.store_status || '-'}</p>
+            <p style="margin: 3px 0;"><strong>商场类型:</strong> ${m.mall_type || '-'}</p>
+            <p style="margin: 3px 0;"><strong>商圈类型:</strong> ${m.trade_area_type || '-'}</p>
+            ${m.store_area ? `<p style="margin: 3px 0;"><strong>面积:</strong> ${m.store_area}㎡</p>` : ''}
+            ${m.seats ? `<p style="margin: 3px 0;"><strong>座位:</strong> ${m.seats}个</p>` : ''}
+          </div>
+        `)
         allStoreClusterGroup.addLayer(marker)
         totalCount++
       }
@@ -3067,7 +3129,29 @@ const reloadBusinessLayer = () => {
       ? createBrandImageIcon(brandIconUrl)
       : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
-    marker.bindPopup(`<b>${markerData.brand || ''} ${markerData.name}</b><br/>${markerData.store_type || '-'}`)
+    marker.bindPopup(`
+      <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
+        <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
+        <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
+        <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
+        <p style="margin: 4px 0;"><strong>门店状态:</strong> ${markerData.store_status || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商场类型:</strong> ${markerData.mall_type || '-'}</p>
+        <p style="margin: 4px 0;"><strong>商圈类型:</strong> ${markerData.trade_area_type || '-'}</p>
+        ${markerData.store_area ? `<p style="margin: 4px 0;"><strong>面积:</strong> ${markerData.store_area}㎡</p>` : ''}
+        ${markerData.seats ? `<p style="margin: 4px 0;"><strong>座位:</strong> ${markerData.seats}个</p>` : ''}
+        ${markerData.frontage ? `<p style="margin: 4px 0;"><strong>门幅面积:</strong> ${markerData.frontage}㎡</p>` : ''}
+        ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
+        ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
+        ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
+        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
+          <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
+          <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
+          <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
+          <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+        </div>
+      </div>
+    `)
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
       L.DomEvent.stopPropagation(e)
@@ -4705,24 +4789,78 @@ const handleShapefileQuery = (event) => {
 const storeSearchVisible = ref(false)
 const storeSearchKeyword = ref('')
 const storeSearchResults = ref([])
+// 定位门店筛选条件
+const locFilterStoreType = ref('')
+const locFilterCity = ref('')
+const locFilterDistrict = ref('')
+const locFilterBrand = ref('')
+const locFilterStoreStatus = ref('')
+const locFilterMallType = ref('')
 
-// 模糊检索：名称、品牌、地址
+// 门店筛选列表
+const locCityList = computed(() => [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].sort())
+const locDistrictList = computed(() => {
+  const city = locFilterCity.value
+  return [...new Set(markerStore.markers.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
+})
+const locBrandList = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].sort())
+const locStoreStatusList = computed(() => [...new Set(markerStore.markers.map(m => m.store_status).filter(Boolean))].sort())
+const locMallTypeList = computed(() => [...new Set(markerStore.markers.map(m => m.mall_type).filter(Boolean))].sort())
+
+// 城市切换时，清空不属于该城市的区县
+watch(locFilterCity, (newCity) => {
+  if (newCity && locFilterDistrict.value) {
+    const districts = [...new Set(markerStore.markers.filter(m => m.city === newCity).map(m => m.district).filter(Boolean))]
+    if (!districts.includes(locFilterDistrict.value)) {
+      locFilterDistrict.value = ''
+    }
+  }
+})
+
+// 模糊检索：名称、品牌、地址 + 筛选条件 + 同步地图显示
 const onStoreSearch = () => {
   const kw = storeSearchKeyword.value.trim().toLowerCase()
-  if (!kw) {
-    storeSearchResults.value = []
-    return
-  }
-  storeSearchResults.value = markerStore.markers.filter(m => {
-    return (
+  const markers = markerStore.markers.filter(m => {
+    // 关键词过滤
+    if (kw && !(
       m.name?.toLowerCase().includes(kw) ||
       m.brand?.toLowerCase().includes(kw) ||
       m.address?.toLowerCase().includes(kw) ||
       m.city?.toLowerCase().includes(kw) ||
       m.district?.toLowerCase().includes(kw) ||
       m.store_code?.toLowerCase().includes(kw)
-    )
-  }).slice(0, 50) // 最多显示 50 条
+    )) return false
+    // 筛选条件过滤
+    if (locFilterStoreType.value && m.store_type !== locFilterStoreType.value) return false
+    if (locFilterCity.value && m.city !== locFilterCity.value) return false
+    if (locFilterDistrict.value && m.district !== locFilterDistrict.value) return false
+    if (locFilterBrand.value && m.brand !== locFilterBrand.value) return false
+    if (locFilterStoreStatus.value && m.store_status !== locFilterStoreStatus.value) return false
+    if (locFilterMallType.value && m.mall_type !== locFilterMallType.value) return false
+    return true
+  }).slice(0, 50)
+  storeSearchResults.value = markers
+
+  // 同步地图显示：根据筛选条件显示/隐藏图标
+  const hasFilters = locFilterStoreType.value || locFilterCity.value || locFilterDistrict.value ||
+    locFilterBrand.value || locFilterStoreStatus.value || locFilterMallType.value || kw
+  if (hasFilters) {
+    const allFiltered = markerStore.markers.filter(m => {
+      if (kw && !(m.name?.toLowerCase().includes(kw) || m.brand?.toLowerCase().includes(kw) ||
+        m.address?.toLowerCase().includes(kw) || m.city?.toLowerCase().includes(kw) ||
+        m.district?.toLowerCase().includes(kw) || m.store_code?.toLowerCase().includes(kw))) return false
+      if (locFilterStoreType.value && m.store_type !== locFilterStoreType.value) return false
+      if (locFilterCity.value && m.city !== locFilterCity.value) return false
+      if (locFilterDistrict.value && m.district !== locFilterDistrict.value) return false
+      if (locFilterBrand.value && m.brand !== locFilterBrand.value) return false
+      if (locFilterStoreStatus.value && m.store_status !== locFilterStoreStatus.value) return false
+      if (locFilterMallType.value && m.mall_type !== locFilterMallType.value) return false
+      return true
+    })
+    markerStore.setVisibleIds(allFiltered.map(m => m.id))
+  } else {
+    markerStore.setVisibleIds(null)
+  }
 }
 
 // 点击门店跳转到地图
@@ -6757,7 +6895,15 @@ function getHeatmapCellStyle(nums, idx) {
 }
 
 .store-search-input-wrap {
-  padding: 10px 12px 8px;
+  padding: 10px 12px 4px;
+}
+
+.store-search-filters {
+  padding: 4px 12px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .store-search-list {

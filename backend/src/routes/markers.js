@@ -47,10 +47,10 @@ router.post('/', authenticate, (req, res) => {
   try {
     const {
       store_code, brand, name, store_type,
-      city, district, area_manager, phone1, store_manager, phone2, address,
-      open_date, business_hours, area, seats, rent,
-      store_category, contact_person, contact_phone, description,
-      latitude, longitude, status, icon_color
+      city, district, address,
+      open_date, business_hours, store_area, seats, frontage,
+      store_category, store_status, mall_type, trade_area_type, description,
+      latitude, longitude, icon_color
     } = req.body
 
     if (!name || latitude === undefined || longitude === undefined) {
@@ -61,18 +61,18 @@ router.post('/', authenticate, (req, res) => {
     const result = db.prepare(`
       INSERT INTO markers (
         store_code, brand, name, store_type,
-        city, district, area_manager, phone1, store_manager, phone2, address,
-        open_date, business_hours, area, seats, rent,
-        store_category, contact_person, contact_phone, description,
+        city, district, address,
+        open_date, business_hours, store_area, seats, frontage,
+        store_category, store_status, mall_type, trade_area_type, description,
         latitude, longitude, status, icon_color, user_id,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       store_code || '', brand || '', name, store_type || '已开业',
-      city || '', district || '', area_manager || '', phone1 || '', store_manager || '', phone2 || '', address || '',
-      open_date || '', business_hours || '', area || null, seats || null, rent || null,
-      store_category || '', contact_person || '', contact_phone || '', description || '',
-      latitude, longitude, status || '正常', icon_color || '#409eff', req.user.id
+      city || '', district || '', address || '',
+      open_date || '', business_hours || '', store_area || null, seats || null, frontage || null,
+      store_category || '', store_status || '', mall_type || '', trade_area_type || '', description || '',
+      latitude, longitude, '正常', icon_color || '#409eff', req.user.id
     )
 
     const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(result.lastInsertRowid)
@@ -92,10 +92,10 @@ router.put('/:id', authenticate, (req, res) => {
   try {
     const {
       store_code, brand, name, store_type,
-      city, district, area_manager, phone1, store_manager, phone2, address,
-      open_date, business_hours, area, seats, rent,
-      store_category, contact_person, contact_phone, description,
-      latitude, longitude, status, icon_color
+      city, district, address,
+      open_date, business_hours, store_area, seats, frontage,
+      store_category, store_status, mall_type, trade_area_type, description,
+      latitude, longitude, icon_color
     } = req.body
 
     const db = getDb()
@@ -109,10 +109,10 @@ router.put('/:id', authenticate, (req, res) => {
     db.prepare(`
       UPDATE markers SET
         store_code = ?, brand = ?, name = ?, store_type = ?,
-        city = ?, district = ?, area_manager = ?, phone1 = ?, store_manager = ?, phone2 = ?, address = ?,
-        open_date = ?, business_hours = ?, area = ?, seats = ?, rent = ?,
-        store_category = ?, contact_person = ?, contact_phone = ?, description = ?,
-        latitude = ?, longitude = ?, status = ?, icon_color = ?,
+        city = ?, district = ?, address = ?, 
+        open_date = ?, business_hours = ?, store_area = ?, seats = ?, frontage = ?,
+        store_category = ?, store_status = ?, mall_type = ?, trade_area_type = ?, description = ?,
+        latitude = ?, longitude = ?, icon_color = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -122,23 +122,20 @@ router.put('/:id', authenticate, (req, res) => {
       store_type ?? existingMarker.store_type,
       city ?? existingMarker.city,
       district ?? existingMarker.district,
-      area_manager ?? existingMarker.area_manager,
-      phone1 ?? existingMarker.phone1,
-      store_manager ?? existingMarker.store_manager,
-      phone2 ?? existingMarker.phone2,
+      
       address ?? existingMarker.address,
       open_date ?? existingMarker.open_date,
       business_hours ?? existingMarker.business_hours,
-      area ?? existingMarker.area,
+      store_area ?? existingMarker.store_area,
       seats ?? existingMarker.seats,
-      rent ?? existingMarker.rent,
+      frontage ?? existingMarker.frontage,
       store_category ?? existingMarker.store_category,
-      contact_person ?? existingMarker.contact_person,
-      contact_phone ?? existingMarker.contact_phone,
+      store_status ?? existingMarker.store_status,
+      mall_type ?? existingMarker.mall_type,
+      trade_area_type ?? existingMarker.trade_area_type,
       description ?? existingMarker.description,
       latitude ?? existingMarker.latitude,
       longitude ?? existingMarker.longitude,
-      status ?? existingMarker.status,
       icon_color ?? existingMarker.icon_color,
       req.params.id
     )
@@ -152,6 +149,18 @@ router.put('/:id', authenticate, (req, res) => {
   } catch (error) {
     console.error('更新门店错误:', error)
     res.status(500).json({ message: '更新失败' })
+  }
+})
+
+// 清空所有门店（必须放在 /:id 之前，避免 clear-all 被 :id 捕获）
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const result = db.prepare('DELETE FROM markers WHERE user_id = ?').run(req.user.id)
+    res.json({ message: `已清空 ${result.changes} 条门店数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空门店错误:', error)
+    res.status(500).json({ message: '清空失败' })
   }
 })
 
@@ -205,18 +214,6 @@ router.post('/batch-delete', authenticate, (req, res) => {
   }
 })
 
-// 清空所有门店（仅清除当前用户自己的数据）
-router.delete('/clear-all', authenticate, (req, res) => {
-  try {
-    const db = getDb()
-    const result = db.prepare('DELETE FROM markers WHERE user_id = ?').run(req.user.id)
-    res.json({ message: `已清空 ${result.changes} 条门店数据`, count: result.changes })
-  } catch (error) {
-    console.error('清空门店错误:', error)
-    res.status(500).json({ message: '清空失败' })
-  }
-})
-
 // 导入门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -231,46 +228,39 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       skipEmptyLines: true,
       complete: (results) => {
         const db = getDb()
-        const imported = []
+                let imported = 0
+
+        // 使用事务批量写入，大幅提升性能
+        db.exec('BEGIN TRANSACTION')
+        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"
 
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue
-
-          const result = db.prepare(`
-            INSERT INTO markers (
-              store_code, brand, name, store_type,
-              city, district, area_manager, phone1, store_manager, phone2, address,
-              open_date, business_hours, area, seats, rent,
-              store_category, contact_person, contact_phone, description,
-              latitude, longitude, status, icon_color, user_id,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '已开业',
-            row.city || '', row.district || '', row.area_manager || '', row.phone1 || '',
-            row.store_manager || '', row.phone2 || '', row.address || '',
-            row.open_date || '', row.business_hours || '',
-            row.area ? parseFloat(row.area) : null,
-            row.seats ? parseInt(row.seats) : null,
-            row.rent ? parseFloat(row.rent) : null,
-            row.store_category || '', row.contact_person || '', row.contact_phone || '', row.description || '',
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#409eff',
-            req.user.id
-          )
-
-          const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(marker)
+          const vals = [
+            esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '已开业'),
+            esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
+            esc(row.open_date || ''), esc(row.business_hours || ''),
+            row.store_area ? esc(parseFloat(row.store_area)) : 'NULL',
+            row.seats ? esc(parseInt(row.seats)) : 'NULL',
+            row.frontage ? esc(parseFloat(row.frontage)) : 'NULL',
+            esc(row.store_category || ''), esc(row.store_status || ''), esc(row.mall_type || ''), esc(row.trade_area_type || ''), esc(row.description || ''),
+            esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
+            "'正常'",
+            esc(row.icon_color || '#409eff'),
+            String(req.user.id),
+            "datetime('now')", "datetime('now')"
+          ].join(',')
+          db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,created_at,updated_at) VALUES (' + vals + ')')
+          imported++
         }
+        db.exec('COMMIT')
 
         // 删除上传的文件
         fs.unlinkSync(req.file.path)
 
         res.json({
-          message: `成功导入 ${imported.length} 条数据`,
-          count: imported.length,
-          imported
+          message: `成功导入 ${imported} 条数据`,
+          count: imported
         })
       }
     })
