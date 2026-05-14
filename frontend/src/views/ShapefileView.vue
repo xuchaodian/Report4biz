@@ -5,8 +5,8 @@
       <p class="subtitle">上传 WGS84 坐标系的 Shapefile 文件，自动转换为高德坐标并叠加显示</p>
     </div>
 
-    <!-- 上传区域 -->
-    <div class="upload-section">
+    <!-- 上传区域（仅管理员可见） -->
+    <div class="upload-section" v-if="userStore.isAdmin">
       <el-upload
         class="shapefile-uploader"
         drag

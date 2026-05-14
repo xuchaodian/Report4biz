@@ -2627,6 +2627,12 @@ const initMap = async () => {
 
   // 主地图 - 使用简化的投影（适合国内地图）
   // 高德/腾讯/影像地图都使用GCJ-02坐标系
+  // 检查 DOM 容器是否存在（组件可能已卸载）
+  const mapContainer = document.getElementById('map')
+  if (!mapContainer) {
+    console.warn('[MapView] #map 容器不存在，跳过地图初始化')
+    return
+  }
   map = L.map('map', {
     center: [centerLat, centerLng],
     zoom: 12,

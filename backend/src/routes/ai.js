@@ -9,6 +9,49 @@ const ARK_API_KEY = process.env.ARK_API_KEY || 'f92f55af-7642-49d8-94f5-d1492b7b
 const ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const MODEL = 'doubao-seed-2-0-pro-260215'
 
+// 每月AI token用量限额配置
+const TOKEN_LIMITS = [
+  { minQuota: 200, limit: 1_500_000, warn: true },        // ≥200 → 150万/月
+  { minQuota: 100, limit: 1_000_000, warn: true },        // 100~199 → 100万/月
+  { minQuota: 1, limit: 500_000, warn: true },             // 1~99 → 50万/月
+  { minQuota: 0, limit: 0, warn: true }                    // 0 → 禁止
+]
+
+// ... (rest of code stays)
+
+function checkAIAccess(userId) {
+  const db = getDb()
+  const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(userId)
+  if (!user) return { allowed: false, message: '用户不存在' }
+  
+  const used = db.prepare(`
+    SELECT COALESCE(SUM(quota_used), 0) as used
+    FROM purchases WHERE user_id = ? AND status = 'active'
+  `).get(userId)
+  
+  const remaining = (user.quota || 0) - (used?.used || 0)
+  
+  // 剩余次数为0 → 直接禁止
+  if (remaining <= 0) {
+    return { allowed: false, message: '剩余次数为0，无法使用AI助手功能。请联系管理员购买联通人口数据配额' }
+  }
+  
+  const monthlyTokens = getMonthlyTokenUsage(userId)
+  
+  for (const limit of TOKEN_LIMITS) {
+    if (remaining > limit.minQuota) {
+      // 找到对应区间
+      if (monthlyTokens >= limit.limit) {
+        const limitStr = limit.limit >= 1_500_000 ? '150万' : limit.limit >= 1_000_000 ? '100万' : '50万'
+        return { allowed: false, message: `本月AI token用量已达${limitStr}上限，请下月再使用（已用${Math.round(monthlyTokens / 10000)}万）` }
+      }
+      return { allowed: true, remaining, monthlyTokens, limit: limit.limit }
+    }
+  }
+  
+  return { allowed: false, message: '无法使用AI助手功能' }
+}
+
 // 工具定义从 ../ai/tools.js 导入
 
 // AI 对话接口
@@ -16,6 +59,12 @@ router.post('/chat', authenticate, async (req, res) => {
   try {
     const { messages, context } = req.body
     const userId = req.user.id
+
+    // 检查AI使用权限（基于剩余配额和月token用量）
+    const access = checkAIAccess(userId)
+    if (!access.allowed) {
+      return res.status(403).json({ message: access.message })
+    }
 
     // 构建系统提示
     const systemPrompt = `你是 GeoManager 地图管理系统的 AI 助手，帮助用户通过自然语言操作地图和管理门店数据。
@@ -76,6 +125,12 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
 
     const result = await response.json()
     const choice = result.choices?.[0]
+
+    // 记录本次token消耗
+    if (result.usage) {
+      const totalTokens = (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0)
+      recordTokenUsage(userId, totalTokens)
+    }
 
     if (!choice) {
       return res.status(500).json({ message: 'AI 返回数据异常' })
@@ -147,6 +202,12 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
 
       const followUpResult = await followUp.json()
       const finalContent = followUpResult.choices?.[0]?.message?.content || '已完成统计查询'
+
+      // 记录followUp的token消耗
+      if (followUpResult.usage) {
+        const totalTokens = (followUpResult.usage.prompt_tokens || 0) + (followUpResult.usage.completion_tokens || 0)
+        recordTokenUsage(userId, totalTokens)
+      }
 
       return res.json({
         type: 'text',

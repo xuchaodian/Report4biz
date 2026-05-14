@@ -95,11 +95,10 @@ export const useCompetitorStore = defineStore('competitor', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const { data } = await axios.post(`${API_URL}/competitors/import`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        })
-        this.competitors = [...this.competitors, ...data.imported]
-        return { success: true, count: data.count }
+        const response = await axios.post(`${API_URL}/competitors/import`, formData)
+        const { data } = response
+        await this.fetchCompetitors()
+        return { success: true, count: data.count || 0 }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '导入失败' }
       }

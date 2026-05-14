@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
+import { authenticate } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -32,9 +33,17 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB 限制
 })
 
-// 上传并解析 Shapefile (ZIP格式)
-router.post('/upload', upload.single('file'), async (req, res) => {
+// 上传并解析 Shapefile (ZIP格式，仅管理员可上传)
+router.post('/upload', authenticate, upload.single('file'), async (req, res) => {
   try {
+    // 检查是否为管理员
+    if (req.user.role !== 'admin') {
+      // 清理已上传的文件
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path)
+      }
+      return res.status(403).json({ message: '仅管理员可以上传统计数据' })
+    }
     if (!req.file) {
       return res.status(400).json({ message: '请上传文件' })
     }
