@@ -222,6 +222,7 @@
         <el-icon class="el-icon--upload"><Upload /></el-icon>
         <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
       </el-upload>
+      <el-progress v-if="importing" :percentage="importProgress" :stroke-width="16" style="margin: 16px 0" :status="importProgress >= 100 ? 'success' : undefined" />
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>
@@ -278,6 +279,7 @@ const importDialogVisible = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
 const importing = ref(false)
+const importProgress = ref(0)
 const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
@@ -497,8 +499,12 @@ const handleFileChange = (file) => { uploadFile.value = file.raw }
 const handleImportConfirm = async () => {
   if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
   importing.value = true
+  importProgress.value = 0
   try {
-    const result = await brandStoreStore.importBrandStores(uploadFile.value)
+    const onProgress = (event) => {
+      importProgress.value = Math.round((event.loaded / event.total) * 100)
+    }
+    const result = await brandStoreStore.importBrandStores(uploadFile.value, onProgress)
     if (result.success !== false) {
       ElMessage.success(result.message)
       importDialogVisible.value = false

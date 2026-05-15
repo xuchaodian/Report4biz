@@ -158,14 +158,24 @@ export function createOldIcon(color = 'default', icon = '📍') {
 }
 
 // 创建品牌图片图标 (32×32px)
-export function createBrandImageIcon(url) {
+export function createBrandImageIcon(url, gray = false) {
+  const filterStyle = gray ? 'filter:grayscale(100%);opacity:0.55;' : ''
   return L.divIcon({
     className: 'custom-brand-marker',
-    html: `<img src="${url}" width="32" height="32" style="border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);" />`,
+    html: `<img src="${url}" width="32" height="32" style="border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);${filterStyle}" />`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
     popupAnchor: [0, -16]
   })
+}
+
+// 闭店状态关键词
+const CLOSED_STATUS_KEYWORDS = ['歇业', '停业', '结业', '闭店', '终止营业', '停止经营', '永久闭店', '正式关停', '撤店', '撤柜', '终止入驻']
+
+// 判断门店状态是否为停业/闭店
+export function isStoreClosed(storeStatus) {
+  if (!storeStatus) return false
+  return CLOSED_STATUS_KEYWORDS.some(kw => storeStatus.includes(kw))
 }
 
 // 标注图标配置

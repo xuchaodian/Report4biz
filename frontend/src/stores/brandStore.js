@@ -78,10 +78,10 @@ export const useBrandStoreStore = defineStore('brandStore', {
       }
     },
 
-    async importBrandStores(file) {
+    async importBrandStores(file, onProgress) {
       const formData = new FormData()
       formData.append('file', file)
-      const data = await api.post('/brand-stores/import', formData)
+      const data = await api.post('/brand-stores/import', formData, { timeout: 300000, onUploadProgress: onProgress })
       return data
     },
 

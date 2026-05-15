@@ -91,11 +91,11 @@ export const useCompetitorStore = defineStore('competitor', {
       }
     },
     
-    async importCompetitors(file) {
+    async importCompetitors(file, onProgress) {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await axios.post(`${API_URL}/competitors/import`, formData)
+        const response = await axios.post(`${API_URL}/competitors/import`, formData, { onUploadProgress: onProgress })
         const { data } = response
         await this.fetchCompetitors()
         return { success: true, count: data.count || 0 }

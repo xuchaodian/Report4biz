@@ -847,7 +847,7 @@ import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
 import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
-  createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
+  createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor, isStoreClosed,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 import axios from 'axios'
@@ -891,7 +891,6 @@ let brandStoreLayer = null  // 品牌门店图层
 let brandMarkerMap = {}     // 品牌门店ID到marker的映射
 let shoppingCenterLayer = null  // 购物中心图层
 let shoppingCenterMarkerMap = {}  // 购物中心ID到marker的映射
-let markerClusterGroup = null
 let allStoreClusterGroup = null  // 所有门店统一聚合图层
 let heatmapLayer = null
 let drawnItems = null
@@ -1431,8 +1430,9 @@ const openStoreCompetitors = (lat, lng) => {
 
 // ====== 共用门店弹窗HTML（三处统一，改一处即全部生效） ======
 function getStorePopupHtml(markerData) {
+  const isClosed = isStoreClosed(markerData.store_status)
   return `
-    <div style="min-width: 220px; font-size: 13px;${markerData.store_status === '闭店' || markerData.store_status === '停业' ? ' opacity: 0.6;' : ''}">
+    <div style="min-width: 220px; font-size: 13px;${isClosed ? ' opacity: 0.6;' : ''}">
       <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
       <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
       <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
@@ -2734,14 +2734,17 @@ const initMap = async () => {
     if (map) map.invalidateSize({ pan: false })
   }, 100)
 
-  // 加载点位数据
-  await loadMarkers()
-  // 加载竞品门店
-  await loadCompetitors()
-  // 加载品牌门店
-  await loadBrandStores()
-  // 加载购物中心
-  await loadShoppingCenters()
+  // 【性能优化】并行拉取所有数据
+  await Promise.all([
+    markerStore.fetchMarkers(),
+    competitorStore.fetchCompetitors(),
+    brandStoreStore.fetchBrandStores(),
+    shoppingCenterStore.fetchShoppingCenters()
+  ])
+
+  // 只渲染我的门店（默认可见），其余图层懒加载
+  await loadMarkers(true)  // true = 跳过 fetch（数据已并行拉取）
+  // 竞品、品牌门店、购物中心由用户切换开关时懒加载
   
   // 如果初始状态是聚合模式，需要构建聚合图层
   if (showCluster.value) {
@@ -2856,7 +2859,7 @@ const loadBaseMap = () => {
 watch(baseMapType, loadBaseMap)
 
 // 加载点位
-const loadMarkers = async () => {
+const loadMarkers = async (skipFetch = false) => {
   // 确保地图已初始化
   if (!map) {
     console.log('[loadMarkers] 地图未初始化，跳过')
@@ -2864,15 +2867,14 @@ const loadMarkers = async () => {
   }
   
   console.log('=== loadMarkers 开始 ===')
-  await markerStore.fetchMarkers()
+  if (!skipFetch) {
+    await markerStore.fetchMarkers()
+  }
   console.log('门店数据:', markerStore.markers)
 
   // 清除原有图层
   if (businessLayer) {
     try { map.removeLayer(businessLayer) } catch(e) {}
-  }
-  if (markerClusterGroup) {
-    try { map.removeLayer(markerClusterGroup) } catch(e) {}
   }
   if (heatmapLayer) {
     try { map.removeLayer(heatmapLayer) } catch(e) {}
@@ -2891,11 +2893,12 @@ const loadMarkers = async () => {
 
   dataToShow.forEach(markerData => {
     console.log('创建标记:', markerData.name, '坐标:', markerData.latitude, markerData.longitude)
-    // 有品牌图标优先用图片图标，否则用门店类型颜色 SVG
+    // 闭店门店图标变灰色
+    const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
-      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
+      ? createBrandImageIcon(brandIconUrl, isClosed)
+      : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,
@@ -2951,23 +2954,6 @@ const loadMarkers = async () => {
     businessLayer.addLayer(marker)
   })
 
-  // 聚合模式
-  markerClusterGroup = L.markerClusterGroup({
-    chunkedLoading: true,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false
-  })
-
-  dataToShow.forEach(markerData => {
-    const brandIconUrl = brandIconMap.value[markerData.brand]
-    const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
-      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
-    const marker = L.marker([markerData.latitude, markerData.longitude], { icon })
-    marker.bindPopup(getStorePopupHtml(markerData))
-    markerClusterGroup.addLayer(marker)
-  })
-
   // 热力图（经典样式：蓝→红）
   const heatmapData = dataToShow.map(m => [m.latitude, m.longitude, 1])
   heatmapLayer = L.heatLayer(heatmapData, { radius: 40, blur: 10, maxZoom: 17, max: 1.0, minOpacity: 0.5, gradient: { 0.2: '#0066ff', 0.4: '#00ddff', 0.6: '#44dd44', 0.8: '#ffcc00', 1.0: '#ff3300' } })
@@ -3008,8 +2994,9 @@ const buildAllStoreCluster = () => {
     console.log('[聚合] 我的门店:', data.length)
     data.forEach(m => {
       if (m.latitude && m.longitude) {
+        const isClosed = isStoreClosed(m.store_status)
         const brandIconUrl = brandIconMap.value[m.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(getStoreTypeColor(m.store_type), 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, isClosed) : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(m.store_type), 'dot', 1.2)
         const marker = L.marker([m.latitude, m.longitude], { icon })
         marker.bindPopup(`
           <div style="min-width: 200px; font-size: 13px;">
@@ -3112,10 +3099,11 @@ const reloadBusinessLayer = () => {
 
   businessLayer = L.layerGroup()
   dataToShow.forEach(markerData => {
+    const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
-      : createSvgIcon(getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
+      ? createBrandImageIcon(brandIconUrl, isClosed)
+      : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
     marker.bindPopup(getStorePopupHtml(markerData))
     // 拖拽开始 - 阻止地图拖动
@@ -3168,14 +3156,16 @@ const reloadBusinessLayer = () => {
 }
 
 // 加载竞品门店
-const loadCompetitors = async () => {
+const loadCompetitors = async (skipFetch = false) => {
   // 确保地图已初始化
   if (!map) {
     console.log('[loadCompetitors] 地图未初始化，跳过')
     return
   }
   
-  await competitorStore.fetchCompetitors()
+  if (!skipFetch) {
+    await competitorStore.fetchCompetitors()
+  }
   console.log('竞品数据:', competitorStore.competitors)
   console.log('竞品数量:', competitorStore.competitors?.length || 0)
 
@@ -3414,14 +3404,16 @@ const updateCompetitorDisplay = () => {
 }
 
 // 加载品牌门店
-const loadBrandStores = async () => {
+const loadBrandStores = async (skipFetch = false) => {
   // 确保地图已初始化
   if (!map) {
     console.log('[loadBrandStores] 地图未初始化，跳过')
     return
   }
   
-  await brandStoreStore.fetchBrandStores()
+  if (!skipFetch) {
+    await brandStoreStore.fetchBrandStores()
+  }
   console.log('品牌门店数据:', brandStoreStore.brandStores)
 
   if (brandStoreLayer) {
@@ -3584,13 +3576,15 @@ const updateBrandStoreDisplay = () => {
 }
 
 // 加载购物中心
-const loadShoppingCenters = async () => {
+const loadShoppingCenters = async (skipFetch = false) => {
   if (!map) {
     console.log('[loadShoppingCenters] 地图未初始化，跳过')
     return
   }
-
-  await shoppingCenterStore.fetchShoppingCenters()
+  
+  if (!skipFetch) {
+    await shoppingCenterStore.fetchShoppingCenters()
+  }
   console.log('购物中心数据:', shoppingCenterStore.shoppingCenters)
 
   if (shoppingCenterLayer) {
@@ -3740,7 +3734,6 @@ const updateLayerDisplay = () => {
   // 移除所有业务图层
   try {
     if (businessLayer && map.hasLayer(businessLayer)) map.removeLayer(businessLayer)
-    if (markerClusterGroup && map.hasLayer(markerClusterGroup)) map.removeLayer(markerClusterGroup)
     if (allStoreClusterGroup && map.hasLayer(allStoreClusterGroup)) map.removeLayer(allStoreClusterGroup)
     if (heatmapLayer && map.hasLayer(heatmapLayer)) map.removeLayer(heatmapLayer)
     // 聚合或热力图模式下隐藏其他门店图层
@@ -3794,18 +3787,30 @@ const updateLayerDisplay = () => {
   } catch(e) {}
 }
 
-// 监控竞品图层开关
-watch(showCompetitorLayer, () => {
+// 监控竞品图层开关（懒加载）
+watch(showCompetitorLayer, async (newVal) => {
+  if (newVal && !competitorLayer) {
+    console.log('[懒加载] 竞品图层未创建，开始渲染...')
+    await loadCompetitors(true)
+  }
   updateCompetitorDisplay()
 })
 
-// 监控品牌门店图层开关
-watch(showBrandStoreLayer, () => {
+// 监控品牌门店图层开关（懒加载）
+watch(showBrandStoreLayer, async (newVal) => {
+  if (newVal && !brandStoreLayer) {
+    console.log('[懒加载] 品牌门店图层未创建，开始渲染...')
+    await loadBrandStores(true)
+  }
   updateBrandStoreDisplay()
 })
 
-// 监控购物中心图层开关
-watch(showShoppingCenterLayer, () => {
+// 监控购物中心图层开关（懒加载）
+watch(showShoppingCenterLayer, async (newVal) => {
+  if (newVal && !shoppingCenterLayer) {
+    console.log('[懒加载] 购物中心图层未创建，开始渲染...')
+    await loadShoppingCenters(true)
+  }
   updateShoppingCenterDisplay()
 })
 

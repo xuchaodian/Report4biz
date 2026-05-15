@@ -74,10 +74,10 @@ export const useShoppingCenterStore = defineStore('shoppingCenter', {
       }
     },
 
-    async importShoppingCenters(file) {
+    async importShoppingCenters(file, onProgress) {
       const formData = new FormData()
       formData.append('file', file)
-      const data = await api.post('/shopping-centers/import', formData)
+      const data = await api.post('/shopping-centers/import', formData, { timeout: 300000, onUploadProgress: onProgress })
       return data
     },
 

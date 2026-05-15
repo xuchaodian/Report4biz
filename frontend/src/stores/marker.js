@@ -90,11 +90,11 @@ export const useMarkerStore = defineStore('marker', {
       }
     },
     
-    async importMarkers(file) {
+    async importMarkers(file, onProgress) {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await axios.post(`${API_URL}/markers/import`, formData, { timeout: 300000 })
+        const response = await axios.post(`${API_URL}/markers/import`, formData, { timeout: 300000, onUploadProgress: onProgress })
         const { data } = response
         // 重新从服务器拉取完整列表（后端不返回 imported 数组）
         await this.fetchMarkers()
