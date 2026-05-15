@@ -206,7 +206,8 @@ const userStore = useUserStore()
 
 const fileList = ref([])
 const uploadHeaders = {
-  'x-user-id': userStore.user?.id || 1
+  'x-user-id': userStore.user?.id || 1,
+  'Authorization': `Bearer ${userStore.token}`
 }
 
 // 重命名相关
