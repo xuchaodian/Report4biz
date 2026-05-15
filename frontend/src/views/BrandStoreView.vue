@@ -231,7 +231,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
@@ -304,7 +304,15 @@ const cityList = computed(() => {
   return [...new Set(brandStoreStore.brandStores.map(s => s.city).filter(Boolean))].sort()
 })
 const districtList = computed(() => {
-  return [...new Set(brandStoreStore.brandStores.map(s => s.district).filter(Boolean))].sort()
+  const city = filterCity.value
+  return [...new Set(brandStoreStore.brandStores.filter(s => !city || s.city === city).map(s => s.district).filter(Boolean))].sort()
+})
+
+watch(filterCity, (newCity) => {
+  if (newCity && filterDistrict.value) {
+    const districts = [...new Set(brandStoreStore.brandStores.filter(s => s.city === newCity).map(s => s.district).filter(Boolean))]
+    if (!districts.includes(filterDistrict.value)) filterDistrict.value = ''
+  }
 })
 const brandList = computed(() => {
   return [...new Set(brandStoreStore.brandStores.map(s => s.brand).filter(Boolean))].sort()

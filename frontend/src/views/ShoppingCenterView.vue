@@ -341,7 +341,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, DataAnalysis, WarningFilled } from '@element-plus/icons-vue'
@@ -406,7 +406,17 @@ const rules = {
 }
 
 const cityList = computed(() => [...new Set(store.shoppingCenters.map(s => s.city).filter(Boolean))].sort())
-const districtList = computed(() => [...new Set(store.shoppingCenters.map(s => s.district).filter(Boolean))].sort())
+const districtList = computed(() => {
+  const city = filterCity.value
+  return [...new Set(store.shoppingCenters.filter(s => !city || s.city === city).map(s => s.district).filter(Boolean))].sort()
+})
+
+watch(filterCity, (newCity) => {
+  if (newCity && filterDistrict.value) {
+    const districts = [...new Set(store.shoppingCenters.filter(s => s.city === newCity).map(s => s.district).filter(Boolean))]
+    if (!districts.includes(filterDistrict.value)) filterDistrict.value = ''
+  }
+})
 const categoryList = computed(() => [...new Set(store.shoppingCenters.map(s => s.store_category).filter(Boolean))].sort())
 
 const filteredList = computed(() => {

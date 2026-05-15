@@ -60,6 +60,9 @@
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
+      <el-input-number v-model="filterMinStars" :min="1" :max="5" :step="1" placeholder="最低星级" style="width: 110px" controls-position="right" @change="handleSearch" />
+      <el-input-number v-model="filterMinReviews" :min="1" :step="10" placeholder="最少评论" style="width: 120px" controls-position="right" @change="handleSearch" />
+
       <span class="统计">共 {{ filteredCompetitors.length }} 条数据</span>
       <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
         <el-icon><Close /></el-icon>清除筛选
@@ -347,6 +350,8 @@ const filterCity = ref('')
 const filterDistrict = ref('')
 const filterBrand = ref('')
 const filterCategory = ref('')
+const filterMinStars = ref(null)
+const filterMinReviews = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -383,7 +388,7 @@ onMounted(() => {
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value || filterCategory.value
+  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
 })
 
 // 品牌颜色映射
@@ -441,9 +446,18 @@ const cityList = computed(() => {
   return [...new Set(competitorStore.competitors.map(c => c.city).filter(Boolean))].sort()
 })
 
-// 区县列表
+// 区县列表（联动城市）
 const districtList = computed(() => {
-  return [...new Set(competitorStore.competitors.map(c => c.district).filter(Boolean))].sort()
+  const city = filterCity.value
+  return [...new Set(competitorStore.competitors.filter(c => !city || c.city === city).map(c => c.district).filter(Boolean))].sort()
+})
+
+// 城市切换时清空区县
+watch(filterCity, (newCity) => {
+  if (newCity && filterDistrict.value) {
+    const districts = [...new Set(competitorStore.competitors.filter(c => c.city === newCity).map(c => c.district).filter(Boolean))]
+    if (!districts.includes(filterDistrict.value)) filterDistrict.value = ''
+  }
 })
 
 // 品牌列表
@@ -468,7 +482,9 @@ const filteredCompetitors = computed(() => {
     const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
     const matchBrand = !filterBrand.value || comp.brand === filterBrand.value
     const matchCategory = !filterCategory.value || comp.store_category === filterCategory.value
-    return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory
+    const matchStars = !filterMinStars.value || (comp.rating && comp.rating >= filterMinStars.value)
+    const matchReviews = !filterMinReviews.value || (comp.reviews && comp.reviews >= filterMinReviews.value)
+    return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory && matchStars && matchReviews
   })
 })
 
@@ -504,6 +520,8 @@ const handleClearFilters = () => {
   filterDistrict.value = ''
   filterBrand.value = ''
   filterCategory.value = ''
+  filterMinStars.value = null
+  filterMinReviews.value = null
   competitorStore.clearFilters()
   currentPage.value = 1
 }
