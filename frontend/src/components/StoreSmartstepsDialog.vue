@@ -321,25 +321,19 @@ function getRadiiInMeters() {
   return radii
 }
 
-// 加载可选月份
+// 加载可选月份（动态计算最近两个月）
 function loadAvailableMonths() {
   const now = new Date()
   const months = []
   const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1  // 4月
+  const currentMonth = now.getMonth() + 1
 
-  // 当前可用数据是3月和2月
-  if (currentMonth >= 4) {
-    // 4月时，可提供3月和2月数据
-    months.push({ value: `${currentYear}03`, label: `${currentYear}年3月` })
-    months.push({ value: `${currentYear}02`, label: `${currentYear}年2月` })
-  } else if (currentMonth >= 3) {
-    // 3月时，可提供2月和1月数据
-    months.push({ value: `${currentYear}02`, label: `${currentYear}年2月` })
-    months.push({ value: `${currentYear}01`, label: `${currentYear}年1月` })
-  } else {
-    // 更早的月份
-    months.push({ value: `${currentYear}01`, label: `${currentYear}年1月` })
+  for (let i = 1; i <= 2; i++) {
+    let month = currentMonth - i
+    let year = currentYear
+    if (month <= 0) { month += 12; year -= 1 }
+    const padded = String(month).padStart(2, '0')
+    months.push({ value: `${year}${padded}`, label: `${year}年${month}月` })
   }
 
   availableMonths.value = months
@@ -1758,7 +1752,11 @@ async function executeQuery(event) {
       })
 
       queryResult.value = res.data
-      ElMessage.success('查询成功!')
+      if (res.data.refunded) {
+        ElMessage.warning('该月份暂无数据，配额已返还')
+      } else {
+        ElMessage.success('查询成功!')
+      }
       loadQuota()
     }
     

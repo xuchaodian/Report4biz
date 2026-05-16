@@ -187,19 +187,18 @@ function getRadiiInMeters() {
   return radii
 }
 
+// 加载可选月份（动态计算最近两个月）
 function loadAvailableMonths() {
   const now = new Date()
   const months = []
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() + 1
-  if (currentMonth >= 4) {
-    months.push({ value: `${currentYear}03`, label: `${currentYear}年3月` })
-    months.push({ value: `${currentYear}02`, label: `${currentYear}年2月` })
-  } else if (currentMonth >= 3) {
-    months.push({ value: `${currentYear}02`, label: `${currentYear}年2月` })
-    months.push({ value: `${currentYear}01`, label: `${currentYear}年1月` })
-  } else {
-    months.push({ value: `${currentYear}01`, label: `${currentYear}年1月` })
+  for (let i = 1; i <= 2; i++) {
+    let month = currentMonth - i
+    let year = currentYear
+    if (month <= 0) { month += 12; year -= 1 }
+    const padded = String(month).padStart(2, '0')
+    months.push({ value: `${year}${padded}`, label: `${year}年${month}月` })
   }
   availableMonths.value = months
   if (months.length > 0) queryForm.value.cityMonth = months[0].value
@@ -237,7 +236,7 @@ async function executeBatchQuery() {
     for (const store of localStores.value) {
       for (const r of radii) {
         try {
-          await axios.post('/api/smartsteps/query', {
+          const res = await axios.post('/api/smartsteps/query', {
             centerLng: store.longitude,
             centerLat: store.latitude,
             radius: r,
@@ -248,7 +247,12 @@ async function executeBatchQuery() {
             storeName: store.name,
             storeType: store.store_type || '已开业'
           })
-          successCount++
+          if (res.data.refunded) {
+            console.log(`[批量购买] ${store.name} 半径${r}m: 暂无数据（已返还配额）`)
+            failCount++
+          } else {
+            successCount++
+          }
         } catch (e) {
           console.error(`[批量购买] ${store.name} 半径${r}m 失败:`, e)
           failCount++
@@ -257,7 +261,10 @@ async function executeBatchQuery() {
     }
 
     if (successCount > 0) {
-      ElMessage.success(`批量查询完成：成功 ${successCount} 次，失败 ${failCount} 次`)
+      ElMessage.success(`批量查询完成：成功获取 ${successCount} 次，无数据 ${failCount} 次（不消耗配额）`)
+      loadQuota()
+    } else if (failCount > 0) {
+      ElMessage.warning('批量查询完成，所选月份数据全部为空，配额已全部返还')
       loadQuota()
     } else {
       ElMessage.error('全部查询失败')
