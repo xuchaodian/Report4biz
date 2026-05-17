@@ -29,48 +29,91 @@
 
     <!-- 文件列表 -->
     <div class="file-list" v-if="fileList.length > 0">
-      <h3>已上传的文件</h3>
-      <el-table :data="fileList" style="width: 100%" row-key="id">
-        <el-table-column prop="name" label="文件名" min-width="200">
-          <template #default="{ row }">
-            <div v-if="renamingId === row.id" class="rename-inline">
-              <el-input
-                ref="renameInputRef"
-                v-model="renameValue"
-                size="small"
-                style="width: 100%"
-                @keyup.enter="confirmRename(row)"
-                @keyup.esc="cancelRename"
-              />
-              <el-button type="primary" size="small" link @click="confirmRename(row)">
-                <el-icon><Check /></el-icon>
-              </el-button>
-              <el-button type="info" size="small" link @click="cancelRename">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
-            <div v-else class="filename-cell" @dblclick="startRename(row)">
-              <span class="filename-text">{{ row.name }}</span>
-              <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)">
-                <el-icon><EditPen /></el-icon>
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
-        <el-table-column prop="created_at" label="上传时间" width="160" />
-        <el-table-column label="操作" width="180" align="center">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="openQueryDialog(row)">
-              <el-icon><Search /></el-icon>
-              检索
-            </el-button>
-            <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+
+      <!-- 一线城市 -->
+      <div v-if="groupedFiles['一线城市'].length > 0" class="tier-section">
+        <h3><el-tag type="danger" round>一线城市</el-tag> <span class="tier-count">{{ groupedFiles['一线城市'].length }}个文件</span></h3>
+        <el-table :data="groupedFiles['一线城市']" style="width: 100%" row-key="id">
+          <el-table-column prop="name" label="文件名" min-width="200">
+            <template #default="{ row }">
+              <div v-if="renamingId === row.id" class="rename-inline">
+                <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
+                <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
+                <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+              </div>
+              <div v-else class="filename-cell" @dblclick="startRename(row)">
+                <span class="filename-text">{{ row.name }}</span>
+                <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
+          <el-table-column prop="created_at" label="上传时间" width="160" />
+          <el-table-column label="操作" width="180" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
+              <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 新一线城市 -->
+      <div v-if="groupedFiles['新一线城市'].length > 0" class="tier-section">
+        <h3><el-tag type="warning" round>新一线城市</el-tag> <span class="tier-count">{{ groupedFiles['新一线城市'].length }}个文件</span></h3>
+        <el-table :data="groupedFiles['新一线城市']" style="width: 100%" row-key="id">
+          <el-table-column prop="name" label="文件名" min-width="200">
+            <template #default="{ row }">
+              <div v-if="renamingId === row.id" class="rename-inline">
+                <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
+                <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
+                <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+              </div>
+              <div v-else class="filename-cell" @dblclick="startRename(row)">
+                <span class="filename-text">{{ row.name }}</span>
+                <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
+          <el-table-column prop="created_at" label="上传时间" width="160" />
+          <el-table-column label="操作" width="180" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
+              <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 二三线城市 -->
+      <div v-if="groupedFiles['二三线城市'].length > 0" class="tier-section">
+        <h3><el-tag type="info" round>二三线城市</el-tag> <span class="tier-count">{{ groupedFiles['二三线城市'].length }}个文件</span></h3>
+        <el-table :data="groupedFiles['二三线城市']" style="width: 100%" row-key="id">
+          <el-table-column prop="name" label="文件名" min-width="200">
+            <template #default="{ row }">
+              <div v-if="renamingId === row.id" class="rename-inline">
+                <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
+                <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
+                <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+              </div>
+              <div v-else class="filename-cell" @dblclick="startRename(row)">
+                <span class="filename-text">{{ row.name }}</span>
+                <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="feature_count" label="要素数量" width="100" align="center" />
+          <el-table-column prop="created_at" label="上传时间" width="160" />
+          <el-table-column label="操作" width="180" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
+              <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
     </div>
 
     <!-- 空状态 -->
@@ -194,7 +237,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled, Delete, Search, Plus, InfoFilled, MapLocation, EditPen, Check, Close } from '@element-plus/icons-vue'
@@ -209,6 +252,30 @@ const uploadHeaders = {
   'x-user-id': userStore.user?.id || 1,
   'Authorization': `Bearer ${userStore.token}`
 }
+
+// 城市分级定义
+const CITY_TIERS = {
+  '一线城市': ['北京', '上海', '广州', '深圳'],
+  '新一线城市': ['成都', '杭州', '重庆', '武汉', '苏州', '西安', '南京', '长沙', '郑州', '天津', '合肥', '青岛', '东莞', '宁波', '佛山']
+}
+
+function getCityTier(name) {
+  if (!name) return '二三线城市'
+  for (const [tier, cities] of Object.entries(CITY_TIERS)) {
+    if (cities.some(city => name.includes(city))) return tier
+  }
+  return '二三线城市'
+}
+
+// 按城市分级分组
+const groupedFiles = computed(() => {
+  const groups = { '一线城市': [], '新一线城市': [], '二三线城市': [] }
+  fileList.value.forEach(f => {
+    const tier = getCityTier(f.name)
+    groups[tier].push(f)
+  })
+  return groups
+})
 
 // 重命名相关
 const renamingId = ref(null)
@@ -728,5 +795,23 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 城市分组样式 */
+.tier-section {
+  margin-bottom: 32px;
+}
+
+.tier-section h3 {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier-count {
+  font-weight: normal;
+  font-size: 13px;
+  color: #999;
 }
 </style>

@@ -664,7 +664,6 @@ const handleImportConfirm = async () => {
     if (result.success) {
       ElMessage.success(`成功导入 ${result.count} 条数据`)
       importDialogVisible.value = false
-      await competitorStore.fetchCompetitors()
     } else {
       ElMessage.error(result.message)
     }

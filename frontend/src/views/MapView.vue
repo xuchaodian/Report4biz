@@ -3606,7 +3606,7 @@ const loadShoppingCenters = async (skipFetch = false) => {
   shoppingCenterMarkerMap = {}
 
   dataToShow.forEach(store => {
-    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.3)
+    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.0)
 
     const popupContent = `
       <div style="min-width: 200px; font-size: 13px;">
@@ -3678,7 +3678,7 @@ const reloadShoppingCenterLayer = () => {
   shoppingCenterMarkerMap = {}
 
   dataToShow.forEach(store => {
-    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.3)
+    const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.0)
     const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#e6a23c'};">🏬 ${store.name}</h4><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>${store.stars ? `<p style="margin:4px 0;"><strong>星级:</strong> ⭐ ${store.stars}</p>` : ''}${store.comments ? `<p style="margin:4px 0;"><strong>评论数:</strong> ${store.comments.toLocaleString()}</p>` : ''}</div>`)
     marker.on('mousedown', (e) => { L.DomEvent.stopPropagation(e) })

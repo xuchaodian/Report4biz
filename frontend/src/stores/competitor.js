@@ -95,7 +95,7 @@ export const useCompetitorStore = defineStore('competitor', {
       try {
         const formData = new FormData()
         formData.append('file', file)
-        const response = await axios.post(`${API_URL}/competitors/import`, formData, { onUploadProgress: onProgress })
+        const response = await axios.post(`${API_URL}/competitors/import`, formData, { timeout: 300000, onUploadProgress: onProgress })
         const { data } = response
         await this.fetchCompetitors()
         return { success: true, count: data.count || 0 }

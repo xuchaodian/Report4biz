@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
-import { getDb } from '../models/database.js'
+import { getDb, saveDatabase } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -151,6 +151,18 @@ router.put('/:id', authenticate, (req, res) => {
   }
 })
 
+// 全清除竞品门店（必须放在 /:id 之前，避免 clear-all 被 :id 捕获）
+router.delete('/clear-all', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
+    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
+  } catch (error) {
+    console.error('清空竞品错误:', error)
+    res.status(500).json({ message: '清空失败' })
+  }
+})
+
 // 删除竞品门店
 router.delete('/:id', authenticate, (req, res) => {
   try {
@@ -202,22 +214,6 @@ router.post('/batch-delete', authenticate, (req, res) => {
 })
 
 // 清空所有竞品门店（普通用户清除自己的，管理员清除所有）
-router.delete('/clear-all', authenticate, (req, res) => {
-  try {
-    const db = getDb()
-    let result
-    if (req.user.role === 'admin') {
-      result = db.prepare('DELETE FROM competitors').run()
-    } else {
-      result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
-    }
-    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
-  } catch (error) {
-    console.error('清空竞品错误:', error)
-    res.status(500).json({ message: '清空失败' })
-  }
-})
-
 // 导入竞品门店
 router.post('/import', authenticate, upload.single('file'), (req, res) => {
   try {
@@ -225,51 +221,50 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       return res.status(400).json({ message: '请上传文件' })
     }
 
+    console.log(`[竞品导入] 收到文件: ${req.file.originalname}, 大小: ${req.file.size}`)
     const fileContent = fs.readFileSync(req.file.path, 'utf-8')
 
     Papa.parse(fileContent, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
+        console.log(`[竞品导入] CSV解析完成, ${results.data.length} 行, 错误: ${results.errors?.length || 0}`)
         const db = getDb()
-        const imported = []
+        let imported = 0
+
+        // 使用事务批量写入，大幅提升性能
+        db.exec('BEGIN TRANSACTION')
+        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"
 
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue
-
-          const result = db.prepare(`
-            INSERT INTO competitors (
-              store_code, brand, name, store_type, store_category,
-              city, district, address,
-              description,
-              latitude, longitude, status, icon_color, user_id,
-              industry, price, rating, reviews, taste_score, environment_score, service_score,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            row.store_code || '', row.brand || '', row.name, row.store_type || '竞品', row.store_category || '',
-            row.city || '', row.district || '', row.address || '',
-            row.description || '',
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#f56c6c',
-            req.user.id,
-            row.industry || '', parseFloat(row.price) || 0, parseFloat(row.rating) || 0,
-            parseInt(row.reviews) || 0, parseFloat(row.taste_score) || 0,
-            parseFloat(row.environment_score) || 0, parseFloat(row.service_score) || 0
-          )
-
-          const competitor = db.prepare('SELECT * FROM competitors WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(competitor)
+          const vals = [
+            esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '竞品'), esc(row.store_category || ''),
+            esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
+            esc(row.description || ''),
+            esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
+            esc(row.status || '正常'),
+            esc(row.icon_color || '#f56c6c'),
+            String(req.user.id),
+            esc(row.industry || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
+            esc(parseInt(row.reviews) || 0), esc(parseFloat(row.taste_score) || 0),
+            esc(parseFloat(row.environment_score) || 0), esc(parseFloat(row.service_score) || 0),
+            "datetime('now')", "datetime('now')"
+          ].join(',')
+          db.exec('INSERT INTO competitors (store_code,brand,name,store_type,store_category,city,district,address,description,latitude,longitude,status,icon_color,user_id,industry,price,rating,reviews,taste_score,environment_score,service_score,created_at,updated_at) VALUES (' + vals + ')')
+          imported++
         }
+        db.exec('COMMIT')
+        // 保存到磁盘
+        saveDatabase()
 
+        console.log(`[竞品导入] 成功导入 ${imported} 条数据`)
         // 删除上传的文件
         fs.unlinkSync(req.file.path)
 
         res.json({
-          message: `成功导入 ${imported.length} 条数据`,
-          count: imported.length,
-          imported
+          message: `成功导入 ${imported} 条数据`,
+          count: imported
         })
       }
     })

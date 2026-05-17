@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
-import { getDb } from '../models/database.js'
+import { getDb, saveDatabase } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -254,6 +254,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
           imported++
         }
         db.exec('COMMIT')
+        // 保存到磁盘
+        saveDatabase()
 
         // 删除上传的文件
         fs.unlinkSync(req.file.path)
