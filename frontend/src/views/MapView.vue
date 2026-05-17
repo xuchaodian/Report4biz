@@ -193,9 +193,9 @@
       </div>
     </div>
 
-    <!-- 门店检索浮层 -->
-    <div v-if="storeSearchVisible" class="store-search-panel">
-      <div class="store-search-header">
+    <!-- 定位门店面板（4种门店类型，可拖拽） -->
+    <div v-if="storeSearchVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
+      <div class="store-search-header" @mousedown="onDragStart">
         <span class="store-search-title">
           <el-icon><Search /></el-icon>
           定位门店
@@ -209,7 +209,6 @@
           v-model="storeSearchKeyword"
           placeholder="输入名称、地址、品牌关键词…"
           clearable
-          autofocus
           @input="onStoreSearch"
           @clear="onStoreSearch"
         >
@@ -218,48 +217,95 @@
           </template>
         </el-input>
       </div>
-      <div class="store-search-filters">
-        <el-select v-model="locFilterStoreType" placeholder="门店类型" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option label="已开业" value="已开业" />
-          <el-option label="重点候选" value="重点候选" />
-          <el-option label="一般候选" value="一般候选" />
-        </el-select>
-        <el-select v-model="locFilterCity" placeholder="城市" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option v-for="c in locCityList" :key="c" :label="c" :value="c" />
-        </el-select>
-        <el-select v-model="locFilterDistrict" placeholder="区县" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option v-for="d in locDistrictList" :key="d" :label="d" :value="d" />
-        </el-select>
-        <el-select v-model="locFilterBrand" placeholder="品牌" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option v-for="b in locBrandList" :key="b" :label="b" :value="b" />
-        </el-select>
-        <el-select v-model="locFilterStoreStatus" placeholder="门店状态" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option v-for="s in locStoreStatusList" :key="s" :label="s" :value="s" />
-        </el-select>
-        <el-select v-model="locFilterMallType" placeholder="商场类型" style="width: 110px" size="small" clearable @change="onStoreSearch">
-          <el-option v-for="m in locMallTypeList" :key="m" :label="m" :value="m" />
-        </el-select>
-      </div>
-      <div class="store-search-list">
-        <div
-          v-if="storeSearchResults.length === 0"
-          class="store-search-empty"
-        >{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
-        <div
-          v-for="s in storeSearchResults"
-          :key="s.id"
-          class="store-search-item"
-          @click="locateStore(s)"
-        >
-          <div class="store-search-name">{{ s.name }}</div>
-          <div class="store-search-sub">
-            <span v-if="s.brand">{{ s.brand }}</span>
-            <span v-if="s.city">{{ s.city }}</span>
-            <span v-if="s.district">{{ s.district }}</span>
+      <el-tabs v-model="searchTabActive" class="store-search-tabs">
+        <el-tab-pane label="我的门店" name="marker">
+          <div class="store-search-filters">
+            <el-select v-model="markerFilterStoreType" placeholder="门店类型" style="width:90px" size="small" clearable @change="onStoreSearch">
+              <el-option label="已开业" value="已开业" /><el-option label="重点候选" value="重点候选" /><el-option label="一般候选" value="一般候选" />
+            </el-select>
+            <el-select v-model="markerFilterCity" placeholder="城市" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="c in markerCityList" :key="c" :label="c" :value="c" />
+            </el-select>
+            <el-select v-model="markerFilterDistrict" placeholder="区县" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="d in markerDistrictList" :key="d" :label="d" :value="d" />
+            </el-select>
+            <el-select v-model="markerFilterBrand" placeholder="品牌" style="width:90px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="b in markerBrandList" :key="b" :label="b" :value="b" />
+            </el-select>
+            <el-select v-model="markerFilterStoreStatus" placeholder="状态" style="width:80px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="s in markerStoreStatusList" :key="s" :label="s" :value="s" />
+            </el-select>
           </div>
-          <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
-        </div>
-      </div>
+          <div class="store-search-list">
+            <div v-if="locateResults.marker.length === 0" class="store-search-empty">{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
+            <div v-for="s in locateResults.marker" :key="'m'+s.id" class="store-search-item" @click="locateStore(s, 'marker')">
+              <div class="store-search-name">{{ s.name }}</div>
+              <div class="store-search-sub"><span v-if="s.brand">{{ s.brand }}</span><span v-if="s.city">{{ s.city }}</span><span v-if="s.district">{{ s.district }}</span></div>
+              <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="竞品门店" name="competitor">
+          <div class="store-search-filters">
+            <el-select v-model="compFilterCity" placeholder="城市" style="width:120px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="c in compCityList" :key="c" :label="c" :value="c" />
+            </el-select>
+            <el-select v-model="compFilterDistrict" placeholder="区县" style="width:120px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="d in compDistrictList" :key="d" :label="d" :value="d" />
+            </el-select>
+            <el-select v-model="compFilterBrand" placeholder="品牌" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="b in compBrandList" :key="b" :label="b" :value="b" />
+            </el-select>
+          </div>
+          <div class="store-search-list">
+            <div v-if="locateResults.competitor.length === 0" class="store-search-empty">{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
+            <div v-for="s in locateResults.competitor" :key="'c'+s.id" class="store-search-item" @click="locateStore(s, 'competitor')">
+              <div class="store-search-name">{{ s.name }}</div>
+              <div class="store-search-sub"><span v-if="s.brand">{{ s.brand }}</span><span v-if="s.city">{{ s.city }}</span><span v-if="s.district">{{ s.district }}</span></div>
+              <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="品牌门店" name="brand">
+          <div class="store-search-filters">
+            <el-select v-model="brandFilterCity" placeholder="城市" style="width:120px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="c in brandCityList" :key="c" :label="c" :value="c" />
+            </el-select>
+            <el-select v-model="brandFilterDistrict" placeholder="区县" style="width:120px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="d in brandDistrictList" :key="d" :label="d" :value="d" />
+            </el-select>
+            <el-select v-model="brandFilterBrand" placeholder="品牌" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="b in brandBrandList" :key="b" :label="b" :value="b" />
+            </el-select>
+          </div>
+          <div class="store-search-list">
+            <div v-if="locateResults.brand.length === 0" class="store-search-empty">{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
+            <div v-for="s in locateResults.brand" :key="'b'+s.id" class="store-search-item" @click="locateStore(s, 'brand')">
+              <div class="store-search-name">{{ s.name }}</div>
+              <div class="store-search-sub"><span v-if="s.brand">{{ s.brand }}</span><span v-if="s.city">{{ s.city }}</span><span v-if="s.district">{{ s.district }}</span></div>
+              <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="购物中心" name="shopping">
+          <div class="store-search-filters">
+            <el-select v-model="shopFilterCity" placeholder="城市" style="width:140px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="c in shopCityList" :key="c" :label="c" :value="c" />
+            </el-select>
+            <el-select v-model="shopFilterDistrict" placeholder="区县" style="width:140px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="d in shopDistrictList" :key="d" :label="d" :value="d" />
+            </el-select>
+          </div>
+          <div class="store-search-list">
+            <div v-if="locateResults.shopping.length === 0" class="store-search-empty">{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
+            <div v-for="s in locateResults.shopping" :key="'s'+s.id" class="store-search-item" @click="locateStore(s, 'shopping')">
+              <div class="store-search-name">{{ s.name }}</div>
+              <div class="store-search-sub"><span v-if="s.city">{{ s.city }}</span><span v-if="s.district">{{ s.district }}</span></div>
+              <div v-if="s.address" class="store-search-addr">{{ s.address }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </div>
 
     <!-- 地图容器 -->
@@ -4759,96 +4805,217 @@ const handleShapefileQuery = (event) => {
 // ===== 定位门店检索 =====
 const storeSearchVisible = ref(false)
 const storeSearchKeyword = ref('')
-const storeSearchResults = ref([])
-// 定位门店筛选条件
-const locFilterStoreType = ref('')
-const locFilterCity = ref('')
-const locFilterDistrict = ref('')
-const locFilterBrand = ref('')
-const locFilterStoreStatus = ref('')
-const locFilterMallType = ref('')
+const searchTabActive = ref('marker')  // marker | competitor | brand | shopping
+const locateResults = ref({ marker: [], competitor: [], brand: [], shopping: [] })
+// 拖拽
+const searchPanelPos = ref({ top: 60, right: 180 })
+let isDragging = false
+let dragStart = { x: 0, y: 0, top: 0, right: 0 }
 
-// 门店筛选列表
-const locCityList = computed(() => [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].sort())
-const locDistrictList = computed(() => {
-  const city = locFilterCity.value
+const onDragStart = (e) => {
+  isDragging = true
+  dragStart = { x: e.clientX, y: e.clientY, top: searchPanelPos.value.top, right: searchPanelPos.value.right }
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+const onDragMove = (e) => {
+  if (!isDragging) return
+  searchPanelPos.value = {
+    top: dragStart.top + (e.clientY - dragStart.y),
+    right: dragStart.right - (e.clientX - dragStart.x)
+  }
+}
+const onDragEnd = () => {
+  isDragging = false
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+}
+
+// 各标签页独立筛选条件
+// 我的门店
+const markerFilterStoreType = ref('')
+const markerFilterCity = ref('')
+const markerFilterDistrict = ref('')
+const markerFilterBrand = ref('')
+const markerFilterStoreStatus = ref('')
+// 竞品门店
+const compFilterCity = ref('')
+const compFilterDistrict = ref('')
+const compFilterBrand = ref('')
+// 品牌门店
+const brandFilterCity = ref('')
+const brandFilterDistrict = ref('')
+const brandFilterBrand = ref('')
+// 购物中心
+const shopFilterCity = ref('')
+const shopFilterDistrict = ref('')
+
+// 各门店筛选列表
+const markerCityList = computed(() => [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].sort())
+const markerDistrictList = computed(() => {
+  const city = markerFilterCity.value
   return [...new Set(markerStore.markers.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
 })
-const locBrandList = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].sort())
-const locStoreStatusList = computed(() => [...new Set(markerStore.markers.map(m => m.store_status).filter(Boolean))].sort())
-const locMallTypeList = computed(() => [...new Set(markerStore.markers.map(m => m.mall_type).filter(Boolean))].sort())
+const markerBrandList = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].sort())
+const markerStoreStatusList = computed(() => [...new Set(markerStore.markers.map(m => m.store_status).filter(Boolean))].sort())
 
-// 城市切换时，清空不属于该城市的区县
-watch(locFilterCity, (newCity) => {
-  if (newCity && locFilterDistrict.value) {
-    const districts = [...new Set(markerStore.markers.filter(m => m.city === newCity).map(m => m.district).filter(Boolean))]
-    if (!districts.includes(locFilterDistrict.value)) {
-      locFilterDistrict.value = ''
-    }
-  }
+const compCityList = computed(() => [...new Set(competitorStore.competitors.map(m => m.city).filter(Boolean))].sort())
+const compDistrictList = computed(() => {
+  const city = compFilterCity.value
+  return [...new Set(competitorStore.competitors.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
+})
+const compBrandList = computed(() => [...new Set(competitorStore.competitors.map(m => m.brand).filter(Boolean))].sort())
+
+const brandCityList = computed(() => [...new Set(brandStoreStore.brandStores.map(m => m.city).filter(Boolean))].sort())
+const brandDistrictList = computed(() => {
+  const city = brandFilterCity.value
+  return [...new Set(brandStoreStore.brandStores.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
+})
+const brandBrandList = computed(() => [...new Set(brandStoreStore.brandStores.map(m => m.brand).filter(Boolean))].sort())
+
+const shopCityList = computed(() => [...new Set(shoppingCenterStore.shoppingCenters.map(m => m.city).filter(Boolean))].sort())
+const shopDistrictList = computed(() => {
+  const city = shopFilterCity.value
+  return [...new Set(shoppingCenterStore.shoppingCenters.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
 })
 
-// 模糊检索：名称、品牌、地址 + 筛选条件 + 同步地图显示
+// 城市切换时清理区县（每个标签页独立）
+watch(markerFilterCity, (nc) => { if (nc && markerFilterDistrict.value && !markerDistrictList.value.includes(markerFilterDistrict.value)) markerFilterDistrict.value = '' })
+watch(compFilterCity, (nc) => { if (nc && compFilterDistrict.value && !compDistrictList.value.includes(compFilterDistrict.value)) compFilterDistrict.value = '' })
+watch(brandFilterCity, (nc) => { if (nc && brandFilterDistrict.value && !brandDistrictList.value.includes(brandFilterDistrict.value)) brandFilterDistrict.value = '' })
+watch(shopFilterCity, (nc) => { if (nc && shopFilterDistrict.value && !shopDistrictList.value.includes(shopFilterDistrict.value)) shopFilterDistrict.value = '' })
+
+// ===== 通用搜索函数 =====
+const filterByKw = (items, kw) => {
+  if (!kw) return items.slice(0, 50)
+  return items.filter(m => (
+    m.name?.toLowerCase().includes(kw) ||
+    m.brand?.toLowerCase().includes(kw) ||
+    m.address?.toLowerCase().includes(kw) ||
+    m.city?.toLowerCase().includes(kw) ||
+    m.district?.toLowerCase().includes(kw) ||
+    m.store_code?.toLowerCase().includes(kw)
+  )).slice(0, 50)
+}
+
+// 模糊检索：并行搜索4种门店类型（各自独立筛选）
 const onStoreSearch = () => {
   const kw = storeSearchKeyword.value.trim().toLowerCase()
-  const markers = markerStore.markers.filter(m => {
-    // 关键词过滤
-    if (kw && !(
-      m.name?.toLowerCase().includes(kw) ||
-      m.brand?.toLowerCase().includes(kw) ||
-      m.address?.toLowerCase().includes(kw) ||
-      m.city?.toLowerCase().includes(kw) ||
-      m.district?.toLowerCase().includes(kw) ||
-      m.store_code?.toLowerCase().includes(kw)
-    )) return false
-    // 筛选条件过滤
-    if (locFilterStoreType.value && m.store_type !== locFilterStoreType.value) return false
-    if (locFilterCity.value && m.city !== locFilterCity.value) return false
-    if (locFilterDistrict.value && m.district !== locFilterDistrict.value) return false
-    if (locFilterBrand.value && m.brand !== locFilterBrand.value) return false
-    if (locFilterStoreStatus.value && m.store_status !== locFilterStoreStatus.value) return false
-    if (locFilterMallType.value && m.mall_type !== locFilterMallType.value) return false
-    return true
-  }).slice(0, 50)
-  storeSearchResults.value = markers
 
-  // 同步地图显示：根据筛选条件显示/隐藏图标
-  const hasFilters = locFilterStoreType.value || locFilterCity.value || locFilterDistrict.value ||
-    locFilterBrand.value || locFilterStoreStatus.value || locFilterMallType.value || kw
+  // 我的门店（独立筛选）
+  let m = markerStore.markers
+  if (markerFilterStoreType.value) m = m.filter(i => i.store_type === markerFilterStoreType.value)
+  if (markerFilterCity.value) m = m.filter(i => i.city === markerFilterCity.value)
+  if (markerFilterDistrict.value) m = m.filter(i => i.district === markerFilterDistrict.value)
+  if (markerFilterBrand.value) m = m.filter(i => i.brand === markerFilterBrand.value)
+  if (markerFilterStoreStatus.value) m = m.filter(i => i.store_status === markerFilterStoreStatus.value)
+  locateResults.value.marker = filterByKw(m, kw)
+
+  // 竞品门店（独立筛选）
+  let c = competitorStore.competitors
+  if (compFilterCity.value) c = c.filter(i => i.city === compFilterCity.value)
+  if (compFilterDistrict.value) c = c.filter(i => i.district === compFilterDistrict.value)
+  if (compFilterBrand.value) c = c.filter(i => i.brand === compFilterBrand.value)
+  locateResults.value.competitor = filterByKw(c, kw)
+
+  // 品牌门店（独立筛选）
+  let b = brandStoreStore.brandStores
+  if (brandFilterCity.value) b = b.filter(i => i.city === brandFilterCity.value)
+  if (brandFilterDistrict.value) b = b.filter(i => i.district === brandFilterDistrict.value)
+  if (brandFilterBrand.value) b = b.filter(i => i.brand === brandFilterBrand.value)
+  locateResults.value.brand = filterByKw(b, kw)
+
+  // 购物中心（独立筛选）
+  let s = shoppingCenterStore.shoppingCenters
+  if (shopFilterCity.value) s = s.filter(i => i.city === shopFilterCity.value)
+  if (shopFilterDistrict.value) s = s.filter(i => i.district === shopFilterDistrict.value)
+  locateResults.value.shopping = filterByKw(s, kw)
+
+  // 同步地图显示（仅我的门店）
+  const hasFilters = kw || markerFilterStoreType.value || markerFilterCity.value || markerFilterDistrict.value ||
+    markerFilterBrand.value || markerFilterStoreStatus.value
   if (hasFilters) {
-    const allFiltered = markerStore.markers.filter(m => {
-      if (kw && !(m.name?.toLowerCase().includes(kw) || m.brand?.toLowerCase().includes(kw) ||
-        m.address?.toLowerCase().includes(kw) || m.city?.toLowerCase().includes(kw) ||
-        m.district?.toLowerCase().includes(kw) || m.store_code?.toLowerCase().includes(kw))) return false
-      if (locFilterStoreType.value && m.store_type !== locFilterStoreType.value) return false
-      if (locFilterCity.value && m.city !== locFilterCity.value) return false
-      if (locFilterDistrict.value && m.district !== locFilterDistrict.value) return false
-      if (locFilterBrand.value && m.brand !== locFilterBrand.value) return false
-      if (locFilterStoreStatus.value && m.store_status !== locFilterStoreStatus.value) return false
-      if (locFilterMallType.value && m.mall_type !== locFilterMallType.value) return false
+    const allFiltered = markerStore.markers.filter(i => {
+      if (kw && !(i.name?.toLowerCase().includes(kw) || i.brand?.toLowerCase().includes(kw) ||
+        i.address?.toLowerCase().includes(kw) || i.city?.toLowerCase().includes(kw) ||
+        i.district?.toLowerCase().includes(kw) || i.store_code?.toLowerCase().includes(kw))) return false
+      if (markerFilterStoreType.value && i.store_type !== markerFilterStoreType.value) return false
+      if (markerFilterCity.value && i.city !== markerFilterCity.value) return false
+      if (markerFilterDistrict.value && i.district !== markerFilterDistrict.value) return false
+      if (markerFilterBrand.value && i.brand !== markerFilterBrand.value) return false
+      if (markerFilterStoreStatus.value && i.store_status !== markerFilterStoreStatus.value) return false
       return true
     })
     markerStore.setVisibleIds(allFiltered.map(m => m.id))
   } else {
     markerStore.setVisibleIds(null)
   }
+
+  // 同步地图显示 - 竞品门店
+  const compFilterActive = kw || compFilterCity.value || compFilterDistrict.value || compFilterBrand.value
+  if (compFilterActive) {
+    competitorStore.setVisibleIds(competitorStore.competitors.filter(i => {
+      if (kw && !(i.name?.toLowerCase().includes(kw) || i.brand?.toLowerCase().includes(kw) ||
+        i.address?.toLowerCase().includes(kw) || i.city?.toLowerCase().includes(kw) ||
+        i.district?.toLowerCase().includes(kw) || i.store_code?.toLowerCase().includes(kw))) return false
+      if (compFilterCity.value && i.city !== compFilterCity.value) return false
+      if (compFilterDistrict.value && i.district !== compFilterDistrict.value) return false
+      if (compFilterBrand.value && i.brand !== compFilterBrand.value) return false
+      return true
+    }).map(m => m.id))
+  } else {
+    competitorStore.setVisibleIds(null)
+  }
+
+  // 同步地图显示 - 品牌门店
+  const brandFilterActive = kw || brandFilterCity.value || brandFilterDistrict.value || brandFilterBrand.value
+  if (brandFilterActive) {
+    brandStoreStore.setVisibleIds(brandStoreStore.brandStores.filter(i => {
+      if (kw && !(i.name?.toLowerCase().includes(kw) || i.brand?.toLowerCase().includes(kw) ||
+        i.address?.toLowerCase().includes(kw) || i.city?.toLowerCase().includes(kw) ||
+        i.district?.toLowerCase().includes(kw) || i.store_code?.toLowerCase().includes(kw))) return false
+      if (brandFilterCity.value && i.city !== brandFilterCity.value) return false
+      if (brandFilterDistrict.value && i.district !== brandFilterDistrict.value) return false
+      if (brandFilterBrand.value && i.brand !== brandFilterBrand.value) return false
+      return true
+    }).map(m => m.id))
+  } else {
+    brandStoreStore.setVisibleIds(null)
+  }
+
+  // 同步地图显示 - 购物中心
+  const shopFilterActive = kw || shopFilterCity.value || shopFilterDistrict.value
+  if (shopFilterActive) {
+    shoppingCenterStore.setVisibleIds(shoppingCenterStore.shoppingCenters.filter(i => {
+      if (kw && !(i.name?.toLowerCase().includes(kw) || i.address?.toLowerCase().includes(kw) ||
+        i.city?.toLowerCase().includes(kw) || i.district?.toLowerCase().includes(kw))) return false
+      if (shopFilterCity.value && i.city !== shopFilterCity.value) return false
+      if (shopFilterDistrict.value && i.district !== shopFilterDistrict.value) return false
+      return true
+    }).map(m => m.id))
+  } else {
+    shoppingCenterStore.setVisibleIds(null)
+  }
 }
 
-// 点击门店跳转到地图
-const locateStore = (store) => {
+// 点击门店跳转到地图（支持4种类型）
+const locateStore = (store, type) => {
   if (!store.latitude || !store.longitude) {
     ElMessage.warning('该门店没有坐标信息')
     return
   }
   map.flyTo([store.latitude, store.longitude], 16, { animate: true, duration: 0.8 })
-  // 打开门店 popup（找到对应 marker 层）
-  if (businessLayer) {
+  // 根据类型找到对应 marker 打开 popup
+  if (type === 'marker' && businessLayer) {
     businessLayer.eachLayer(layer => {
-      if (layer._storeId === store.id) {
-        layer.openPopup()
-      }
+      if (layer._storeId === store.id) layer.openPopup()
     })
+  } else if (type === 'brand' && brandMarkerMap[store.id]) {
+    brandMarkerMap[store.id].openPopup()
+  } else if (type === 'shopping' && shoppingCenterMarkerMap[store.id]) {
+    shoppingCenterMarkerMap[store.id].openPopup()
   }
+  // 竞品门店没有 marker map，先跳转位置即可
 }
 
 // 定位数据范围（保留供 AI 助手使用）
@@ -6834,10 +7001,8 @@ function getHeatmapCellStyle(nums, idx) {
 /* 门店检索浮层 */
 .store-search-panel {
   position: absolute;
-  top: 60px;
-  right: 180px;
-  width: 300px;
-  max-height: 480px;
+  width: 360px;
+  max-height: 520px;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -6847,12 +7012,54 @@ function getHeatmapCellStyle(nums, idx) {
   overflow: hidden;
 }
 
+.store-search-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  :deep(.el-tabs__header) {
+    margin: 0;
+    padding: 0 12px;
+  }
+
+  :deep(.el-tabs__content) {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    .el-tab-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+  }
+
+  .store-search-filters {
+    padding: 4px 12px 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .store-search-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 8px 8px;
+  }
+}
+
 .store-search-header {
   display: flex;
   align-items: center;
   padding: 12px 14px 10px;
   border-bottom: 1px solid #eee;
   gap: 6px;
+  cursor: grab;
+  user-select: none;
 }
 
 .store-search-title {
