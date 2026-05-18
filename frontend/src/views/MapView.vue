@@ -3478,7 +3478,9 @@ const loadBrandStores = async (skipFetch = false) => {
     ? brandStoreStore.brandStores
     : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
 
-  brandStoreLayer = L.layerGroup()
+  brandStoreLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
   brandMarkerMap = {}  // 清空映射表
 
   dataToShow.forEach(store => {
@@ -3550,7 +3552,9 @@ const reloadBrandStoreLayer = () => {
   const wasOnMap = map.hasLayer(brandStoreLayer)
   if (brandStoreLayer) { try { map.removeLayer(brandStoreLayer) } catch(e) {} }
 
-  brandStoreLayer = L.layerGroup()
+  brandStoreLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
   brandMarkerMap = {}
 
   dataToShow.forEach(store => {
@@ -3648,7 +3652,9 @@ const loadShoppingCenters = async (skipFetch = false) => {
     ? shoppingCenterStore.shoppingCenters
     : shoppingCenterStore.shoppingCenters.filter(s => visibleIds.includes(s.id))
 
-  shoppingCenterLayer = L.layerGroup()
+  shoppingCenterLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
   shoppingCenterMarkerMap = {}
 
   dataToShow.forEach(store => {
@@ -3720,7 +3726,9 @@ const reloadShoppingCenterLayer = () => {
   const wasOnMap = map.hasLayer(shoppingCenterLayer)
   if (shoppingCenterLayer) { try { map.removeLayer(shoppingCenterLayer) } catch(e) {} }
 
-  shoppingCenterLayer = L.layerGroup()
+  shoppingCenterLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
   shoppingCenterMarkerMap = {}
 
   dataToShow.forEach(store => {
