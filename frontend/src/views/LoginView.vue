@@ -1,5 +1,17 @@
 <template>
   <div class="login-container">
+    <!-- 背景轮播 -->
+    <div class="bg-slideshow">
+      <div
+        v-for="(img, i) in bgImages"
+        :key="i"
+        class="bg-slide"
+        :class="{ active: currentBg === i }"
+        :style="{ backgroundImage: `url(${img})` }"
+      />
+    </div>
+    <div class="bg-overlay" />
+
     <div class="login-box">
       <div class="login-header">
         <img src="@/assets/logo.png" alt="Logo" class="login-logo">
@@ -57,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -76,6 +88,27 @@ const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
+
+// 背景图片列表
+const bgImages = [
+  'https://images.unsplash.com/photo-1569336415962-a4bd9f18cdb3?w=1600&q=80',   // 城市天际线
+  'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=1600&q=80',   // 数据分析
+  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1600&q=80',   // 商业图表
+  'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1600&q=80',   // 数字世界地图
+  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1600&q=80'    // 数字屏幕
+]
+const currentBg = ref(0)
+let bgTimer = null
+
+onMounted(() => {
+  bgTimer = setInterval(() => {
+    currentBg.value = (currentBg.value + 1) % bgImages.length
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (bgTimer) clearInterval(bgTimer)
+})
 
 const handleLogin = async () => {
   const valid = await formRef.value.validate().catch(() => false)
@@ -98,43 +131,87 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+  overflow: hidden;
+  background: #1a1a2e;
 }
 
+/* 背景轮播 */
+.bg-slideshow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.bg-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease-in-out;
+
+  &.active {
+    opacity: 1;
+  }
+}
+
+.bg-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(135deg, rgba(26,26,46,0.85) 0%, rgba(22,34,78,0.75) 50%, rgba(26,26,46,0.85) 100%);
+}
+
+/* 登录框 */
 .login-box {
-  width: 400px;
-  padding: 40px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 2;
+  width: 420px;
+  padding: 44px 40px 36px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 32px;
+  
+  .login-logo {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 12px;
+  }
   
   h1 {
-    font-size: 28px;
+    font-size: 26px;
+    font-weight: 600;
     color: #333;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   
   p {
-    color: #666;
+    color: #999;
     font-size: 14px;
+    letter-spacing: 2px;
   }
 }
 
 .login-form {
   .login-btn {
     width: 100%;
+    height: 44px;
+    font-size: 16px;
+    letter-spacing: 4px;
   }
 }
 
 .login-footer {
   text-align: center;
   margin-top: 20px;
-  color: #666;
+  color: #999;
   font-size: 14px;
   
   a {

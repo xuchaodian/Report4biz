@@ -573,6 +573,8 @@ onMounted(() => {
   padding: 20px;
   max-width: 1000px;
   margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
 }
 
 .header {
