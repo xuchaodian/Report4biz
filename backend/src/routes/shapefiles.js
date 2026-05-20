@@ -424,6 +424,9 @@ router.post('/calculate-population', (req, res) => {
     const allFields = {}
     const matchedFeatures = []
 
+    // 预计算圆的包围盒，用于快速过滤不相关的要素
+    const circleBbox = turf.bbox(circle)
+
     for (const row of rows) {
       // 使用内存缓存避免重复 JSON.parse
       let geojson
@@ -446,6 +449,15 @@ router.post('/calculate-population', (req, res) => {
         const props = feature.properties || {}
         const fieldVal = parseFloat(props[fieldName])
         if (isNaN(fieldVal) || fieldVal <= 0) continue
+
+        // 快速 AABB 包围盒碰撞检测：过滤掉明显不在圆内的要素（跳过 turf 重计算）
+        try {
+          const fBbox = turf.bbox(feature)
+          if (fBbox[0] > circleBbox[2] || fBbox[2] < circleBbox[0] ||
+              fBbox[1] > circleBbox[3] || fBbox[3] < circleBbox[1]) {
+            continue
+          }
+        } catch (e) { /* 包围盒计算失败，回退到完整计算 */ }
 
         try {
           // 将GeoJSON要素转为turf多边形后进行相交判断
