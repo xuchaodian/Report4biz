@@ -5924,103 +5924,103 @@ const startPopulationCompare = async () => {
     // 根据城市选择对应的shapefile（优先精确匹配，其次模糊匹配）
     const findShapefileForCity = (city, allShapefiles) => {
       if (!city) return allShapefiles[0] // 没有城市信息时使用第一个
-      
-      // 精确匹配
-      let matched = allShapefiles.find(sf => sf.city === city)
-      if (matched) return matched
-      
-      // 模糊匹配：门店城市包含在shapefile城市中，或反过来
-      matched = allShapefiles.find(sf => 
-        (sf.city && sf.city.includes(city)) || (city.includes(sf.city))
+
+      // 从 shapefile 名称中提取城市名（"杭州1km网格人口.zip" → "杭州"）
+      const shapefileCityMap = allShapefiles.map(sf => {
+        const nameCity = sf.name?.replace(/1km网格人口.*$/i, '').trim()
+        return { ...sf, _cityName: nameCity }
+      })
+
+      // 标准化门店城市名（去掉"市""省"后缀，如 "杭州市" → "杭州"）
+      const normalizeCity = (c) => c.replace(/[市县区省]$/, '').trim()
+
+      const normalizedStoreCity = normalizeCity(city)
+
+      // 1. 精确匹配 shapefile 名称中的城市名
+      let matched = shapefileCityMap.find(sf =>
+        sf._cityName && normalizeCity(sf._cityName) === normalizedStoreCity
       )
       if (matched) return matched
-      
-      // 使用第一个（兜底）
+
+      // 2. 模糊匹配：门店城市包含在shapefile城市中，或反过来
+      matched = shapefileCityMap.find(sf =>
+        sf._cityName && (sf._cityName.includes(city) || city.includes(sf._cityName))
+      )
+      if (matched) return matched
+
+      // 3. 使用第一个（兜底）
       console.warn(`未找到城市[${city}]对应的shapefile，使用第一个: ${allShapefiles[0].name}`)
       return allShapefiles[0]
     }
 
     const radiusMeters = compareRadius.value * 1000
-    const allResults = []
 
-    for (const store of storesToCompare) {
-      const lat = store.latitude
-      const lng = store.longitude
-
-      if (!lat || !lng) {
-        ElMessage.warning(`门店 "${store.name}" 缺少坐标信息`)
-        continue
-      }
-
-      // 提取门店城市名
-      const storeCity = extractCityFromStore(store)
-      
-      // 根据城市选择shapefile
-      const targetShapefile = findShapefileForCity(storeCity, shapefiles)
-      const sfId = targetShapefile.id
-      const sfCity = targetShapefile.city
-      
-      // 获取shapefile字段信息
-      const sfRes = await fetch(`/api/shapefiles/${sfId}`, {
-        headers: { 'x-user-id': userId }
-      })
-      const sfData = await sfRes.json()
-      const geojson = sfData.data?.geojson || sfData.geojson
-
-      // 自动选择第一个整数字段
-      let statField = null
-      if (geojson?.features?.length > 0) {
-        const props = geojson.features[0].properties || {}
-        for (const [key, val] of Object.entries(props)) {
-          if (key !== 'RecID') {
-            const numVal = Number(val)
-            if (!isNaN(numVal) && Number.isInteger(numVal)) {
-              statField = key
-              break
-            }
-          }
+    // 并行处理各门店
+    const storePromises = storesToCompare
+      .filter(store => {
+        if (!store.latitude || !store.longitude) {
+          ElMessage.warning(`门店 "${store.name}" 缺少坐标信息`)
+          return false
         }
-      }
+        return true
+      })
+      .map(async (store) => {
+        const lat = store.latitude
+        const lng = store.longitude
 
-      if (!statField) {
-        ElMessage.warning(`门店 "${store.name}" 对应的数据文件未找到有效统计字段`)
-        continue
-      }
-      
-      console.log(`计算人口: 门店=${store.name}, 城市=${storeCity}, 使用shapefile=${targetShapefile.name}, 字段=${statField}`)
-      
-      // 调用后端计算API
-      const response = await fetch('/api/shapefiles/calculate-population', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId
-        },
-        body: JSON.stringify({
-          lat,
-          lng,
-          radius: radiusMeters,
-          fieldName: statField,
-          city: sfCity // 使用shapefile的城市名
+        // 提取门店城市名
+        const storeCity = extractCityFromStore(store)
+        
+        // 根据城市选择shapefile
+        const targetShapefile = findShapefileForCity(storeCity, shapefiles)
+        const sfId = targetShapefile.id
+        
+        // 从 shapefile 元数据中读取字段名（避免下载全量 GeoJSON，节省 6MB+）
+        const fieldNames = targetShapefile.field_names || []
+        // 选择第一个非 RecID 的字段作为统计字段
+        const statField = fieldNames.find(f => f !== 'RecID' && f !== 'recid' && f !== 'FID') || fieldNames[0]
+        
+        if (!statField) {
+          console.warn(`门店 "${store.name}" 未找到有效统计字段，跳过`)
+          return null
+        }
+        
+        console.log(`计算人口: 门店=${store.name}, 城市=${storeCity}, 使用shapefile=${targetShapefile.name}, 字段=${statField}`)
+        
+        // 调用后端计算API
+        const response = await fetch('/api/shapefiles/calculate-population', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': userId
+          },
+          body: JSON.stringify({
+            lat,
+            lng,
+            radius: radiusMeters,
+            fieldName: statField,
+            shapefileId: sfId // 传给后端过滤，只处理此shapefile
+          })
         })
+        
+        if (!response.ok) {
+          throw new Error(`后端计算API错误: ${response.status}`)
+        }
+        
+        const apiResult = await response.json()
+        const result = apiResult.data
+        console.log(`  -> 结果: total=${result.total}, count=${result.count}`)
+        return {
+          ...store,
+          city: storeCity,
+          shapefileName: targetShapefile.name,
+          total: result.total,
+          statField,
+          allFields: result.allFields
+        }
       })
-      
-      if (!response.ok) {
-        throw new Error(`后端计算API错误: ${response.status}`)
-      }
-      
-      const apiResult = await response.json()
-      const result = apiResult.data
-      console.log(`  -> 结果: total=${result.total}, count=${result.count}`)
-      allResults.push({
-        ...store,
-        city: storeCity,
-        shapefileName: targetShapefile.name,
-        total: result.total,
-        statField,
-        allFields: result.allFields
-      })
-    }
+
+    const allResults = (await Promise.all(storePromises)).filter(r => r !== null)
 
     if (allResults.length < 2) {
       ElMessage.warning('有效门店数量不足，请检查门店坐标')

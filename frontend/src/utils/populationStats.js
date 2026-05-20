@@ -303,6 +303,7 @@ export const calculatePopulationByRadius = async (lat, lng, radiusMeters, fieldN
  * 格式化数字显示
  */
 export const formatNumber = (num) => {
-  if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-  return num.toLocaleString()
+  const n = Math.round(num)
+  if (n >= 10000) return (n / 10000).toFixed(1) + '万'
+  return n.toLocaleString()
 }

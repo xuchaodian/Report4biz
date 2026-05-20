@@ -14,6 +14,10 @@ const __dirname = dirname(__filename)
 
 const router = express.Router()
 
+// 简单内存缓存：避免同一 shapefile 被频繁 JSON.parse（key=shapefileId, value={geojson, ts}）
+const shapefileCache = new Map()
+const CACHE_TTL_MS = 60 * 1000 // 缓存1分钟
+
 // 配置上传
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -388,17 +392,24 @@ router.get('/:id/fields', (req, res) => {
 router.post('/calculate-population', (req, res) => {
   try {
     const userId = req.headers['x-user-id'] || 1
-    const { lat, lng, radius, fieldName } = req.body
+    const { lat, lng, radius, fieldName, shapefileId } = req.body
 
     if (!lat || !lng || !radius) {
       return res.status(400).json({ success: false, error: '缺少必要参数' })
     }
 
     const db = getDb()
-    // 获取所有shapefile（跨用户共享，人口需要全量数据）
-    const rows = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles`
-    ).all()
+    // 获取shapefile（如果前端传了shapefileId则只处理该文件，否则全部加载）
+    let rows
+    if (shapefileId) {
+      rows = db.prepare(
+        `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ?`
+      ).all(shapefileId)
+    } else {
+      rows = db.prepare(
+        `SELECT id, name, geojson, field_names FROM shapefiles`
+      ).all()
+    }
 
     if (!rows || rows.length === 0) {
       return res.json({ success: true, data: { total: 0, allFields: {}, matchedFeatures: [] } })
@@ -414,7 +425,20 @@ router.post('/calculate-population', (req, res) => {
     const matchedFeatures = []
 
     for (const row of rows) {
-      const geojson = JSON.parse(row.geojson)
+      // 使用内存缓存避免重复 JSON.parse
+      let geojson
+      const cached = shapefileCache.get(row.id)
+      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        geojson = cached.geojson
+      } else {
+        geojson = JSON.parse(row.geojson)
+        shapefileCache.set(row.id, { geojson, ts: Date.now() })
+        // 控制缓存大小，超过10个时删除最旧的
+        if (shapefileCache.size > 10) {
+          const oldest = shapefileCache.keys().next().value
+          shapefileCache.delete(oldest)
+        }
+      }
       const features = geojson.features || []
       console.log(`[calculate-population] 处理文件: ${row.name}, 要素数: ${features.length}`)
 
