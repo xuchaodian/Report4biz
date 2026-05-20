@@ -7,6 +7,7 @@ import { dirname } from 'path'
 import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import * as turf from '@turf/turf'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -380,6 +381,124 @@ router.get('/:id/fields', (req, res) => {
   } catch (error) {
     console.error('获取字段列表失败:', error)
     res.status(500).json({ message: '服务器错误' })
+  }
+})
+
+// 计算人口分布 - 根据圆心+半径计算各shapefile内人口统计
+router.post('/calculate-population', (req, res) => {
+  try {
+    const userId = req.headers['x-user-id'] || 1
+    const { lat, lng, radius, fieldName } = req.body
+
+    if (!lat || !lng || !radius) {
+      return res.status(400).json({ success: false, error: '缺少必要参数' })
+    }
+
+    const db = getDb()
+    // 获取所有shapefile（跨用户共享，人口需要全量数据）
+    const rows = db.prepare(
+      `SELECT id, name, geojson, field_names FROM shapefiles`
+    ).all()
+
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, data: { total: 0, allFields: {}, matchedFeatures: [] } })
+    }
+
+    // 创建圆心点
+    const center = turf.point([parseFloat(lng), parseFloat(lat)])
+    // 创建圆（使用turf的circle，steps=64保证精度）
+    const circle = turf.circle([parseFloat(lng), parseFloat(lat)], radius / 1000, { steps: 64, units: 'kilometers' })
+
+    let totalPop = 0
+    const allFields = {}
+    const matchedFeatures = []
+
+    for (const row of rows) {
+      const geojson = JSON.parse(row.geojson)
+      const features = geojson.features || []
+      console.log(`[calculate-population] 处理文件: ${row.name}, 要素数: ${features.length}`)
+
+      for (const feature of features) {
+        const props = feature.properties || {}
+        const fieldVal = parseFloat(props[fieldName])
+        if (isNaN(fieldVal) || fieldVal <= 0) continue
+
+        try {
+          // 将GeoJSON要素转为turf多边形后进行相交判断
+          const geom = feature.geometry
+          if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue
+
+          let fPoly
+          if (geom.type === 'Polygon') {
+            fPoly = turf.polygon(geom.coordinates)
+          } else {
+            // MultiPolygon: 逐个处理每个多边形
+            let totalWeight = 0
+            for (const coords of geom.coordinates) {
+              try {
+                const subPoly = turf.polygon(coords)
+                const subIntersect = turf.intersect(turf.featureCollection([subPoly, circle]))
+                if (!subIntersect) continue
+                const subArea = turf.area(subPoly)
+                const subIntersectArea = turf.area(subIntersect)
+                const subRatio = Math.min(subIntersectArea / subArea, 1)
+                totalWeight += fieldVal * subRatio
+              } catch (e) { continue }
+            }
+            if (totalWeight <= 0) continue
+            totalPop += totalWeight
+            matchedFeatures.push({
+              feature: { properties: { shapefileName: row.name, ...props }, geometry },
+              value: totalWeight,
+              coverageRatio: 1,
+              geom: feature.geometry
+            })
+            continue
+          }
+
+          const intersect = turf.intersect(turf.featureCollection([fPoly, circle]))
+          if (!intersect) continue
+
+          // 计算相交面积比例 = 交集面积 / 多边形面积（与前端客户端计算一致）
+          const polygonArea = turf.area(feature)
+          const intersectArea = turf.area(intersect)
+          const ratio = Math.min(intersectArea / polygonArea, 1)
+          const weighted = fieldVal * ratio
+
+          totalPop += weighted
+          matchedFeatures.push({
+            feature: { properties: { shapefileName: row.name, ...props }, geometry: feature.geometry },
+            value: weighted,
+            coverageRatio: ratio,
+            geom: feature.geometry
+          })
+
+          // 收集所有字段
+          for (const [key, val] of Object.entries(props)) {
+            const num = parseFloat(val)
+            if (!isNaN(num)) {
+              allFields[key] = (allFields[key] || 0) + num * ratio
+            }
+          }
+        } catch (e) {
+          console.error(`[calculate-population] 要素处理错误: ${e.message}`)
+          continue
+        }
+      }
+    }
+
+    console.log(`[calculate-population] 总人口: ${totalPop}, 匹配要素: ${matchedFeatures.length}`)
+    res.json({
+      success: true,
+      data: {
+        total: Math.round(totalPop),
+        allFields,
+        matchedFeatures
+      }
+    })
+  } catch (error) {
+    console.error('计算人口分布错误:', error)
+    res.status(500).json({ success: false, error: error.message })
   }
 })
 

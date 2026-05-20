@@ -1854,15 +1854,18 @@ const analyzePopulationDistribution = async () => {
                   intersectionRatio: 1, fieldName, shapefileName: sf.name, geom
                 })
                 
-                // 收集所有字段（原始值）
-                for (const [key, val] of Object.entries(props)) {
-                  if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
-                    if (!radiusResults[maxRadiusMeters].allFields[key]) {
-                      radiusResults[maxRadiusMeters].allFields[key] = { total: 0, originalTotal: 0 }
+                // 仅在无API字段数据时收集原始值（用于回退显示）
+                const hasApiFields = radiusResults[maxRadiusMeters].apiAllFields && Object.keys(radiusResults[maxRadiusMeters].apiAllFields).length > 0
+                if (!hasApiFields) {
+                  for (const [key, val] of Object.entries(props)) {
+                    if (val !== null && val !== undefined && Number.isInteger(Number(val))) {
+                      if (!radiusResults[maxRadiusMeters].allFields[key]) {
+                        radiusResults[maxRadiusMeters].allFields[key] = { total: 0, originalTotal: 0 }
+                      }
+                      const numVal = Number(val)
+                      radiusResults[maxRadiusMeters].allFields[key].total += numVal
+                      radiusResults[maxRadiusMeters].allFields[key].originalTotal += numVal
                     }
-                    const numVal = Number(val)
-                    radiusResults[maxRadiusMeters].allFields[key].total += numVal
-                    radiusResults[maxRadiusMeters].allFields[key].originalTotal += numVal
                   }
                 }
               }
@@ -1947,7 +1950,9 @@ const analyzePopulationDistribution = async () => {
     if (maxRadiusData.matchingData.length > 0) {
       maxRadiusData.matchingData.forEach((data, index) => {
       const { feature, value, geom } = data
-      const color = getColorByValue(value)
+      const props = feature.properties || {}
+      const rawValue = parseInt(props[fieldName]) || 0  // 原始shapefile值
+      const color = getColorByValue(rawValue)
 
       let latlngs = []
       if (geom.type === 'Polygon') {
@@ -1960,14 +1965,13 @@ const analyzePopulationDistribution = async () => {
         const polygon = L.polygon(latlngs, {
           color: '#ff7800', weight: 1, fillColor: color, fillOpacity: 0.7
         })
-        const props = feature.properties || {}
         polygon.bindPopup(`
           <div style="font-size: 12px; min-width: 140px;">
             <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
             <span style="color: #666;">${fieldName}:</span>
-            <strong style="color: #e6a23c;">${value.toLocaleString()}</strong><br/>
+            <strong style="color: #e6a23c;">${rawValue.toLocaleString()}</strong><br/>
             <span style="color: #999; font-size: 11px;">
-              占总计: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
+              占比: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
             </span>
           </div>
         `)
@@ -1977,9 +1981,9 @@ const analyzePopulationDistribution = async () => {
         // 添加标签
         const polyCenter = getFeatureCenter(feature)
         if (polyCenter) {
-          let displayValue = value
-          if (value >= 10000) displayValue = (value / 10000).toFixed(1) + '万'
-          else if (value >= 1000) displayValue = value.toLocaleString()
+          let displayValue = rawValue
+          if (displayValue >= 10000) displayValue = (displayValue / 10000).toFixed(1) + '万'
+          else if (rawValue >= 1000) displayValue = rawValue.toLocaleString()
 
           const labelMarker = L.marker([polyCenter.lat, polyCenter.lng], {
             icon: L.divIcon({
@@ -2059,8 +2063,9 @@ const analyzePopulationDistribution = async () => {
 
     // 格式化数字
     const formatNumber = (num) => {
-      if (num >= 10000) return (num / 10000).toFixed(1) + '万'
-      return num.toLocaleString()
+      const n = Math.round(num)
+      if (n >= 10000) return (n / 10000).toFixed(1) + '万'
+      return n.toLocaleString()
     }
 
     // 计算面板位置（多边形最右边的点，如果无多边形则使用圆心右侧）
@@ -2142,6 +2147,7 @@ const analyzePopulationDistribution = async () => {
       // 优先使用API返回的总计，回退到前端计算的总计
       const apiTotal = data?.apiTotal || 0
       const frontendTotal = data ? data.matchingData.map(d => d.value).reduce((s, v) => s + v, 0) : 0
+      console.log(`[dialog] radius=${r}m field=${fieldName} apiTotal=${apiTotal} frontendTotal=${frontendTotal}`)
       const displayTotal = apiTotal > 0 ? apiTotal : frontendTotal
       statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;">${formatNumber(displayTotal)}</td>`
     })
@@ -2156,6 +2162,7 @@ const analyzePopulationDistribution = async () => {
         // 优先使用API返回的字段值，回退到前端计算的字段值
         const apiVal = data?.apiAllFields?.[field] || 0
         const frontendVal = data?.allFields?.[field]?.total || 0
+        console.log(`[dialog] radius=${r}m field=${field} apiVal=${apiVal} frontendVal=${frontendVal}`)
         const displayVal = apiVal > 0 ? apiVal : frontendVal
         statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">${formatNumber(displayVal)}</td>`
       })
