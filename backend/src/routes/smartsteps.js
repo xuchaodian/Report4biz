@@ -294,6 +294,45 @@ router.get('/services', (req, res) => {
 })
 
 /**
+ * 生成模拟数据（用于测试，不消耗联通API配额）
+ * 结构模仿真实智慧足迹API响应
+ */
+function generateMockData(services) {
+  const mockDataSet = {
+    '1001': { totalPopulation: Math.floor(Math.random() * 50000) + 5000 },
+    '1003': { workingPopulation: Math.floor(Math.random() * 30000) + 3000 },
+    '1005': { hourlyTraffic: Array.from({length: 24}, () => Math.floor(Math.random() * 2000) + 100) },
+    '1006': { age_0_14: Math.floor(Math.random() * 5000) + 500, age_15_59: Math.floor(Math.random() * 20000) + 2000, age_60_plus: Math.floor(Math.random() * 3000) + 300 },
+    '1007': { high: Math.floor(Math.random() * 3000) + 500, mid: Math.floor(Math.random() * 5000) + 1000, low: Math.floor(Math.random() * 2000) + 300 },
+    '1008': { age_0_14: Math.floor(Math.random() * 5000) + 500, age_15_29: Math.floor(Math.random() * 8000) + 1000, age_30_44: Math.floor(Math.random() * 8000) + 1000, age_45_59: Math.floor(Math.random() * 5000) + 500, age_60_plus: Math.floor(Math.random() * 3000) + 300 },
+    '1009': { male: Math.floor(Math.random() * 15000) + 2000, female: Math.floor(Math.random() * 15000) + 2000 },
+    '1010': { high: Math.floor(Math.random() * 2000) + 200, mid_high: Math.floor(Math.random() * 3000) + 500, mid: Math.floor(Math.random() * 5000) + 1000, mid_low: Math.floor(Math.random() * 3000) + 500, low: Math.floor(Math.random() * 2000) + 200 },
+    '1011': { single: Math.floor(Math.random() * 5000) + 500, couple: Math.floor(Math.random() * 5000) + 500, family_with_children: Math.floor(Math.random() * 8000) + 1000, family_elderly: Math.floor(Math.random() * 2000) + 200 },
+    '1012': { car: Math.floor(Math.random() * 8000) + 1000, public_transport: Math.floor(Math.random() * 12000) + 2000, walk: Math.floor(Math.random() * 5000) + 500, bike: Math.floor(Math.random() * 3000) + 300 },
+    '1013': { local: Math.floor(Math.random() * 20000) + 5000, other_city: Math.floor(Math.random() * 8000) + 1000, other_province: Math.floor(Math.random() * 5000) + 500 },
+    '1014': { local: Math.floor(Math.random() * 20000) + 5000, other_city: Math.floor(Math.random() * 8000) + 1000, other_province: Math.floor(Math.random() * 5000) + 500 },
+    '1015': { weekday: Math.floor(Math.random() * 30000) + 5000, weekend: Math.floor(Math.random() * 25000) + 4000 },
+    '1016': { daily_avg: Math.floor(Math.random() * 3000) + 500 },
+    '1017': { monthly_avg: Math.floor(Math.random() * 80000) + 10000 },
+    '1018': { once: Math.floor(Math.random() * 5000) + 500, twice: Math.floor(Math.random() * 3000) + 300, three_plus: Math.floor(Math.random() * 2000) + 200 },
+    '1019': { local: Math.floor(Math.random() * 15000) + 3000, other_city: Math.floor(Math.random() * 5000) + 500, other_province: Math.floor(Math.random() * 3000) + 300, other_country: Math.floor(Math.random() * 500) + 50 },
+    '1020': { local: Math.floor(Math.random() * 15000) + 3000, other_city: Math.floor(Math.random() * 5000) + 500 },
+    '1021': { local: Math.floor(Math.random() * 15000) + 3000, other_district: Math.floor(Math.random() * 5000) + 500 },
+    '1022': { lt_30min: Math.floor(Math.random() * 5000) + 500, '30_60min': Math.floor(Math.random() * 4000) + 400, '1_2h': Math.floor(Math.random() * 3000) + 300, '2_4h': Math.floor(Math.random() * 2000) + 200, gt_4h: Math.floor(Math.random() * 1000) + 100 },
+    '1023': { total: Math.floor(Math.random() * 100000) + 10000 }
+  }
+
+  const result = {}
+  const codeList = Array.isArray(services) ? services : services.split(',')
+  for (const code of codeList) {
+    if (mockDataSet[code]) {
+      result[code] = mockDataSet[code]
+    }
+  }
+  return Object.keys(result).length > 0 ? result : mockDataSet['1001']
+}
+
+/**
  * 查询数据
  * 请求体: {
  *   centerLng: number,   // GCJ-02经度
@@ -307,7 +346,7 @@ router.get('/services', (req, res) => {
  */
 router.post('/query', authenticate, async (req, res) => {
   // 从请求体获取参数（提到try外面供catch块访问）
-  const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType } = req.body
+  const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType, mock } = req.body
 
   // 数据库和配额变量（提到try外供catch访问）
   let db, available
@@ -355,6 +394,23 @@ router.post('/query', authenticate, async (req, res) => {
       })
     }
     
+    // Mock 模式：跳过联通API调用，返回模拟数据（不消耗配额，方便测试）
+    if (mock) {
+      console.log('[Mock] 模式开启，返回模拟数据')
+      const mockResult = generateMockData(services)
+      return res.json({
+        success: true,
+        refunded: false,
+        mock: true,
+        wkt: buildCircleWkt(centerLng, centerLat, radius),
+        centerWgs: gcj02ToWgs84(centerLng, centerLat),
+        data: mockResult,
+        quotaUsed: 0,
+        remainingQuota: available,
+        message: '模拟数据（测试模式，不消耗配额）'
+      })
+    }
+
     // 构建polygons参数（point格式：point(经度 纬度)）
     const wkt = buildCircleWkt(centerLng, centerLat, radius)
     

@@ -1,6 +1,6 @@
 <template>
   <div class="login-container">
-    <!-- 背景轮播 -->
+    <!-- 背景轮播：合作公司 GIS 人流分析可视化截图 -->
     <div class="bg-slideshow">
       <div
         v-for="(img, i) in bgImages"
@@ -89,13 +89,13 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
-// 背景图片列表
+// 登录页背景图
 const bgImages = [
-  'https://images.unsplash.com/photo-1569336415962-a4bd9f18cdb3?w=1600&q=80',   // 城市天际线
-  'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=1600&q=80',   // 数据分析
-  'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1600&q=80',   // 商业图表
-  'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1600&q=80',   // 数字世界地图
-  'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1600&q=80'    // 数字屏幕
+  '/bg1.jpg',
+  '/bg2.jpg',
+  '/bg3.png',
+  '/bg4.png',
+  '/bg5.jpg',
 ]
 const currentBg = ref(0)
 let bgTimer = null
@@ -103,7 +103,7 @@ let bgTimer = null
 onMounted(() => {
   bgTimer = setInterval(() => {
     currentBg.value = (currentBg.value + 1) % bgImages.length
-  }, 5000)
+  }, 6000)
 })
 
 onUnmounted(() => {
@@ -149,7 +149,7 @@ const handleLogin = async () => {
   background-size: cover;
   background-position: center;
   opacity: 0;
-  transition: opacity 1.2s ease-in-out;
+  transition: opacity 1.5s ease-in-out;
 
   &.active {
     opacity: 1;
