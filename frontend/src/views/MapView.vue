@@ -171,13 +171,14 @@
           </div>
         </el-tooltip>
         <el-divider style="margin: 6px 0;" />
-        <!-- 智慧足迹 -->
+        <!-- 智慧足迹（已隐藏）
         <el-tooltip content="智慧足迹人口分析" placement="left">
           <div class="tool-item" :class="{ active: smartstepsVisible }" @click="smartstepsVisible = !smartstepsVisible">
             <el-icon><DataAnalysis /></el-icon>
             <span>人口分析</span>
           </div>
         </el-tooltip>
+        -->
         <!-- 图标样式（已隐藏） -->
         <!-- 清除绘制 -->
         <el-tooltip content="清除绘制" placement="left">
@@ -256,6 +257,9 @@
             <el-select v-model="compFilterBrand" placeholder="品牌" style="width:100px" size="small" clearable @change="onStoreSearch">
               <el-option v-for="b in compBrandList" :key="b" :label="b" :value="b" />
             </el-select>
+            <el-select v-model="compFilterReviews" placeholder="评论数" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="r in reviewRangeOptions" :key="r.value" :label="r.label" :value="r.value" />
+            </el-select>
           </div>
           <div class="store-search-list">
             <div v-if="locateResults.competitor.length === 0" class="store-search-empty">{{ storeSearchKeyword ? '未找到相关门店' : '请输入关键词搜索' }}</div>
@@ -294,6 +298,9 @@
             </el-select>
             <el-select v-model="shopFilterDistrict" placeholder="区县" style="width:140px" size="small" clearable @change="onStoreSearch">
               <el-option v-for="d in shopDistrictList" :key="d" :label="d" :value="d" />
+            </el-select>
+            <el-select v-model="shopFilterReviews" placeholder="评论数" style="width:100px" size="small" clearable @change="onStoreSearch">
+              <el-option v-for="r in reviewRangeOptions" :key="r.value" :label="r.label" :value="r.value" />
             </el-select>
           </div>
           <div class="store-search-list">
@@ -2127,6 +2134,14 @@ const analyzePopulationDistribution = async () => {
     let statsHtml = `<div style="background:rgba(255,255,255,0.95);border:2px solid #333;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:grab;user-select:none;position:relative;">`
     statsHtml += `<div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;display:flex;justify-content:space-between;align-items:center;">`
     statsHtml += `<span>📊 人口分布分析</span>`
+    // 在标题下方显示设置的半径
+    const radiiLabels = [circleForm.radius, circleForm.radius2, circleForm.radius3]
+      .filter(r => r && r > 0)
+      .map(r => r + circleForm.unit)
+      .join(' / ')
+    if (radiiLabels) {
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">半径: ${radiiLabels}</div>`
+    }
     statsHtml += `<button id="close-stats-panel-${panelId}" style="background:none;border:none;cursor:pointer;font-size:14px;color:#999;padding:0;width:16px;height:16px;display:flex;align-items:center;justify-content:center;" title="关闭">×</button>`
     statsHtml += `</div>`
 
@@ -4857,6 +4872,7 @@ const markerFilterStoreStatus = ref('')
 const compFilterCity = ref('')
 const compFilterDistrict = ref('')
 const compFilterBrand = ref('')
+const compFilterReviews = ref('')
 // 品牌门店
 const brandFilterCity = ref('')
 const brandFilterDistrict = ref('')
@@ -4864,6 +4880,16 @@ const brandFilterBrand = ref('')
 // 购物中心
 const shopFilterCity = ref('')
 const shopFilterDistrict = ref('')
+const shopFilterReviews = ref('')
+
+// 评论数筛选范围
+const reviewRangeOptions = [
+  { label: '< 100', value: '<100' },
+  { label: '100-500', value: '100-500' },
+  { label: '500-1000', value: '500-1000' },
+  { label: '1000-5000', value: '1000-5000' },
+  { label: '5000+', value: '5000+' },
+]
 
 // 各门店筛选列表
 const markerCityList = computed(() => [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].sort())
@@ -4913,6 +4939,19 @@ const filterByKw = (items, kw) => {
   )).slice(0, 50)
 }
 
+// 评论数范围过滤（兼容竞品的 reviews 字段和购物中心的 comments 字段）
+const filterByReviews = (items, range) => {
+  if (!range) return items
+  const [min, max] = range.split('-').map(Number)
+  return items.filter(i => {
+    // 竞品用 reviews，购物中心用 comments
+    const v = Number(i.reviews ?? i.comments) || 0
+    if (range === '<100') return v < 100
+    if (range === '5000+') return v >= 5000
+    return v >= min && v <= max
+  })
+}
+
 // 模糊检索：并行搜索4种门店类型（各自独立筛选）
 const onStoreSearch = () => {
   const kw = storeSearchKeyword.value.trim().toLowerCase()
@@ -4931,6 +4970,7 @@ const onStoreSearch = () => {
   if (compFilterCity.value) c = c.filter(i => i.city === compFilterCity.value)
   if (compFilterDistrict.value) c = c.filter(i => i.district === compFilterDistrict.value)
   if (compFilterBrand.value) c = c.filter(i => i.brand === compFilterBrand.value)
+  if (compFilterReviews.value) c = filterByReviews(c, compFilterReviews.value)
   locateResults.value.competitor = filterByKw(c, kw)
 
   // 品牌门店（独立筛选）
@@ -4944,6 +4984,7 @@ const onStoreSearch = () => {
   let s = shoppingCenterStore.shoppingCenters
   if (shopFilterCity.value) s = s.filter(i => i.city === shopFilterCity.value)
   if (shopFilterDistrict.value) s = s.filter(i => i.district === shopFilterDistrict.value)
+  if (shopFilterReviews.value) s = filterByReviews(s, shopFilterReviews.value)
   locateResults.value.shopping = filterByKw(s, kw)
 
   // 同步地图显示（仅我的门店）
@@ -4967,7 +5008,7 @@ const onStoreSearch = () => {
   }
 
   // 同步地图显示 - 竞品门店
-  const compFilterActive = kw || compFilterCity.value || compFilterDistrict.value || compFilterBrand.value
+  const compFilterActive = kw || compFilterCity.value || compFilterDistrict.value || compFilterBrand.value || compFilterReviews.value
   if (compFilterActive) {
     competitorStore.setVisibleIds(competitorStore.competitors.filter(i => {
       if (kw && !(i.name?.toLowerCase().includes(kw) || i.brand?.toLowerCase().includes(kw) ||
@@ -4976,10 +5017,13 @@ const onStoreSearch = () => {
       if (compFilterCity.value && i.city !== compFilterCity.value) return false
       if (compFilterDistrict.value && i.district !== compFilterDistrict.value) return false
       if (compFilterBrand.value && i.brand !== compFilterBrand.value) return false
+      if (compFilterReviews.value && !filterByReviews([i], compFilterReviews.value).length) return false
       return true
     }).map(m => m.id))
+    if (map && showCompetitorLayer.value) reloadCompetitorLayer()
   } else {
     competitorStore.setVisibleIds(null)
+    if (map && showCompetitorLayer.value) reloadCompetitorLayer()
   }
 
   // 同步地图显示 - 品牌门店
@@ -4999,17 +5043,20 @@ const onStoreSearch = () => {
   }
 
   // 同步地图显示 - 购物中心
-  const shopFilterActive = kw || shopFilterCity.value || shopFilterDistrict.value
+  const shopFilterActive = kw || shopFilterCity.value || shopFilterDistrict.value || shopFilterReviews.value
   if (shopFilterActive) {
     shoppingCenterStore.setVisibleIds(shoppingCenterStore.shoppingCenters.filter(i => {
       if (kw && !(i.name?.toLowerCase().includes(kw) || i.address?.toLowerCase().includes(kw) ||
         i.city?.toLowerCase().includes(kw) || i.district?.toLowerCase().includes(kw))) return false
       if (shopFilterCity.value && i.city !== shopFilterCity.value) return false
       if (shopFilterDistrict.value && i.district !== shopFilterDistrict.value) return false
+      if (shopFilterReviews.value && !filterByReviews([i], shopFilterReviews.value).length) return false
       return true
     }).map(m => m.id))
+    if (map && showShoppingCenterLayer.value) reloadShoppingCenterLayer()
   } else {
     shoppingCenterStore.setVisibleIds(null)
+    if (map && showShoppingCenterLayer.value) reloadShoppingCenterLayer()
   }
 }
 
