@@ -1,8 +1,8 @@
 <template>
   <div class="shapefile-view">
     <div class="header">
-      <h2>Shapefile 管理</h2>
-      <p class="subtitle">上传 WGS84 坐标系的 Shapefile 文件，自动转换为高德坐标并叠加显示</p>
+      <h2>基于七普的常住人口</h2>
+      <p class="subtitle">可用于计算半径圆内人口与查询城市人口分布</p>
     </div>
 
     <!-- 上传区域（仅管理员可见） -->
