@@ -13,7 +13,10 @@ router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const brandStores = db.prepare(`
-      SELECT * FROM brand_stores ORDER BY created_at DESC
+      SELECT id, user_id, store_code, brand, name, store_category,
+             city, district, address, description,
+             latitude, longitude, status, icon_color, created_at
+      FROM brand_stores ORDER BY created_at DESC
     `).all()
 
     res.json({ brandStores })

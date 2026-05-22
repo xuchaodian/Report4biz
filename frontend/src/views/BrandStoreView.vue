@@ -85,14 +85,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.name }}
-            <template v-if="getStoreStars(row.name) > 0">
-              <span class="store-stars">{{ '⭐'.repeat(getStoreStars(row.name)) }}</span>
-            </template>
-          </template>
-        </el-table-column>
+        <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip />
         <el-table-column prop="store_category" label="门店分类" width="120" />
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
@@ -238,7 +231,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
-import axios from 'axios'
 
 const userStore = useUserStore()
 const brandStoreStore = useBrandStoreStore()
@@ -285,9 +277,6 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
-
-// 门店购买次数映射 {门店名称: 购买次数}
-const storePurchaseCount = ref({})
 
 const formRef = ref(null)
 const form = reactive({
@@ -552,44 +541,9 @@ onMounted(async () => {
   filterBrand.value = ''
   filterCategory.value = ''
   brandStoreStore.clearFilters()
-  // 先加载门店列表，再获取购买次数
   await brandStoreStore.fetchBrandStores()
-  console.log('✅ 门店列表加载完成，准备获取购买次数')
-  await fetchStorePurchaseCounts()
-  console.log('✅ 购买次数获取完成')
+  console.log('✅ 门店列表加载完成')
 })
-
-// 获取所有门店的购买次数
-async function fetchStorePurchaseCounts() {
-  try {
-    const stores = brandStoreStore.brandStores
-    console.log('开始获取购买次数，门店数:', stores.length)
-    const counts = {}
-    for (const store of stores) {
-      if (store.name) {
-        try {
-          const url = `/api/purchase/by-store/${encodeURIComponent(store.name)}`
-          console.log('请求:', url)
-          const res = await axios.get(url)
-          console.log('响应:', store.name, res.data)
-          counts[store.name] = res.data?.purchases?.length || 0
-        } catch (e) {
-          console.error('获取失败:', store.name, e)
-          counts[store.name] = 0
-        }
-      }
-    }
-    console.log('最终结果:', counts)
-    storePurchaseCount.value = counts
-  } catch (e) {
-    console.error('获取购买次数失败:', e)
-  }
-}
-
-// 获取门店名称的星星数量
-function getStoreStars(storeName) {
-  return storePurchaseCount.value[storeName] || 0
-}
 
 </script>
 

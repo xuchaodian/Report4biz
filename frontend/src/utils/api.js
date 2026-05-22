@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 10000
+  timeout: 30000  // 大列表（如品牌门店 9221条）需要更长时间传输
 })
 
 // 请求拦截器

@@ -93,8 +93,8 @@ const rules = {
 const bgImages = [
   '/bg1.jpg',
   '/bg2.jpg',
-  '/bg3.png',
-  '/bg4.png',
+  '/bg3.jpg',
+  '/bg4.jpg',
   '/bg5.jpg',
 ]
 const currentBg = ref(0)
