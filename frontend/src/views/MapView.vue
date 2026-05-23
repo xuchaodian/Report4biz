@@ -143,6 +143,13 @@
             <span>定位门店</span>
           </div>
         </el-tooltip>
+        <!-- 查询行政界 -->
+        <el-tooltip content="查询行政界" placement="left">
+          <div class="tool-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
+            <el-icon><Flag /></el-icon>
+            <span>查询行政界</span>
+          </div>
+        </el-tooltip>
         <!-- 测量距离 -->
         <el-tooltip content="测量距离" placement="left">
           <div class="tool-item" :class="{ active: activeTool === 'measure' }" @click="setTool('measure')">
@@ -313,6 +320,51 @@
           </div>
         </el-tab-pane>
       </el-tabs>
+    </div>
+
+    <!-- 查询行政界面板（可拖拽，样式同定位门店） -->
+    <div v-if="districtVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
+      <div class="store-search-header" @mousedown="onDragStart">
+        <span class="store-search-title">
+          <el-icon><Flag /></el-icon>
+          查询行政界
+        </span>
+        <el-button link @click="districtVisible = false">
+          <el-icon><Close /></el-icon>
+        </el-button>
+      </div>
+      <div class="store-search-input-wrap">
+        <el-input
+          v-model="districtKeyword"
+          placeholder="输入城市或区县名称（如 上海）"
+          clearable
+          @keyup.enter="searchDistrict"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button type="primary" :loading="districtLoading" @click="searchDistrict" style="margin-top:8px; width:100%">
+          查询边界
+        </el-button>
+      </div>
+      <div class="store-search-list">
+        <div v-if="districtResult" class="district-info">
+          <div class="district-info-header">
+            <el-icon><Flag /></el-icon>
+            <strong>{{ districtResult.name }}</strong>
+            <span class="district-level-tag">{{ districtResult.level === 'city' ? '城市' : districtResult.level === 'district' ? '区县' : '省份' }}</span>
+          </div>
+          <div class="district-info-meta">
+            中心坐标: {{ districtResult.center[0].toFixed(4) }}, {{ districtResult.center[1].toFixed(4) }}
+          </div>
+          <div class="district-info-meta">地块数: {{ districtResult.boundaries.length }}</div>
+        </div>
+        <div v-if="districtResult && districtResult.boundaries.length > 0" class="district-actions-row">
+          <el-button size="small" type="danger" plain @click="clearDistrictBoundary" style="flex:1">清除边界</el-button>
+        </div>
+        <div v-if="districtError" class="district-error">{{ districtError }}</div>
+      </div>
     </div>
 
     <!-- 地图容器 -->
@@ -880,7 +932,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
+  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, Flag, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -979,6 +1031,12 @@ const layerOpacity = ref(1)
 const baseMapType = ref('vec')
 const currentCoords = ref(null)
 const measurementResult = ref('')
+const districtVisible = ref(false)
+const districtKeyword = ref('')
+const districtLoading = ref(false)
+const districtResult = ref(null)
+const districtError = ref('')
+let districtLayer = null  // Leaflet polygon layer
 const markerDialogVisible = ref(false)
 const editingMarker = ref(null)
 const markerFormRef = ref(null)
@@ -4564,14 +4622,85 @@ const clearDrawings = () => {
       map.removeLayer(shapefileQueryLayer)
       shapefileQueryLayer = null
     }
+    // 清除行政边界图层
+    if (districtLayer) {
+      map.removeLayer(districtLayer)
+      districtLayer = null
+    }
   } catch (e) {
     console.error('[clearDrawings] 清除图层失败:', e)
   }
   measurePoints = []
   measureAreaPoints = []
   measurementResult.value = ''
+  districtResult.value = null
+  districtError.value = ''
   activeTool.value = ''
   ElMessage.success('已清除')
+}
+
+// 查询行政边界
+const searchDistrict = async () => {
+  if (!districtKeyword.value.trim()) {
+    ElMessage.warning('请输入城市或区县名称')
+    return
+  }
+  districtLoading.value = true
+  districtResult.value = null
+  districtError.value = ''
+  try {
+    const res = await fetch(`/api/district/boundary?keywords=${encodeURIComponent(districtKeyword.value.trim())}`)
+    const data = await res.json()
+    if (data.success && data.data && data.data.boundaries.length > 0) {
+      districtResult.value = data.data
+
+      // 清除旧的行政边界图层
+      if (districtLayer) {
+        map.removeLayer(districtLayer)
+        districtLayer = null
+      }
+
+      // 在地图上绘制边界
+      const polygons = data.data.boundaries.map(coords =>
+        L.polygon(coords, {
+          color: '#e74c3c',
+          weight: 2.5,
+          opacity: 0.8,
+          fillColor: '#e74c3c',
+          fillOpacity: 0.08
+        })
+      )
+      districtLayer = L.featureGroup(polygons).addTo(map)
+
+      // 缩放到边界范围
+      const bounds = districtLayer.getBounds()
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40] })
+      }
+
+      ElMessage.success(`已显示「${data.data.name}」行政边界`)
+    } else {
+      districtError.value = data.error || '未找到该行政区划的边界数据'
+      ElMessage.warning(districtError.value)
+    }
+  } catch (e) {
+    console.error('[District] 查询失败:', e)
+    districtError.value = '查询失败: ' + e.message
+    ElMessage.error('行政边界查询失败')
+  } finally {
+    districtLoading.value = false
+  }
+}
+
+
+// 清除行政边界
+const clearDistrictBoundary = () => {
+  if (districtLayer && map) {
+    map.removeLayer(districtLayer)
+    districtLayer = null
+  }
+  districtResult.value = null
+  districtError.value = ''
 }
 
 // 切换图标样式
@@ -7267,5 +7396,41 @@ function getHeatmapCellStyle(nums, idx) {
 @keyframes poi-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+/* 查询行政界 - 结果信息 */
+.district-info {
+  padding: 10px 12px;
+}
+.district-info-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.district-level-tag {
+  font-size: 11px;
+  color: #fff;
+  background: #e74c3c;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+.district-info-meta {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.6;
+  padding-left: 22px;
+}
+.district-actions-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.district-error {
+  padding: 10px 12px;
+  color: #dc2626;
+  font-size: 13px;
 }
 
