@@ -73,7 +73,7 @@
         <span class="business-circle-arrow" :class="{ expanded: businessCircleExpanded }">▼</span>
       </div>
       <div v-show="businessCircleExpanded" class="business-circle-body">
-        <div class="business-circle-btn" @click="setTool('circle')">
+        <div class="business-circle-btn" :class="{ active: activeTool === 'circle' }" @click="setTool('circle')">
           <el-icon><Coordinate /></el-icon>
           <span>商圈内点位</span>
         </div>
@@ -352,13 +352,30 @@
         <div v-if="districtResult" class="district-info">
           <div class="district-info-header">
             <el-icon><Flag /></el-icon>
-            <strong>{{ districtResult.name }}</strong>
-            <span class="district-level-tag">{{ districtResult.level === 'city' ? '城市' : districtResult.level === 'district' ? '区县' : '省份' }}</span>
+            <strong>{{ districtResult.cityName ? districtResult.cityName + districtResult.name : districtResult.name }}</strong>
+            <span v-if="!districtResult.cityName" class="district-level-tag">{{ districtResult.level === 'city' ? '市' : districtResult.level === 'district' ? '区' : '省' }}</span>
           </div>
           <div class="district-info-meta">
-            中心坐标: {{ districtResult.center[0].toFixed(4) }}, {{ districtResult.center[1].toFixed(4) }}
+            行政面积: {{ districtResult.area || '-' }} 平方公里
           </div>
-          <div class="district-info-meta">地块数: {{ districtResult.boundaries.length }}</div>
+          <div v-if="districtStoreCounts" class="district-store-counts">
+            <div class="district-count-row">
+              <span class="district-count-label">我的门店：</span>
+              <span class="district-count-num">{{ districtStoreCounts.myStores.total }}家<template v-if="districtStoreCounts.myStores.closed > 0">（其中停业：{{ districtStoreCounts.myStores.closed }}家）</template></span>
+            </div>
+            <div class="district-count-row">
+              <span class="district-count-label">竞品门店：</span>
+              <span class="district-count-num">{{ Object.values(districtStoreCounts.competitors).reduce((a, b) => a + b, 0) }}家</span>
+            </div>
+            <div v-for="(count, brand) in districtStoreCounts.competitors" :key="brand" class="district-count-row district-count-sub">
+              <span class="district-count-label">&nbsp;&nbsp;* {{ brand }}</span>
+              <span class="district-count-num">{{ count }}家</span>
+            </div>
+            <div class="district-count-row">
+              <span class="district-count-label">购物中心：</span>
+              <span class="district-count-num">{{ districtStoreCounts.shoppingCenters }}家</span>
+            </div>
+          </div>
         </div>
         <div v-if="districtResult && districtResult.boundaries.length > 0" class="district-actions-row">
           <el-button size="small" type="danger" plain @click="clearDistrictBoundary" style="flex:1">清除边界</el-button>
@@ -1036,6 +1053,7 @@ const districtKeyword = ref('')
 const districtLoading = ref(false)
 const districtResult = ref(null)
 const districtError = ref('')
+const districtStoreCounts = ref(null)
 let districtLayer = null  // Leaflet polygon layer
 const markerDialogVisible = ref(false)
 const editingMarker = ref(null)
@@ -4005,6 +4023,11 @@ const setTool = (tool) => {
   // 重新选择同一工具时不清空 drawnItems（drawnItems 由 clearDrawings 统一清空）
   activeTool.value = tool
 
+  // 提示用户下一步操作
+  if (tool === 'circle') {
+    ElMessage.info('请在地图上点击选择圆心位置')
+  }
+
   // 设置光标
   if (['marker', 'polyline', 'polygon', 'rectangle', 'circle', 'measure', 'area'].includes(tool)) {
     map.getContainer().style.cursor = 'crosshair'
@@ -4635,6 +4658,7 @@ const clearDrawings = () => {
   measurementResult.value = ''
   districtResult.value = null
   districtError.value = ''
+  districtStoreCounts.value = null
   activeTool.value = ''
   ElMessage.success('已清除')
 }
@@ -4679,6 +4703,19 @@ const searchDistrict = async () => {
       }
 
       ElMessage.success(`已显示「${data.data.name}」行政边界`)
+
+      // 从后端统计边界内门店数量
+      try {
+        const countRes = await fetch('/api/district/store-counts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionStorage.getItem('token')}` },
+          body: JSON.stringify({ boundaries: data.data.boundaries })
+        })
+        const countData = await countRes.json()
+        if (countData.success) districtStoreCounts.value = countData.data
+      } catch (e) {
+        console.error('[District] 门店统计请求失败:', e)
+      }
     } else {
       districtError.value = data.error || '未找到该行政区划的边界数据'
       ElMessage.warning(districtError.value)
@@ -4702,6 +4739,7 @@ const clearDistrictBoundary = () => {
   districtResult.value = null
   districtError.value = ''
 }
+
 
 // 切换图标样式
 const changeMarkerStyle = (style) => {
@@ -6898,6 +6936,12 @@ function getHeatmapCellStyle(nums, idx) {
         color: #ff8800;
       }
 
+      &.active {
+        background: #fff4e6;
+        border-color: #ff8800;
+        color: #ff8800;
+      }
+
       .el-icon {
         font-size: 14px;
         flex-shrink: 0;
@@ -7427,6 +7471,30 @@ function getHeatmapCellStyle(nums, idx) {
   display: flex;
   gap: 8px;
   padding: 0 12px 10px;
+}
+.district-store-counts {
+  padding: 6px 12px 10px;
+  border-top: 1px solid #f0f0f0;
+}
+.district-count-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.district-count-label {
+  color: #666;
+}
+.district-count-num {
+  font-weight: 600;
+  color: #409eff;
+}
+.district-count-sub {
+  font-size: 12px;
+  padding: 2px 0;
+}
+.district-count-sub .district-count-num {
+  color: #666;
 }
 .district-error {
   padding: 10px 12px;
