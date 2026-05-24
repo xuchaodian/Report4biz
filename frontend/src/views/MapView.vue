@@ -120,6 +120,42 @@
       </div>
     </div>
 
+    <!-- 门店工具面板 - 右上角 -->
+    <div class="store-tools-panel">
+      <div class="store-tools-header" @click="storeToolsExpanded = !storeToolsExpanded">
+        <span class="store-tools-title">门店工具</span>
+        <span class="store-tools-arrow" :class="{ expanded: storeToolsExpanded }">▼</span>
+      </div>
+      <div v-show="storeToolsExpanded" class="store-tools-body">
+        <!-- 添加门店 -->
+        <el-tooltip content="添加门店" placement="left">
+          <div class="store-tools-item" :class="{ active: activeTool === 'marker' }" @click="setTool('marker')">
+            <el-icon><Location /></el-icon>
+            <span>添加门店</span>
+          </div>
+        </el-tooltip>
+        <!-- 定位门店 -->
+        <el-tooltip content="定位门店" placement="left">
+          <div class="store-tools-item" :class="{ active: storeSearchVisible }" @click="storeSearchVisible = !storeSearchVisible">
+            <el-icon><Search /></el-icon>
+            <span>定位门店</span>
+          </div>
+        </el-tooltip>
+        <!-- 热力图 -->
+        <div class="store-tools-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
+          <el-icon><DataLine /></el-icon>
+          <span>热力图</span>
+        </div>
+        <!-- 聚合显示 -->
+        <el-tooltip content="聚合显示" placement="left">
+          <div class="store-tools-item" :class="{ active: showCluster }" @click="toggleCluster">
+            <el-icon><Grid /></el-icon>
+            <span>聚合显示</span>
+          </div>
+        </el-tooltip>
+      </div>
+    </div>
+
     <!-- 工具栏 - 右上角收起/展开 -->
     <div class="toolbar">
       <div class="toolbar-header" @click="toolbarExpanded = !toolbarExpanded">
@@ -129,20 +165,6 @@
         </el-icon>
       </div>
       <div v-show="toolbarExpanded" class="toolbar-body">
-        <!-- 添加门店 -->
-        <el-tooltip content="添加门店" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'marker' }" @click="setTool('marker')">
-            <el-icon><Location /></el-icon>
-            <span>添加门店</span>
-          </div>
-        </el-tooltip>
-        <!-- 定位门店 -->
-        <el-tooltip content="定位门店" placement="left">
-          <div class="tool-item" :class="{ active: storeSearchVisible }" @click="storeSearchVisible = !storeSearchVisible">
-            <el-icon><Search /></el-icon>
-            <span>定位门店</span>
-          </div>
-        </el-tooltip>
         <!-- 查询行政界 -->
         <el-tooltip content="查询行政界" placement="left">
           <div class="tool-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
@@ -162,19 +184,6 @@
           <div class="tool-item" :class="{ active: activeTool === 'area' }" @click="setTool('area')">
             <el-icon><Aim /></el-icon>
             <span>测量面积</span>
-          </div>
-        </el-tooltip>
-        <el-divider style="margin: 6px 0;" />
-        <!-- 热力图 -->
-        <div class="tool-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
-          <el-icon><DataLine /></el-icon>
-          <span>热力图</span>
-        </div>
-        <!-- 聚合显示 -->
-        <el-tooltip content="聚合显示" placement="left">
-          <div class="tool-item" :class="{ active: showCluster }" @click="toggleCluster">
-            <el-icon><Grid /></el-icon>
-            <span>聚合显示</span>
           </div>
         </el-tooltip>
         <el-divider style="margin: 6px 0;" />
@@ -1044,6 +1053,7 @@ const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐�
 const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
 const showShoppingCenterLayer = ref(false)  // 购物中心图层显示控制（默认隐藏）
 const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
+const storeToolsExpanded = ref(false) // 门店工具面板展开/收起
 const layerOpacity = ref(1)
 const baseMapType = ref('vec')
 const currentCoords = ref(null)
@@ -6772,7 +6782,7 @@ function getHeatmapCellStyle(nums, idx) {
 .poi-search-panel {
   position: absolute;
   top: 10px;
-  right: 287px;
+  right: 150px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -6998,8 +7008,8 @@ function getHeatmapCellStyle(nums, idx) {
 // 显示门店开关 - 样式参考地图工具箱
 .store-toggle-panel {
   position: absolute;
-  top: 10px;
-  right: 152px;
+  bottom: 60px;
+  left: 10px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -7059,6 +7069,70 @@ function getHeatmapCellStyle(nums, idx) {
       font-size: 12px;
     }
   }
+}
+
+/* 门店工具面板 - 右上角 */
+.store-tools-panel {
+  position: absolute;
+  top: 10px;
+  right: 285px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  min-width: 96px;
+  overflow: hidden;
+  border: 2px solid #409eff;
+}
+.store-tools-header {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+}
+.store-tools-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.store-tools-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  color: #fff;
+  transition: transform 0.2s;
+  transform: rotate(-90deg);
+}
+.store-tools-arrow.expanded {
+  transform: rotate(0deg);
+}
+.store-tools-body {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.store-tools-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #606266;
+  transition: all 0.15s;
+}
+.store-tools-item:hover {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.store-tools-item.active {
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 600;
 }
 
 // 自定义缩放控件 - 在图层控制上方
