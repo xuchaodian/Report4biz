@@ -66,6 +66,16 @@
               style="width: 100%;"
             />
           </el-form-item>
+          <el-form-item label="半径4">
+            <el-input-number
+              v-model="queryForm.radius4"
+              :min="0"
+              :max="10"
+              :step="0.1"
+              :precision="1"
+              style="width: 100%;"
+            />
+          </el-form-item>
           <el-form-item label="数据年月">
             <el-select v-model="queryForm.cityMonth" placeholder="选择月份" style="width: 100%;">
               <el-option
@@ -175,15 +185,34 @@ const isLoading = ref(false)
 const queryResult = ref(null)
 const showConfirmDialog = ref(false)
 
-// 查询表单（3个半径，单位：公里）
+// 查询表单（4个半径，单位：公里）— 从 localStorage 加载预设值
+const PANEL_STORAGE_KEY = 'panel_smartsteps_radii'
+function loadPanelRadii() {
+  try {
+    const saved = localStorage.getItem(PANEL_STORAGE_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return { radius1: 0.5, radius2: 1, radius3: 1.5, radius4: 2 }
+}
+const panelRadii = loadPanelRadii()
 const queryForm = ref({
   storeName: '',
   storeType: '',
-  radius1: 1,
-  radius2: 0,
-  radius3: 0,
+  radius1: panelRadii.radius1,
+  radius2: panelRadii.radius2,
+  radius3: panelRadii.radius3,
+  radius4: panelRadii.radius4,
   cityMonth: ''
 })
+
+// 半径值变化时自动保存到 localStorage
+watch(
+  () => [queryForm.value.radius1, queryForm.value.radius2, queryForm.value.radius3, queryForm.value.radius4],
+  ([r1, r2, r3, r4]) => {
+    localStorage.setItem(PANEL_STORAGE_KEY, JSON.stringify({ radius1: r1, radius2: r2, radius3: r3, radius4: r4 }))
+  },
+  { deep: true }
+)
 
 // 可选月份（最近两个月）
 const availableMonths = ref([])
@@ -217,6 +246,9 @@ function getRadiiInMeters() {
   if (queryForm.value.radius3 > 0) {
     radii.push(Math.round(queryForm.value.radius3 * 1000))
   }
+  if (queryForm.value.radius4 > 0) {
+    radii.push(Math.round(queryForm.value.radius4 * 1000))
+  }
   return radii
 }
 
@@ -232,6 +264,9 @@ function getRadiiDisplay() {
   if (queryForm.value.radius3 > 0) {
     radii.push(`${queryForm.value.radius3}公里`)
   }
+  if (queryForm.value.radius4 > 0) {
+    radii.push(`${queryForm.value.radius4}公里`)
+  }
   return radii.length > 0 ? radii.join(', ') : '无'
 }
 
@@ -243,7 +278,7 @@ const selectedMonthLabel = computed(() => {
 
 // 是否有有效半径
 const hasRadius = computed(() => {
-  return queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0
+  return queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0 || queryForm.value.radius4 > 0
 })
 
 // 是否可以购买（只要选择了位置、半径、年月就允许点击，执行时再检查配额）

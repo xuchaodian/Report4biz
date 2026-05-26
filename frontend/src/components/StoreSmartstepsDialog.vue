@@ -57,6 +57,16 @@
           style="width: 100%;"
         />
       </el-form-item>
+      <el-form-item label="半径4">
+        <el-input-number
+          v-model="queryForm.radius4"
+          :min="0"
+          :max="10"
+          :step="0.1"
+          :precision="1"
+          style="width: 100%;"
+        />
+      </el-form-item>
       <el-form-item label="数据年月">
         <el-select v-model="queryForm.cityMonth" placeholder="选择月份" style="width: 100%;">
           <el-option
@@ -246,13 +256,32 @@ const dialogVisible = computed({
 // 门店信息
 const storeInfo = ref(null)
 
-// 查询表单
+// 查询表单 — 从 localStorage 加载预设半径值
+const STORAGE_KEY = 'store_smartsteps_radii'
+function loadSavedRadii() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return { radius1: 0.5, radius2: 1, radius3: 1.5, radius4: 2 } // 默认
+}
+const savedRadii = loadSavedRadii()
 const queryForm = ref({
-  radius1: 1,
-  radius2: 0,
-  radius3: 0,
+  radius1: savedRadii.radius1,
+  radius2: savedRadii.radius2,
+  radius3: savedRadii.radius3,
+  radius4: savedRadii.radius4,
   cityMonth: ''
 })
+
+// 半径值变化时自动保存到 localStorage
+watch(
+  () => [queryForm.value.radius1, queryForm.value.radius2, queryForm.value.radius3, queryForm.value.radius4],
+  ([r1, r2, r3, r4]) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ radius1: r1, radius2: r2, radius3: r3, radius4: r4 }))
+  },
+  { deep: true }
+)
 
 // 可选月份
 const availableMonths = ref([])
@@ -279,7 +308,7 @@ const insightLoading = ref(false)
 
 // 计算属性
 const canQuery = computed(() => {
-  const hasRadius = queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0
+  const hasRadius = queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0 || queryForm.value.radius4 > 0
   return hasRadius && queryForm.value.cityMonth && quotaInfo.value?.available > 0
 })
 
@@ -294,6 +323,7 @@ function getQuotaToUse() {
   if (queryForm.value.radius1 > 0) count++
   if (queryForm.value.radius2 > 0) count++
   if (queryForm.value.radius3 > 0) count++
+  if (queryForm.value.radius4 > 0) count++
   return count
 }
 
@@ -309,6 +339,7 @@ function getRadiiDisplay() {
   if (queryForm.value.radius1 > 0) radii.push(`${queryForm.value.radius1}公里`)
   if (queryForm.value.radius2 > 0) radii.push(`${queryForm.value.radius2}公里`)
   if (queryForm.value.radius3 > 0) radii.push(`${queryForm.value.radius3}公里`)
+  if (queryForm.value.radius4 > 0) radii.push(`${queryForm.value.radius4}公里`)
   return radii.length > 0 ? radii.join(', ') : '无'
 }
 

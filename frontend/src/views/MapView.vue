@@ -153,6 +153,13 @@
             <span>聚合显示</span>
           </div>
         </el-tooltip>
+        <!-- 按行政界查询 -->
+        <el-tooltip content="按行政界查询" placement="left">
+          <div class="store-tools-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
+            <el-icon><Flag /></el-icon>
+            <span>按行政界查询</span>
+          </div>
+        </el-tooltip>
       </div>
     </div>
 
@@ -165,13 +172,6 @@
         </el-icon>
       </div>
       <div v-show="toolbarExpanded" class="toolbar-body">
-        <!-- 查询行政界 -->
-        <el-tooltip content="查询行政界" placement="left">
-          <div class="tool-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
-            <el-icon><Flag /></el-icon>
-            <span>查询行政界</span>
-          </div>
-        </el-tooltip>
         <!-- 测量距离 -->
         <el-tooltip content="测量距离" placement="left">
           <div class="tool-item" :class="{ active: activeTool === 'measure' }" @click="setTool('measure')">

@@ -360,6 +360,11 @@ router.post('/query', authenticate, async (req, res) => {
       return res.status(400).json({ message: '请至少选择一个服务' })
     }
     
+    // 半径最小值校验（联通API要求至少500米）
+    if (radius < 500) {
+      return res.status(400).json({ message: `半径不能小于500米（当前${Math.round(radius)}米）` })
+    }
+    
     // 初始化数据库连接
     db = getDb()
     
@@ -459,9 +464,9 @@ router.post('/query', authenticate, async (req, res) => {
     }
     
     // 检测返回数据是否全为0/空（需要返还配额）
-    const isEmptyData = checkIfDataIsEmpty(result)
+    const isEmptyData = !querySuccess ? true : checkIfDataIsEmpty(result)
     
-    // 实际扣减的配额（空数据时为0）
+    // 实际扣减的配额（查询失败或空数据时为0）
     const actualQuotaUsed = isEmptyData ? 0 : quotaUsed
     
     // 记录到purchases表
@@ -483,8 +488,8 @@ router.post('/query', authenticate, async (req, res) => {
         JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
       )
       
-      // 仅在非空数据时扣减当前剩余配额（不是初始总配额）
-      if (!isEmptyData) {
+      // 仅在查询成功且非空数据时扣减配额和缓存
+      if (querySuccess && !isEmptyData) {
         db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
         
         // 保存到缓存
