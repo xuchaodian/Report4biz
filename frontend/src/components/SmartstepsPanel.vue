@@ -39,10 +39,10 @@
           <el-form-item label="半径1">
             <el-input-number
               v-model="queryForm.radius1"
-              :min="0.1"
-              :max="10"
-              :step="0.1"
-              :precision="1"
+              :min="0.31"
+              :max="5"
+              :step="0.01"
+              :precision="2"
               style="width: 100%;"
             />
           </el-form-item>
@@ -50,9 +50,9 @@
             <el-input-number
               v-model="queryForm.radius2"
               :min="0"
-              :max="10"
-              :step="0.1"
-              :precision="1"
+              :max="5"
+              :step="0.01"
+              :precision="2"
               style="width: 100%;"
             />
           </el-form-item>
@@ -60,9 +60,9 @@
             <el-input-number
               v-model="queryForm.radius3"
               :min="0"
-              :max="10"
-              :step="0.1"
-              :precision="1"
+              :max="5"
+              :step="0.01"
+              :precision="2"
               style="width: 100%;"
             />
           </el-form-item>
@@ -70,9 +70,9 @@
             <el-input-number
               v-model="queryForm.radius4"
               :min="0"
-              :max="10"
-              :step="0.1"
-              :precision="1"
+              :max="5"
+              :step="0.01"
+              :precision="2"
               style="width: 100%;"
             />
           </el-form-item>
@@ -88,7 +88,7 @@
           </el-form-item>
         </el-form>
         <div class="query-info">
-          <span>单位: 公里 ｜ 请在当月10日之后选择上月数据</span>
+          <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 请在当月20日之后选择上月数据</span>
         </div>
       </div>
 
