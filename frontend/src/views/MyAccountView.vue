@@ -2946,23 +2946,6 @@ const captureMapToCanvas = async (centerLat, centerLng, radiusMeters, competitor
     }
   }
 
-  // 图例
-  const legendY = CANVAS_H - 80
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'
-  ctx.fillRect(20, legendY, 320, 55)
-  ctx.strokeStyle = '#dddddd'
-  ctx.lineWidth = 1
-  ctx.strokeRect(20, legendY, 320, 55)
-  ctx.fillStyle = '#555555'
-  ctx.font = '20px Arial'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('● 红圈 = 半径 3km', 30, legendY + 18)
-  ctx.fillStyle = '#f56c6c'
-  ctx.fillText('● 红色圆点 = 圆心', 30, legendY + 42)
-  ctx.fillStyle = getCompBrandColor('')
-  ctx.fillText(`● 图钉 = 竞品门店 (${competitors.length}家)`, 190, legendY + 42)
-
   // JPEG质量（0.5平衡清晰度和文件大小）
   const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
   console.log('[导出截图] Canvas渲染成功, base64长度:', dataUrl.length, '竞品数:', competitors.length)
@@ -3042,12 +3025,12 @@ const captureMapOnlyCanvas = async (centerLat, centerLng, radiusMeters) => {
   ctx.stroke()
 
   // 半径文字标注
-  const radiusKm = (radiusMeters / 1000).toFixed(1)
+  const radiusKm = (radiusMeters / 1000).toFixed(2)
   ctx.fillStyle = '#f56c6c'
   ctx.font = 'bold 26px Arial'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const labelR = radiusPx + 40
+  const labelR = radiusPx + 70
   ctx.fillText(`${radiusKm}km`, halfW + labelR, halfH)
 
   // 圆心标记（红白圆点）
@@ -3059,19 +3042,6 @@ const captureMapOnlyCanvas = async (centerLat, centerLng, radiusMeters) => {
   ctx.strokeStyle = '#f56c6c'
   ctx.lineWidth = 4
   ctx.stroke()
-
-  // 图例
-  const legendY = CANVAS_H - 80
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'
-  ctx.fillRect(20, legendY, 280, 40)
-  ctx.strokeStyle = '#dddddd'
-  ctx.lineWidth = 1
-  ctx.strokeRect(20, legendY, 280, 40)
-  ctx.fillStyle = '#555555'
-  ctx.font = '20px Arial'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(`● 红圈 = 半径 ${radiusKm}km`, 30, legendY + 20)
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
   console.log('[导出截图] 地图Canvas渲染成功, base64长度:', dataUrl.length, 'radius:', radiusMeters, 'zoom:', zoom)
@@ -3144,6 +3114,15 @@ const captureShoppingCenterMap = async (centerLat, centerLng, centers, zoom = 14
   ctx.lineWidth = 4
   ctx.stroke()
 
+  // 半径文字标注
+  const radiusKm = (DISPLAY_RADIUS / 1000).toFixed(0)
+  ctx.fillStyle = '#f56c6c'
+  ctx.font = 'bold 26px Arial'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const labelR = radiusPx + 70
+  ctx.fillText(`${radiusKm}km`, halfW + labelR, halfH)
+
   // 圆心标记
   const dotR = 12
   ctx.beginPath()
@@ -3190,23 +3169,6 @@ const captureShoppingCenterMap = async (centerLat, centerLng, centers, zoom = 14
       ctx.fillText(labelText, lx, ly)
     }
   }
-
-  // 图例
-  const legendY = CANVAS_H - 80
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'
-  ctx.fillRect(20, legendY, 320, 55)
-  ctx.strokeStyle = '#dddddd'
-  ctx.lineWidth = 1
-  ctx.strokeRect(20, legendY, 320, 55)
-  ctx.fillStyle = '#555555'
-  ctx.font = '20px Arial'
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'middle'
-  ctx.fillText('● 红圈 = 半径 3km', 30, legendY + 18)
-  ctx.fillStyle = '#f56c6c'
-  ctx.fillText('● 红色圆点 = 圆心', 30, legendY + 42)
-  ctx.fillStyle = '#67c23a'
-  ctx.fillText(`● 绿色图钉 = 购物中心 (${centers.length}家)`, 190, legendY + 42)
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.5)
   console.log('[导出截图] 购物中心Canvas渲染成功, base64长度:', dataUrl.length, '购物中心数:', centers.length)

@@ -1,8 +1,13 @@
 import express from 'express'
 import crypto from 'crypto'
+import fs from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
+const __dirname = dirname(fileURLToPath(import.meta.url))
 const router = express.Router()
 const SHARE_SECRET = 'Report4biz_share_2026'
 
@@ -433,6 +438,265 @@ router.delete('/:id', authenticate, (req, res) => {
     console.error('删除记录失败:', error)
     res.status(500).json({ message: '删除失败' })
   }
+})
+
+/**
+ * 获取购买记录周边的竞品门店（用于导出地图截图）
+ * GET /api/purchase/:id/competitors-for-map
+ */
+router.get('/:id/competitors-for-map', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+    const purchase = db.prepare(`SELECT center_lng, center_lat FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    if (!purchase) return res.status(404).json({ message: '记录不存在' })
+
+    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL`).all()
+
+    res.json({
+      center: { lat: purchase.center_lat, lng: purchase.center_lng },
+      radius: 3000,
+      competitors: competitors.map(c => ({
+        id: c.id, name: c.name, brand: c.brand || '',
+        latitude: c.latitude, longitude: c.longitude, address: c.address || ''
+      }))
+    })
+  } catch (error) {
+    console.error('获取竞品地图数据失败:', error)
+    res.status(500).json({ message: error.message })
+  }
+})
+
+/**
+ * 获取购买记录周边的购物中心（用于导出地图截图）
+ * GET /api/purchase/:id/shopping-centers-for-map
+ */
+router.get('/:id/shopping-centers-for-map', authenticate, (req, res) => {
+  try {
+    const { id } = req.params
+    const db = getDb()
+    const purchase = db.prepare(`SELECT center_lng, center_lat FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    if (!purchase) return res.status(404).json({ message: '记录不存在' })
+
+    const centers = db.prepare(`SELECT id, name, latitude, longitude, address FROM shopping_centers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`).all()
+
+    res.json({
+      center: { lat: purchase.center_lat, lng: purchase.center_lng },
+      centers: centers.map(c => ({
+        id: c.id, name: c.name,
+        latitude: c.latitude, longitude: c.longitude, address: c.address || ''
+      }))
+    })
+  } catch (error) {
+    console.error('获取购物中心地图数据失败:', error)
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// 导出Excel报表（不带截图，回退方案）
+router.get('/:id/export-excel', authenticate, (req, res) => {
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const outputPath = join(__dirname, '../../uploads/screenshots', `export_${req.params.id}_${Date.now()}.xlsx`)
+
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
+  }
+
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  const cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+
+  exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    if (error) {
+      console.error('导出Excel执行错误:', error.message)
+      return res.status(500).json({ message: '导出失败: ' + error.message })
+    }
+
+    try {
+      const lines = stdout.trim().split('\n')
+      const jsonLine = lines.filter(l => l.trim().startsWith('{')).pop() || '{}'
+      const result = JSON.parse(jsonLine)
+      if (result.error) {
+        return res.status(500).json({ message: result.error })
+      }
+
+      if (!fs.existsSync(outputPath)) {
+        return res.status(500).json({ message: '导出失败: 输出文件未生成' })
+      }
+
+      const fileName = result.filename || `${req.params.id}.xlsx`
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+      const fileStream = fs.createReadStream(outputPath)
+      fileStream.pipe(res)
+      fileStream.on('end', () => {
+        fs.unlink(outputPath, () => {})
+      })
+    } catch (e) {
+      console.error('解析Python输出失败:', stdout)
+      res.status(500).json({ message: '导出失败: ' + e.message })
+    }
+  })
+})
+
+// 导出Excel报表（带竞品地图截图 + 购物中心地图截图）
+router.post('/:id/export-map-excel', authenticate, async (req, res) => {
+  const { competitorScreenshot, shoppingCenterScreenshot, mapScreenshot } = req.body
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const outputPath = join(__dirname, '../../uploads/screenshots', `export_${req.params.id}_${Date.now()}.xlsx`)
+
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
+  }
+
+  const screenshotDir = join(__dirname, '../../uploads/screenshots')
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
+
+  const saveScreenshot = (base64Str, prefix) => {
+    if (!base64Str) return null
+    try {
+      const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, '')
+      const buf = Buffer.from(base64Data, 'base64')
+      if (buf.length < 100) return null
+      const fpath = join(screenshotDir, `${prefix}_${req.params.id}_${Date.now()}.png`)
+      fs.writeFileSync(fpath, buf)
+      console.log(`[导出截图] 已保存 ${prefix}: ${fpath} (${buf.length}字节)`)
+      return fpath
+    } catch (e) {
+      console.error(`[导出截图] 保存${prefix}失败:`, e)
+      return null
+    }
+  }
+
+  const compPath = saveScreenshot(competitorScreenshot, 'competitor')
+  const shopPath = saveScreenshot(shoppingCenterScreenshot, 'shopping')
+  const mapPath = saveScreenshot(mapScreenshot, 'map')
+
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  let cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  if (compPath) cmd += ` "${compPath}"`
+  if (shopPath) cmd += ` "${shopPath}"`
+  if (mapPath) cmd += ` "${mapPath}"`
+
+  exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    const cleanUp = (fp) => { if (fp) try { fs.unlinkSync(fp) } catch (e) {} }
+    cleanUp(compPath)
+    cleanUp(shopPath)
+    cleanUp(mapPath)
+
+    if (error) {
+      console.error('导出Excel执行错误:', error.message)
+      return res.status(500).json({ message: '导出失败: ' + error.message })
+    }
+
+    try {
+      const lines = stdout.trim().split('\n')
+      const jsonLine = lines.filter(l => l.trim().startsWith('{')).pop() || '{}'
+      const result = JSON.parse(jsonLine)
+      if (result.error) {
+        return res.status(500).json({ message: result.error })
+      }
+
+      if (!fs.existsSync(outputPath)) {
+        return res.status(500).json({ message: '导出失败: 输出文件未生成' })
+      }
+
+      const fileName = result.filename || `${req.params.id}.xlsx`
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+      const fileStream = fs.createReadStream(outputPath)
+      fileStream.pipe(res)
+      fileStream.on('end', () => {
+        fs.unlink(outputPath, () => {})
+      })
+    } catch (e) {
+      console.error('解析Python输出失败:', stdout)
+      res.status(500).json({ message: '导出失败: ' + e.message })
+    }
+  })
+})
+
+// 导出PDF报表：生成Excel后转换为PDF
+router.post('/:id/export-pdf-report', authenticate, async (req, res) => {
+  const { competitorScreenshot, shoppingCenterScreenshot, mapScreenshot } = req.body
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const ts = Date.now()
+  const excelPath = join(__dirname, '../../uploads/screenshots', `pdf_export_${req.params.id}_${ts}.xlsx`)
+  const pdfPath = join(__dirname, '../../uploads/screenshots', `pdf_export_${req.params.id}_${ts}.pdf`)
+
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在' })
+  }
+
+  const screenshotDir = join(__dirname, '../../uploads/screenshots')
+  if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
+
+  const saveScreenshot = (base64Str, prefix) => {
+    if (!base64Str) return null
+    try {
+      const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, '')
+      const buf = Buffer.from(base64Data, 'base64')
+      if (buf.length < 100) return null
+      const fpath = join(screenshotDir, `${prefix}_${req.params.id}_${ts}.png`)
+      fs.writeFileSync(fpath, buf)
+      return fpath
+    } catch (e) {
+      return null
+    }
+  }
+
+  const compPath = saveScreenshot(competitorScreenshot, 'competitor')
+  const shopPath = saveScreenshot(shoppingCenterScreenshot, 'shopping')
+  const mapPath = saveScreenshot(mapScreenshot, 'map')
+
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  let cmd = `python3 "${scriptPath}" "${templatePath}" "${excelPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  if (compPath) cmd += ` "${compPath}"`
+  if (shopPath) cmd += ` "${shopPath}"`
+  if (mapPath) cmd += ` "${mapPath}"`
+
+  const cleanUp = (fp) => { if (fp) try { fs.unlinkSync(fp) } catch (e) {} }
+
+  exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
+    cleanUp(compPath)
+    cleanUp(shopPath)
+    cleanUp(mapPath)
+
+    if (error) {
+      cleanUp(excelPath)
+      return res.status(500).json({ message: 'Excel生成失败: ' + error.message })
+    }
+
+    // 用LibreOffice将Excel转为PDF
+    const pdfCmd = `libreoffice --headless --convert-to pdf --outdir "${screenshotDir}" "${excelPath}"`
+    exec(pdfCmd, { timeout: 30000 }, (pdfErr, pdfStdout, pdfStderr) => {
+      cleanUp(excelPath)
+
+      if (pdfErr) {
+        console.error('PDF转换失败:', pdfErr.message)
+        return res.status(500).json({ message: 'PDF转换失败: ' + pdfErr.message })
+      }
+
+      if (!fs.existsSync(pdfPath)) {
+        return res.status(500).json({ message: 'PDF文件未生成' })
+      }
+
+      const storeName = req.body.filename || '报表'
+      const fileName = `${storeName}.pdf`
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+
+      const fileStream = fs.createReadStream(pdfPath)
+      fileStream.pipe(res)
+      fileStream.on('end', () => {
+        cleanUp(pdfPath)
+      })
+    })
+  })
 })
 
 export default router

@@ -360,9 +360,13 @@ router.post('/query', authenticate, async (req, res) => {
       return res.status(400).json({ message: '请至少选择一个服务' })
     }
     
-    // 半径最小值校验（联通API要求至少500米）
-    if (radius < 500) {
-      return res.status(400).json({ message: `半径不能小于500米（当前${Math.round(radius)}米）` })
+    // 面积校验（联通API要求 0.3~80 平方公里）
+    const radiusKm = radius / 1000
+    const area = Math.PI * radiusKm * radiusKm
+    if (area < 0.3 || area > 80) {
+      return res.status(400).json({
+        message: `圆形面积 ${area.toFixed(2)} km² 超出允许范围（0.3~80 km²），请调整半径（建议 0.32~5.0 公里）`
+      })
     }
     
     // 初始化数据库连接

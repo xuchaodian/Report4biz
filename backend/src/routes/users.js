@@ -240,29 +240,29 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
 
-    // 如果要更新配额，需要检查配额限制（追加模式）
+    // 如果要更新配额，检查配额限制（设定模式）
     if (quota !== undefined) {
-      const addQuota = parseInt(quota) || 0
-      
-      // 获取当前用户的现有配额
+      const newQuota = parseInt(quota) || 0
       const currentUserQuota = existingUser.quota || 0
-      
-      // 计算当前已分配的配额（不包括当前用户）
-      const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
-      const currentAllocated = allocatedResult?.total || 0
+      const diff = newQuota - currentUserQuota  // 正=追加，负=减少
 
-      // 获取初始总配额
-      const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
-      const initialQuota = quotaRecord?.initial_quota || 0
+      // 只有在增加时才需要检查可用配额
+      if (diff > 0) {
+        // 已分配给其他用户的总配额
+        const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
+        const otherAllocated = allocatedResult?.total || 0
 
-      // 可用配额 = 初始总配额 - 其他用户已分配的配额
-      const availableQuota = Math.max(0, initialQuota - currentAllocated)
+        const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
+        const initialQuota = quotaRecord?.initial_quota || 0
 
-      // 如果要追加的配额大于可用配额，拒绝
-      if (addQuota > availableQuota) {
-        return res.status(400).json({ 
-          message: `分配失败：超出可用配额。需要追加 ${addQuota} 次，可用 ${availableQuota} 次（初始总配额 ${initialQuota} - 已分配给其他用户的 ${currentAllocated}）` 
-        })
+        // 可用 = 初始总配额 - 其他用户已分配 - 当前用户已有
+        const availableQuota = Math.max(0, initialQuota - otherAllocated - currentUserQuota)
+
+        if (diff > availableQuota) {
+          return res.status(400).json({ 
+            message: `分配失败：超出可用配额。需追加 ${diff} 次，当前可用 ${availableQuota} 次`
+          })
+        }
       }
     }
 
@@ -294,8 +294,8 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     if (quota !== undefined) {
-      // 追加配额而不是覆盖
-      updates.push('quota = quota + ?')
+      // 设定模式：直接设为输入值
+      updates.push('quota = ?')
       params.push(parseInt(quota) || 0)
     }
 

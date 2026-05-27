@@ -19,6 +19,7 @@ import smartstepsRoutes from './routes/smartsteps.js'
 import purchaseRoutes from './routes/purchase.js'
 import streetviewRoutes from './routes/streetview.js'
 import districtRoutes from './routes/district.js'
+import tileProxyRoutes from './routes/tile-proxy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -31,8 +32,8 @@ app.set('trust proxy', true)
 
 // 中间件
 app.use(cors())
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 
 // 静态文件服务 - 品牌图标上传目录
 app.use('/uploads/brand-icons', express.static(join(__dirname, '../uploads/brand-icons')))
@@ -59,6 +60,7 @@ async function start() {
     app.use('/api/purchase', purchaseRoutes)
     app.use('/api/streetview', streetviewRoutes)
     app.use('/api/district', districtRoutes)
+    app.use('/api/tile-proxy', tileProxyRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

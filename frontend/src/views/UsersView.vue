@@ -127,12 +127,13 @@
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isEdit" label="设置剩余次数">
-          <el-input-number v-model="form.quota" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
+        <el-form-item v-if="isEdit" label="剩余次数">
+          <el-input-number v-model="form.remaining" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
           <div class="quota-tip">
-            <div>当前用户剩余次数: {{ form.quota }}</div>
-            <div>系统剩余可分配次数: {{ quotaInfo.availableQuota }}</div>
-            <div style="color: #67c23a; margin-top: 4px;">注意：输入的值将设置为用户新的剩余次数，系统会自动计算总配额</div>
+            <div>当前剩余次数: {{ form.remaining }}</div>
+            <div>已使用次数: {{ form.usedQuota }}</div>
+            <div>系统剩余可分配: {{ quotaInfo.availableQuota }}</div>
+            <div style="color: #67c23a; margin-top: 4px;">输入新的剩余次数，系统将自动换算为配额总数</div>
           </div>
         </el-form-item>
       </el-form>
@@ -262,7 +263,9 @@ const form = reactive({
   company: '',
   password: '',
   role: 'user',
-  quota: 0
+  quota: 0,
+  usedQuota: 0,
+  remaining: 0
 })
 
 const rules = {
@@ -402,16 +405,17 @@ const showAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
-  // 对于普通用户，显示剩余次数（remainingQuota），但编辑时输入的是要追加的配额
-  // 对于管理员账号，显示为 0（配额从 admin_quota 表管理）
-  const editQuota = row.role === 'admin' ? 0 : (row.remainingQuota ?? 0)
+  // 显示剩余次数（admin 显示 0）
+  const editRemaining = row.role === 'admin' ? 0 : (row.remainingQuota ?? 0)
   Object.assign(form, {
     username: row.username,
     email: row.email,
     company: row.company || '',
     password: '',
     role: row.role,
-    quota: editQuota
+    quota: row.quota || 0,
+    usedQuota: row.usedQuota || 0,
+    remaining: editRemaining
   })
   dialogVisible.value = true
 }
@@ -423,7 +427,9 @@ const handleSave = async () => {
   saving.value = true
   try {
     if (isEdit.value) {
-      const updateData = { email: form.email, role: form.role, company: form.company, quota: form.quota }
+      // 将输入"剩余次数"换算为"配额总数"提交给后端
+      const totalQuota = (form.remaining || 0) + (form.usedQuota || 0)
+      const updateData = { email: form.email, role: form.role, company: form.company, quota: totalQuota }
       if (form.password) {
         updateData.password = form.password
       }

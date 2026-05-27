@@ -32,8 +32,8 @@
           v-model="queryForm.radius1"
           :min="0.1"
           :max="10"
-          :step="0.1"
-          :precision="1"
+          :step="0.01"
+          :precision="2"
           style="width: 100%;"
         />
       </el-form-item>
@@ -42,8 +42,8 @@
           v-model="queryForm.radius2"
           :min="0"
           :max="10"
-          :step="0.1"
-          :precision="1"
+          :step="0.01"
+          :precision="2"
           style="width: 100%;"
         />
       </el-form-item>
@@ -52,8 +52,8 @@
           v-model="queryForm.radius3"
           :min="0"
           :max="10"
-          :step="0.1"
-          :precision="1"
+          :step="0.01"
+          :precision="2"
           style="width: 100%;"
         />
       </el-form-item>
@@ -62,8 +62,8 @@
           v-model="queryForm.radius4"
           :min="0"
           :max="10"
-          :step="0.1"
-          :precision="1"
+          :step="0.01"
+          :precision="2"
           style="width: 100%;"
         />
       </el-form-item>
