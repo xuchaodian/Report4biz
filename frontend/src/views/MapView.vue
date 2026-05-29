@@ -160,6 +160,13 @@
             <span>按行政界查询</span>
           </div>
         </el-tooltip>
+        <!-- 按商圈查询 -->
+        <el-tooltip content="按商圈查询" placement="left">
+          <div class="store-tools-item" :class="{ active: commerceVisible }" @click="commerceVisible = !commerceVisible">
+            <el-icon><Shop /></el-icon>
+            <span>按商圈查询</span>
+          </div>
+        </el-tooltip>
       </div>
     </div>
 
@@ -390,6 +397,77 @@
           <el-button size="small" type="danger" plain @click="clearDistrictBoundary" style="flex:1">清除边界</el-button>
         </div>
         <div v-if="districtError" class="district-error">{{ districtError }}</div>
+      </div>
+    </div>
+
+    <!-- 按商圈查询面板 -->
+    <div v-if="commerceVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
+      <div class="store-search-header" @mousedown="onDragStart">
+        <span class="store-search-title">
+          <el-icon><Shop /></el-icon>
+          按商圈查询
+        </span>
+        <el-button link @click="commerceVisible = false">
+          <el-icon><Close /></el-icon>
+        </el-button>
+      </div>
+      <div class="store-search-input-wrap">
+        <el-input
+          v-model="commerceKeyword"
+          placeholder="输入商圈名称（如 徐家汇）"
+          clearable
+          @keyup.enter="searchCommerce"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button type="primary" :loading="commerceLoading" @click="searchCommerce" style="margin-top:8px; width:100%">
+          查询
+        </el-button>
+      </div>
+      <div class="store-search-list">
+        <!-- 查询结果 -->
+        <div v-if="commerceResult" class="district-info">
+          <div class="district-info-header">
+            <el-icon><Shop /></el-icon>
+            <strong>{{ commerceResult.keyword }}</strong>
+            <span class="commerce-match-count">匹配 {{ commerceResult.total }} 个</span>
+          </div>
+          <!-- 面积 -->
+          <div v-if="commerceArea" class="district-info-meta">
+            面积: {{ commerceArea }} 平方公里
+          </div>
+          <!-- 门店统计 -->
+          <div v-if="commerceStoreCounts" class="district-store-counts">
+            <div class="district-count-row">
+              <span class="district-count-label">我的门店：</span>
+              <span class="district-count-num">{{ commerceStoreCounts.myStores.total }}家
+                <template v-if="commerceStoreCounts.myStores.closed > 0">
+                  （其中停业：{{ commerceStoreCounts.myStores.closed }}家）
+                </template>
+              </span>
+            </div>
+            <div class="district-count-row">
+              <span class="district-count-label">竞品门店：</span>
+              <span class="district-count-num">{{ Object.values(commerceStoreCounts.competitors).reduce((a, b) => a + b, 0) }}家</span>
+            </div>
+            <div v-for="(count, brand) in commerceStoreCounts.competitors" :key="brand" class="district-count-row district-count-sub">
+              <span class="district-count-label">&nbsp;&nbsp;* {{ brand }}</span>
+              <span class="district-count-num">{{ count }}家</span>
+            </div>
+            <div class="district-count-row">
+              <span class="district-count-label">购物中心：</span>
+              <span class="district-count-num">{{ commerceStoreCounts.shoppingCenters }}家</span>
+            </div>
+          </div>
+        </div>
+        <div v-if="commerceNoResult" class="district-error">未找到匹配的商圈</div>
+        <!-- 清除图层按钮 -->
+        <div v-if="commerceLayerItems.length > 0" class="district-actions-row">
+          <el-button size="small" type="danger" plain @click="clearCommerceLayer" style="flex:1">清除图层</el-button>
+        </div>
+        <div v-if="commerceError" class="district-error">{{ commerceError }}</div>
       </div>
     </div>
 
@@ -958,7 +1036,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, Flag, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
+  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, Flag, Shop, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -1065,6 +1143,19 @@ const districtResult = ref(null)
 const districtError = ref('')
 const districtStoreCounts = ref(null)
 let districtLayer = null  // Leaflet polygon layer
+
+// 按商圈查询
+const commerceVisible = ref(false)
+const commerceKeyword = ref('')
+const commerceLoading = ref(false)
+const commerceResult = ref(null)
+const commerceNoResult = ref(false)
+const commerceError = ref('')
+const commerceLayerItems = ref([])
+const commerceArea = ref(null)
+const commerceStoreCounts = ref(null)
+let commerceLayer = null
+
 const markerDialogVisible = ref(false)
 const editingMarker = ref(null)
 const markerFormRef = ref(null)
@@ -4660,6 +4751,11 @@ const clearDrawings = () => {
       map.removeLayer(districtLayer)
       districtLayer = null
     }
+    // 清除商圈查询图层
+    if (commerceLayer) {
+      map.removeLayer(commerceLayer)
+      commerceLayer = null
+    }
   } catch (e) {
     console.error('[clearDrawings] 清除图层失败:', e)
   }
@@ -4669,6 +4765,12 @@ const clearDrawings = () => {
   districtResult.value = null
   districtError.value = ''
   districtStoreCounts.value = null
+  commerceLayerItems.value = []
+  commerceResult.value = null
+  commerceNoResult.value = false
+  commerceError.value = ''
+  commerceArea.value = null
+  commerceStoreCounts.value = null
   activeTool.value = ''
   ElMessage.success('已清除')
 }
@@ -4748,6 +4850,207 @@ const clearDistrictBoundary = () => {
   }
   districtResult.value = null
   districtError.value = ''
+}
+
+// 按商圈查询
+const searchCommerce = async () => {
+  if (!commerceKeyword.value.trim()) {
+    ElMessage.warning('请输入商圈名称')
+    return
+  }
+  commerceLoading.value = true
+  commerceResult.value = null
+  commerceNoResult.value = false
+  commerceError.value = ''
+  try {
+    // 先清除旧图层
+    if (commerceLayer && map) {
+      map.removeLayer(commerceLayer)
+      commerceLayer = null
+    }
+    commerceLayerItems.value = []
+
+    const res = await fetch('/api/shapefiles/search-commerce', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: commerceKeyword.value.trim() })
+    })
+    const data = await res.json()
+    if (data.success && data.data.features.length > 0) {
+      commerceResult.value = data.data
+      commerceLoading.value = false
+
+      // 在地图上绘制商圈多边形
+      const polygons = []
+      commerceLayerItems.value = data.data.features
+
+      for (const item of data.data.features) {
+        const feature = item.feature
+        const props = feature.properties || {}
+        const name = props[item.shapefileField] || '未知'
+        const coords = feature.geometry.coordinates
+
+        if (feature.geometry.type === 'Polygon') {
+          const latlngs = coords[0].map(c => [c[1], c[0]])
+          const poly = L.polygon(latlngs, {
+            color: '#ff6600',
+            weight: 3,
+            opacity: 0.8,
+            fillColor: '#ff6600',
+            fillOpacity: 0.1,
+            interactive: false
+          })
+          poly.bindTooltip(name, { permanent: false, direction: 'center', className: 'commerce-tooltip' })
+          polygons.push(poly)
+        } else if (feature.geometry.type === 'MultiPolygon') {
+          for (const polyCoords of coords) {
+            const latlngs = polyCoords[0].map(c => [c[1], c[0]])
+            const poly = L.polygon(latlngs, {
+              color: '#ff6600',
+              weight: 3,
+              opacity: 0.8,
+              fillColor: '#ff6600',
+              fillOpacity: 0.1,
+              interactive: false
+            })
+            poly.bindTooltip(name, { permanent: false, direction: 'center', className: 'commerce-tooltip' })
+            polygons.push(poly)
+          }
+        }
+      }
+
+      if (polygons.length > 0 && map) {
+        commerceLayer = L.featureGroup(polygons).addTo(map)
+        const bounds = commerceLayer.getBounds()
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [40, 40] })
+        }
+
+        // 提取边界坐标用于门店统计（Leaflet格式 [[lat,lng],...]）
+        const boundaries = []
+        for (const item of data.data.features) {
+          const feature = item.feature
+          const coords = feature.geometry.coordinates
+          if (feature.geometry.type === 'Polygon') {
+            boundaries.push(coords[0].map(c => [c[1], c[0]]))
+          } else if (feature.geometry.type === 'MultiPolygon') {
+            for (const polyCoords of coords) {
+              boundaries.push(polyCoords[0].map(c => [c[1], c[0]]))
+            }
+          }
+        }
+
+        // 计算面积（球面近似）
+        if (boundaries.length > 0) {
+          const flatCoords = boundaries.flat()
+          if (flatCoords.length >= 3) {
+            // calculatePolygonArea 需要 [lng, lat] 格式
+            const lngLatCoords = flatCoords.map(p => [p[1], p[0]])
+            const areaSqm = calculatePolygonArea(lngLatCoords)
+            commerceArea.value = Math.round(areaSqm / 10000) / 100  // 平方米 → 平方公里，保留2位
+          }
+        }
+
+        // 查询商圈内门店统计（使用前端 Turf.js 精确计算）
+        try {
+          const token = sessionStorage.getItem('token')
+          const authHeaders = { 'Authorization': `Bearer ${token}` }
+
+          // 获取所有门店、竞品、购物中心数据
+          const [markersRes, compRes, shopRes] = await Promise.all([
+            fetch('/api/markers', { headers: authHeaders }).catch(() => null),
+            fetch('/api/competitors', { headers: authHeaders }).catch(() => null),
+            fetch('/api/shopping-centers', { headers: authHeaders }).catch(() => null)
+          ])
+
+          // 将边界转为 turf Polygon（需要 [lng,lat] 格式）
+          const turfPolygon = turf.polygon(boundaries.map(ring =>
+            ring.map(p => [p[1], p[0]])  // [lat,lng] -> [lng,lat]
+          ))
+
+          // 统计我的门店
+          let myTotal = 0, closed = 0
+          const closedKeywords = ['闭店', '停业', '歇业', '休业', '结业', '暂停营业']
+          if (markersRes && markersRes.ok) {
+            const md = await markersRes.json()
+            const allMarkers = md.markers || md.data || md || []
+            if (Array.isArray(allMarkers)) for (const m of allMarkers) {
+              if (m.latitude && m.longitude) {
+                const pt = turf.point([m.longitude, m.latitude])
+                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                  myTotal++
+                  if (m.store_status && closedKeywords.some(kw => m.store_status.includes(kw))) closed++
+                }
+              }
+            }
+          }
+
+          // 统计竞品门店（按品牌分组）
+          const brandCounts = {}
+          if (compRes && compRes.ok) {
+            const cd = await compRes.json()
+            const competitors = cd.competitors || cd.data || cd || []
+            if (Array.isArray(competitors)) for (const c of competitors) {
+              if (c.latitude && c.longitude) {
+                const pt = turf.point([c.longitude, c.latitude])
+                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                  const brand = c.brand || '未知品牌'
+                  brandCounts[brand] = (brandCounts[brand] || 0) + 1
+                }
+              }
+            }
+          }
+
+          // 统计购物中心
+          let shoppingTotal = 0
+          if (shopRes && shopRes.ok) {
+            const sd = await shopRes.json()
+            const centers = sd.shoppingCenters || sd.data || sd || []
+            if (Array.isArray(centers)) for (const s of centers) {
+              if (s.latitude && s.longitude) {
+                const pt = turf.point([s.longitude, s.latitude])
+                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                  shoppingTotal++
+                }
+              }
+            }
+          }
+
+          commerceStoreCounts.value = {
+            myStores: { total: myTotal, closed },
+            competitors: brandCounts,
+            shoppingCenters: shoppingTotal
+          }
+        } catch (e) {
+          console.error('[Commerce] 门店统计请求失败:', e)
+        }
+      }
+      ElMessage.success(`找到 ${data.data.total} 个匹配商圈`)
+    } else {
+      commerceNoResult.value = true
+      ElMessage.info('未找到匹配的商圈')
+    }
+  } catch (e) {
+    console.error('[Commerce] 查询失败:', e)
+    commerceError.value = '查询失败: ' + e.message
+    ElMessage.error('商圈查询失败')
+  } finally {
+    commerceLoading.value = false
+  }
+}
+
+// 清除商圈图层
+const clearCommerceLayer = () => {
+  if (commerceLayer && map) {
+    map.removeLayer(commerceLayer)
+    commerceLayer = null
+  }
+  commerceLayerItems.value = []
+  commerceResult.value = null
+  commerceNoResult.value = false
+  commerceError.value = ''
+  commerceArea.value = null
+  commerceStoreCounts.value = null
 }
 
 
@@ -7577,5 +7880,35 @@ function getHeatmapCellStyle(nums, idx) {
   padding: 10px 12px;
   color: #dc2626;
   font-size: 13px;
+}
+
+/* 商圈查询样式 */
+.commerce-match-count {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 8px;
+  font-weight: normal;
+}
+.commerce-list {
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.commerce-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+.commerce-item:last-child {
+  border-bottom: none;
+}
+.commerce-item-name {
+  font-weight: 500;
+  color: #303133;
+}
+.commerce-item-source {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 2px;
 }
 

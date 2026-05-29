@@ -554,4 +554,74 @@ router.post('/calculate-population', (req, res) => {
   }
 })
 
+/**
+ * POST /api/shapefiles/search-commerce
+ * 搜索城市商圈 shapefile 中的名称匹配
+ * Body: { keyword: string }
+ * 在所有 category='other' 的 shapefile 中查找名称/name 字段包含 keyword 的要素
+ */
+router.post('/search-commerce', (req, res) => {
+  try {
+    const db = getDb()
+    const userId = req.headers['x-user-id'] || 1
+    const { keyword } = req.body
+
+    if (!keyword || !keyword.trim()) {
+      return res.status(400).json({ success: false, message: '请输入搜索关键词' })
+    }
+
+    const kw = keyword.trim()
+
+    // 获取所有 other 类 shapefile
+    const rows = db.prepare(
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'other' AND (user_id = ? OR user_id = 1)`
+    ).all(userId)
+
+    const matchedFeatures = []
+
+    for (const row of rows) {
+      try {
+        const geojson = JSON.parse(row.geojson)
+        const features = geojson.features || []
+
+        // 确定名称字段（名称 / name / Name）
+        let nameField = null
+        const fields = row.field_names ? JSON.parse(row.field_names) : []
+        nameField = fields.find(f => ['名称', 'name', 'Name', 'NAME'].includes(f))
+
+        if (!nameField) continue
+
+        for (const feature of features) {
+          const props = feature.properties || {}
+          const fieldValue = props[nameField]
+          if (fieldValue && String(fieldValue).includes(kw)) {
+            matchedFeatures.push({
+              shapefileId: row.id,
+              shapefileName: row.name,
+              shapefileField: nameField,
+              feature
+            })
+          }
+        }
+      } catch (e) {
+        console.error(`解析 ${row.name} 失败:`, e)
+        continue
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        keyword: kw,
+        total: matchedFeatures.length,
+        features: matchedFeatures
+      }
+    })
+
+  } catch (error) {
+    console.error('搜索商圈失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
 export default router

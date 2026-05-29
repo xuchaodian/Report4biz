@@ -119,12 +119,18 @@ router.get('/boundary', async (req, res) => {
 
 // 射线法判断点是否在多边形内（ring 格式：[lng, lat]）
 function pointInPoly(lng, lat, ring) {
+  // 射线法（处理顶点相交问题）
   let inside = false
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i]
     const [xj, yj] = ring[j]
-    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
-      inside = !inside
+
+    // 只处理跨越水平线的边（严格处理顶点避免重复计数）
+    if ((yi > lat) !== (yj > lat)) {
+      const intersectLng = (xj - xi) * (lat - yi) / (yj - yi) + xi
+      if (lng < intersectLng) {
+        inside = !inside
+      }
     }
   }
   return inside
