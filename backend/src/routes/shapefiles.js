@@ -68,12 +68,22 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
     
     // 另一种情况：文件名本身就是正常的 UTF-8，直接使用即可
 
+    // 获取用户ID (从 header 或默认)
+    const userId = req.headers['x-user-id'] || 1
+
+    // 获取类别参数（默认 population），放在前面供解析时使用
+    const category = req.body.category || 'population'
+
     // 调用 Python 脚本解析 shapefile (使用 exec 代替 execSync，避免缓冲区溢出)
     const pythonScript = path.join(__dirname, '../utils/shapefile_parser.py')
 
+    // citynd 类型是七普人口数据（WGS84），需要转换到 GCJ-02
+    // other 类型是城市商圈数据（已是高德坐标系），跳过转换
+    const skipCoordConvert = category === 'other' ? '--skip-convert' : ''
+
     // 使用 Promise 包装 exec
     const pythonResult = await new Promise((resolve, reject) => {
-      exec(`python3 "${pythonScript}" "${filePath}"`, { 
+      exec(`python3 "${pythonScript}" "${filePath}" ${skipCoordConvert}`.trim(), { 
         encoding: 'utf-8',
         maxBuffer: 100 * 1024 * 1024  // 100MB 缓冲区
       }, (error, stdout, stderr) => {
@@ -94,18 +104,15 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       return res.status(400).json({ message: parseResult.error || '解析失败' })
     }
 
-    // 获取用户ID (从 header 或默认)
-    const userId = req.headers['x-user-id'] || 1
-
     // 保存到数据库
     const db = getDb()
     const geojsonData = JSON.stringify(parseResult.data)
 
     // 插入数据
     const insertResult = db.prepare(
-      `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, created_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))`
-    ).run(originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId)
+      `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
+    ).run(originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId, category)
 
     const insertId = insertResult.lastInsertRowid
 
@@ -116,7 +123,8 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
         id: insertId,
         name: originalName,
         featureCount: parseResult.data.features.length,
-        fields: parseResult.data.metadata.fields
+        fields: parseResult.data.metadata.fields,
+        category
       }
     })
 
@@ -131,14 +139,22 @@ router.get('/', (req, res) => {
   try {
     const db = getDb()
     const userId = req.headers['x-user-id'] || 1
+    const category = req.query.category  // 可选：population / other
 
     // 返回当前用户 + 管理员(user_id=1) 的文件（去重）
-    const rows = db.prepare(
-      `SELECT id, name, field_names, feature_count, created_at, user_id
-       FROM shapefiles
-       WHERE user_id = ? OR user_id = 1
-       ORDER BY created_at DESC`
-    ).all(userId)
+    let sql = `SELECT id, name, field_names, feature_count, created_at, user_id, category
+               FROM shapefiles
+               WHERE (user_id = ? OR user_id = 1)`
+    const params = [userId]
+
+    if (category) {
+      sql += ` AND category = ?`
+      params.push(category)
+    }
+
+    sql += ` ORDER BY created_at DESC`
+
+    const rows = db.prepare(sql).all(...params)
 
     // 解析 field_names
     const data = rows.map(obj => {

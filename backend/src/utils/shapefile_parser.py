@@ -18,6 +18,9 @@ import shapefile
 # 支持的编码列表，按优先级尝试
 ENCODINGS = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
 
+# 坐标转换开关：默认转换 WGS84→GCJ-02，设为 True 则跳过
+SKIP_COORD_CONVERT = False
+
 
 def try_decode(value, encodings=None):
     """尝试用多种编码解码字符串"""
@@ -177,21 +180,25 @@ def parse_shapefile_from_zip(zip_path):
                 # 转换几何坐标
                 coordinates = []
                 if shape.shapeType == 5:  # Polygon
-                    # shape.parts 定义了每个 part 的起始点索引
-                    # 需要添加最后一个边界来获取每个 part 的范围
                     parts = list(shape.parts) + [len(shape.points)]
                     for i, part_start in enumerate(shape.parts):
-                        part_end = parts[i + 1]  # 下一个 part 的起始索引就是当前 part 的结束索引
+                        part_end = parts[i + 1]
                         part_coords = []
                         for j in range(part_start, part_end):
                             lng, lat = shape.points[j]
-                            gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
-                            part_coords.append([gcj_lng, gcj_lat])
+                            if SKIP_COORD_CONVERT:
+                                part_coords.append([lng, lat])
+                            else:
+                                gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
+                                part_coords.append([gcj_lng, gcj_lat])
                         coordinates.append(part_coords)
                 elif shape.shapeType == 1:  # Point
                     lng, lat = shape.points[0]
-                    gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
-                    coordinates = [[gcj_lng, gcj_lat]]
+                    if SKIP_COORD_CONVERT:
+                        coordinates = [[lng, lat]]
+                    else:
+                        gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
+                        coordinates = [[gcj_lng, gcj_lat]]
 
                 feature = {
                     'type': 'Feature',
@@ -225,9 +232,14 @@ if __name__ == '__main__':
         sys.exit(1)
 
     zip_path = sys.argv[1]
+    skip_coord_convert = len(sys.argv) > 2 and sys.argv[2] == '--skip-convert'
+
     if not os.path.exists(zip_path):
         print(json.dumps({'success': False, 'error': f'文件不存在: {zip_path}'}))
         sys.exit(1)
+
+    # 传入参数给 parse 函数
+    parse_shapefile_from_zip.__globals__['SKIP_COORD_CONVERT'] = skip_coord_convert
 
     result = parse_shapefile_from_zip(zip_path)
     print(json.dumps(result, ensure_ascii=False))

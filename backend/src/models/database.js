@@ -281,6 +281,14 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // 兼容迁移：添加 category 列（用于区分七普人口和其他类型）
+  try {
+    db.run(`ALTER TABLE shapefiles ADD COLUMN category TEXT DEFAULT 'population'`)
+    console.log('[数据库] shapefiles 表已添加 category 列')
+  } catch (e) {
+    // 列已存在则忽略
+  }
+
   // 创建智慧足迹购买记录表
   db.run(`
     CREATE TABLE IF NOT EXISTS purchases (

@@ -4920,10 +4920,13 @@ const handleShapefileQuery = (event) => {
                   .map(field => {
                     const v = featureProps[field]
                     if (v === null || v === undefined || v === '') return null
-                    // 支持数字和字符串数字
+                    // 显示文本字段（名称等）原文
+                    if (typeof v === 'string' && isNaN(Number(v))) {
+                      return `${field}: ${v}`
+                    }
+                    // 显示数字字段
                     const num = typeof v === 'number' ? v : Number(v)
                     if (isNaN(num)) return null
-                    // 显示整数
                     return `${field}: ${Math.round(num)}`
                   })
                   .filter(v => v !== null)
