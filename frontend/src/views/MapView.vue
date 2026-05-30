@@ -141,18 +141,6 @@
             <span>定位门店</span>
           </div>
         </el-tooltip>
-        <!-- 热力图 -->
-        <div class="store-tools-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
-          <el-icon><DataLine /></el-icon>
-          <span>热力图</span>
-        </div>
-        <!-- 聚合显示 -->
-        <el-tooltip content="聚合显示" placement="left">
-          <div class="store-tools-item" :class="{ active: showCluster }" @click="toggleCluster">
-            <el-icon><Grid /></el-icon>
-            <span>聚合显示</span>
-          </div>
-        </el-tooltip>
         <!-- 按行政界查询 -->
         <el-tooltip content="按行政界查询" placement="left">
           <div class="store-tools-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
@@ -165,6 +153,18 @@
           <div class="store-tools-item" :class="{ active: commerceVisible }" @click="commerceVisible = !commerceVisible">
             <el-icon><Shop /></el-icon>
             <span>按商圈查询</span>
+          </div>
+        </el-tooltip>
+        <!-- 热力图 -->
+        <div class="store-tools-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
+          <el-icon><DataLine /></el-icon>
+          <span>热力图</span>
+        </div>
+        <!-- 聚合显示 -->
+        <el-tooltip content="聚合显示" placement="left">
+          <div class="store-tools-item" :class="{ active: showCluster }" @click="toggleCluster">
+            <el-icon><Grid /></el-icon>
+            <span>聚合显示</span>
           </div>
         </el-tooltip>
       </div>

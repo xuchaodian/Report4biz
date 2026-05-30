@@ -8,6 +8,7 @@ import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
+import iconv from 'iconv-lite'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -55,18 +56,36 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
 
     const filePath = req.file.path
     // 处理文件名编码问题
-    // HTTP multipart 头的文件名可能在传输中被编码，我们尝试恢复正确的 UTF-8
     let originalName = req.file.originalname
-    
-    // 检测是否有编码问题（检查是否包含 Latin-1 被误解为 UTF-8 的情况）
-    // 常见特征：中文变成乱码如 "ä½ " 等
-    const hasEncodingIssue = /[Ã¤Ã©Ã¨Ã¼Ã¶Ã¼Â°Ã§Â·Â¢]/.test(originalName)
-    if (hasEncodingIssue) {
-      // 将字符串当作 Latin-1 重新编码为 Buffer，再解码为 UTF-8
-      originalName = Buffer.from(originalName, 'latin1').toString('utf8')
+
+    // 自动检测并修复文件名乱码
+    // 策略：尝试多种编码修复方案，选用包含中文的结果
+    function hasChinese(s) { return /[\u4e00-\u9fa5]/.test(s) }
+
+    // 场景1：UTF-8 字节被当作 Latin-1 读取（常见 macOS 上传）
+    // 特征：字符串中 Latin-1 补充字符（U+0080-00FF）占比高
+    const latin1Ratio = [...originalName].filter(c => {
+      const code = c.charCodeAt(0)
+      return code >= 0x80 && code <= 0xFF
+    }).length / originalName.length
+    if (latin1Ratio > 0.3) {
+      const fixed = Buffer.from(originalName, 'latin1').toString('utf8')
+      if (hasChinese(fixed) || !hasChinese(originalName)) {
+        originalName = fixed
+      }
     }
-    
-    // 另一种情况：文件名本身就是正常的 UTF-8，直接使用即可
+
+    // 场景2：UTF-8 字节被 busboy 误当作 GBK 解码（常见中文 Windows Chrome）
+    // 修复：将乱码字符串用 GBK 编码还原字节，再用 UTF-8 解码
+    if (!hasChinese(originalName)) {
+      try {
+        const gbkBytes = iconv.encode(originalName, 'gbk')
+        const utf8Name = gbkBytes.toString('utf8')
+        if (hasChinese(utf8Name)) {
+          originalName = utf8Name
+        }
+      } catch (e) { /* GBK 编码失败，保持原样 */ }
+    }
 
     // 获取用户ID (从 header 或默认)
     const userId = req.headers['x-user-id'] || 1
@@ -113,6 +132,9 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
        VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
     ).run(originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId, category)
+
+    // 立即保存到磁盘，防止进程重启导致数据丢失
+    db.saveNow()
 
     const insertId = insertResult.lastInsertRowid
 
@@ -225,6 +247,7 @@ router.put('/:id/rename', (req, res) => {
     }
 
     db.prepare(`UPDATE shapefiles SET name = ? WHERE id = ? AND user_id = ?`).run(name.trim(), id, userId)
+    db.saveNow()
 
     res.json({ success: true, message: '重命名成功' })
   } catch (error) {
@@ -241,6 +264,7 @@ router.delete('/:id', (req, res) => {
     const userId = req.headers['x-user-id'] || 1
 
     db.prepare(`DELETE FROM shapefiles WHERE id = ? AND user_id = ?`).run(id, userId)
+    db.saveNow()
 
     res.json({ success: true, message: '删除成功' })
 
