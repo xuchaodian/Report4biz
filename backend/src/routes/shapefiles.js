@@ -648,4 +648,92 @@ router.post('/search-commerce', (req, res) => {
   }
 })
 
+
+/**
+ * POST /api/shapefiles/calculate-potential
+ * 开店余地分析
+ */
+router.post('/calculate-potential', (req, res) => {
+  try {
+    const userId = req.headers['x-user-id'] || 1
+    const { cityName, radius, myStoreMin, competitorMin, conditions } = req.body
+    if (!cityName || !radius) return res.status(400).json({ success: false, error: '缺少参数' })
+    const r = parseFloat(radius) || 1
+    const db = getDb()
+    const rows = db.prepare(`SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'population' AND name LIKE ? AND (user_id = ? OR user_id = 1) LIMIT 1`).all(`%${cityName}%`, userId)
+    if (!rows || !rows.length) return res.json({ success: false, error: `未找到${cityName}的数据` })
+    const geojson = JSON.parse(rows[0].geojson)
+    const features = geojson.features || []
+    const markers = db.prepare('SELECT id, latitude, longitude, store_status FROM markers').all()
+    const comps = db.prepare('SELECT id, brand, latitude, longitude FROM competitors').all()
+    const myStores = markers.filter(m => m.latitude && m.longitude)
+    const compStores = comps.filter(c => c.latitude && c.longitude)
+    const closedKeywords = ['闭店','停业','歇业','休业','结业','暂停营业']
+    const results = []
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i], props = f.properties || {}, geom = f.geometry
+      if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue
+      let center
+      try {
+        const poly = geom.type === 'Polygon' ? turf.polygon(geom.coordinates) : turf.polygon(geom.coordinates[0])
+        center = turf.centerOfMass(poly)
+      } catch(e) { continue }
+      const cc = center.geometry.coordinates
+      const circle = turf.circle(cc, r, { steps: 48, units: 'kilometers' })
+      let popOk = true
+      if (conditions && conditions.length > 0) {
+        for (const cond of conditions) {
+          const val = parseFloat(props[cond.field])
+          if (isNaN(val)) { popOk = false; break }
+          try {
+            const fp = turf.polygon(geom.coordinates)
+            const inter = turf.intersect(turf.featureCollection([fp, circle]))
+            if (!inter) { popOk = false; break }
+            const ratio = Math.min(turf.area(inter) / turf.area(fp), 1)
+            const weighted = val * ratio
+            const op = cond.operator || '>'
+            const condVal = parseFloat(cond.value) || parseFloat(cond.minValue) || 0
+            if (op === '>') { if (!(weighted > condVal)) { popOk = false; break } }
+            else if (op === '>=') { if (!(weighted >= condVal)) { popOk = false; break } }
+            else if (op === '<') { if (!(weighted < condVal)) { popOk = false; break } }
+            else if (op === '<=') { if (!(weighted <= condVal)) { popOk = false; break } }
+            else if (op === '=') { if (!(Math.abs(weighted - condVal) < 1)) { popOk = false; break } }
+            else { if (weighted < condVal) { popOk = false; break } }
+          } catch(e) { popOk = false; break }
+        }
+      }
+      if (!popOk) continue
+      let mc = 0, ccCount = 0
+      const bCounts = {}
+      for (const s of myStores) { if (turf.booleanPointInPolygon(turf.point([s.longitude, s.latitude]), circle)) mc++ }
+      const myStoreOp = req.body.myStoreOp || '>'
+      const myStoreVal = parseFloat(req.body.myStoreVal) || parseFloat(req.body.myStoreMin) || 1
+      const compOp = req.body.competitorOp || '>'
+      const compVal = parseFloat(req.body.competitorVal) || parseFloat(req.body.competitorMin) || 1
+      // 我的门店数条件
+      if (myStoreOp === '>' && !(mc > myStoreVal)) continue
+      else if (myStoreOp === '>=' && !(mc >= myStoreVal)) continue
+      else if (myStoreOp === '<' && !(mc < myStoreVal)) continue
+      else if (myStoreOp === '<=' && !(mc <= myStoreVal)) continue
+      else if (myStoreOp === '=' && !(Math.abs(mc - myStoreVal) < 1)) continue
+      for (const c of compStores) {
+        if (turf.booleanPointInPolygon(turf.point([c.longitude, c.latitude]), circle)) {
+          ccCount++; const b = c.brand || '未知'; bCounts[b] = (bCounts[b] || 0) + 1
+        }
+      }
+      // 竞品门店数条件
+      if (compOp === '>' && !(ccCount > compVal)) continue
+      else if (compOp === '>=' && !(ccCount >= compVal)) continue
+      else if (compOp === '<' && !(ccCount < compVal)) continue
+      else if (compOp === '<=' && !(ccCount <= compVal)) continue
+      else if (compOp === '=' && !(Math.abs(ccCount - compVal) < 1)) continue
+      results.push({ index: i, center: cc, radius: r, myStores: mc, competitors: ccCount, competitorBrands: bCounts })
+    }
+    res.json({ success: true, data: { cityName, total: features.length, matched: results.length, results } })
+  } catch (error) {
+    console.error('[calculate-potential] error:', error)
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
 export default router

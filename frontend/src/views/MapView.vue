@@ -89,6 +89,10 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>联通人口</span>
         </div>
+        <div class="business-circle-btn" :class="{ active: potentialVisible }" @click="potentialVisible = !potentialVisible">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>开店余地</span>
+        </div>
       </div>
     </div>
 
@@ -471,6 +475,81 @@
       </div>
     </div>
 
+
+    <!-- 开店余地对话框 -->
+    <el-dialog v-model="potentialVisible" title="开店余地分析" width="600px" :close-on-click-modal="false" draggable @opened="loadPotentialCities">
+      <el-form label-width="120px">
+        <el-form-item label="选择城市">
+          <el-select v-model="potentialCity" placeholder="请选择城市" style="width:100%" filterable>
+            <el-option-group v-for="group in groupedPotentialCities" :key="group.letter" :label="group.letter">
+              <el-option v-for="c in group.cities" :key="c" :label="c" :value="c" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="半径(km)">
+          <el-input-number v-model="potentialRadius" :min="0.1" :max="10" :step="0.1" :controls="false" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="我的门店数">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="potentialMyStoreOp" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialMyStoreVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+          </div>
+        </el-form-item>
+        <el-form-item label="竞品门店数">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="potentialCompOp" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialCompVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+          </div>
+        </el-form-item>
+        <el-form-item label="人口数量1">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="potentialCond1Field" placeholder="字段" style="flex:1;min-width:0" @change="onPotentialFieldChange(1)" @click="loadPotentialFields">
+              <el-option v-for="f in potentialNumericFields" :key="f" :label="f" :value="f" />
+            </el-select>
+            <el-select v-model="potentialCond1Op" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialCond1Val" type="number" placeholder="值" style="flex:1;min-width:0" />
+          </div>
+        </el-form-item>
+                <el-form-item label="人口数量2">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-select v-model="potentialCond2Field" placeholder="字段" style="flex:1;min-width:0" clearable @click="loadPotentialFields">
+              <el-option v-for="f in potentialNumericFields" :key="f" :label="f" :value="f" />
+            </el-select>
+            <el-select v-model="potentialCond2Op" placeholder="运算符" style="width:78px;flex-shrink:0" :disabled="!potentialCond2Field">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialCond2Val" type="number" placeholder="值" style="flex:1;min-width:0" :disabled="!potentialCond2Field" />
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="potentialVisible = false">取消</el-button>
+        <el-button type="primary" :loading="potentialLoading" @click="calculatePotential">开始分析</el-button>
+      </template>
+    </el-dialog>
+    
     <!-- 地图容器 -->
     <div id="map" class="map-container" />
 
@@ -1152,6 +1231,57 @@ const commerceResult = ref(null)
 const commerceNoResult = ref(false)
 const commerceError = ref('')
 const commerceLayerItems = ref([])
+
+// 开店余地
+const potentialVisible = ref(false)
+const populationCities = ref([])
+const potentialCity = ref('')
+const potentialRadius = ref(1.0)
+const potentialMyStoreOp = ref('>')
+const potentialMyStoreVal = ref(1)
+const potentialCompOp = ref('>')
+const potentialCompVal = ref(1)
+const potentialNumericFields = ref([])
+const potentialCond1Field = ref('')
+const potentialCond1Op = ref('>')
+const potentialCond1Val = ref(null)
+const potentialCond2Field = ref('')
+const potentialCond2Op = ref('>')
+const potentialCond2Val = ref(null)
+const potentialLoading = ref(false)
+const potentialResults = ref([])
+let potentialLayer = null
+
+// 常用汉字拼音首字母映射表
+const pinyinMap = {
+  '上': 'S', '北': 'B', '广': 'G', '深': 'S', '成': 'C',
+  '杭': 'H', '重': 'C', '武': 'W', '苏': 'S', '西': 'X',
+  '南': 'N', '长': 'C', '郑': 'Z', '天': 'T', '合': 'H',
+  '青': 'Q', '东': 'D', '宁': 'N', '佛': 'F', '昆': 'K',
+  '福': 'F', '厦': 'X', '海': 'H', '贵': 'G', '太': 'T',
+  '济': 'J', '哈': 'H', '沈': 'S', '大': 'D', '兰': 'L',
+  '西': 'X', '拉': 'L', '银': 'Y', '乌': 'W', '桂': 'G',
+  '珠': 'Z', '中': 'Z', '浦': 'P', '月': 'Y', '彭': 'P',
+  '桃': 'T', '南': 'N', '周': 'Z'
+}
+// 获取汉字拼音首字母
+function getFirstLetter(char) {
+  return pinyinMap[char] || char
+}
+// 按拼音首字母分组的城市列表
+const groupedPotentialCities = computed(() => {
+  const groups = {}
+  for (const city of populationCities.value) {
+    const firstLetter = getFirstLetter(city[0])
+    if (!groups[firstLetter]) groups[firstLetter] = []
+    groups[firstLetter].push(city)
+  }
+  return Object.keys(groups).sort().map(letter => ({
+    letter,
+    cities: groups[letter]
+  }))
+})
+
 const commerceArea = ref(null)
 const commerceStoreCounts = ref(null)
 let commerceLayer = null
@@ -4752,6 +4882,10 @@ const clearDrawings = () => {
       districtLayer = null
     }
     // 清除商圈查询图层
+    if (potentialLayer) {
+      map.removeLayer(potentialLayer)
+      potentialLayer = null
+    }
     if (commerceLayer) {
       map.removeLayer(commerceLayer)
       commerceLayer = null
@@ -4771,6 +4905,7 @@ const clearDrawings = () => {
   commerceError.value = ''
   commerceArea.value = null
   commerceStoreCounts.value = null
+  potentialResults.value = []
   activeTool.value = ''
   ElMessage.success('已清除')
 }
@@ -5053,6 +5188,141 @@ const clearCommerceLayer = () => {
   commerceStoreCounts.value = null
 }
 
+
+
+
+// 开店余地：加载城市列表
+const loadPotentialCities = async () => {
+  try {
+    const res = await fetch('/api/shapefiles?category=population')
+    const data = await res.json()
+    if (data && data.data) {
+      let cities = data.data.map(f => {
+        const name = f.name || ''
+        return name.replace('1km网格人口.zip', '').replace('.zip', '')
+      }).filter(c => c && /[\u4e00-\u9fa5]/.test(c))
+      cities = [...new Set(cities)]
+      // 按拼音排序
+      cities.sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      populationCities.value = cities
+    }
+  } catch(e) {
+    console.error('[Potential] 加载城市列表失败:', e)
+  }
+}
+
+// 开店余地：加载字段列表（点击下拉时触发）
+const loadPotentialFields = async () => {
+  if (!potentialCity.value || potentialNumericFields.value.length > 0) return
+  try {
+    const res = await fetch('/api/shapefiles?category=population')
+    const data = await res.json()
+    const file = (data.data || []).find(f => (f.name || '').includes(potentialCity.value))
+    if (file) {
+      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields')
+      const fieldsData = await fieldsRes.json()
+      if (fieldsData.success) {
+        potentialNumericFields.value = fieldsData.data.numericFields || []
+      }
+    }
+  } catch(e) {
+    console.error('[Potential] 加载字段失败:', e)
+  }
+}
+
+// 开店余地：城市切换时加载字段
+const onPotentialFieldChange = async (idx) => {
+  if (!potentialCity.value) return
+  try {
+    const res = await fetch('/api/shapefiles?category=population')
+    const data = await res.json()
+    const file = (data.data || []).find(f => (f.name || '').includes(potentialCity.value))
+    if (file) {
+      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields')
+      const fieldsData = await fieldsRes.json()
+      if (fieldsData.success) {
+        potentialNumericFields.value = fieldsData.data.numericFields || []
+      }
+    }
+  } catch(e) {
+    console.error('[Potential] 加载字段失败:', e)
+  }
+}
+
+// 开店余地：开始分析
+const calculatePotential = async () => {
+  if (!potentialCity.value) { ElMessage.warning('请选择城市'); return }
+  potentialLoading.value = true
+  try {
+    // 清除旧图层
+    if (potentialLayer && map) {
+      map.removeLayer(potentialLayer)
+      potentialLayer = null
+    }
+    const conditions = []
+    if (potentialCond1Field.value && potentialCond1Val.value !== null) {
+      conditions.push({ field: potentialCond1Field.value, operator: potentialCond1Op.value || '>', value: potentialCond1Val.value })
+    }
+    if (potentialCond2Field.value && potentialCond2Val.value !== null) {
+      conditions.push({ field: potentialCond2Field.value, operator: potentialCond2Op.value || '>', value: potentialCond2Val.value })
+    }
+    const res = await fetch('/api/shapefiles/calculate-potential', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cityName: potentialCity.value,
+        radius: potentialRadius.value,
+        myStoreOp: potentialMyStoreOp.value || '>',
+        myStoreVal: potentialMyStoreVal.value,
+        competitorOp: potentialCompOp.value || '>',
+        competitorVal: potentialCompVal.value,
+        conditions
+      })
+    })
+    const data = await res.json()
+    if (data.success && data.data.matched > 0) {
+      potentialResults.value = data.data.results
+      // 在地图上显示符合条件的圆
+      const circles = []
+      for (const r of data.data.results) {
+        const circle = L.circle([r.center[1], r.center[0]], {
+          radius: r.radius * 1000,
+          color: '#67c23a',
+          weight: 2,
+          opacity: 0.7,
+          fillColor: '#67c23a',
+          fillOpacity: 0.12,
+          interactive: false
+        })
+        circle.bindTooltip('门店:' + r.myStores + ' 竞品:' + r.competitors, {
+          permanent: false, direction: 'center', className: 'potential-tooltip'
+        })
+        circles.push(circle)
+      }
+      if (circles.length > 0 && map) {
+        potentialLayer = L.featureGroup(circles).addTo(map)
+        map.fitBounds(potentialLayer.getBounds(), { padding: [40, 40] })
+      }
+      ElMessage.success('找到 ' + data.data.matched + ' 个符合条件的区域')
+    } else {
+      ElMessage.info('未找到符合条件的区域')
+    }
+  } catch(e) {
+    console.error('[Potential] 计算失败:', e)
+    ElMessage.error('分析失败: ' + e.message)
+  } finally {
+    potentialLoading.value = false
+  }
+}
+
+// 清除开店余地图层
+const clearPotentialLayer = () => {
+  if (potentialLayer && map) {
+    map.removeLayer(potentialLayer)
+    potentialLayer = null
+  }
+  potentialResults.value = []
+}
 
 // 切换图标样式
 const changeMarkerStyle = (style) => {
