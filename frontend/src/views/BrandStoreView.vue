@@ -59,7 +59,7 @@
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
-      <span class="统计">共 {{ filteredBrandStores.length }} 条数据</span>
+      <span class="统计">共 {{ tableTotal }} 条数据</span>
       <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
         <el-icon><Close /></el-icon>清除筛选
       </el-button>
@@ -68,8 +68,8 @@
     <div class="data-table">
       <el-table
         ref="tableRef"
-        :data="paginatedBrandStores"
-        v-loading="brandStoreStore.loading"
+        :data="tableData"
+        v-loading="tableLoading"
         border
         stripe
         row-key="id"
@@ -113,9 +113,11 @@
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        :total="filteredBrandStores.length"
+        :total="tableTotal"
         :page-sizes="[10, 20, 50, 100]"
         layout="total, sizes, prev, pager, next, jumper"
+        @current-change="loadBrandStoresTable"
+        @size-change="loadBrandStoresTable"
       />
     </div>
 
@@ -246,6 +248,9 @@ const filterBrand = ref('')
 const filterCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
+const tableData = ref([])
+const tableTotal = ref(0)
+const tableLoading = ref(false)
 
 // 同步筛选条件到 store（用于地图 visibleIds 联动，不持久化到其他用户）
 const syncFiltersToStore = () => {
@@ -313,6 +318,7 @@ const categoryList = computed(() => {
 })
 
 const filteredBrandStores = computed(() => {
+  // 仅用于 visibleIds 同步（基于 store 全量数据）
   return brandStoreStore.brandStores.filter(store => {
     const matchKeyword = !searchKeyword.value ||
       store.name.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
@@ -327,18 +333,30 @@ const filteredBrandStores = computed(() => {
   })
 })
 
-const paginatedBrandStores = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredBrandStores.value.slice(start, end)
-})
+// 服务端分页加载表格数据
+const loadBrandStoresTable = async () => {
+  tableLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      page: currentPage.value, pageSize: pageSize.value,
+      keyword: searchKeyword.value, city: filterCity.value,
+      district: filterDistrict.value, brand: filterBrand.value,
+      category: filterCategory.value
+    })
+    const token = sessionStorage.getItem('token')
+    const r = await fetch(`/api/brand-stores?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    const d = await r.json()
+    if (d.success) { tableData.value = d.data; tableTotal.value = d.total }
+    else if (d.brandStores) { tableData.value = d.brandStores; tableTotal.value = d.brandStores.length }
+  } catch(e) { console.error('[BrandStore] 加载失败:', e) }
+  finally { tableLoading.value = false }
+}
 
 const handleSearch = () => {
   currentPage.value = 1
-  // 同步筛选条件到 store（持久化）
   syncFiltersToStore()
-  // 计算可见ID
   syncVisibleIds()
+  loadBrandStoresTable()
 }
 
 const syncVisibleIds = () => {
@@ -365,6 +383,7 @@ const handleClearFilters = () => {
   filterCategory.value = ''
   brandStoreStore.clearFilters()
   currentPage.value = 1
+  loadBrandStoresTable()
 }
 
 const showAddDialog = () => {
@@ -543,6 +562,7 @@ onMounted(async () => {
   brandStoreStore.clearFilters()
   await brandStoreStore.fetchBrandStores()
   console.log('✅ 门店列表加载完成')
+  loadBrandStoresTable()
 })
 
 </script>

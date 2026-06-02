@@ -1,6 +1,8 @@
 <template>
   <div class="shopping-center-view">
-    <div class="data-header">
+    <el-tabs v-model="scActiveTab" class="sc-tabs">
+      <el-tab-pane label="购物中心" name="centers">
+        <div class="data-header">
       <h2>购物中心</h2>
       <div class="header-actions">
         <el-button type="success" @click="openShoppingCenterCompare">
@@ -77,7 +79,7 @@
         @change="handleSearch"
       />
 
-      <span class="统计">共 {{ filteredList.length }} 条数据</span>
+      <span class="统计">共 {{ scTableTotal }} 条数据</span>
       <el-button v-if="hasActiveFilters" type="warning" plain @click="handleClearFilters">
         <el-icon><Close /></el-icon>清除筛选
       </el-button>
@@ -86,8 +88,8 @@
     <div class="data-table">
       <el-table
         ref="tableRef"
-        :data="paginatedList"
-        v-loading="store.loading"
+        :data="scTableData"
+        v-loading="scTableLoading"
         border
         stripe
         row-key="id"
@@ -134,9 +136,11 @@
       <el-pagination
         v-model:current-page="currentPage"
         v-model:page-size="pageSize"
-        :total="filteredList.length"
+        :total="scTableTotal"
         :page-sizes="[10, 20, 50, 100]"
         layout="total, sizes, prev, pager, next, jumper"
+        @current-change="loadShoppingCenterTable"
+        @size-change="loadShoppingCenterTable"
       />
     </div>
 
@@ -338,6 +342,74 @@
         <el-button v-if="compareStep === 2" @click="compareStep = 1">重新选择</el-button>
       </template>
     </el-dialog>
+      </el-tab-pane>
+      <el-tab-pane label="商场餐饮商户" name="tenants">
+        <div class="data-header">
+          <h2>商场餐饮商户</h2>
+          <div class="header-actions">
+            <el-upload
+              v-if="userStore.isAdmin"
+              action="/api/mall-tenants/import"
+              accept=".csv"
+              :show-file-list="false"
+              :on-success="onTenantImportSuccess"
+              :on-error="() => ElMessage.error('导入失败')"
+            >
+              <el-button type="primary"><el-icon><Upload /></el-icon>导入CSV</el-button>
+            </el-upload>
+            <el-button v-if="userStore.isAdmin" type="danger" @click="handleClearAllTenants"><el-icon><Delete /></el-icon>全清除</el-button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <el-input v-model="tenantKeyword" placeholder="搜索商场名称/商户名称" style="width:200px" clearable>
+            <template #prefix><el-icon><Search /></el-icon></template>
+          </el-input>
+          <el-select v-model="tenantFilterCity" placeholder="按城市" style="width:120px" clearable>
+            <el-option v-for="c in tenantCityOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-select v-model="tenantFilterDistrict" placeholder="按区县" style="width:120px" clearable>
+            <el-option v-for="d in tenantDistrictOptions" :key="d" :label="d" :value="d" />
+          </el-select>
+          <el-select v-model="tenantFilterBizCircle" placeholder="按商圈" style="width:120px" clearable>
+            <el-option v-for="b in tenantBizCircleOptions" :key="b" :label="b" :value="b" />
+          </el-select>
+          <el-select v-model="tenantFilterType" placeholder="按类型" style="width:120px" clearable>
+            <el-option v-for="t in tenantTypeOptions" :key="t" :label="t" :value="t" />
+          </el-select>
+          <span class="统计">共 {{ tenantTotal }} 条数据</span>
+          <el-button v-if="hasTenantFilter" type="warning" plain @click="clearTenantFilters"><el-icon><Close /></el-icon>清除筛选</el-button>
+        </div>
+        <div class="data-table">
+          <el-table :data="tenantData" stripe border size="small" style="width:100%" v-loading="tenantLoading">
+            <el-table-column prop="商场名称" label="商场" min-width="120" />
+            <el-table-column prop="商户名称" label="商户" min-width="200" />
+            <el-table-column prop="商户类型" label="类型" min-width="80" />
+            <el-table-column prop="所在楼层" label="楼层" min-width="80" />
+            <el-table-column prop="评论数" label="评论数" min-width="60" align="right" />
+            <el-table-column prop="星级" label="星级" min-width="50" align="right" />
+            <el-table-column prop="价格" label="价格" min-width="50" align="right" />
+            <el-table-column prop="城市" label="城市" min-width="50" />
+            <el-table-column prop="区县" label="区县" min-width="70" />
+            <el-table-column prop="商圈" label="商圈" min-width="80" />
+            <el-table-column prop="地址" label="地址" min-width="260" />
+            <el-table-column prop="数据出处" label="数据源" min-width="50" />
+            <el-table-column prop="数据年月" label="数据年月" min-width="60" />
+          </el-table>
+        </div>
+        <div class="pagination-container" v-if="tenantTotal > 0">
+          <el-pagination
+            v-model:current-page="tenantCurrentPage"
+            v-model:page-size="tenantPageSize"
+            :total="tenantTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="loadTenants"
+            @size-change="loadTenants"
+          />
+        </div>
+        <div v-if="tenantData.length === 0" style="text-align:center;padding:40px;color:#909399">暂无数据</div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -354,6 +426,29 @@ import * as echarts from 'echarts'
 const userStore = useUserStore()
 const store = useShoppingCenterStore()
 const router = useRouter()
+const scActiveTab = ref('centers')
+const tenantData = ref([])
+const tenantTotal = ref(0)
+const tenantKeyword = ref('')
+const tenantFilterCity = ref('')
+const tenantFilterDistrict = ref('')
+const tenantFilterBizCircle = ref('')
+const tenantFilterType = ref('')
+const tenantCurrentPage = ref(1)
+const tenantPageSize = ref(20)
+const tenantLoading = ref(false)
+
+// 筛选下拉选项（从服务端返回）
+const tenantCityOptions = ref([])
+const tenantDistrictOptions = ref([])
+const tenantBizCircleOptions = ref([])
+const tenantTypeOptions = ref([])
+
+// 是否有激活的筛选条件
+const hasTenantFilter = computed(() =>
+  tenantKeyword.value || tenantFilterCity.value || tenantFilterDistrict.value ||
+  tenantFilterBizCircle.value || tenantFilterType.value
+)
 
 const storeCategoryOptions = ['购物中心', '百货商场', '奥特莱斯', '社区商业', '街边商业', '专业市场']
 const statusList = ['正常', '关注', '暂停', '关闭']
@@ -422,6 +517,7 @@ watch(filterCity, (newCity) => {
 const categoryList = computed(() => [...new Set(store.shoppingCenters.map(s => s.store_category).filter(Boolean))].sort())
 
 const filteredList = computed(() => {
+  // 仅用于 visibleIds 同步（基于 store 全量数据）
   return store.shoppingCenters.filter(item => {
     const matchKeyword = !searchKeyword.value ||
       item.name.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
@@ -430,24 +526,40 @@ const filteredList = computed(() => {
     const matchCity = !filterCity.value || item.city === filterCity.value
     const matchDistrict = !filterDistrict.value || item.district === filterDistrict.value
     const matchCategory = !filterCategory.value || item.store_category === filterCategory.value
-    // 星级筛选：大于等于设定值
     const matchStars = !filterStarsMin.value || (item.stars && item.stars >= parseFloat(filterStarsMin.value))
-    // 评论数筛选：大于等于设定值
     const matchComments = !filterCommentsMin.value || (item.comments && item.comments >= parseInt(filterCommentsMin.value))
     return matchKeyword && matchCity && matchDistrict && matchCategory && matchStars && matchComments
   })
 })
 
-const paginatedList = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredList.value.slice(start, start + pageSize.value)
-})
+// 购物中心表格数据（服务端分页）
+const scTableData = ref([])
+const scTableTotal = ref(0)
+const scTableLoading = ref(false)
+const loadShoppingCenterTable = async () => {
+  scTableLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      page: currentPage.value, pageSize: pageSize.value,
+      keyword: searchKeyword.value, city: filterCity.value,
+      district: filterDistrict.value, category: filterCategory.value,
+      starsMin: filterStarsMin.value || '', commentsMin: filterCommentsMin.value || ''
+    })
+    const token = sessionStorage.getItem('token')
+    const r = await fetch(`/api/shopping-centers?${params}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    const d = await r.json()
+    if (d.success) { scTableData.value = d.data; scTableTotal.value = d.total }
+    else if (d.shoppingCenters) { scTableData.value = d.shoppingCenters; scTableTotal.value = d.shoppingCenters.length }
+  } catch(e) { console.error('[ShoppingCenter] 加载失败:', e) }
+  finally { scTableLoading.value = false }
+}
 
 const hasActiveFilters = computed(() => searchKeyword.value || filterCity.value || filterDistrict.value || filterCategory.value || filterStarsMin.value || filterCommentsMin.value)
 
 const handleSearch = () => {
   currentPage.value = 1
   syncFiltersToStore()
+  loadShoppingCenterTable()
 }
 
 const handleClearFilters = () => {
@@ -459,6 +571,8 @@ const handleClearFilters = () => {
   filterCommentsMin.value = ''
   store.clearFilters()
   store.setVisibleIds(null)  // 清除地图筛选
+  currentPage.value = 1
+  loadShoppingCenterTable()
   currentPage.value = 1
 }
 
@@ -633,6 +747,7 @@ onMounted(() => {
   filterCommentsMin.value = ''
   store.clearFilters()
   store.setVisibleIds(null)  // 重置地图图层显示
+  loadShoppingCenterTable()
 })
 
 // ===== 商场常住人口对比 =====
@@ -833,6 +948,73 @@ function getHeatmapCellStyle(nums, idx) {
 
 // 窗口resize时重绘图表
 window.addEventListener('resize', () => { if (compareChart) compareChart.resize() })
+
+// ====== 商场商户功能 ======
+const loadTenants = async () => {
+  tenantLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      page: tenantCurrentPage.value,
+      pageSize: tenantPageSize.value,
+      keyword: tenantKeyword.value,
+      city: tenantFilterCity.value,
+      district: tenantFilterDistrict.value,
+      bizCircle: tenantFilterBizCircle.value,
+      type: tenantFilterType.value
+    })
+    const r = await fetch('/api/mall-tenants?' + params.toString())
+    const d = await r.json()
+    if (d.success) {
+      tenantData.value = d.data
+      tenantTotal.value = d.total
+      if (d.filterOptions) {
+        tenantCityOptions.value = d.filterOptions.city || []
+        tenantDistrictOptions.value = d.filterOptions.district || []
+        tenantBizCircleOptions.value = d.filterOptions.bizCircle || []
+        tenantTypeOptions.value = d.filterOptions.type || []
+      }
+    } else console.warn('[Tenants] 加载失败:', d)
+  } catch(e) { console.error('[Tenants] 加载失败:', e) }
+  finally { tenantLoading.value = false }
+}
+
+// 清除筛选
+const clearTenantFilters = () => {
+  tenantKeyword.value = ''
+  tenantFilterCity.value = ''
+  tenantFilterDistrict.value = ''
+  tenantFilterBizCircle.value = ''
+  tenantFilterType.value = ''
+}
+
+const onTenantImportSuccess = (res) => {
+  if (res.success) { ElMessage.success('导入成功'); loadTenants() }
+  else { ElMessage.error(res.message || '导入失败') }
+}
+
+// 全清除
+const handleClearAllTenants = async () => {
+  try {
+    await ElMessageBox.confirm('确定要清除所有商户数据吗？此操作不可恢复！', '警告', {
+      type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消'
+    })
+    const r = await fetch('/api/mall-tenants', { method: 'DELETE' })
+    const d = await r.json()
+    if (d.success) { ElMessage.success('已清除所有数据'); loadTenants() }
+    else { ElMessage.error(d.message || '清除失败') }
+  } catch (e) { if (e !== 'cancel') console.error(e) }
+}
+
+// Tab 切换自动加载
+watch(scActiveTab, (tab) => {
+  if (tab === 'tenants') { tenantCurrentPage.value = 1; loadTenants() }
+})
+
+// 筛选变化时重置商户翻页到第1页并重新加载
+watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType], () => {
+  tenantCurrentPage.value = 1
+  loadTenants()
+})
 </script>
 
 <style lang="scss" scoped>
@@ -842,6 +1024,21 @@ window.addEventListener('resize', () => { if (compareChart) compareChart.resize(
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+}
+.sc-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sc-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  overflow: auto;
+}
+.sc-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 .data-header {
   display: flex;

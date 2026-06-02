@@ -9,14 +9,47 @@ const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
 // 获取所有购物中心
+// 支持分页: ?page=1&pageSize=20&keyword=&city=&district=&category=
+// 无page参数时返回全量（兼容地图）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const shoppingCenters = db.prepare(`
-      SELECT * FROM shopping_centers ORDER BY created_at DESC
-    `).all()
+    const page = parseInt(req.query.page)
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize) || 20))
+    const keyword = (req.query.keyword || '').trim()
+    const city = req.query.city || ''
+    const district = req.query.district || ''
+    const category = req.query.category || ''
+    const starsMin = req.query.starsMin ? parseFloat(req.query.starsMin) : 0
+    const commentsMin = req.query.commentsMin ? parseInt(req.query.commentsMin) : 0
 
-    res.json({ shoppingCenters })
+    let where = 'WHERE 1=1'
+    const params = []
+    if (keyword) { where += ' AND (name LIKE ? OR address LIKE ? OR store_code LIKE ?)'; const kw = `%${keyword}%`; params.push(kw, kw, kw) }
+    if (city) { where += ' AND city = ?'; params.push(city) }
+    if (district) { where += ' AND district = ?'; params.push(district) }
+    if (category) { where += ' AND store_category = ?'; params.push(category) }
+    if (starsMin > 0) { where += ' AND (stars IS NOT NULL AND stars >= ?)'; params.push(starsMin) }
+    if (commentsMin > 0) { where += ' AND (comments IS NOT NULL AND comments >= ?)'; params.push(commentsMin) }
+
+    // 无page参数 = 全量返回（兼容地图等）
+    if (isNaN(page)) {
+      const shoppingCenters = db.prepare(`SELECT * FROM shopping_centers ${where} ORDER BY created_at DESC`).all(...params)
+      return res.json({ shoppingCenters })
+    }
+
+    // 分页模式
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM shopping_centers ${where}`).get(...params)
+    const total = countRow.total
+    const offset = (page - 1) * pageSize
+    const data = db.prepare(`SELECT * FROM shopping_centers ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset)
+
+    // 筛选选项
+    const allCity = db.prepare(`SELECT DISTINCT city FROM shopping_centers WHERE city != '' ORDER BY city`).all().map(r => r.city)
+    const allDistrict = db.prepare(`SELECT DISTINCT district FROM shopping_centers WHERE district != '' ORDER BY district`).all().map(r => r.district)
+    const allCategory = db.prepare(`SELECT DISTINCT store_category FROM shopping_centers WHERE store_category != '' ORDER BY store_category`).all().map(r => r.store_category)
+
+    res.json({ success: true, data, total, page, pageSize, filterOptions: { city: allCity, district: allDistrict, category: allCategory } })
   } catch (error) {
     console.error('获取购物中心列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })

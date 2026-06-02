@@ -38,6 +38,26 @@ router.get('/:city', (req, res) => {
   }
 })
 
+// POST /api/city-data - 手动添加城市数据
+router.post('/', (req, res) => {
+  try {
+    const body = req.body
+    if (!body['城市']) return res.status(400).json({ success: false, message: '城市名不能为空' })
+    const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'))
+    const idx = data.findIndex(d => d['城市'] === body['城市'])
+    const record = {}
+    // 用现有字段列表保留顺序
+    const fields = ['城市','省份','等级','年份','GDP(亿元)','增速(%)','人均GDP(元)','年末常住人口(万人)','城镇人口(万人)','城镇居民人均可支配收入(元)','城镇居民人均消费支出(元)','社会消费品零售总额(亿元)']
+    fields.forEach(f => { const v = body[f]; record[f] = (v !== undefined && v !== '') ? (isNaN(Number(v)) ? v : Number(v)) : '' })
+    if (idx >= 0) data[idx] = record
+    else data.push(record)
+    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2))
+    res.json({ success: true, message: `已${idx >= 0 ? '更新' : '添加'}「${body['城市']}」` })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
 // POST /api/city-data/import - 导入 CSV
 router.post('/import', upload.single('file'), (req, res) => {
   try {

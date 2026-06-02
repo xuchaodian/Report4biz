@@ -9,17 +9,46 @@ const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
 // 获取所有品牌门店（共享数据，所有用户可见）
+// 支持分页: ?page=1&pageSize=20&keyword=&city=&district=&brand=&category=
+// 无page参数时返回全量（兼容地图）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const brandStores = db.prepare(`
-      SELECT id, user_id, store_code, brand, name, store_category,
-             city, district, address, description,
-             latitude, longitude, status, icon_color, created_at
-      FROM brand_stores ORDER BY created_at DESC
-    `).all()
+    const page = parseInt(req.query.page)
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize) || 20))
+    const keyword = (req.query.keyword || '').trim()
+    const city = req.query.city || ''
+    const district = req.query.district || ''
+    const brand = req.query.brand || ''
+    const category = req.query.category || ''
 
-    res.json({ brandStores })
+    let where = 'WHERE 1=1'
+    const params = []
+    if (keyword) { where += ' AND (name LIKE ? OR address LIKE ? OR store_code LIKE ? OR brand LIKE ?)'; const kw = `%${keyword}%`; params.push(kw, kw, kw, kw) }
+    if (city) { where += ' AND city = ?'; params.push(city) }
+    if (district) { where += ' AND district = ?'; params.push(district) }
+    if (brand) { where += ' AND brand = ?'; params.push(brand) }
+    if (category) { where += ' AND store_category = ?'; params.push(category) }
+
+    // 无page参数 = 全量返回（兼容地图等）
+    if (isNaN(page)) {
+      const brandStores = db.prepare(`SELECT id, user_id, store_code, brand, name, store_category, city, district, address, description, latitude, longitude, status, icon_color, created_at FROM brand_stores ${where} ORDER BY created_at DESC`).all(...params)
+      return res.json({ brandStores })
+    }
+
+    // 分页模式
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM brand_stores ${where}`).get(...params)
+    const total = countRow.total
+    const offset = (page - 1) * pageSize
+    const data = db.prepare(`SELECT id, user_id, store_code, brand, name, store_category, city, district, address, description, latitude, longitude, status, icon_color, created_at FROM brand_stores ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset)
+
+    // 筛选选项（从全量数据中提取）
+    const allCity = db.prepare(`SELECT DISTINCT city FROM brand_stores WHERE city != '' ORDER BY city`).all().map(r => r.city)
+    const allDistrict = db.prepare(`SELECT DISTINCT district FROM brand_stores WHERE district != '' ORDER BY district`).all().map(r => r.district)
+    const allBrand = db.prepare(`SELECT DISTINCT brand FROM brand_stores WHERE brand != '' ORDER BY brand`).all().map(r => r.brand)
+    const allCategory = db.prepare(`SELECT DISTINCT store_category FROM brand_stores WHERE store_category != '' ORDER BY store_category`).all().map(r => r.store_category)
+
+    res.json({ success: true, data, total, page, pageSize, filterOptions: { city: allCity, district: allDistrict, brand: allBrand, category: allCategory } })
   } catch (error) {
     console.error('获取品牌门店列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })

@@ -4,6 +4,7 @@
       <h2>城市宏观数据</h2>
       <div class="header-actions">
         <div style="display:flex;gap:8px">
+          <el-button v-if="userStore.isAdmin" type="success" size="small" @click="openAdd"><el-icon><Plus /></el-icon>添加</el-button>
           <el-upload
             v-if="userStore.isAdmin"
             action="/api/city-data/import"
@@ -17,7 +18,6 @@
         </div>
         <div style="display:flex;gap:8px">
           <el-button v-if="userStore.isAdmin" type="danger" size="small" @click="handleClear"><el-icon><Delete /></el-icon>一键清除</el-button>
-          <el-button size="small" @click="loadData"><el-icon><Refresh /></el-icon>刷新</el-button>
         </div>
       </div>
     </div>
@@ -64,11 +64,11 @@
       </div>
     </div>
 
-    <!-- 编辑对话框 -->
-    <el-dialog v-model="editVisible" title="编辑城市数据" width="600px" :close-on-click-modal="false">
+    <!-- 添加/编辑对话框 -->
+    <el-dialog v-model="editVisible" :title="isAddMode ? '添加城市数据' : '编辑城市数据'" width="600px" :close-on-click-modal="false">
       <el-form :model="editForm" label-width="140px" size="small">
         <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="城市"><el-input v-model="editForm['城市']" disabled /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="城市"><el-input v-model="editForm['城市']" :disabled="!isAddMode" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="省份"><el-input v-model="editForm['省份']" /></el-form-item></el-col>
         </el-row>
         <el-row :gutter="16">
@@ -103,7 +103,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Upload, Delete, Edit, MapLocation } from '@element-plus/icons-vue'
+import { Refresh, Upload, Delete, Edit, MapLocation, Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -111,7 +111,14 @@ const cityData = ref([])
 const loading = ref(false)
 const editVisible = ref(false)
 const editLoading = ref(false)
+const isAddMode = ref(false)
 const editForm = ref({})
+
+const openAdd = () => {
+  isAddMode.value = true
+  editForm.value = { '城市':'','省份':'','等级':'','年份':'2025年','GDP(亿元)':null,'增速(%)':null,'人均GDP(元)':null,'年末常住人口(万人)':null,'城镇人口(万人)':null,'城镇居民人均可支配收入(元)':null,'城镇居民人均消费支出(元)':null,'社会消费品零售总额(亿元)':null }
+  editVisible.value = true
+}
 
 onMounted(() => loadData())
 
@@ -158,8 +165,9 @@ const viewOnMap = (row) => {
 const saveEdit = async () => {
   editLoading.value = true
   try {
-    const res = await fetch(`/api/city-data/${encodeURIComponent(editForm.value['城市'])}`, {
-      method: 'PUT',
+    const url = isAddMode.value ? '/api/city-data' : `/api/city-data/${encodeURIComponent(editForm.value['城市'])}`
+    const res = await fetch(url, {
+      method: isAddMode.value ? 'POST' : 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editForm.value)
     })
