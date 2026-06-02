@@ -246,4 +246,49 @@ router.get('/ip-location', (req, res) => {
   queryWithIpApi()
 })
 
+// 行政区域边界查询 - 使用高德行政区域API
+router.get('/district', (req, res) => {
+  const rawCity = req.query.city
+  if (!rawCity) return res.status(400).json({ error: '城市名不能为空' })
+  const city = ensureProperEncoding(rawCity)
+  const url = `https://restapi.amap.com/v3/config/district?keywords=${encodeURIComponent(city)}&key=${AMap_KEY}&extensions=all&subdistrict=0`
+  https.get(url, (apiRes) => {
+    let data = ''
+    apiRes.on('data', chunk => data += chunk)
+    apiRes.on('end', () => {
+      try {
+        const json = JSON.parse(data)
+        if (json.status === '1' && json.districts && json.districts.length > 0) {
+          const district = json.districts[0]
+          const polyline = district.polyline || ''
+          // polyline 格式：lon1,lat1;lon2,lat2|lon1,lat1;...
+          // 用 | 分隔多个多边形（可能有飞地）
+          const polygons = polyline.split('|').filter(Boolean).map(part => {
+            const points = part.split(';').filter(Boolean).map(pt => {
+              const [lon, lat] = pt.split(',')
+              return [parseFloat(lon), parseFloat(lat)]
+            })
+            return points
+          })
+          res.json({
+            success: true,
+            data: {
+              name: district.name,
+              center: district.center,
+              polygons,
+              level: district.level
+            }
+          })
+        } else {
+          res.json({ success: false, message: json.info || '未找到该城市' })
+        }
+      } catch (e) {
+        res.json({ success: false, message: '解析失败' })
+      }
+    })
+  }).on('error', (error) => {
+    res.status(500).json({ error: '服务出错' })
+  })
+})
+
 export default router

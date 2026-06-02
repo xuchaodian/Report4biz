@@ -70,6 +70,11 @@ const routes = [
         path: 'shapefiles',
         name: 'Shapefiles',
         component: () => import('@/views/ShapefileView.vue')
+      },
+      {
+        path: 'city-data',
+        name: 'CityData',
+        component: () => import('@/views/CityDataView.vue')
       }
     ]
   }

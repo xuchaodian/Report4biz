@@ -4950,6 +4950,32 @@ const searchDistrict = async () => {
       }
 
       ElMessage.success(`已显示「${data.data.name}」行政边界`)
+      
+      // 如果是从城市数据页跳转来，额外显示统计数据弹窗
+      if (window._pendingCityStats) {
+        var cityN = window._pendingCityStats; delete window._pendingCityStats
+        fetch('/api/city-data/' + encodeURIComponent(cityN)).then(function(r){return r.json()}).then(function(cd){
+          if (!cd.success || !cd.data) return
+          var d = cd.data
+          var html = '<div style="font-size:13px;line-height:1.8;min-width:200px"><h3 style="margin:0 0 8px;font-size:15px;border-bottom:1px solid #eee;padding-bottom:6px">' + (d['城市']||'') + ' ' + (d['年份']||'') + '</h3>'
+          if (d['GDP(亿元)']) html += '<div>GDP: ' + d['GDP(亿元)'].toLocaleString() + ' 亿</div>'
+          if (d['增速(%)']) html += '<div>增速: ' + d['增速(%)'] + '%</div>'
+          if (d['人均GDP(元)']) html += '<div>人均GDP: ' + d['人均GDP(元)'].toLocaleString() + ' 元</div>'
+          if (d['年末常住人口(万人)']) html += '<div>常住人口: ' + d['年末常住人口(万人)'].toLocaleString() + ' 万</div>'
+          if (d['城镇居民人均可支配收入(元)']) html += '<div>人均可支配收入: ' + d['城镇居民人均可支配收入(元)'].toLocaleString() + ' 元</div>'
+          if (d['社会消费品零售总额(亿元)']) html += '<div>社零总额: ' + d['社会消费品零售总额(亿元)'].toLocaleString() + ' 亿</div>'
+          html += '</div>'
+          L.popup({maxWidth:360}).setLatLng(districtLayer.getBounds().getCenter()).setContent(html).openOn(map)
+          // 绑定到边界图层，点击可重新打开
+          window._cityStatsHtml = html
+          districtLayer.eachLayer(function(layer){
+            layer.off('click')
+            layer.on('click', function(){
+              L.popup({maxWidth:360}).setLatLng(layer.getBounds().getCenter()).setContent(window._cityStatsHtml).openOn(map)
+            })
+          })
+        }).catch(function(e){console.error('[CityData] 弹窗失败:',e)})
+      }
 
       // 从后端统计边界内门店数量
       try {
@@ -7046,6 +7072,16 @@ onMounted(() => {
         }
         // 清除全局变量避免重复显示
         delete window.shapefileQueryResult
+      }
+      
+      // 从城市数据页跳转，自动显示城市行政边界及统计数据
+      var cityToShow = sessionStorage.getItem('cityData_target')
+      if (cityToShow) {
+        sessionStorage.removeItem('cityData_target')
+        window._pendingCityStats = cityToShow
+        // 用已有的按行政界查询功能
+        districtKeyword.value = cityToShow
+        searchDistrict()
       }
     }, 500)  // 减少等待时间，因为 initMap 已经 await 了
   })

@@ -228,6 +228,58 @@
         </div>
         <el-empty v-else description="暂无上传的文件" />
       </el-tab-pane>
+
+      <el-tab-pane label="城市数据" name="citydata">
+        <!-- 操作栏 -->
+        <div class="upload-section" style="display:flex;justify-content:space-between">
+          <div style="display:flex;gap:8px;align-items:center">
+            <el-upload
+              v-if="userStore.isAdmin"
+              action="/api/city-data/import"
+              accept=".csv"
+              :show-file-list="false"
+              :on-success="onCityDataImportSuccess"
+              :on-error="() => ElMessage.error('导入失败')"
+            >
+              <el-button type="primary" size="small"><el-icon><Upload /></el-icon>导入CSV</el-button>
+            </el-upload>
+            <el-button size="small" type="primary" link @click="$router.push('/city-data')">
+              <el-icon><FullScreen /></el-icon>全屏查看
+            </el-button>
+            <span v-if="userStore.isAdmin" style="font-size:12px;color:#909399">支持CSV格式，列名需与现有字段一致</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <el-button v-if="userStore.isAdmin" type="danger" size="small" @click="handleClearCityData"><el-icon><Delete /></el-icon>一键清除</el-button>
+          </div>
+        </div>
+        <!-- 数据表格 -->
+        <div class="file-list" v-if="cityData.length > 0">
+
+          <el-table :data="cityData" style="width:100%" stripe border :max-height="600" size="small" @sort-change="onCityDataSort">
+            <el-table-column prop="城市" label="城市" min-width="80" fixed sortable="custom" />
+            <el-table-column prop="年份" label="年份" min-width="70" sortable="custom" />
+            <el-table-column prop="GDP(亿元)" label="GDP(亿)" min-width="100" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['GDP(亿元)']?.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column prop="增速(%)" label="增速" min-width="70" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['增速(%)'] }}%</template>
+            </el-table-column>
+            <el-table-column prop="人均GDP(元)" label="人均GDP(元)" min-width="110" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['人均GDP(元)']?.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column prop="年末常住人口(万人)" label="常住人口(万)" min-width="110" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['年末常住人口(万人)']?.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column prop="城镇居民人均可支配收入(元)" label="人均可支配收入(元)" min-width="140" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['城镇居民人均可支配收入(元)']?.toLocaleString() }}</template>
+            </el-table-column>
+            <el-table-column prop="社会消费品零售总额(亿元)" label="社零总额(亿)" min-width="100" align="right" sortable="custom">
+              <template #default="{ row }">{{ row['社会消费品零售总额(亿元)']?.toLocaleString() }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <el-empty v-else description="暂无数据" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 检索对话框 -->
@@ -334,6 +386,7 @@ const activeTab = ref('population')
 
 const populationFiles = ref([])
 const otherFiles = ref([])
+const cityData = ref([])
 const uploadHeaders = {
   'x-user-id': userStore.user?.id || 1,
   'Authorization': `Bearer ${userStore.token}`
@@ -438,7 +491,68 @@ const loadFileList = async (category) => {
 
 // Tab 切换
 const onTabChange = (tab) => {
-  loadFileList(tab)
+  if (tab === 'citydata') {
+    loadCityData()
+  } else {
+    loadFileList(tab)
+  }
+}
+
+// 加载城市宏观数据
+const loadCityData = async () => {
+  try {
+    const res = await fetch('/api/city-data')
+    const d = await res.json()
+    if (d.success) cityData.value = d.data
+  } catch(e) {
+    console.error('[CityData] 加载失败:', e)
+  }
+}
+
+// CSV 导入成功回调
+const onCityDataImportSuccess = (res) => {
+  if (res.success) {
+    ElMessage.success('导入成功')
+    loadCityData()
+  } else {
+    ElMessage.error(res.message || '导入失败')
+  }
+}
+
+// 一键清除城市数据
+const handleClearCityData = async () => {
+  try {
+    await ElMessageBox.confirm('确定要清除所有城市宏观数据吗？此操作不可撤销！', '警告', {
+      confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+    })
+    const res = await fetch('/api/city-data', { method: 'DELETE' })
+    const d = await res.json()
+    if (d.success) {
+      ElMessage.success('已清除所有数据')
+      loadCityData()
+    } else {
+      ElMessage.error(d.message || '清除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') console.error('[CityData] 清除失败:', e)
+  }
+}
+
+// 城市数据排序
+const onCityDataSort = ({ prop, order }) => {
+  if (!prop || !order) return
+  cityData.value.sort((a, b) => {
+    const va = a[prop], vb = b[prop]
+    if (va == null) return 1
+    if (vb == null) return -1
+    const isNum = typeof va === 'number' || !isNaN(parseFloat(va))
+    if (isNum && typeof va !== 'string') {
+      return order === 'ascending' ? va - vb : vb - va
+    }
+    return order === 'ascending'
+      ? String(va).localeCompare(String(vb), 'zh-CN')
+      : String(vb).localeCompare(String(va), 'zh-CN')
+  })
 }
 
 // 开始重命名

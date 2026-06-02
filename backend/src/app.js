@@ -20,6 +20,7 @@ import purchaseRoutes from './routes/purchase.js'
 import streetviewRoutes from './routes/streetview.js'
 import districtRoutes from './routes/district.js'
 import tileProxyRoutes from './routes/tile-proxy.js'
+import cityDataRoutes from './routes/city-data.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -61,6 +62,7 @@ async function start() {
     app.use('/api/streetview', streetviewRoutes)
     app.use('/api/district', districtRoutes)
     app.use('/api/tile-proxy', tileProxyRoutes)
+    app.use('/api/city-data', cityDataRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {
