@@ -452,6 +452,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <div style="margin-top:16px">
+          <div style="font-size:13px;color:#666;margin-bottom:8px">分类占比饼图：</div>
+          <el-select v-model="tcChartMall" placeholder="选择商场查看分类占比" style="width:300px">
+            <el-option v-for="m in tcSelectedList" :key="m" :label="m" :value="m" />
+          </el-select>
+        </div>
+        <div ref="tcChartRef" style="width:100%;height:350px;margin-top:12px"></div>
       </div>
       <template #footer>
         <el-button @click="tcVisible = false">关闭</el-button>
@@ -1111,6 +1118,38 @@ const tcSelectedTypes = ref([])
 const tcClassificationOptions = ref([])
 const tcLoading = ref(false)
 const tcCompareData = ref([])
+const tcChartMall = ref('')
+const tcChartRef = ref(null)
+let tcChartInstance = null
+
+// 监听选择的商场变化，更新饼图
+watch(tcChartMall, (mall) => {
+  if (!mall || !tcCompareData.value.length) return
+  nextTick(() => renderTcPieChart(mall))
+})
+
+// 渲染分类占比饼图
+const renderTcPieChart = (mall) => {
+  const raw = tcCompareData.value
+  const mallData = raw.find(r => r['商场名称'] === mall)
+  if (!mallData || !mallData.分类型) return
+  if (!tcChartRef.value) return
+  if (!tcChartInstance) tcChartInstance = echarts.init(tcChartRef.value)
+  const data = Object.entries(mallData.分类型)
+    .filter(([_, count]) => count > 0)
+    .map(([name, count]) => ({ name, value: count }))
+    .sort((a, b) => b.value - a.value)
+  tcChartInstance.setOption({
+    title: { text: mall, left: 'center', textStyle: { fontSize: 14 } },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    series: [{
+      type: 'pie', radius: ['30%', '60%'], center: ['50%', '55%'],
+      data,
+      label: { formatter: '{b}\n{d}%', fontSize: 11 },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+    }]
+  })
+}
 
 // 转置对比数据：行=分类，列=商场
 const tcTransposedData = computed(() => {
@@ -1189,10 +1228,17 @@ const tcStartCompare = async () => {
     if (d.success) {
       tcCompareData.value = d.data
       tcStep.value = 2
+      // 自动选择第一个商场并渲染饼图
+      nextTick(() => {
+        tcChartMall.value = tcSelectedList.value[0] || ''
+      })
     } else ElMessage.error(d.message || '对比失败')
   } catch(e) { ElMessage.error('对比失败: ' + e.message) }
   finally { tcLoading.value = false }
 }
+
+// 窗口resize时重绘饼图
+window.addEventListener('resize', () => { if (tcChartInstance) tcChartInstance.resize() })
 
 // 筛选变化时重置商户翻页到第1页并重新加载
 watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType, tenantFilterClassification], (newVals, oldVals) => {
