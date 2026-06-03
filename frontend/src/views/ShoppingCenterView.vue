@@ -348,6 +348,7 @@
           <h2>商场餐饮商户</h2>
           <div class="header-actions">
             <div style="display:flex;gap:8px;align-items:center">
+            <el-button type="success" @click="openTenantCompare"><el-icon><DataAnalysis /></el-icon>商场商户对比</el-button>
             <el-upload
               v-if="userStore.isAdmin"
               accept=".csv"
@@ -409,6 +410,50 @@
           />
         </div>
         <div v-if="tenantData.length === 0" style="text-align:center;padding:40px;color:#909399">暂无数据</div>
+
+    <!-- 商场商户对比对话框 -->
+    <el-dialog v-model="tcVisible" title="商场商户对比" width="900px" draggable :show-close="true">
+      <div v-if="tcStep === 1">
+        <!-- 选择商场 -->
+        <el-input v-model="tcSearchKeyword" placeholder="搜索商场名称" style="width:300px" clearable />
+        <div v-show="tcSelectedList.length > 0" style="margin-bottom:12px">
+          <div style="font-size:12px;color:#666;margin-bottom:6px">已选择 ({{ tcSelectedList.length }}/5)：</div>
+          <el-tag v-for="s in tcSelectedList" :key="s" closable @close="tcRemoveItem(s)" style="margin-right:8px;margin-bottom:4px">{{ s }}</el-tag>
+        </div>
+        <div style="max-height:350px;overflow-y:auto;border:1px solid #ebeef5;border-radius:4px;padding:8px">
+          <div v-for="name in tcFilteredMallList" :key="name"
+            :style="{ display:'flex', alignItems:'center', padding:'6px 8px', cursor:'pointer', borderBottom:'1px solid #f5f5f5', background: tcSelectedList.includes(name) ? '#ecf5ff' : 'white' }"
+            @click="tcToggleItem(name)">
+            <el-button :type="tcSelectedList.includes(name) ? 'primary' : 'default'" size="small" style="margin-right:12px">
+              {{ tcSelectedList.includes(name) ? '已选' : '选择' }}
+            </el-button>
+            <span>{{ name }}</span>
+          </div>
+          <div v-if="tcFilteredMallList.length === 0" style="text-align:center;padding:20px;color:#909399">未找到匹配的商场</div>
+        </div>
+        <!-- 选择类型 -->
+        <div style="margin-top:16px">
+          <div style="font-size:13px;color:#666;margin-bottom:8px">选择对比类型（勾选后只对比这些类型，不选则对比全部）</div>
+          <el-select v-model="tcSelectedTypes" multiple placeholder="选择类型" style="width:100%" collapse-tags collapse-tags-tooltip :max-collapse-tags="5">
+            <el-option v-for="t in tcTypeOptions" :key="t" :label="t" :value="t" />
+          </el-select>
+        </div>
+      </div>
+      <div v-if="tcStep === 2">
+        <el-table :data="tcCompareData" border stripe size="small" style="width:100%">
+          <el-table-column prop="商场名称" label="商场" min-width="120" />
+          <el-table-column prop="商户总数" label="商户总数" width="100" align="right" />
+          <el-table-column v-for="type in tcSelectedTypes" :key="type" :label="type" align="right" min-width="100">
+            <template #default="{ row }">{{ row.分类型?.[type] ?? 0 }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="tcVisible = false">关闭</el-button>
+        <el-button v-if="tcStep === 2" @click="tcStep = 1">重新选择</el-button>
+        <el-button v-if="tcStep === 1" type="primary" :disabled="tcSelectedList.length < 2" :loading="tcLoading" @click="tcStartCompare">开始对比</el-button>
+      </template>
+    </el-dialog>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -1031,6 +1076,70 @@ const handleClearAllTenants = async () => {
 watch(scActiveTab, (tab) => {
   if (tab === 'tenants') { tenantCurrentPage.value = 1; loadTenants() }
 })
+
+// ====== 商场商户对比 ======
+const tcVisible = ref(false)
+const tcStep = ref(1)
+const tcSearchKeyword = ref('')
+const tcSelectedList = ref([])
+const tcSelectedTypes = ref([])
+const tcTypeOptions = ref([])
+const tcLoading = ref(false)
+const tcCompareData = ref([])
+
+const tcFilteredMallList = computed(() => {
+  const kw = tcSearchKeyword.value.trim().toLowerCase()
+  return kw ? tcMallNames.value.filter(n => n.toLowerCase().includes(kw)) : tcMallNames.value
+})
+
+const tcMallNames = ref([])
+const tcLoadMallList = async () => {
+  try {
+    const r = await fetch('/api/mall-tenants/options')
+    const d = await r.json()
+    if (d.success) {
+      tcMallNames.value = d.data.mallNames || []
+      tcTypeOptions.value = d.data.types || []
+    }
+  } catch(e) { console.error('[TenantCompare] 加载失败:', e) }
+}
+
+const openTenantCompare = () => {
+  tcStep.value = 1
+  tcSelectedList.value = []
+  tcSelectedTypes.value = []
+  tcCompareData.value = []
+  tcVisible.value = true
+  tcLoadMallList()
+}
+
+const tcToggleItem = (name) => {
+  const idx = tcSelectedList.value.indexOf(name)
+  if (idx >= 0) tcSelectedList.value.splice(idx, 1)
+  else if (tcSelectedList.value.length < 5) tcSelectedList.value.push(name)
+}
+
+const tcRemoveItem = (name) => {
+  const idx = tcSelectedList.value.indexOf(name)
+  if (idx >= 0) tcSelectedList.value.splice(idx, 1)
+}
+
+const tcStartCompare = async () => {
+  tcLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      malls: tcSelectedList.value.join(','),
+      types: tcSelectedTypes.value.join(',')
+    })
+    const r = await fetch('/api/mall-tenants/compare?' + params.toString())
+    const d = await r.json()
+    if (d.success) {
+      tcCompareData.value = d.data
+      tcStep.value = 2
+    } else ElMessage.error(d.message || '对比失败')
+  } catch(e) { ElMessage.error('对比失败: ' + e.message) }
+  finally { tcLoading.value = false }
+}
 
 // 筛选变化时重置商户翻页到第1页并重新加载
 watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType], (newVals, oldVals) => {

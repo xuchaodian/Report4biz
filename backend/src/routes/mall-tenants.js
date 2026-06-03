@@ -131,6 +131,49 @@ router.post('/import', upload.single('file'), (req, res) => {
   }
 })
 
+// GET /api/mall-tenants/options - 返回过滤选项（轻量，不含数据）
+router.get('/options', (req, res) => {
+  try {
+    const all = loadData()
+    const mallNames = [...new Set(all.map(d => d['商场名称']).filter(Boolean))].sort()
+    const types = [...new Set(all.map(d => d['商户类型']).filter(Boolean))].sort()
+    res.json({ success: true, data: { mallNames, types } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// GET /api/mall-tenants/compare?malls=商场A,商场B&types=类型1,类型2
+router.get('/compare', (req, res) => {
+  try {
+    const all = loadData()
+    const mallNames = (req.query.malls || '').split(',').filter(Boolean)
+    const selectedTypes = (req.query.types || '').split(',').filter(Boolean)
+
+    const result = []
+    for (const name of mallNames) {
+      const mallTenants = all.filter(d => d['商场名称'] === name)
+      const total = mallTenants.length
+      const typeCounts = {}
+      for (const t of mallTenants) {
+        const type = t['商户类型'] || '未知'
+        typeCounts[type] = (typeCounts[type] || 0) + 1
+      }
+      // 只返回选择的类型
+      const filteredCounts = {}
+      if (selectedTypes.length > 0) {
+        for (const t of selectedTypes) {
+          filteredCounts[t] = typeCounts[t] || 0
+        }
+      }
+      result.push({ 商场名称: name, 商户总数: total, 分类型: selectedTypes.length > 0 ? filteredCounts : typeCounts })
+    }
+    res.json({ success: true, data: result })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
 // DELETE /api/mall-tenants - 清除所有数据
 router.delete('/', (req, res) => {
   try {
