@@ -48,8 +48,7 @@ router.get('/', (req, res) => {
     let filtered = all
     if (keyword) {
       filtered = filtered.filter(d =>
-        (d['商场名称'] || '').toLowerCase().includes(keyword) ||
-        (d['商户名称'] || '').toLowerCase().includes(keyword)
+        (String(d['商场名称'] || '')).toLowerCase().includes(keyword)
       )
     }
     if (city) filtered = filtered.filter(d => d['城市'] === city)
@@ -61,10 +60,12 @@ router.get('/', (req, res) => {
     const start = (page - 1) * pageSize
     const data = filtered.slice(start, start + pageSize)
 
-    // 同时返回筛选选项（用于下拉框）
+    // 筛选选项（根据已选城市/区县联动）
     const cityOptions = [...new Set(all.map(d => d['城市']).filter(Boolean))]
-    const districtOptions = [...new Set(all.map(d => d['区县']).filter(Boolean))]
-    const bizCircleOptions = [...new Set(all.map(d => d['商圈']).filter(Boolean))]
+    const filteredByCity = city ? all.filter(d => d['城市'] === city) : all
+    const districtOptions = [...new Set(filteredByCity.map(d => d['区县']).filter(Boolean))]
+    const filteredByDistrict = district ? filteredByCity.filter(d => d['区县'] === district) : filteredByCity
+    const bizCircleOptions = [...new Set(filteredByDistrict.map(d => d['商圈']).filter(Boolean))]
     const typeOptions = [...new Set(all.map(d => d['商户类型']).filter(Boolean))]
 
     res.json({ success: true, data, total, page, pageSize,
@@ -103,9 +104,15 @@ router.post('/import', upload.single('file'), (req, res) => {
       const row = {}
       headers.forEach((h, idx) => {
         const raw = vals[idx] || ''
-        const cleaned = raw.replace(/,/g, '')
-        const num = parseFloat(cleaned)
-        row[h] = isNaN(num) ? raw : num
+        // 文本字段不应转为数字
+        const textFields = ['商场ID','商场名称','商户ID','商户名称','商户类型','所在楼层','评分','城市','区县','商圈','地址','备注','营业时间','数据出处','数据年月']
+        if (textFields.includes(h)) {
+          row[h] = raw
+        } else {
+          const cleaned = raw.replace(/,/g, '')
+          const num = parseFloat(cleaned)
+          row[h] = isNaN(num) ? raw : num
+        }
       })
       if (!row['商户ID']) continue
       const idx = existing.findIndex(d => d['商户ID'] === row['商户ID'])

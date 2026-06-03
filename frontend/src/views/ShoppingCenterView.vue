@@ -347,21 +347,22 @@
         <div class="data-header">
           <h2>商场餐饮商户</h2>
           <div class="header-actions">
+            <div style="display:flex;gap:8px;align-items:center">
             <el-upload
               v-if="userStore.isAdmin"
-              action="/api/mall-tenants/import"
               accept=".csv"
               :show-file-list="false"
-              :on-success="onTenantImportSuccess"
-              :on-error="() => ElMessage.error('导入失败')"
+              :http-request="handleTenantUpload"
             >
-              <el-button type="primary"><el-icon><Upload /></el-icon>导入CSV</el-button>
+              <el-button type="primary" :loading="tenantImporting"><el-icon><Upload /></el-icon>{{ tenantImporting ? '导入中...' : '导入CSV' }}</el-button>
             </el-upload>
             <el-button v-if="userStore.isAdmin" type="danger" @click="handleClearAllTenants"><el-icon><Delete /></el-icon>全清除</el-button>
+            <span v-if="tenantImportProgress > 0 && tenantImporting" style="font-size:12px;color:#909399">{{ tenantImportProgress }}%</span>
+            </div>
           </div>
         </div>
         <div class="filter-bar">
-          <el-input v-model="tenantKeyword" placeholder="搜索商场名称/商户名称" style="width:200px" clearable>
+          <el-input v-model="tenantKeyword" placeholder="搜索商场名称" style="width:200px" clearable>
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
           <el-select v-model="tenantFilterCity" placeholder="按城市" style="width:120px" clearable>
@@ -437,8 +438,10 @@ const tenantFilterType = ref('')
 const tenantCurrentPage = ref(1)
 const tenantPageSize = ref(20)
 const tenantLoading = ref(false)
+const tenantImporting = ref(false)
+const tenantImportProgress = ref(0)
 
-// 筛选下拉选项（从服务端返回）
+// 商户筛选下拉选项（从服务端返回）
 const tenantCityOptions = ref([])
 const tenantDistrictOptions = ref([])
 const tenantBizCircleOptions = ref([])
@@ -987,9 +990,28 @@ const clearTenantFilters = () => {
   tenantFilterType.value = ''
 }
 
-const onTenantImportSuccess = (res) => {
-  if (res.success) { ElMessage.success('导入成功'); loadTenants() }
-  else { ElMessage.error(res.message || '导入失败') }
+const handleTenantUpload = async (options) => {
+  const file = options.file
+  tenantImporting.value = true
+  tenantImportProgress.value = 0
+  try {
+    // 模拟进度
+    const progressInterval = setInterval(() => {
+      tenantImportProgress.value = Math.min(tenantImportProgress.value + 5, 90)
+    }, 200)
+    const formData = new FormData()
+    formData.append('file', file)
+    const r = await fetch('/api/mall-tenants/import', { method: 'POST', body: formData })
+    clearInterval(progressInterval)
+    tenantImportProgress.value = 100
+    const d = await r.json()
+    if (d.success) { setTimeout(() => { ElMessage.success(d.message || '导入成功'); loadTenants(); tenantImportProgress.value = 0; tenantImporting.value = false }, 300) }
+    else { ElMessage.error(d.message || '导入失败'); tenantImporting.value = false; tenantImportProgress.value = 0 }
+  } catch (e) {
+    ElMessage.error('导入失败: ' + e.message)
+    tenantImporting.value = false
+    tenantImportProgress.value = 0
+  }
 }
 
 // 全清除
@@ -1011,7 +1033,16 @@ watch(scActiveTab, (tab) => {
 })
 
 // 筛选变化时重置商户翻页到第1页并重新加载
-watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType], () => {
+watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType], (newVals, oldVals) => {
+  // 城市变化时清除区县和商圈
+  if (newVals[1] !== oldVals[1]) {
+    tenantFilterDistrict.value = ''
+    tenantFilterBizCircle.value = ''
+  }
+  // 区县变化时清除商圈
+  if (newVals[2] !== oldVals[2]) {
+    tenantFilterBizCircle.value = ''
+  }
   tenantCurrentPage.value = 1
   loadTenants()
 })
