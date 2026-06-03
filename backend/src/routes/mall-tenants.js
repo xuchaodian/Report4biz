@@ -43,6 +43,7 @@ router.get('/', (req, res) => {
     const district = req.query.district || ''
     const bizCircle = req.query.bizCircle || ''
     const type = req.query.type || ''
+    const classification = req.query.classification || ''
 
     // 过滤
     let filtered = all
@@ -55,8 +56,20 @@ router.get('/', (req, res) => {
     if (district) filtered = filtered.filter(d => d['区县'] === district)
     if (bizCircle) filtered = filtered.filter(d => d['商圈'] === bizCircle)
     if (type) filtered = filtered.filter(d => d['商户类型'] === type)
+    if (classification) filtered = filtered.filter(d => d['归类'] === classification)
+
+    // 排序
+    const sortBy = req.query.sortBy || ''
+    const sortOrder = req.query.sortOrder || ''
+    if (sortBy && ['商场名称','商场ID','城市'].includes(sortBy)) {
+      filtered.sort((a, b) => {
+        const va = String(a[sortBy] || ''), vb = String(b[sortBy] || '')
+        return sortOrder === 'desc' ? vb.localeCompare(va, 'zh-CN') : va.localeCompare(vb, 'zh-CN')
+      })
+    }
 
     const total = filtered.length
+    const mallCount = [...new Set(filtered.map(d => d['商场名称']))].length
     const start = (page - 1) * pageSize
     const data = filtered.slice(start, start + pageSize)
 
@@ -67,9 +80,10 @@ router.get('/', (req, res) => {
     const filteredByDistrict = district ? filteredByCity.filter(d => d['区县'] === district) : filteredByCity
     const bizCircleOptions = [...new Set(filteredByDistrict.map(d => d['商圈']).filter(Boolean))]
     const typeOptions = [...new Set(all.map(d => d['商户类型']).filter(Boolean))]
+    const classificationOptions = [...new Set(all.map(d => d['归类']).filter(Boolean))]
 
-    res.json({ success: true, data, total, page, pageSize,
-      filterOptions: { city: cityOptions, district: districtOptions, bizCircle: bizCircleOptions, type: typeOptions }
+    res.json({ success: true, data, total, mallCount, page, pageSize,
+      filterOptions: { city: cityOptions, district: districtOptions, bizCircle: bizCircleOptions, type: typeOptions, classification: classificationOptions }
     })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
@@ -105,7 +119,7 @@ router.post('/import', upload.single('file'), (req, res) => {
       headers.forEach((h, idx) => {
         const raw = vals[idx] || ''
         // 文本字段不应转为数字
-        const textFields = ['商场ID','商场名称','商户ID','商户名称','商户类型','所在楼层','评分','城市','区县','商圈','地址','备注','营业时间','数据出处','数据年月']
+        const textFields = ['商场ID','商场名称','商户ID','商户名称','商户类型','所在楼层','评分','城市','区县','商圈','归类','地址','备注','营业时间','数据出处','数据年月']
         if (textFields.includes(h)) {
           row[h] = raw
         } else {
@@ -137,18 +151,20 @@ router.get('/options', (req, res) => {
     const all = loadData()
     const mallNames = [...new Set(all.map(d => d['商场名称']).filter(Boolean))].sort()
     const types = [...new Set(all.map(d => d['商户类型']).filter(Boolean))].sort()
-    res.json({ success: true, data: { mallNames, types } })
+    const classifications = [...new Set(all.map(d => d['归类']).filter(Boolean))].sort()
+    res.json({ success: true, data: { mallNames, types, classifications } })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
 })
 
-// GET /api/mall-tenants/compare?malls=商场A,商场B&types=类型1,类型2
+// GET /api/mall-tenants/compare?malls=商场A,商场B&types=分类1,分类2&byClassification=true
 router.get('/compare', (req, res) => {
   try {
     const all = loadData()
     const mallNames = (req.query.malls || '').split(',').filter(Boolean)
     const selectedTypes = (req.query.types || '').split(',').filter(Boolean)
+    const byClassification = req.query.byClassification === 'true'
 
     const result = []
     for (const name of mallNames) {
@@ -156,7 +172,7 @@ router.get('/compare', (req, res) => {
       const total = mallTenants.length
       const typeCounts = {}
       for (const t of mallTenants) {
-        const type = t['商户类型'] || '未知'
+        const type = byClassification ? (t['归类'] || '未知') : (t['商户类型'] || '未知')
         typeCounts[type] = (typeCounts[type] || 0) + 1
       }
       // 只返回选择的类型

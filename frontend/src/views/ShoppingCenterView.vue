@@ -378,14 +378,18 @@
           <el-select v-model="tenantFilterType" placeholder="按类型" style="width:120px" clearable>
             <el-option v-for="t in tenantTypeOptions" :key="t" :label="t" :value="t" />
           </el-select>
-          <span class="统计">共 {{ tenantTotal }} 条数据</span>
+          <el-select v-model="tenantFilterClassification" placeholder="按归类" style="width:120px" clearable>
+            <el-option v-for="c in tenantClassificationOptions" :key="c" :label="c" :value="c" />
+          </el-select>
+          <span class="统计">共 {{ tenantMallCount }} 家商场 ｜ {{ tenantTotal }} 家商户</span>
           <el-button v-if="hasTenantFilter" type="warning" plain @click="clearTenantFilters"><el-icon><Close /></el-icon>清除筛选</el-button>
         </div>
         <div class="data-table">
-          <el-table :data="tenantData" stripe border size="small" style="width:100%" v-loading="tenantLoading">
-            <el-table-column prop="商场名称" label="商场" min-width="120" />
+          <el-table :data="tenantData" stripe border size="small" style="width:100%" v-loading="tenantLoading" @sort-change="onTenantSort">
+            <el-table-column prop="商场名称" label="商场" min-width="120" sortable="custom" />
             <el-table-column prop="商户名称" label="商户" min-width="200" />
             <el-table-column prop="商户类型" label="类型" min-width="80" />
+            <el-table-column prop="归类" label="归类" min-width="60" />
             <el-table-column prop="所在楼层" label="楼层" min-width="80" />
             <el-table-column prop="评论数" label="评论数" min-width="60" align="right" />
             <el-table-column prop="星级" label="星级" min-width="50" align="right" />
@@ -433,18 +437,19 @@
         </div>
         <!-- 选择类型 -->
         <div style="margin-top:16px">
-          <div style="font-size:13px;color:#666;margin-bottom:8px">选择对比类型（勾选后只对比这些类型，不选则对比全部）</div>
-          <el-select v-model="tcSelectedTypes" multiple placeholder="选择类型" style="width:100%" collapse-tags collapse-tags-tooltip :max-collapse-tags="5">
-            <el-option v-for="t in tcTypeOptions" :key="t" :label="t" :value="t" />
+          <div style="font-size:13px;color:#666;margin-bottom:8px">选择对比分类（勾选后只对比这些分类，不选则对比全部）</div>
+          <el-select v-model="tcSelectedTypes" multiple placeholder="选择分类" style="width:100%" collapse-tags collapse-tags-tooltip :max-collapse-tags="5">
+            <el-option v-for="t in tcClassificationOptions" :key="t" :label="t" :value="t" />
           </el-select>
         </div>
       </div>
       <div v-if="tcStep === 2">
-        <el-table :data="tcCompareData" border stripe size="small" style="width:100%">
-          <el-table-column prop="商场名称" label="商场" min-width="120" />
-          <el-table-column prop="商户总数" label="商户总数" width="100" align="right" />
-          <el-table-column v-for="type in tcSelectedTypes" :key="type" :label="type" align="right" min-width="100">
-            <template #default="{ row }">{{ row.分类型?.[type] ?? 0 }}</template>
+        <el-table :data="tcTransposedData" border stripe size="small" style="width:100%" :header-cell-style="{ background: '#f0f5ff', color: '#303133', fontWeight: 600 }">
+          <el-table-column prop="分类" label="分类" min-width="120" />
+          <el-table-column v-for="mall in tcSelectedList" :key="mall" :label="mall" align="right" min-width="100">
+            <template #default="{ row }">
+              <span :style="row[mall] === row._max ? 'color:#e74c3c;font-weight:700' : ''">{{ row[mall] }}</span>
+            </template>
           </el-table-column>
         </el-table>
       </div>
@@ -475,11 +480,15 @@ const router = useRouter()
 const scActiveTab = ref('centers')
 const tenantData = ref([])
 const tenantTotal = ref(0)
+const tenantMallCount = ref(0)
 const tenantKeyword = ref('')
 const tenantFilterCity = ref('')
 const tenantFilterDistrict = ref('')
 const tenantFilterBizCircle = ref('')
 const tenantFilterType = ref('')
+const tenantFilterClassification = ref('')
+const tenantSortBy = ref('')
+const tenantSortOrder = ref('')
 const tenantCurrentPage = ref(1)
 const tenantPageSize = ref(20)
 const tenantLoading = ref(false)
@@ -491,11 +500,12 @@ const tenantCityOptions = ref([])
 const tenantDistrictOptions = ref([])
 const tenantBizCircleOptions = ref([])
 const tenantTypeOptions = ref([])
+const tenantClassificationOptions = ref([])
 
 // 是否有激活的筛选条件
 const hasTenantFilter = computed(() =>
   tenantKeyword.value || tenantFilterCity.value || tenantFilterDistrict.value ||
-  tenantFilterBizCircle.value || tenantFilterType.value
+  tenantFilterBizCircle.value || tenantFilterType.value || tenantFilterClassification.value
 )
 
 const storeCategoryOptions = ['购物中心', '百货商场', '奥特莱斯', '社区商业', '街边商业', '专业市场']
@@ -1008,18 +1018,23 @@ const loadTenants = async () => {
       city: tenantFilterCity.value,
       district: tenantFilterDistrict.value,
       bizCircle: tenantFilterBizCircle.value,
-      type: tenantFilterType.value
+      type: tenantFilterType.value,
+      classification: tenantFilterClassification.value,
+      sortBy: tenantSortBy.value,
+      sortOrder: tenantSortOrder.value
     })
     const r = await fetch('/api/mall-tenants?' + params.toString())
     const d = await r.json()
     if (d.success) {
       tenantData.value = d.data
       tenantTotal.value = d.total
+      tenantMallCount.value = d.mallCount || 0
       if (d.filterOptions) {
         tenantCityOptions.value = d.filterOptions.city || []
         tenantDistrictOptions.value = d.filterOptions.district || []
         tenantBizCircleOptions.value = d.filterOptions.bizCircle || []
         tenantTypeOptions.value = d.filterOptions.type || []
+        tenantClassificationOptions.value = d.filterOptions.classification || []
       }
     } else console.warn('[Tenants] 加载失败:', d)
   } catch(e) { console.error('[Tenants] 加载失败:', e) }
@@ -1033,6 +1048,16 @@ const clearTenantFilters = () => {
   tenantFilterDistrict.value = ''
   tenantFilterBizCircle.value = ''
   tenantFilterType.value = ''
+  tenantFilterClassification.value = ''
+  tenantSortBy.value = ''
+  tenantSortOrder.value = ''
+}
+
+const onTenantSort = ({ prop, order }) => {
+  tenantSortBy.value = prop || ''
+  tenantSortOrder.value = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : ''
+  tenantCurrentPage.value = 1
+  loadTenants()
 }
 
 const handleTenantUpload = async (options) => {
@@ -1083,9 +1108,36 @@ const tcStep = ref(1)
 const tcSearchKeyword = ref('')
 const tcSelectedList = ref([])
 const tcSelectedTypes = ref([])
-const tcTypeOptions = ref([])
+const tcClassificationOptions = ref([])
 const tcLoading = ref(false)
 const tcCompareData = ref([])
+
+// 转置对比数据：行=分类，列=商场
+const tcTransposedData = computed(() => {
+  const raw = tcCompareData.value
+  if (!raw.length) return []
+  const mallNames = raw.map(r => r['商场名称'])
+  const allTypes = new Set()
+  for (const r of raw) {
+    allTypes.add('商户总数')
+    if (r.分类型) Object.keys(r.分类型).forEach(k => allTypes.add(k))
+  }
+  const types = tcSelectedTypes.value.length > 0 ? tcSelectedTypes.value : [...allTypes].sort()
+  // 确保"商户总数"排在最前面
+  const sortedTypes = ['商户总数', ...types.filter(t => t !== '商户总数')]
+
+  return sortedTypes.map(type => {
+    const row = { 分类: type }
+    let maxVal = -1
+    for (const r of raw) {
+      let val = type === '商户总数' ? r['商户总数'] : (r.分类型?.[type] ?? 0)
+      row[r['商场名称']] = val
+      if (val > maxVal) maxVal = val
+    }
+    row._max = maxVal
+    return row
+  })
+})
 
 const tcFilteredMallList = computed(() => {
   const kw = tcSearchKeyword.value.trim().toLowerCase()
@@ -1099,7 +1151,7 @@ const tcLoadMallList = async () => {
     const d = await r.json()
     if (d.success) {
       tcMallNames.value = d.data.mallNames || []
-      tcTypeOptions.value = d.data.types || []
+      tcClassificationOptions.value = d.data.classifications || d.data.types || []
     }
   } catch(e) { console.error('[TenantCompare] 加载失败:', e) }
 }
@@ -1129,7 +1181,8 @@ const tcStartCompare = async () => {
   try {
     const params = new URLSearchParams({
       malls: tcSelectedList.value.join(','),
-      types: tcSelectedTypes.value.join(',')
+      types: tcSelectedTypes.value.join(','),
+      byClassification: 'true'
     })
     const r = await fetch('/api/mall-tenants/compare?' + params.toString())
     const d = await r.json()
@@ -1142,7 +1195,7 @@ const tcStartCompare = async () => {
 }
 
 // 筛选变化时重置商户翻页到第1页并重新加载
-watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType], (newVals, oldVals) => {
+watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType, tenantFilterClassification], (newVals, oldVals) => {
   // 城市变化时清除区县和商圈
   if (newVals[1] !== oldVals[1]) {
     tenantFilterDistrict.value = ''
