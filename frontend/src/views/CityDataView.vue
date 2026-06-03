@@ -29,28 +29,28 @@
         <el-table-column prop="等级" label="等级" min-width="60" sortable="custom" />
         <el-table-column prop="年份" label="年份" min-width="70" sortable="custom" />
         <el-table-column prop="GDP(亿元)" label="GDP(亿)" min-width="100" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['GDP(亿元)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['GDP(亿元)'] != null ? Math.round(Number(row['GDP(亿元)'])) : '-' }}</template>
         </el-table-column>
         <el-table-column prop="增速(%)" label="增速" min-width="65" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['增速(%)'] }}%</template>
+          <template #default="{ row }">{{ row['增速(%)'] != null ? Number(row['增速(%)']).toFixed(1) + '%' : '-' }}</template>
         </el-table-column>
         <el-table-column prop="人均GDP(元)" label="人均GDP(元)" min-width="110" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['人均GDP(元)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['人均GDP(元)'] != null ? Math.round(Number(row['人均GDP(元)'])).toLocaleString() : '-' }}</template>
         </el-table-column>
         <el-table-column prop="年末常住人口(万人)" label="常住人口(万)" min-width="110" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['年末常住人口(万人)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['年末常住人口(万人)'] != null ? Math.round(Number(row['年末常住人口(万人)'])) : '-' }}</template>
         </el-table-column>
         <el-table-column prop="城镇人口(万人)" label="城镇人口(万)" min-width="100" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['城镇人口(万人)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['城镇人口(万人)'] != null ? Math.round(Number(row['城镇人口(万人)'])) : '-' }}</template>
         </el-table-column>
         <el-table-column prop="城镇居民人均可支配收入(元)" label="人均可支配收入(元)" min-width="140" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['城镇居民人均可支配收入(元)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['城镇居民人均可支配收入(元)'] != null ? Math.round(Number(row['城镇居民人均可支配收入(元)'])).toLocaleString() : '-' }}</template>
         </el-table-column>
         <el-table-column prop="城镇居民人均消费支出(元)" label="人均消费支出(元)" min-width="130" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['城镇居民人均消费支出(元)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['城镇居民人均消费支出(元)'] != null ? Math.round(Number(row['城镇居民人均消费支出(元)'])).toLocaleString() : '-' }}</template>
         </el-table-column>
         <el-table-column prop="社会消费品零售总额(亿元)" label="社零总额(亿)" min-width="100" align="right" sortable="custom">
-          <template #default="{ row }">{{ row['社会消费品零售总额(亿元)']?.toLocaleString() }}</template>
+          <template #default="{ row }">{{ row['社会消费品零售总额(亿元)'] != null ? Math.round(Number(row['社会消费品零售总额(亿元)'])) : '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
