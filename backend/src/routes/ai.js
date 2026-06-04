@@ -13,8 +13,9 @@ const MODEL = 'doubao-seed-2-0-pro-260215'
 const TOKEN_LIMITS = [
   { minQuota: 200, limit: 1_500_000, warn: true },        // ≥200 → 150万/月
   { minQuota: 100, limit: 1_000_000, warn: true },        // 100~199 → 100万/月
-  { minQuota: 1, limit: 500_000, warn: true },             // 1~99 → 50万/月
-  { minQuota: 0, limit: 0, warn: true }                    // 0 → 禁止
+  { minQuota: 50, limit: 500_000, warn: true },           // 50~99 → 50万/月
+  { minQuota: 1, limit: 100_000, warn: true },            // 1~49 → 10万/月
+  { minQuota: 0, limit: 0, warn: true }                   // 0 → 禁止
 ]
 
 // ... (rest of code stays)
@@ -45,7 +46,8 @@ function recordTokenUsage(userId, tokens) {
 const TOKEN_WARN_CONFIG = [
   { minQuota: 200, limit: 1_500_000, step: 150_000, label: '高频' },
   { minQuota: 100, limit: 1_000_000, step: 100_000, label: '中频' },
-  { minQuota: 1, limit: 500_000, step: 50_000, label: '普通' }
+  { minQuota: 50, limit: 500_000, step: 50_000, label: '普通' },
+  { minQuota: 1, limit: 100_000, step: 10_000, label: '低频' }
 ]
 
 // 获取用户tier对应的警告配置
@@ -111,7 +113,7 @@ function checkAIAccess(userId) {
     if (remaining >= limit.minQuota) {
       // 找到对应区间
       if (monthlyTokens >= limit.limit) {
-        const limitStr = limit.limit >= 1_500_000 ? '150万' : limit.limit >= 1_000_000 ? '100万' : '50万'
+        const limitStr = limit.limit >= 1_500_000 ? '150万' : limit.limit >= 1_000_000 ? '100万' : limit.limit >= 500_000 ? '50万' : '10万'
         return { allowed: false, message: `本月AI token用量已达${limitStr}上限，请下月再使用（已用${Math.round(monthlyTokens / 10000)}万）` }
       }
       return { allowed: true, remaining, monthlyTokens, limit: limit.limit }
