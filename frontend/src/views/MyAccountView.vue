@@ -75,6 +75,9 @@
           <el-button type="text" @click="refreshQuota" :loading="quotaLoading">
             🔄 刷新配额
           </el-button>
+          <el-button type="text" @click="showRechargeDialog">
+            💳 充值
+          </el-button>
           <el-button type="text" @click="showHistoryDialog">
             📋 购买履历
           </el-button>
@@ -304,7 +307,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -503,6 +506,21 @@ const refreshQuota = async () => {
   } finally {
     quotaLoading.value = false
   }
+}
+
+// 显示充值联系方式对话框
+const showRechargeDialog = () => {
+  ElMessageBox.alert(
+    `请联系徐经理采购联通人口大数据<br><br>
+    联系电话：138 1779 1741（同微信号）<br>
+    电子邮件：jyo@youshi-tech.com`,
+    '💳 充值',
+    {
+      confirmButtonText: '知道了',
+      dangerouslyUseHTMLString: true,
+      center: true
+    }
+  )
 }
 
 // 显示购买履历对话框

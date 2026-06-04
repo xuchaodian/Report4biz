@@ -308,6 +308,78 @@ const queryStats = {
   }
 }
 
+// ===== 城市数据类工具 =====
+
+const queryCityData = {
+  type: 'function',
+  function: {
+    name: 'query_city_data',
+    description: '查询城市宏观统计数据（GDP、人口、人均收入等）。用户说"XX城市GDP多少"、"XX城市人口"、"XX城市人均收入"、"城市数据"时调用。',
+    parameters: {
+      type: 'object',
+      required: ['city'],
+      properties: {
+        city: { type: 'string', description: '城市名称，如"北京"、"上海"、"广州"' }
+      }
+    }
+  }
+}
+
+const queryMallTenants = {
+  type: 'function',
+  function: {
+    name: 'query_mall_tenants',
+    description: '查询商场餐饮商户信息。用户说"XX商场有哪些餐厅"、"XX商场的商户"、"商场商户"时调用，返回商户列表及分类统计。',
+    parameters: {
+      type: 'object',
+      required: ['mall_name'],
+      properties: {
+        mall_name: { type: 'string', description: '商场名称，如"浦江城市生活广场"、"上海颛桥万达广场"' },
+        classification: { type: 'string', description: '按归类筛选，如"快餐"、"火锅"' },
+        limit: { type: 'number', description: '返回条数，默认10' }
+      }
+    }
+  }
+}
+
+const compareMallTenants = {
+  type: 'function',
+  function: {
+    name: 'compare_mall_tenants',
+    description: '对比多个商场的商户构成。用户说"对比XX和XX的商户"、"商场商户对比"时调用，返回各商场商户总数和分类统计。',
+    parameters: {
+      type: 'object',
+      required: ['malls'],
+      properties: {
+        malls: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '商场名称列表，2-5个，如["浦江城市生活广场", "上海颛桥万达广场"]'
+        },
+        by_classification: { type: 'boolean', description: '是否按归类统计，默认true' }
+      }
+    }
+  }
+}
+
+const calculatePotential = {
+  type: 'function',
+  function: {
+    name: 'calculate_potential',
+    description: '开店余地分析，分析某城市哪些区域适合开店。用户说"开店余地"、"XX城市还有开店空间吗"、"在哪开店好"时调用。',
+    parameters: {
+      type: 'object',
+      required: ['city'],
+      properties: {
+        city: { type: 'string', description: '城市名称，如"上海"、"北京"' },
+        radius: { type: 'number', description: '分析半径(km)，默认1' },
+        min_stores: { type: 'number', description: '最低我的门店数，默认1' },
+        min_competitors: { type: 'number', description: '最低竞品门店数，默认1' }
+      }
+    }
+  }
+}
+
 // ===== 汇总导出 =====
 
 /**
@@ -334,13 +406,17 @@ export const tools = [
   storePopulationDistribution,
   comparePopulation,
   compareStores,
-  storeRanking
+  storeRanking,
+  queryCityData,
+  queryMallTenants,
+  compareMallTenants,
+  calculatePotential
 ]
 
 /**
  * 服务端执行的工具名称列表（需要查数据库）
  */
-export const serverSideTools = ['query_stats']
+export const serverSideTools = ['query_stats', 'query_city_data', 'query_mall_tenants', 'compare_mall_tenants', 'calculate_potential']
 
 /**
  * 所有工具名称（用于快速判断）

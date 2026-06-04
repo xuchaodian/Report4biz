@@ -19,6 +19,75 @@ const TOKEN_LIMITS = [
 
 // ... (rest of code stays)
 
+// 获取用户本月已用token数
+function getMonthlyTokenUsage(db, userId) {
+  const now = new Date()
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01 00:00:00`
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(tokens_used), 0) as total
+    FROM ai_usage WHERE user_id = ? AND created_at >= ?
+  `).get(userId, monthStart)
+  return row?.total || 0
+}
+
+// 记录AI token用量
+function recordTokenUsage(userId, tokens) {
+  try {
+    const db = getDb()
+    db.prepare(`INSERT INTO ai_usage (user_id, tokens_used) VALUES (?, ?)`).run(userId, tokens)
+    db.saveNow()
+  } catch (e) {
+    console.error('[AI] 记录token用量失败:', e.message)
+  }
+}
+
+// token用量提醒阈值配置
+const TOKEN_WARN_CONFIG = [
+  { minQuota: 200, limit: 1_500_000, step: 150_000, label: '高频' },
+  { minQuota: 100, limit: 1_000_000, step: 100_000, label: '中频' },
+  { minQuota: 1, limit: 500_000, step: 50_000, label: '普通' }
+]
+
+// 获取用户tier对应的警告配置
+function getWarnConfig(remaining) {
+  for (const cfg of TOKEN_WARN_CONFIG) {
+    if (remaining >= cfg.minQuota) return cfg
+  }
+  return null
+}
+
+// 每个用户上次警告的阈值级别（内存跟踪，重启后重置）
+const warnedLevels = new Map()
+
+// 检查是否需要发送token用量提醒
+function checkTokenWarning(userId, monthlyUsed, remaining) {
+  const cfg = getWarnConfig(remaining)
+  if (!cfg) return null
+
+  const currentLevel = Math.floor(monthlyUsed / cfg.step)
+  const key = `${userId}_${cfg.label}`
+  const lastLevel = warnedLevels.get(key) ?? -1
+
+  if (currentLevel > lastLevel && currentLevel > 0) {
+    warnedLevels.set(key, currentLevel)
+    const warned = currentLevel * cfg.step
+    const remainTokens = cfg.limit - monthlyUsed
+    const remainAfterWarn = cfg.limit - warned
+    // 估算可查询次数：按每次平均 2000 tokens 估算
+    const estQueries = Math.max(1, Math.round(remainTokens / 2000))
+    const estQueriesAfterWarn = Math.max(1, Math.round(remainAfterWarn / 2000))
+    return {
+      warnAt: warned,
+      remainTokens,
+      estQueries,
+      limit: cfg.limit,
+      label: cfg.label,
+      message: `⚠️ 本月已消耗 ${(warned / 10000).toFixed(0)} 万 token，剩余约 ${(remainTokens / 10000).toFixed(0)} 万（约 ${estQueries} 次查询）`
+    }
+  }
+  return null
+}
+
 function checkAIAccess(userId) {
   const db = getDb()
   const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(userId)
@@ -36,10 +105,10 @@ function checkAIAccess(userId) {
     return { allowed: false, message: '剩余次数为0，无法使用AI助手功能。请联系管理员购买联通人口数据配额' }
   }
   
-  const monthlyTokens = getMonthlyTokenUsage(userId)
+  const monthlyTokens = getMonthlyTokenUsage(db, userId)
   
   for (const limit of TOKEN_LIMITS) {
-    if (remaining > limit.minQuota) {
+    if (remaining >= limit.minQuota) {
       // 找到对应区间
       if (monthlyTokens >= limit.limit) {
         const limitStr = limit.limit >= 1_500_000 ? '150万' : limit.limit >= 1_000_000 ? '100万' : '50万'
@@ -87,6 +156,22 @@ router.post('/chat', authenticate, async (req, res) => {
 - 人口对比分析：compare_population（用户提到"对比门店A和门店B的人口"、"哪些门店周边人口更多"、"对比XX和YY"时调用，需要2-5家门店）
 - 门店购买数据对比：compare_stores（用户提到"门店对比"、"对比门店A和门店B的购买履历"、"对比客流"、"对比数据"时调用，跳转到数据管理页面进行对比操作，需要2-5家门店）
 - 门店人口数据排名：store_ranking（用户提到"排名"、"门店排名"、"门店排行"、"到访人口最多"、"人口排名"时调用，按到访、居住、工作人口数分别显示前10和后10名）
+- 城市宏观数据：query_city_data（用户提到城市GDP、人口、收入等时调用）
+- 商场餐饮商户：query_mall_tenants（用户提到商场商户、餐厅时调用）
+- 商场商户对比：compare_mall_tenants（用户提到商场商户对比时调用）
+- 开店余地分析：calculate_potential（用户提到开店余地时调用）
+
+## ⚠️ 高消耗查询引导（重要）
+以下查询 token 消耗较大，你需要在回复结果的同时，引导用户亲自在系统中操作以获得更完整的结果：
+
+**【query_mall_tenants - 商场商户查询】**
+回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击目标商场名称 → 在「餐饮商户」Tab中自助筛选查看，结果更完整且不消耗 AI 额度。'
+
+**【compare_mall_tenants - 商场商户对比】**
+回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击商场 → 在「餐饮商户」Tab中选择「商户对比」功能自助操作。'
+
+**【calculate_potential - 开店余地分析】**
+回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您在地图工具栏中点击「开店余地」按钮自助分析，支持自定义人口/门店筛选条件且不消耗 AI 额度。'
 
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}
@@ -127,9 +212,12 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
     const choice = result.choices?.[0]
 
     // 记录本次token消耗
+    let tokenWarn = null
     if (result.usage) {
       const totalTokens = (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0)
       recordTokenUsage(userId, totalTokens)
+      // 检查是否需要发送token用量提醒
+      tokenWarn = checkTokenWarning(userId, access.monthlyTokens + totalTokens, access.remaining)
     }
 
     if (!choice) {
@@ -147,7 +235,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
         const args = JSON.parse(tc.function.arguments || '{}')
 
         if (serverSideTools.includes(tc.function.name)) {
-          toolResult = await executeQueryStats(userId, args)
+          toolResult = await executeServerTool(tc.function.name, userId, args)
         } else {
           // 其他工具由前端执行，这里返回 pending 标记
           toolResult = { status: 'client_side', args }
@@ -170,7 +258,8 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
             name: tc.function.name,
             args: JSON.parse(tc.function.arguments || '{}')
           })),
-          assistant_message: choice.message
+          assistant_message: choice.message,
+          tokenWarn: tokenWarn?.message
         })
       }
 
@@ -196,7 +285,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
           model: MODEL,
           messages: followUpMessages,
           temperature: 0.3,
-          max_tokens: 800
+          max_tokens: 400
         })
       })
 
@@ -207,18 +296,21 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
       if (followUpResult.usage) {
         const totalTokens = (followUpResult.usage.prompt_tokens || 0) + (followUpResult.usage.completion_tokens || 0)
         recordTokenUsage(userId, totalTokens)
+        tokenWarn = checkTokenWarning(userId, access.monthlyTokens + totalTokens, access.remaining) || tokenWarn
       }
 
       return res.json({
         type: 'text',
-        content: finalContent
+        content: finalContent,
+        tokenWarn: tokenWarn?.message
       })
     }
 
     // 普通文字回复
     res.json({
       type: 'text',
-      content: choice.message?.content || '好的，我来帮您处理。'
+      content: choice.message?.content || '好的，我来帮您处理。',
+      tokenWarn: tokenWarn?.message
     })
 
   } catch (error) {
@@ -228,51 +320,146 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
 })
 
 // 服务端执行：统计查询
-async function executeQueryStats(userId, args) {
+async function executeServerTool(toolName, userId, args) {
   try {
-    const db = getDb()
-    const { group_by = 'city', data_type = 'markers' } = args
+    switch (toolName) {
+      case 'query_stats':
+        return await executeQueryStats(userId, args)
 
-    const tableMap = {
-      markers: 'markers',
-      competitors: 'competitors',
-      brand_stores: 'brand_stores',
-      shopping_centers: 'shopping_centers'
+      case 'query_city_data':
+        return await executeCityDataQuery(args)
+
+      case 'query_mall_tenants':
+        return await executeMallTenantsQuery(args)
+
+      case 'compare_mall_tenants':
+        return await executeMallTenantsCompare(args)
+
+      case 'calculate_potential':
+        return await executeCalculatePotential(args)
+
+      default:
+        return { success: false, error: `未知工具: ${toolName}` }
     }
-    const table = tableMap[data_type] || 'markers'
-
-    const validColumns = ['city', 'store_type', 'store_category', 'brand', 'district', 'name']
-    const col = validColumns.includes(group_by) ? group_by : 'city'
-
-    let rows
-    if (table === 'markers') {
-      rows = db.prepare(`
-        SELECT ${col} as label, COUNT(*) as count
-        FROM ${table}
-        WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
-        GROUP BY ${col}
-        ORDER BY count DESC
-        LIMIT 20
-      `).all(userId)
-    } else {
-      rows = db.prepare(`
-        SELECT ${col} as label, COUNT(*) as count
-        FROM ${table}
-        WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
-        GROUP BY ${col}
-        ORDER BY count DESC
-        LIMIT 20
-      `).all(userId)
-    }
-
-    // 仅返回摘要信息，避免大量数据传入 AI（节省 token）
-    const summary = rows.length > 0
-      ? `共 ${rows.length} 个分组（前 ${rows.length} 条）：` + rows.map(r => `${r.label} ${r.count}家`).join('；')
-      : '暂无数据'
-
-    return { success: true, data: rows, summary, group_by: col, data_type }
   } catch (err) {
     return { success: false, error: err.message }
+  }
+}
+
+// ==== 原有 query_stats ====
+async function executeQueryStats(userId, args) {
+  const db = getDb()
+  const { group_by = 'city', data_type = 'markers' } = args
+
+  const tableMap = {
+    markers: 'markers',
+    competitors: 'competitors',
+    brand_stores: 'brand_stores',
+    shopping_centers: 'shopping_centers'
+  }
+  const table = tableMap[data_type] || 'markers'
+  const validColumns = ['city', 'store_type', 'store_category', 'brand', 'district', 'name']
+  const col = validColumns.includes(group_by) ? group_by : 'city'
+
+  const rows = db.prepare(`
+    SELECT ${col} as label, COUNT(*) as count
+    FROM ${table}
+    WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
+    GROUP BY ${col}
+    ORDER BY count DESC
+    LIMIT 20
+  `).all(userId)
+
+  const summary = rows.length > 0
+    ? `共 ${rows.length} 个分组：` + rows.map(r => `${r.label} ${r.count}家`).join('；')
+    : '暂无数据'
+  return { success: true, data: rows, summary, group_by: col, data_type }
+}
+
+// ==== 城市宏观数据查询 ====
+async function executeCityDataQuery(args) {
+  const { city } = args
+  if (!city) return { success: false, error: '请提供城市名称' }
+  const r = await fetch(`https://mka-online.cn/api/city-data/${encodeURIComponent(city)}`)
+  const d = await r.json()
+  if (!d.success) return { success: false, error: d.message || '未找到该城市数据' }
+  const c = d.data
+  const items = [
+    `城市: ${c['城市'] || '-'}`,
+    `省份: ${c['省份'] || '-'}`,
+    `等级: ${c['等级'] || '-'}`,
+    `年份: ${c['年份'] || '-'}`,
+    `GDP: ${c['GDP(亿元)'] != null ? c['GDP(亿元)'] + '亿元' : '-'}`,
+    `增速: ${c['增速(%)'] != null ? c['增速(%)'] + '%' : '-'}`,
+    `人均GDP: ${c['人均GDP(元)'] != null ? c['人均GDP(元)'] + '元' : '-'}`,
+    `常住人口: ${c['年末常住人口(万人)'] != null ? c['年末常住人口(万人)'] + '万人' : '-'}`,
+    `人均可支配收入: ${c['城镇居民人均可支配收入(元)'] != null ? c['城镇居民人均可支配收入(元)'] + '元' : '-'}`,
+    `社零总额: ${c['社会消费品零售总额(亿元)'] != null ? c['社会消费品零售总额(亿元)'] + '亿元' : '-'}`
+  ].filter(Boolean)
+  return { success: true, summary: items.join('\n'), data: c }
+}
+
+// ==== 商场商户查询 ====
+async function executeMallTenantsQuery(args) {
+  const { mall_name, classification, limit = 10 } = args
+  if (!mall_name) return { success: false, error: '请提供商场名称' }
+  const params = new URLSearchParams({ pageSize: 50, keyword: mall_name })
+  if (classification) params.set('classification', classification)
+  const r = await fetch(`https://mka-online.cn/api/mall-tenants?${params}`)
+  const d = await r.json()
+  if (!d.success) return { success: false, error: '查询失败' }
+  const tenants = d.data || []
+  // 按归类统计
+  const byClass = {}
+  for (const t of tenants) {
+    const cls = t['归类'] || t['商户类型'] || '未知'
+    byClass[cls] = (byClass[cls] || 0) + 1
+  }
+  const classSummary = Object.entries(byClass).sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k} ${v}家`).join('；')
+  const list = tenants.slice(0, limit).map(t =>
+    `${t['商户名称']}（${t['商户类型'] || '-'}，${t['所在楼层'] || '-'}）`
+  ).join('\n')
+  return {
+    success: true,
+    summary: `「${mall_name}」共 ${tenants.length} 家商户\n分类统计：${classSummary}\n商户列表：\n${list}`,
+    data: { total: tenants.length, byClassification: byClass, list: tenants.slice(0, limit) }
+  }
+}
+
+// ==== 商场商户对比 ====
+async function executeMallTenantsCompare(args) {
+  const { malls, by_classification = true } = args
+  if (!malls || malls.length < 2) return { success: false, error: '请至少选择2个商场' }
+  const params = new URLSearchParams({ malls: malls.join(','), byClassification: String(by_classification) })
+  const r = await fetch(`https://mka-online.cn/api/mall-tenants/compare?${params}`)
+  const d = await r.json()
+  if (!d.success) return { success: false, error: '对比失败' }
+  const lines = d.data.map(m =>
+    `${m['商场名称']}: 共${m['商户总数']}家` + (m['分类型']
+      ? '\n  ' + Object.entries(m['分类型']).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ')
+      : '')
+  )
+  return { success: true, summary: lines.join('\n\n'), data: d.data }
+}
+
+// ==== 开店余地分析 ====
+async function executeCalculatePotential(args) {
+  const { city, radius = 1, min_stores = 1, min_competitors = 1 } = args
+  if (!city) return { success: false, error: '请提供城市名称' }
+  const r = await fetch('https://mka-online.cn/api/shapefiles/calculate-potential', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cityName: city, radius, myStoreMin: min_stores, competitorMin: min_competitors, conditions: [] })
+  })
+  const d = await r.json()
+  if (!d.success) return { success: false, error: d.error || '分析失败' }
+  const matched = d.data?.matched || 0
+  const total = d.data?.total || 0
+  return {
+    success: true,
+    summary: `${city}开店余地分析：共 ${total} 个网格，符合条件 ${matched} 个（占比 ${(matched / total * 100).toFixed(1)}%），已在图上显示`,
+    data: { matched, total }
   }
 }
 

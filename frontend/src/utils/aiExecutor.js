@@ -581,6 +581,19 @@ export function getActionDescription(name, args) {
       const radiusText3 = args.radius ? `${args.radius}公里` : '2公里'
       return `门店人口数据排名（半径 ${radiusText3}）`
     }
+    case 'query_city_data': {
+      return `查询城市数据：${args.city}`
+    }
+    case 'query_mall_tenants': {
+      const clsText = args.classification ? `（${args.classification}）` : ''
+      return `查询商场商户：${args.mall_name}${clsText}`
+    }
+    case 'compare_mall_tenants': {
+      return `商场商户对比：${(args.malls || []).join(' vs ')}`
+    }
+    case 'calculate_potential': {
+      return `开店余地分析：${args.city}（半径${args.radius || 1}km）`
+    }
     default:
       return name
   }

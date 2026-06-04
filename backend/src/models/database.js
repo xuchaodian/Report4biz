@@ -426,6 +426,18 @@ export async function initDatabase() {
     console.log(`已插入 ${sampleStores.length} 条示例门店数据`)
   }
 
+  // 创建 AI 用量记录表
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS ai_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+  } catch (e) {
+    console.warn('创建 ai_usage 表失败:', e.message)
+  }
+
   // 保存数据库
   saveDatabase()
 
