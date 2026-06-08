@@ -159,6 +159,13 @@
             <span>按商圈查询</span>
           </div>
         </el-tooltip>
+        <!-- 门店商圈 -->
+        <el-tooltip content="对可见门店统一生成半径圆" placement="left">
+          <div class="store-tools-item" :class="{ active: showStoreCircles }" @click="toggleStoreCircles">
+            <el-icon><Aim /></el-icon>
+            <span>门店商圈</span>
+          </div>
+        </el-tooltip>
         <!-- 热力图 -->
         <div class="store-tools-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
           <el-icon><DataLine /></el-icon>
@@ -220,6 +227,22 @@
         {{ measurementResult }}
       </div>
     </div>
+
+    <!-- 门店商圈半径设置对话框 -->
+    <el-dialog v-model="storeCircleDialogVisible" title="设置门店商圈半径" width="400px" :close-on-click-modal="false">
+      <div style="padding: 10px 0;">
+        <p style="margin-bottom:12px;font-size:14px;color:#606266;">为地图上所有可见的「我的门店」生成半径圆</p>
+        <el-form label-width="80px">
+          <el-form-item label="半径(km)">
+            <el-input-number v-model="storeCircleRadius" :min="0.5" :max="10" :step="0.5" :precision="1" style="width:200px" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="storeCircleDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="applyStoreCircles">生成</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 定位门店面板（4种门店类型，可拖拽） -->
     <div v-if="storeSearchVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
@@ -1135,7 +1158,7 @@ import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
 import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
-  createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor, isStoreClosed,
+  createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor, getStoreTypeBorderColor, isStoreClosed,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 import axios from 'axios'
@@ -1183,6 +1206,7 @@ let allStoreClusterGroup = null  // 所有门店统一聚合图层
 let heatmapLayer = null
 let drawnItems = null
 let analysisCircleLayer = null  // 圆形分析专用图层
+let storeCircleLayer = null     // 门店商圈圆形图层
 let shapefileQueryLayer = null  // Shapefile检索高亮图层
 let measureLine = null
 let measureArea = null
@@ -1203,6 +1227,9 @@ const activeTool = ref('')
 const toolbarExpanded = ref(false) // 默认收起
 const showHeatmap = ref(false)
 const showCluster = ref(false)
+const showStoreCircles = ref(false)
+const storeCircleRadius = ref(1)
+const storeCircleDialogVisible = ref(false)
 
 const showBusinessLayer = ref(true)
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
@@ -3272,7 +3299,7 @@ const loadMarkers = async (skipFetch = false) => {
     const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl, isClosed)
+      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type))
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
@@ -3371,7 +3398,7 @@ const buildAllStoreCluster = () => {
       if (m.latitude && m.longitude) {
         const isClosed = isStoreClosed(m.store_status)
         const brandIconUrl = brandIconMap.value[m.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, isClosed) : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(m.store_type), 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(m.store_type)) : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(m.store_type), 'dot', 1.2)
         const marker = L.marker([m.latitude, m.longitude], { icon })
         marker.bindPopup(`
           <div style="min-width: 200px; font-size: 13px;">
@@ -3477,7 +3504,7 @@ const reloadBusinessLayer = () => {
     const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl, isClosed)
+      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type))
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
     marker.bindPopup(getStorePopupHtml(markerData))
@@ -4853,6 +4880,54 @@ const toggleCluster = () => {
   updateLayerDisplay()
 }
 
+// 门店商圈：点击切换显示
+const toggleStoreCircles = () => {
+  if (showStoreCircles.value) {
+    showStoreCircles.value = false
+    if (storeCircleLayer) {
+      try { map.removeLayer(storeCircleLayer) } catch(e) {}
+      storeCircleLayer = null
+    }
+  } else {
+    storeCircleRadius.value = 1
+    storeCircleDialogVisible.value = true
+  }
+}
+
+// 应用门店商圈（生成圆形）
+const applyStoreCircles = () => {
+  storeCircleDialogVisible.value = false
+  if (!map) { ElMessage.warning('地图未初始化'); return }
+  if (storeCircleLayer) {
+    try { map.removeLayer(storeCircleLayer) } catch(e) {}
+    storeCircleLayer = null
+  }
+  let stores = markerStore.markers
+  if (markerStore.visibleIds !== null && markerStore.visibleIds !== undefined) {
+    stores = stores.filter(m => markerStore.visibleIds.includes(m.id))
+  }
+  const validStores = stores.filter(m => m.latitude && m.longitude)
+  if (validStores.length === 0) {
+    ElMessage.warning('没有可见的门店数据')
+    return
+  }
+  const radiusM = storeCircleRadius.value * 1000
+  storeCircleLayer = L.layerGroup().addTo(map)
+  validStores.forEach(store => {
+    const circle = L.circle([store.latitude, store.longitude], {
+      radius: radiusM,
+      color: '#f56c6c',
+      fillColor: '#f56c6c',
+      fillOpacity: 0.12,
+      weight: 2
+    })
+    circle.bindTooltip(`${store.name || '未知'} - ${storeCircleRadius.value}km`, { sticky: true })
+    storeCircleLayer.addLayer(circle)
+  })
+  showStoreCircles.value = true
+  ElMessage.success(`已为 ${validStores.length} 家门店生成 ${storeCircleRadius.value}km 商圈`)
+}
+
 // 清除绘制
 const clearDrawings = () => {
   if (!map) {
@@ -4871,6 +4946,12 @@ const clearDrawings = () => {
       map.removeLayer(analysisCircleLayer)
       analysisCircleLayer = null
     }
+    // 清除门店商圈圆形
+    if (storeCircleLayer) {
+      map.removeLayer(storeCircleLayer)
+      storeCircleLayer = null
+    }
+    showStoreCircles.value = false
     // 清除Shapefile检索高亮图层
     if (shapefileQueryLayer) {
       map.removeLayer(shapefileQueryLayer)

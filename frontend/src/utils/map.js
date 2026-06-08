@@ -158,13 +158,17 @@ export function createOldIcon(color = 'default', icon = '📍') {
 }
 
 // 创建品牌图片图标 (32×32px)
-export function createBrandImageIcon(url, gray = false) {
+// gray: 闭店时变灰
+// borderColor: 门店类型边框颜色（如 '重点候选' 用土橙色边框区分）
+export function createBrandImageIcon(url, gray = false, borderColor = null) {
   const filterStyle = gray ? 'filter:grayscale(100%);opacity:0.55;' : ''
+  const borderStyle = borderColor ? `border:3px solid ${borderColor};` : ''
+  const imgStyle = `border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);${borderStyle}${filterStyle}`
   return L.divIcon({
     className: 'custom-brand-marker',
-    html: `<img src="${url}" width="32" height="32" style="border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);${filterStyle}" />`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    html: `<img src="${url}" width="32" height="32" style="${imgStyle}" />`,
+    iconSize: borderColor ? [38, 38] : [32, 32],
+    iconAnchor: borderColor ? [19, 19] : [16, 16],
     popupAnchor: [0, -16]
   })
 }
@@ -209,6 +213,15 @@ export function getStoreTypeColor(storeType) {
     '一般候选': '#e6a23c'   // 黄色
   }
   return colorMap[storeType] || '#409eff'
+}
+
+// 获取品牌Logo边框颜色（仅对候选类型添加边框）
+export function getStoreTypeBorderColor(storeType) {
+  const borderMap = {
+    '重点候选': '#d48806',  // 土橙色
+    '一般候选': '#888888'   // 深灰色
+  }
+  return borderMap[storeType] || null
 }
 
 // 格式化坐标
