@@ -4912,12 +4912,48 @@ const applyStoreCircles = () => {
     return
   }
   const radiusM = storeCircleRadius.value * 1000
+  const R = radiusM
+  const R2 = R * R
+
+  // 计算任意两个门店之间的距离
+  const distMatrix = validStores.map((a, i) =>
+    validStores.map((b, j) => {
+      if (i === j) return Infinity
+      const dlat = (a.latitude - b.latitude) * Math.PI / 180
+      const dlon = (a.longitude - b.longitude) * Math.PI / 180
+      const lat1 = a.latitude * Math.PI / 180
+      const lat2 = b.latitude * Math.PI / 180
+      const aa = Math.sin(dlat/2) * Math.sin(dlat/2) +
+                 Math.cos(lat1) * Math.cos(lat2) * Math.sin(dlon/2) * Math.sin(dlon/2)
+      return 2 * 6371000 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa))
+    })
+  )
+
+  // 计算每个门店的最大重叠百分比
+  const circleColors = validStores.map((store, idx) => {
+    let maxOverlap = 0
+    for (let j = 0; j < validStores.length; j++) {
+      if (idx === j) continue
+      const d = distMatrix[idx][j]
+      if (d >= 2 * R) continue // 不重叠
+      // 两个等半径圆的交集面积公式
+      const overlapArea = 2 * R2 * Math.acos(d / (2 * R)) - (d / 2) * Math.sqrt(4 * R2 - d * d)
+      const overlapPct = overlapArea / (Math.PI * R2)
+      if (overlapPct > maxOverlap) maxOverlap = overlapPct
+    }
+    // 根据最大重叠率选择颜色
+    if (maxOverlap >= 0.30) return '#e6a23c'  // 黄色：≥30%
+    if (maxOverlap > 0) return '#409eff'       // 蓝色：<30%
+    return '#f56c6c'                            // 红色：不重叠
+  })
+
   storeCircleLayer = L.layerGroup().addTo(map)
-  validStores.forEach(store => {
+  validStores.forEach((store, idx) => {
+    const color = circleColors[idx]
     const circle = L.circle([store.latitude, store.longitude], {
       radius: radiusM,
-      color: '#f56c6c',
-      fillColor: '#f56c6c',
+      color: color,
+      fillColor: color,
       fillOpacity: 0.12,
       weight: 2
     })
