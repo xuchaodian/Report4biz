@@ -153,8 +153,8 @@ router.post('/store-counts', authenticate, async (req, res) => {
 
     const db = getDb()
 
-    // 1. 我的门店 — 含状态信息
-    const allMarkers = db.prepare('SELECT id, name, latitude, longitude, store_status FROM markers').all()
+    // 1. 我的门店 — 含状态信息（仅统计当前用户的门店）
+    const allMarkers = db.prepare('SELECT id, name, latitude, longitude, store_status FROM markers WHERE user_id = ?').all(req.user.id)
     let myStoreTotal = 0
     let closedCount = 0
     const closedKeywords = ['闭店', '停业', '歇业', '休业', '结业', '暂停营业']
@@ -173,7 +173,7 @@ router.post('/store-counts', authenticate, async (req, res) => {
     }
 
     // 2. 竞品门店 — 按品牌分组
-    const allCompetitors = db.prepare('SELECT id, name, brand, latitude, longitude FROM competitors').all()
+    const allCompetitors = db.prepare('SELECT id, name, brand, latitude, longitude FROM competitors WHERE user_id = ?').all(req.user.id)
     const brandCounts = {}
     for (const c of allCompetitors) {
       if (c.latitude && c.longitude) {
@@ -187,7 +187,7 @@ router.post('/store-counts', authenticate, async (req, res) => {
       }
     }
 
-    // 3. 购物中心
+    // 3. 购物中心（管理员共享数据，不按用户过滤）
     const allShopping = db.prepare('SELECT id, name, latitude, longitude FROM shopping_centers').all()
     let shoppingTotal = 0
     for (const s of allShopping) {
