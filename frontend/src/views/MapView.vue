@@ -718,32 +718,6 @@
           </el-col>
         </el-row>
 
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="区域经理" prop="area_manager">
-              <el-input v-model="markerForm.area_manager" placeholder="区域经理姓名" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电话1" prop="phone1">
-              <el-input v-model="markerForm.phone1" placeholder="区域经理电话" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="店长" prop="store_manager">
-              <el-input v-model="markerForm.store_manager" placeholder="店长姓名" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电话2" prop="phone2">
-              <el-input v-model="markerForm.phone2" placeholder="店长电话" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
         <el-form-item label="地址" prop="address">
           <el-input v-model="markerForm.address" placeholder="详细地址" />
         </el-form-item>
@@ -6696,6 +6670,9 @@ const resetMarkerForm = () => {
     seats: null,
     rent: null,
     store_category: '',
+    store_status: '',
+    mall_type: '',
+    trade_area_type: '',
     contact_person: '',
     contact_phone: '',
     description: '',
@@ -6729,6 +6706,9 @@ const editMarker = async (id) => {
     seats: marker.seats || null,
     rent: marker.rent || null,
     store_category: marker.store_category || '',
+    store_status: marker.store_status || '',
+    mall_type: marker.mall_type || '',
+    trade_area_type: marker.trade_area_type || '',
     contact_person: marker.contact_person || '',
     contact_phone: marker.contact_phone || '',
     description: marker.description || '',
