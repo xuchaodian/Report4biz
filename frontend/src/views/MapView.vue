@@ -4981,6 +4981,16 @@ const clearDrawings = () => {
       map.removeLayer(commerceLayer)
       commerceLayer = null
     }
+    // 清除多边形图层
+    if (tempPolygonLayer) {
+      map.removeLayer(tempPolygonLayer)
+      tempPolygonLayer = null
+    }
+    if (tempPolygonMarker) {
+      map.removeLayer(tempPolygonMarker)
+      tempPolygonMarker = null
+    }
+    tempPolygonPoints = []
   } catch (e) {
     console.error('[clearDrawings] 清除图层失败:', e)
   }
@@ -6082,6 +6092,11 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
       dashArray: '5, 5'
     }).addTo(map)
     
+    // 点击半径圆显示POI结果面板
+    poiRadiusCircle.on('click', () => {
+      poiResultVisible.value = true
+    })
+    
     // 绘制中心点标记（红色图钉）
     poiCenterMarker = L.marker([centerLat, centerLng], {
       icon: L.divIcon({
@@ -6358,18 +6373,26 @@ const startPolygonSearch = () => {
     dashArray: '5, 5'
   }).addTo(map)
   
+  // 点击已绘制的多边形可重新显示POI结果面板
+  tempPolygonLayer.on('click', () => {
+    poiResultVisible.value = true
+  })
+  
+  // 设置十字光标
+  map.getContainer().style.cursor = 'crosshair'
+  
   // 临时标记点
   updateMarkers = () => {
     if (tempPolygonMarker) {
       map.removeLayer(tempPolygonMarker)
+      tempPolygonMarker = null
     }
     if (tempPolygonPoints.length > 0) {
       const markers = tempPolygonPoints.map((p, i) => 
         L.circleMarker(p, { radius: 6, color: '#10b981', fillColor: '#fff', fillOpacity: 1 })
           .bindPopup(`点${i + 1}`)
-          .addTo(map)
       )
-      tempPolygonMarker = L.layerGroup(markers)
+      tempPolygonMarker = L.layerGroup(markers).addTo(map)
     }
   }
   
@@ -6446,6 +6469,9 @@ const showPolygonCompleteButton = () => {
 const finishPolygonSearch = async () => {
   // 移除点击监听
   map.off('click', addPolygonPoint)
+  
+  // 恢复光标
+  map.getContainer().style.cursor = ''
   
   // 移除完成按钮
   if (completeBtn) {
@@ -6531,6 +6557,17 @@ const clearPoiSearch = () => {
     map.removeLayer(poiRadiusCircle)
     poiRadiusCircle = null
   }
+  
+  // 清除多边形图层
+  if (tempPolygonLayer) {
+    map.removeLayer(tempPolygonLayer)
+    tempPolygonLayer = null
+  }
+  if (tempPolygonMarker) {
+    map.removeLayer(tempPolygonMarker)
+    tempPolygonMarker = null
+  }
+  tempPolygonPoints = []
   
   poiCenterPoint = null
   poiSearchRadius = 2000

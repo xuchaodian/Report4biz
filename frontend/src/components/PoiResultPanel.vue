@@ -1,6 +1,6 @@
 <template>
-  <div v-if="visible" class="poi-result-panel">
-    <div class="panel-header">
+  <div v-if="visible" class="poi-result-panel" :style="{ top: panelTop + 'px', right: panelRight + 'px' }">
+    <div class="panel-header" @mousedown.prevent="startDrag">
       <span class="title">POI搜索结果</span>
       <span class="count">{{ pois.length }} 个</span>
       <el-button link @click="close">
@@ -23,6 +23,7 @@
 </template>
 
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 
 const props = defineProps({
@@ -32,6 +33,36 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+
+const panelTop = ref(180)
+const panelRight = ref(18)
+let dragging = false
+let startX = 0, startY = 0
+let startTop = 0, startRight = 0
+
+const startDrag = (e) => {
+  dragging = true
+  startX = e.clientX
+  startY = e.clientY
+  startTop = panelTop.value
+  startRight = panelRight.value
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+const onDrag = (e) => {
+  if (!dragging) return
+  const dx = e.clientX - startX
+  const dy = e.clientY - startY
+  panelTop.value = startTop + dy
+  panelRight.value = startRight - dx
+}
+
+const stopDrag = () => {
+  dragging = false
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+}
 
 const focusOn = (poi) => {
   if (poi.location && props.map) {
@@ -48,8 +79,6 @@ const close = () => {
 <style scoped>
 .poi-result-panel {
   position: fixed;
-  top: 180px;
-  right: 18px;
   width: 300px;
   max-height: 400px;
   background: #fff;
@@ -66,6 +95,11 @@ const close = () => {
   padding: 12px 16px;
   border-bottom: 1px solid #eee;
   gap: 8px;
+  cursor: grab;
+}
+
+.panel-header:active {
+  cursor: grabbing;
 }
 
 .title {
