@@ -1789,6 +1789,71 @@ const openStoreCompetitors = (lat, lng) => {
   circleDialogVisible.value = true
 }
 
+// 门店popup"周边检索"按钮 - 以门店坐标为圆心进行POI检索
+const openStorePoiSearch = async (lat, lng) => {
+  if (!map) return
+  try {
+    const { value: keyword } = await ElMessageBox.prompt('请输入搜索关键词', '周边检索', {
+      confirmButtonText: '下一步',
+      cancelButtonText: '取消',
+      inputValue: '餐饮',
+      inputPlaceholder: '如：咖啡厅、餐厅'
+    })
+    if (!keyword || !keyword.trim()) return
+
+    const { value: radiusKm } = await ElMessageBox.prompt('请输入搜索半径（公里）', '设置半径', {
+      confirmButtonText: '搜索',
+      cancelButtonText: '取消',
+      inputValue: '2',
+      inputPattern: /^\d+(\.\d+)?$/,
+      inputErrorMessage: '请输入有效的数字'
+    })
+    if (!radiusKm) return
+
+    const radiusM = Math.round(parseFloat(radiusKm) * 1000)
+
+    // 清除之前的POI标记
+    poiResultVisible.value = false
+    poiMarkers.value.forEach(m => map.removeLayer(m))
+    poiMarkers.value = []
+    if (poiCenterMarker) { map.removeLayer(poiCenterMarker); poiCenterMarker = null }
+    if (poiRadiusCircle) { map.removeLayer(poiRadiusCircle); poiRadiusCircle = null }
+    if (tempCircleMarker) { map.removeLayer(tempCircleMarker); tempCircleMarker = null }
+
+    // 绘制半径圆（紫色虚线）
+    poiRadiusCircle = L.circle([lat, lng], {
+      radius: radiusM,
+      color: '#6366f1',
+      fillColor: '#6366f1',
+      fillOpacity: 0.1,
+      weight: 2,
+      dashArray: '5, 5'
+    }).addTo(map)
+    poiRadiusCircle.on('click', () => { poiResultVisible.value = true })
+
+    // 执行API搜索
+    const loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
+    const response = await fetch('/api/poi/around', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lng, lat, radius: radiusM, keywords: keyword.trim() })
+    })
+    const result = await response.json()
+    loadingMsg.close()
+
+    if (result.error) { ElMessage.error(result.error); return }
+
+    poiResults.value = result.pois || []
+    poiResultVisible.value = true
+    showPoiOnMap(result.pois, lat, lng, radiusM)
+    ElMessage.success(`找到 ${result.count} 个结果`)
+  } catch (err) {
+    if (err === 'cancel') return
+    console.error('[Store PoiSearch]', err)
+    ElMessage.error('搜索失败')
+  }
+}
+
 // ====== 共用门店弹窗HTML（三处统一，改一处即全部生效） ======
 function getStorePopupHtml(markerData) {
   const isClosed = isStoreClosed(markerData.store_status)
@@ -1806,12 +1871,13 @@ function getStorePopupHtml(markerData) {
       ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
       ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
       ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-      <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-        <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px;">编辑</button>
-        <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px;">删除</button>
-        <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 12px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px;">联通人口</button>
-        <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">人口分布</button>
-        <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 12px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px;">竞品分布</button>
+      <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
+        <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
+        <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
+        <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px; font-size: 12px;">联通人口</button>
+        <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">人口分布</button>
+        <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">竞品分布</button>
+        <button onclick="window.openStorePoiSearch(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #6366f1; color: white; border: none; border-radius: 4px; font-size: 12px;">周边检索</button>
       </div>
     </div>`
 }
@@ -7141,6 +7207,7 @@ onMounted(() => {
   window.openStorePopulationDistribution = openStorePopulationDistribution
   window.openStoreSmartsteps = openStoreSmartsteps
   window.openStoreCompetitors = openStoreCompetitors
+  window.openStorePoiSearch = openStorePoiSearch
   window.storeHasPurchaseHistory = storeHasPurchaseHistory
 
   // 暴露Shapefile检索结果显示函数
@@ -7228,6 +7295,7 @@ onUnmounted(() => {
   delete window.openStorePopulationDistribution
   delete window.openStoreSmartsteps
   delete window.openStoreCompetitors
+  delete window.openStorePoiSearch
   delete window.handleShapefileQueryFromGlobal
   shapefileProcessing = false
 })
