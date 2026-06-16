@@ -803,6 +803,7 @@
       :title="circleDialogMode === 'population' ? '商圈人口分布' : '设置圆形半径'"
       width="420px"
       :show-close="true"
+      draggable
       @close="closeCircleDialog"
     >
       <el-form :model="circleForm" label-width="80px">
@@ -885,7 +886,15 @@
         <div v-if="circleAnalysisData.myStores.length > 0" class="analysis-section">
           <div class="analysis-section-title">
             <el-icon><Location /></el-icon>
-            我的门店 ({{ circleAnalysisData.myStores.length }}家)
+            我的门店
+            <template v-if="circleAnalysisData.myStoresByRadius.length > 1">
+              <span v-for="(item, idx) in circleAnalysisData.myStoresByRadius" :key="idx" style="margin-left:4px;">
+                <el-tag size="small">{{ item.radius }}{{ item.unit === 'km' ? 'km' : 'm' }}:{{ item.count }}家</el-tag>
+              </span>
+            </template>
+            <template v-else>
+              ({{ circleAnalysisData.myStores.length }}家)
+            </template>
           </div>
           <el-table :data="circleAnalysisData.myStores" size="small" max-height="200">
             <el-table-column prop="name" label="门店名称" />
@@ -900,7 +909,15 @@
         <div v-if="circleAnalysisData.competitorStores.length > 0" class="analysis-section">
           <div class="analysis-section-title">
             <el-icon><DataLine /></el-icon>
-            竞品门店 ({{ circleAnalysisData.competitorStores.length }}家)
+            竞品门店
+            <template v-if="circleAnalysisData.competitorStoresByRadius.length > 1">
+              <span v-for="(item, idx) in circleAnalysisData.competitorStoresByRadius" :key="idx" style="margin-left:4px;">
+                <el-tag size="small">{{ item.radius }}{{ item.unit === 'km' ? 'km' : 'm' }}:{{ item.count }}家</el-tag>
+              </span>
+            </template>
+            <template v-else>
+              ({{ circleAnalysisData.competitorStores.length }}家)
+            </template>
           </div>
           <el-table :data="circleAnalysisData.competitorStores" size="small" max-height="200">
             <el-table-column prop="name" label="门店名称" />
@@ -1310,7 +1327,9 @@ const circleAnalysisData = reactive({
   myStores: [],
   competitorStores: [],
   myStoresFull: [],  // 完整数据（含经纬度）
-  competitorStoresFull: []
+  competitorStoresFull: [],
+  myStoresByRadius: [],  // 各半径内门店数
+  competitorStoresByRadius: []  // 各半径内竞品数
 })
 const circleAnalysisTitle = ref('圆形内门店分析')
 
@@ -1388,11 +1407,18 @@ const circleAnalysisParams = reactive({
 // 分析圆形内的门店
 const analyzeCircleStores = () => {
   if (!circleForm.center) return
-  // 转换半径为米
-  let radiusInMeters = circleForm.radius
-  if (circleForm.unit === 'km') {
-    radiusInMeters = radiusInMeters * 1000
+  
+  // 计算所有半径（米）
+  const radii = [circleForm.radius]
+  if (circleForm.radius2 !== null && circleForm.radius2 !== undefined && circleForm.radius2 !== '') {
+    radii.push(circleForm.radius2)
   }
+  if (circleForm.radius3 !== null && circleForm.radius3 !== undefined && circleForm.radius3 !== '') {
+    radii.push(circleForm.radius3)
+  }
+  
+  const radiiMeters = radii.map(r => circleForm.unit === 'km' ? r * 1000 : r)
+  const maxRadius = Math.max(...radiiMeters)
 
   const centerLat = circleForm.center.lat
   const centerLng = circleForm.center.lng
@@ -1403,11 +1429,11 @@ const analyzeCircleStores = () => {
     myStoresData = markerStore.markers.filter(m => markerStore.visibleIds.includes(m.id))
   }
 
-  // 分析我的门店
+  // 分析我的门店（按最大半径过滤，包含所有圈内门店）
   const filteredMyStores = myStoresData
     .filter(store => {
       const distance = calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
-      return distance <= radiusInMeters
+      return distance <= maxRadius
     })
   circleAnalysisData.myStoresFull = filteredMyStores
   circleAnalysisData.myStores = filteredMyStores
@@ -1424,11 +1450,11 @@ const analyzeCircleStores = () => {
     competitorData = competitorStore.competitors.filter(c => competitorStore.visibleIds.includes(c.id))
   }
 
-  // 分析竞品门店
+  // 分析竞品门店（按最大半径过滤）
   const filteredCompetitorStores = competitorData
     .filter(store => {
       const distance = calculateDistance(centerLat, centerLng, store.latitude, store.longitude)
-      return distance <= radiusInMeters
+      return distance <= maxRadius
     })
   circleAnalysisData.competitorStoresFull = filteredCompetitorStores
   circleAnalysisData.competitorStores = filteredCompetitorStores
@@ -1440,12 +1466,31 @@ const analyzeCircleStores = () => {
     .sort((a, b) => a.distance - b.distance)
 
   // 设置分析结果对话框标题
-  const radiusText = circleForm.unit === 'km' ? `${circleForm.radius}公里` : `${circleForm.radius}米`
+  const radiusText = radii.map(r => circleForm.unit === 'km' ? `${r}公里` : `${r}米`).join('/')
   circleAnalysisTitle.value = `半径${radiusText}圆形内门店分析`
 
-  // 保存分析参数
+  // 按各半径分别统计数量
+  const myCounts = radiiMeters.map(r =>
+    filteredMyStores.filter(s => calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= r).length
+  )
+  circleAnalysisData.myStoresByRadius = radii.map((r, i) => ({
+    radius: r,
+    unit: circleForm.unit,
+    count: myCounts[i]
+  }))
+  const compCounts = radiiMeters.map(r =>
+    filteredCompetitorStores.filter(s => calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= r).length
+  )
+  circleAnalysisData.competitorStoresByRadius = radii.map((r, i) => ({
+    radius: r,
+    unit: circleForm.unit,
+    count: compCounts[i]
+  }))
+
+  // 保存分析参数（所有半径）
   circleAnalysisParams.center = { lat: centerLat, lng: centerLng }
-  circleAnalysisParams.radius = radiusInMeters
+  circleAnalysisParams.radii = radiiMeters
+  circleAnalysisParams.radius = maxRadius  // 保持向后兼容
 
   // 关闭圆形设置对话框
   circleDialogVisible.value = false
@@ -1532,7 +1577,7 @@ const openPopulationDistribution = async () => {
   setTimeout(async () => {
     try {
       const userId = localStorage.getItem('userId') || 1
-      const listRes = await fetch(`/api/shapefiles`, {
+      const listRes = await fetch(`/api/shapefiles?category=population`, {
         headers: { 'x-user-id': userId }
       })
       const listData = await listRes.json()
@@ -1696,7 +1741,7 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
   // 加载统计字段选项（使用轻量级字段端点）
   try {
     const userId = localStorage.getItem('userId') || 1
-    const listRes = await fetch(`/api/shapefiles`, {
+    const listRes = await fetch(`/api/shapefiles?category=population`, {
       headers: { 'x-user-id': userId }
     })
     const listData = await listRes.json()
@@ -2080,7 +2125,7 @@ const analyzePopulationDistribution = async () => {
     ElMessage.info('正在计算人口分布...')
 
     // 获取所有shapefile
-    const listRes = await fetch(`/api/shapefiles`, {
+    const listRes = await fetch(`/api/shapefiles?category=population`, {
       headers: { 'x-user-id': userId }
     })
     const listData = await listRes.json()
@@ -2921,15 +2966,19 @@ const showCircleOnMap = () => {
   analysisCircleLayer = new L.LayerGroup()
   analysisCircleLayer.addTo(map)
 
-  // 绘制圆形
-  const circle = L.circle([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], {
-    radius: circleAnalysisParams.radius,
-    color: '#f56c6c',
-    fillColor: '#f56c6c',
-    fillOpacity: 0.2,
-    weight: 2
+  // 绘制所有半径圆
+  const radii = circleAnalysisParams.radii || [circleAnalysisParams.radius]
+  radii.forEach((r, idx) => {
+    const circle = L.circle([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], {
+      radius: r,
+      color: '#f56c6c',
+      fillColor: '#f56c6c',
+      fillOpacity: 0.1 + idx * 0.05,
+      weight: 2
+    })
+    circle.bindTooltip(`半径${r >= 1000 ? (r / 1000) + 'km' : r + 'm'}`, { sticky: true })
+    analysisCircleLayer.addLayer(circle)
   })
-  analysisCircleLayer.addLayer(circle)
 
   // 绘制圆心标记
   const centerMarker = L.marker([circleAnalysisParams.center.lat, circleAnalysisParams.center.lng], {
@@ -6923,7 +6972,7 @@ const startPopulationCompare = async () => {
   try {
     // 获取所有shapefile
     const userId = localStorage.getItem('userId') || 1
-    const listRes = await fetch(`/api/shapefiles`, {
+    const listRes = await fetch(`/api/shapefiles?category=population`, {
       headers: { 'x-user-id': userId }
     })
     const listData = await listRes.json()
