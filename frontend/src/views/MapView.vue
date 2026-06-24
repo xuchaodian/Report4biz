@@ -236,22 +236,59 @@
     </div>
 
     <!-- 城市商圈选择对话框 -->
-    <el-dialog v-model="cityTradeAreaVisible" title="选择城市商圈" width="400px" :close-on-click-modal="false" @close="cityTradeAreaVisible = false">
-      <div style="padding: 10px 0;">
-        <el-checkbox-group v-model="selectedTradeAreaCities">
-          <div v-for="city in cityTradeAreaList" :key="city.name" style="margin-bottom:8px;">
-            <el-checkbox :label="city.name" :value="city.name">
-              <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
-            </el-checkbox>
-          </div>
-        </el-checkbox-group>
-        <div v-if="cityTradeAreaList.length === 0 && !cityTradeAreaLoading" style="text-align:center;padding:20px;color:#909399;font-size:13px;">
-          暂无城市商圈数据
-        </div>
+    <el-dialog v-model="cityTradeAreaVisible" title="选择城市商圈" width="450px" :close-on-click-modal="false" @close="cityTradeAreaVisible = false">
+      <div style="padding: 6px 0;">
         <div v-if="cityTradeAreaLoading" style="text-align:center;padding:20px;">
           <el-icon class="is-loading" style="font-size:20px;"><Loading /></el-icon>
           <span style="margin-left:8px;color:#909399;font-size:13px;">加载中...</span>
         </div>
+        <div v-else-if="cityTradeAreaList.length === 0" style="text-align:center;padding:20px;color:#909399;font-size:13px;">
+          暂无城市商圈数据
+        </div>
+        <template v-else>
+          <!-- 一线城市 -->
+          <div v-if="groupedTradeAreaCities['一线城市'] && groupedTradeAreaCities['一线城市'].length > 0" style="margin-bottom:18px;">
+            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+              <el-tag type="danger" round size="small">一线城市</el-tag>
+              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['一线城市'].length }}个城市</span>
+            </h3>
+            <el-checkbox-group v-model="selectedTradeAreaCities">
+              <div v-for="city in groupedTradeAreaCities['一线城市']" :key="city.name" style="margin-bottom:6px;">
+                <el-checkbox :label="city.name" :value="city.name">
+                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </div>
+          <!-- 新一线城市 -->
+          <div v-if="groupedTradeAreaCities['新一线城市'] && groupedTradeAreaCities['新一线城市'].length > 0" style="margin-bottom:18px;">
+            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+              <el-tag type="warning" round size="small">新一线城市</el-tag>
+              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['新一线城市'].length }}个城市</span>
+            </h3>
+            <el-checkbox-group v-model="selectedTradeAreaCities">
+              <div v-for="city in groupedTradeAreaCities['新一线城市']" :key="city.name" style="margin-bottom:6px;">
+                <el-checkbox :label="city.name" :value="city.name">
+                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </div>
+          <!-- 二三线城市 -->
+          <div v-if="groupedTradeAreaCities['二三线城市'] && groupedTradeAreaCities['二三线城市'].length > 0" style="margin-bottom:8px;">
+            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+              <el-tag type="info" round size="small">二三线城市</el-tag>
+              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['二三线城市'].length }}个城市</span>
+            </h3>
+            <el-checkbox-group v-model="selectedTradeAreaCities">
+              <div v-for="city in groupedTradeAreaCities['二三线城市']" :key="city.name" style="margin-bottom:6px;">
+                <el-checkbox :label="city.name" :value="city.name">
+                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </div>
+        </template>
       </div>
       <template #footer>
         <el-button @click="cityTradeAreaVisible = false">取消</el-button>
@@ -1377,6 +1414,28 @@ const cityTradeAreaList = ref([])       // [{ name, ids: [], count }]
 const selectedTradeAreaCities = ref([])   // 选中的城市名
 let cityTradeAreaLayer = null           // Leaflet 图层组
 const CITY_TRADE_AREA_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
+
+// 城市分级（与 ShapefileView 保持一致）
+const CITY_TIERS = {
+  '一线城市': ['北京', '上海', '广州', '深圳'],
+  '新一线城市': ['成都', '杭州', '重庆', '武汉', '苏州', '西安', '南京', '长沙', '郑州', '天津', '合肥', '青岛', '东莞', '宁波', '佛山']
+}
+function getCityTier(name) {
+  if (!name) return '二三线城市'
+  for (const [tier, cities] of Object.entries(CITY_TIERS)) {
+    if (cities.some(city => name.includes(city))) return tier
+  }
+  return '二三线城市'
+}
+// 按城市等级分组的商圈城市列表
+const groupedTradeAreaCities = computed(() => {
+  const groups = { '一线城市': [], '新一线城市': [], '二三线城市': [] }
+  cityTradeAreaList.value.forEach(city => {
+    const tier = getCityTier(city.name)
+    groups[tier].push(city)
+  })
+  return groups
+})
 const showHeatmap = ref(false)
 const showCluster = ref(false)
 const showStoreCircles = ref(false)
@@ -5416,7 +5475,6 @@ const openCityTradeArea = async () => {
     // 按城市分组：从文件名提取城市名（如"上海商圈"->"上海"）
     const cityMap = {}
     files.forEach(f => {
-      if (!f.geojson) return  // 列表接口不返回 geojson，只统计
       // 用 shapefile name 中的城市名
       let cityName = f.name.replace(/商圈/g, '').replace(/区域/g, '').trim()
       if (!cityName) cityName = f.name
@@ -5427,7 +5485,7 @@ const openCityTradeArea = async () => {
       cityMap[cityName].count++
     })
     cityTradeAreaList.value = Object.values(cityMap)
-    selectedTradeAreaCities.value = cityTradeAreaList.value.map(c => c.name)
+    selectedTradeAreaCities.value = []  // 默认全不选
   } catch (e) {
     console.error('[cityTradeArea] 获取城市列表失败:', e)
     ElMessage.error('获取城市商圈数据失败')
@@ -5478,18 +5536,27 @@ const loadCityTradeArea = async () => {
       const colorIdx = i % CITY_TRADE_AREA_COLORS.length
       const fillColor = CITY_TRADE_AREA_COLORS[colorIdx]
       const borderColor = fillColor
+      const NAME_FIELDS = ['名称', 'name', 'Name', 'NAME']
       const layer = L.geoJSON(geojson, {
         style: {
           color: borderColor,
           weight: 2,
           fillColor: fillColor,
           fillOpacity: 0.15
+        },
+        onEachFeature: (feature, featureLayer) => {
+          let name = ''
+          for (const field of NAME_FIELDS) {
+            if (feature.properties && feature.properties[field]) {
+              name = feature.properties[field]
+              break
+            }
+          }
+          if (name) {
+            featureLayer.bindTooltip(name, { sticky: true })
+          }
         }
       })
-      // 找到对应的城市名作为 tooltip 标题
-      const cityEntry = cityTradeAreaList.value.find(c => c.ids.includes(fid))
-      const cityLabel = cityEntry ? cityEntry.name : `商圈(${fid})`
-      layer.bindTooltip(`<b>${cityLabel}</b><br/>要素数: ${geojson.features.length}`, { sticky: true })
       cityTradeAreaLayer.addLayer(layer)
       totalFeatures += geojson.features.length
     }
