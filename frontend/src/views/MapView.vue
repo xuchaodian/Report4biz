@@ -204,6 +204,13 @@
             <span>测量面积</span>
           </div>
         </el-tooltip>
+        <!-- 城市商圈 -->
+        <el-tooltip content="城市商圈" placement="left">
+          <div class="tool-item" :class="{ active: cityTradeAreaLayer !== null }" @click="openCityTradeArea">
+            <el-icon><MapLocation /></el-icon>
+            <span>城市商圈</span>
+          </div>
+        </el-tooltip>
         <el-divider style="margin: 6px 0;" />
         <!-- 智慧足迹（已隐藏）
         <el-tooltip content="智慧足迹人口分析" placement="left">
@@ -227,6 +234,32 @@
         {{ measurementResult }}
       </div>
     </div>
+
+    <!-- 城市商圈选择对话框 -->
+    <el-dialog v-model="cityTradeAreaVisible" title="选择城市商圈" width="400px" :close-on-click-modal="false" @close="cityTradeAreaVisible = false">
+      <div style="padding: 10px 0;">
+        <el-checkbox-group v-model="selectedTradeAreaCities">
+          <div v-for="city in cityTradeAreaList" :key="city.name" style="margin-bottom:8px;">
+            <el-checkbox :label="city.name" :value="city.name">
+              <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
+            </el-checkbox>
+          </div>
+        </el-checkbox-group>
+        <div v-if="cityTradeAreaList.length === 0 && !cityTradeAreaLoading" style="text-align:center;padding:20px;color:#909399;font-size:13px;">
+          暂无城市商圈数据
+        </div>
+        <div v-if="cityTradeAreaLoading" style="text-align:center;padding:20px;">
+          <el-icon class="is-loading" style="font-size:20px;"><Loading /></el-icon>
+          <span style="margin-left:8px;color:#909399;font-size:13px;">加载中...</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="cityTradeAreaVisible = false">取消</el-button>
+        <el-button type="primary" :loading="cityTradeAreaLoading" :disabled="selectedTradeAreaCities.length === 0" @click="loadCityTradeArea">
+          显示商圈
+        </el-button>
+      </template>
+    </el-dialog>
 
     <!-- 门店商圈模式选择对话框 -->
     <el-dialog v-model="storeCircleModeDialogVisible" title="门店商圈" width="380px" :close-on-click-modal="false">
@@ -1337,6 +1370,13 @@ let measureLabelMarkers = []     // 各点的距离标签
 // 状态变量
 const activeTool = ref('')
 const toolbarExpanded = ref(false) // 默认收起
+// 城市商圈
+const cityTradeAreaVisible = ref(false)
+const cityTradeAreaLoading = ref(false)
+const cityTradeAreaList = ref([])       // [{ name, ids: [], count }]
+const selectedTradeAreaCities = ref([])   // 选中的城市名
+let cityTradeAreaLayer = null           // Leaflet 图层组
+const CITY_TRADE_AREA_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
 const showHeatmap = ref(false)
 const showCluster = ref(false)
 const showStoreCircles = ref(false)
@@ -5354,6 +5394,114 @@ const applyStoreCircles = () => {
   ElMessage.success(`已为 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 商圈${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因筛选未显示）` : ''}`)
 }
 
+// 城市商圈
+const openCityTradeArea = async () => {
+  if (cityTradeAreaLayer) {
+    // 已显示，点击时清除
+    map.removeLayer(cityTradeAreaLayer)
+    cityTradeAreaLayer = null
+    selectedTradeAreaCities.value = []
+    return
+  }
+  cityTradeAreaVisible.value = true
+  cityTradeAreaLoading.value = true
+  cityTradeAreaList.value = []
+  try {
+    const userId = userStore.user?.id || 1
+    const res = await fetch(`/api/shapefiles?category=other`, {
+      headers: { 'x-user-id': userId }
+    })
+    const json = await res.json()
+    const files = json.data || []
+    // 按城市分组：从文件名提取城市名（如"上海商圈"->"上海"）
+    const cityMap = {}
+    files.forEach(f => {
+      if (!f.geojson) return  // 列表接口不返回 geojson，只统计
+      // 用 shapefile name 中的城市名
+      let cityName = f.name.replace(/商圈/g, '').replace(/区域/g, '').trim()
+      if (!cityName) cityName = f.name
+      if (!cityMap[cityName]) {
+        cityMap[cityName] = { name: cityName, ids: [], count: 0 }
+      }
+      cityMap[cityName].ids.push(f.id)
+      cityMap[cityName].count++
+    })
+    cityTradeAreaList.value = Object.values(cityMap)
+    selectedTradeAreaCities.value = cityTradeAreaList.value.map(c => c.name)
+  } catch (e) {
+    console.error('[cityTradeArea] 获取城市列表失败:', e)
+    ElMessage.error('获取城市商圈数据失败')
+  } finally {
+    cityTradeAreaLoading.value = false
+  }
+}
+
+const loadCityTradeArea = async () => {
+  if (!map) { ElMessage.warning('地图未初始化'); return }
+  cityTradeAreaVisible.value = false
+  cityTradeAreaLoading.value = true
+  // 清除已有图层
+  if (cityTradeAreaLayer) {
+    map.removeLayer(cityTradeAreaLayer)
+    cityTradeAreaLayer = null
+  }
+  try {
+    const userId = userStore.user?.id || 1
+    // 先获取所有 other 类 shapefile
+    const listRes = await fetch(`/api/shapefiles?category=other`, {
+      headers: { 'x-user-id': userId }
+    })
+    const listJson = await listRes.json()
+    const allFiles = listJson.data || []
+    // 筛选出选中城市对应的文件
+    const cityFileIds = []
+    cityTradeAreaList.value.forEach(city => {
+      if (selectedTradeAreaCities.value.includes(city.name)) {
+        cityFileIds.push(...city.ids)
+      }
+    })
+    if (cityFileIds.length === 0) {
+      ElMessage.warning('请选择至少一个城市')
+      return
+    }
+    // 逐个获取完整 GeoJSON
+    cityTradeAreaLayer = L.layerGroup().addTo(map)
+    let totalFeatures = 0
+    for (let i = 0; i < cityFileIds.length; i++) {
+      const fid = cityFileIds[i]
+      const res = await fetch(`/api/shapefiles/${fid}`, {
+        headers: { 'x-user-id': userId }
+      })
+      const json = await res.json()
+      const geojson = json.data?.geojson
+      if (!geojson || !geojson.features) continue
+      const colorIdx = i % CITY_TRADE_AREA_COLORS.length
+      const fillColor = CITY_TRADE_AREA_COLORS[colorIdx]
+      const borderColor = fillColor
+      const layer = L.geoJSON(geojson, {
+        style: {
+          color: borderColor,
+          weight: 2,
+          fillColor: fillColor,
+          fillOpacity: 0.15
+        }
+      })
+      // 找到对应的城市名作为 tooltip 标题
+      const cityEntry = cityTradeAreaList.value.find(c => c.ids.includes(fid))
+      const cityLabel = cityEntry ? cityEntry.name : `商圈(${fid})`
+      layer.bindTooltip(`<b>${cityLabel}</b><br/>要素数: ${geojson.features.length}`, { sticky: true })
+      cityTradeAreaLayer.addLayer(layer)
+      totalFeatures += geojson.features.length
+    }
+    ElMessage.success(`已显示 ${selectedTradeAreaCities.value.length} 个城市的 ${totalFeatures} 个商圈面`)
+  } catch (e) {
+    console.error('[cityTradeArea] 加载商圈数据失败:', e)
+    ElMessage.error('加载商圈数据失败')
+  } finally {
+    cityTradeAreaLoading.value = false
+  }
+}
+
 // 图例弹窗关闭时同步清除商圈圆形
 const onStoreCircleLegendClose = () => {
   showStoreCircles.value = false
@@ -5410,6 +5558,12 @@ const clearDrawings = () => {
       map.removeLayer(commerceLayer)
       commerceLayer = null
     }
+    // 清除城市商圈图层
+    if (cityTradeAreaLayer) {
+      map.removeLayer(cityTradeAreaLayer)
+      cityTradeAreaLayer = null
+    }
+    selectedTradeAreaCities.value = []
     // 清除多边形图层
     if (tempPolygonLayer) {
       map.removeLayer(tempPolygonLayer)
