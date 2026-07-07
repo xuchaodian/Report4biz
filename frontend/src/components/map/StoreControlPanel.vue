@@ -121,18 +121,15 @@ defineEmits([
 
 <style scoped>
 .store-control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  position: absolute;
-  top: 10px;
-  right: 285px;
-  z-index: 1001;
+  /* 不作定位参考，让子元素直接相对于 .map-view 定位 */
 }
 
-/* 显示门店开关 */
+/* 显示门店开关 - 左下角 */
 .store-toggle-panel {
-  position: relative;
+  position: absolute;
+  z-index: 1001;
+  bottom: 60px;
+  left: 10px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -193,9 +190,12 @@ defineEmits([
   font-size: 12px;
 }
 
-/* 门店工具面板 */
+/* 门店工具面板 - 右上角 */
 .store-tools-panel {
-  position: relative;
+  position: absolute;
+  z-index: 1001;
+  top: 10px;
+  right: 285px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);

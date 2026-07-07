@@ -59,36 +59,73 @@ watch(() => props.results, (newResults) => {
 <style scoped>
 .search-panel {
   position: absolute;
-  top: 15px;
-  left: 15px;
-  z-index: 1000;
+  top: 10px;
+  left: 10px;
   width: 320px;
-  max-height: calc(100vh - 100px);
-  display: flex;
-  flex-direction: column;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+  overflow: hidden;
+  border: 2px solid #409eff;
 }
 
 .search-body {
-  flex-shrink: 0;
+  padding: 8px 12px;
+}
+
+.search-body :deep(.el-input__wrapper) {
+  border-radius: 6px;
+  box-shadow: none;
+  border: 1px solid #dcdfe6;
+  transition: all 0.2s;
+}
+
+.search-body :deep(.el-input__wrapper):hover {
+  border-color: #409eff;
+}
+
+.search-body :deep(.el-input__wrapper.is-focus) {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+}
+
+.search-body :deep(.el-input__inner) {
+  font-size: 13px;
+}
+
+.search-body :deep(.el-input__inner)::placeholder {
+  color: #999;
+}
+
+.search-body :deep(.el-input__prefix) {
+  color: #409eff;
+}
+
+.search-body :deep(.el-input__clear) {
+  color: #999;
+}
+
+.search-body :deep(.el-input__clear):hover {
+  color: #409eff;
 }
 
 .search-results {
-  background: #fff;
-  border-radius: 0 0 8px 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  max-height: 460px;
+  max-height: 300px;
   overflow-y: auto;
-  margin-top: 2px;
+  border-top: 1px solid #eee;
 }
 
 .search-result-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
   padding: 10px 12px;
   cursor: pointer;
-  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #333;
   border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
 }
 
 .search-result-item:last-child {
@@ -96,14 +133,20 @@ watch(() => props.results, (newResults) => {
 }
 
 .search-result-item:hover {
-  background: #f5f7fa;
+  background: #e6f4ff;
 }
 
 .result-icon {
   flex-shrink: 0;
-  margin-top: 2px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+  border-radius: 50%;
   color: #409eff;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .result-info {
@@ -112,20 +155,20 @@ watch(() => props.results, (newResults) => {
 }
 
 .result-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
-  color: #303133;
-  margin-bottom: 2px;
+  color: #333;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .result-address {
   font-size: 12px;
-  color: #909399;
+  color: #999;
+  margin-top: 2px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

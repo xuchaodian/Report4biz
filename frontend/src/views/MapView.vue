@@ -9,66 +9,25 @@
     />
 
     <!-- 周边检索面板 -->
-    <div class="poi-search-panel">
-      <div class="poi-search-header" @click="poiSearchExpanded = !poiSearchExpanded">
-        <span class="poi-search-title">周边检索</span>
-        <span class="poi-search-arrow" :class="{ expanded: poiSearchExpanded }">▼</span>
-      </div>
-      <div v-show="poiSearchExpanded" class="poi-search-body">
-        <div class="poi-search-input">
-          <el-input
-            v-model="poiKeywords"
-            placeholder="输入关键词（如：咖啡厅、餐厅）"
-            size="small"
-            clearable
-          />
-        </div>
-        <div class="poi-search-modes">
-          <div class="poi-mode-btn" @click="startCircleSearch">
-            <el-icon><Location /></el-icon>
-            <span>半径圆</span>
-          </div>
-          <div class="poi-mode-btn" @click="startPolygonSearch">
-            <el-icon><Edit /></el-icon>
-            <span>多边形</span>
-          </div>
-          <div class="poi-mode-btn" @click="clearPoiSearch">
-            <el-icon><Delete /></el-icon>
-            <span>清除</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <PoiSearchPanel
+      v-model:expanded="poiSearchExpanded"
+      v-model:keyword="poiKeywords"
+      @circle-search="startCircleSearch"
+      @polygon-search="startPolygonSearch"
+      @clear-search="clearPoiSearch"
+    />
 
     <!-- 商圈工具面板 -->
-    <div class="business-circle-panel">
-      <div class="business-circle-header" @click="businessCircleExpanded = !businessCircleExpanded">
-        <span class="business-circle-title">商圈工具</span>
-        <span class="business-circle-arrow" :class="{ expanded: businessCircleExpanded }">▼</span>
-      </div>
-      <div v-show="businessCircleExpanded" class="business-circle-body">
-        <div class="business-circle-btn" :class="{ active: activeTool === 'circle' }" @click="setTool('circle')">
-          <el-icon><Coordinate /></el-icon>
-          <span>商圈内点位</span>
-        </div>
-        <div class="business-circle-btn" @click="openPopulationDistribution">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>常住人口分布</span>
-        </div>
-        <div class="business-circle-btn" @click="openPopulationCompare">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>常住人口对比</span>
-        </div>
-        <div class="business-circle-btn" @click="smartstepsVisible = !smartstepsVisible" title="智慧足迹人口分析">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>联通人口</span>
-        </div>
-        <div class="business-circle-btn" :class="{ active: potentialVisible }" @click="potentialVisible = !potentialVisible">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>开店余地</span>
-        </div>
-      </div>
-    </div>
+    <BusinessCirclePanel
+      v-model:expanded="businessCircleExpanded"
+      :active-tool="activeTool"
+      :potential-visible="potentialVisible"
+      @set-tool="setTool"
+      @population-dist="openPopulationDistribution"
+      @population-compare="openPopulationCompare"
+      @toggle-smartsteps="smartstepsVisible = !smartstepsVisible"
+      @toggle-potential="potentialVisible = !potentialVisible"
+    />
 
 
 
@@ -1135,6 +1094,9 @@
 import { ref, shallowRef, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+// 按需导入：ElMessage/ElMessageBox 通过JS调用，需显式加载CSS
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
   Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close
@@ -1153,6 +1115,8 @@ import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
+import PoiSearchPanel from '@/components/map/PoiSearchPanel.vue'
+import BusinessCirclePanel from '@/components/map/BusinessCirclePanel.vue'
 import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
 import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
 import MapToolbar from '@/components/map/MapToolbar.vue'
@@ -7997,191 +7961,7 @@ function getHeatmapCellStyle(nums, idx) {
 }
 
 // 周边检索面板样式
-.poi-search-panel {
-  position: absolute;
-  top: 10px;
-  right: 150px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  min-width: 110px;
-  max-width: 110px;
-  overflow: hidden;
-  border: 2px solid #409eff;
-
-  .poi-search-header {
-    padding: 10px 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
-    background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-
-    .poi-search-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
-    }
-
-    .poi-search-arrow {
-      margin-left: auto;
-      font-size: 10px;
-      color: #fff;
-      transition: transform 0.2s;
-      transform: rotate(-90deg);
-
-      &.expanded {
-        transform: rotate(0deg);
-      }
-    }
-  }
-
-  .poi-search-body {
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-width: 100%;
-    box-sizing: border-box;
-
-    .poi-search-input {
-      width: 100%;
-      max-width: 100px;
-      box-sizing: border-box;
-
-      .el-input__inner {
-        border-color: #409eff;
-        width: 100%;
-      }
-    }
-
-    .poi-search-modes {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-
-      .poi-mode-btn {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        padding: 7px 10px;
-        border: 1px solid #dcdfe6;
-        border-radius: 4px;
-        background: #fff;
-        color: #606266;
-        font-size: 12px;
-        cursor: pointer;
-        box-sizing: border-box;
-        user-select: none;
-
-        &:hover {
-          background: #ecf5ff;
-          border-color: #409eff;
-          color: #409eff;
-        }
-
-        .el-icon {
-          font-size: 14px;
-          flex-shrink: 0;
-        }
-
-        span {
-          line-height: 1;
-        }
-      }
-    }
-  }
-}
-
 // 商圈工具面板样式
-.business-circle-panel {
-  position: absolute;
-  top: 10px;
-  right: 420px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  min-width: 110px;
-  overflow: hidden;
-  border: 2px solid #ff8800;
-
-  .business-circle-header {
-    padding: 10px 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    user-select: none;
-    background: linear-gradient(135deg, #ff8800 0%, #cc6600 100%);
-
-    .business-circle-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
-    }
-
-    .business-circle-arrow {
-      margin-left: auto;
-      font-size: 10px;
-      color: #fff;
-      transition: transform 0.2s;
-      transform: rotate(-90deg);
-
-      &.expanded {
-        transform: rotate(0deg);
-      }
-    }
-  }
-
-  .business-circle-body {
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-
-    .business-circle-btn {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      width: 100%;
-      padding: 7px 10px;
-      border: 1px solid #dcdfe6;
-      border-radius: 4px;
-      background: #fff;
-      color: #606266;
-      font-size: 12px;
-      cursor: pointer;
-      box-sizing: border-box;
-      user-select: none;
-
-      &:hover {
-        background: #fff4e6;
-        border-color: #ff8800;
-        color: #ff8800;
-      }
-
-      &.active {
-        background: #fff4e6;
-        border-color: #ff8800;
-        color: #ff8800;
-      }
-
-      .el-icon {
-        font-size: 14px;
-        flex-shrink: 0;
-      }
-
-      span {
-        line-height: 1;
-      }
-    }
-  }
-}
-
 // 智慧足迹浮动按钮样式 - 绝对定位右上角（商圈工具左侧）
 .smartsteps-float-btn {
   position: absolute;
