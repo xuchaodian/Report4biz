@@ -487,6 +487,63 @@ export async function executeTool(name, args, ctx) {
       }
     }
 
+    // ===== 门店数据总览 =====
+    case 'get_store_summary': {
+      const myStores = markerStore.markers || []
+      const competitors = competitorStore.competitors || []
+      const brandStores = brandStoreStore.brandStores || []
+      const centers = shoppingCenterStore.shoppingCenters || []
+
+      return {
+        success: true,
+        message: `📊 当前数据总览：
+- 我的门店：${myStores.length} 家
+- 竞品门店：${competitors.length} 家
+- 品牌门店：${brandStores.length} 家
+- 购物中心：${centers.length} 家
+
+可见图层：
+- 我的门店：${showBusinessLayer.value ? '✅' : '❌'}
+- 竞品图层：${showCompetitorLayer.value ? '✅' : '❌'}
+- 品牌门店：${showBrandStoreLayer.value ? '✅' : '❌'}
+- 购物中心：${showShoppingCenterLayer.value ? '✅' : '❌'}
+
+地图工具状态：
+- 热力图：${showHeatmap.value ? '✅' : '❌'}
+- 聚合显示：${showCluster.value ? '✅' : '❌'}`
+      }
+    }
+
+    // ===== 生成业务简报 =====
+    case 'generate_report': {
+      const myStores = markerStore.markers || []
+      const competitors = competitorStore.competitors || []
+      const cities = [...new Set(myStores.map(s => s.city).filter(Boolean))]
+      const brands = [...new Set(competitors.map(s => s.brand).filter(Boolean))].slice(0, 10)
+
+      const parts = [`📋 业务简报（自动生成）\n`]
+      parts.push(`📍 覆盖城市：${cities.length > 0 ? cities.join('、') : '暂无数据'}`)
+      parts.push(``)
+      parts.push(`🏪 **门店概况**`)
+      parts.push(`- 我的门店：${myStores.length} 家`)
+      parts.push(`- 竞品门店：${competitors.length} 家`)
+      parts.push(`- 竞争品牌：${brands.length > 0 ? brands.join('、') : '无数据'}`)
+      parts.push(``)
+      parts.push(`💡 **建议**`)
+      if (myStores.length === 0) {
+        parts.push(`- 暂无门店数据，请先导入门店`)
+      } else if (cities.length === 1) {
+        parts.push(`- 当前仅在 ${cities[0]} 有门店，建议考虑向周边城市扩展`)
+      } else {
+        parts.push(`- 已覆盖 ${cities.length} 个城市，可对比各城市门店表现`)
+      }
+      if (brands.length > 5) {
+        parts.push(`- 竞品品牌较多（${brands.length} 个），建议重点关注前3个主要竞品`)
+      }
+
+      return { success: true, message: parts.join('\n') }
+    }
+
     default:
       return { success: false, message: `未知工具：${name}` }
   }
@@ -593,6 +650,12 @@ export function getActionDescription(name, args) {
     }
     case 'calculate_potential': {
       return `开店余地分析：${args.city}（半径${args.radius || 1}km）`
+    }
+    case 'get_store_summary': {
+      return '获取门店数据总览'
+    }
+    case 'generate_report': {
+      return '生成业务简报'
     }
     default:
       return name

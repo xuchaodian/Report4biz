@@ -113,6 +113,9 @@ const inputText = ref('')
 const messages = ref([])
 const messagesRef = ref(null)
 
+const MAX_HISTORY = 6  // 减少历史消息数，节省token
+const MAX_TOTAL_MSGS = 20  // 总消息上限
+
 const quickQuestions = [
   '显示北京的已开业门店',
   '对比星巴克国贸店和望京店的人口',
@@ -122,10 +125,30 @@ const quickQuestions = [
   '定位到上海'
 ]
 
-// 格式化消息内容（简单换行处理）
+// 格式化消息内容（支持简单Markdown）
 function formatContent(text) {
   if (!text) return ''
-  return text.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  // 代码块 ```code```
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+  // 行内代码 `code`
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  // 加粗 **text**
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  // 无序列表 - item
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>')
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+  // 有序列表 1. item
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+  // 换行
+  html = html.replace(/\n/g, '<br>')
+  // 合并连续的<br></li><br>清理
+  html = html.replace(/<br><\/(ul|li)>/g, '</$1>')
+  html = html.replace(/<\/(ul|li)><br>/g, '</$1>')
+  return html
 }
 
 // 滚动到底部
@@ -149,16 +172,27 @@ async function sendMessage(text) {
   inputText.value = ''
 
   messages.value.push({ role: 'user', content: text })
+  // 超上限时丢弃最早的消息
+  if (messages.value.length > MAX_TOTAL_MSGS) {
+    messages.value.splice(0, messages.value.length - MAX_TOTAL_MSGS)
+  }
   loading.value = true
 
   try {
-    // 构建历史消息（最多保留最近8条）
-    const historyMessages = messages.value
-      .slice(-9, -1)
+    // 构建精简历史（最近 MAX_HISTORY 条）
+    const recentMsgs = messages.value
+      .slice(-MAX_HISTORY - 1, -1)
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content }))
 
-    historyMessages.push({ role: 'user', content: text })
+    recentMsgs.push({ role: 'user', content: text })
+
+    // 精简 context：只传必要的字段
+    const slimContext = {
+      storeCount: props.context.storeCount,
+      viewport: props.context.viewport,
+      currentCity: props.context.currentCity
+    }
 
     const token = userStore.token
     const response = await fetch('/api/ai/chat', {
@@ -168,8 +202,9 @@ async function sendMessage(text) {
         'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
-        messages: historyMessages,
-        context: props.context
+        messages: recentMsgs,
+        context: slimContext,
+        max_tokens: 800
       })
     })
 
@@ -439,6 +474,42 @@ defineExpose({ addFeedback, visible })
     font-size: 13px;
     line-height: 1.6;
     word-break: break-word;
+
+    :deep(code) {
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: monospace;
+      color: #e11d48;
+    }
+
+    :deep(pre) {
+      background: #1f2937;
+      color: #e5e7eb;
+      padding: 10px 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 6px 0;
+
+      code {
+        background: none;
+        color: inherit;
+        padding: 0;
+        font-size: inherit;
+      }
+    }
+
+    :deep(ul) {
+      margin: 4px 0;
+      padding-left: 20px;
+
+      li { margin-bottom: 2px; }
+    }
+
+    :deep(strong) { font-weight: 600; }
   }
 
   .msg-actions {
