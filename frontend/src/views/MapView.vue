@@ -1,38 +1,12 @@
 <template>
   <div class="map-view">
     <!-- 左上角地址检索框 -->
-    <div class="search-panel">
-      <div class="search-body">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="输入地址搜索定位"
-          size="default"
-          clearable
-          @input="searchAddress"
-          @keyup.enter="handleEnterSearch"
-        >
-          <template #prefix>
-            <el-icon><Search /></el-icon>
-          </template>
-        </el-input>
-      </div>
-      <div v-if="searchResults.length > 0" class="search-results">
-        <div
-          v-for="(result, index) in searchResults"
-          :key="index"
-          class="search-result-item"
-          @click="goToLocation(result)"
-        >
-          <div class="result-icon">
-            <el-icon><LocationFilled /></el-icon>
-          </div>
-          <div class="result-info">
-            <div class="result-name">{{ result.name || result.display_name }}</div>
-            <div class="result-address">{{ result.address || result.district }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AddressSearchPanel
+      :results="searchResults"
+      @search="searchAddress"
+      @search-enter="handleEnterSearch"
+      @select-result="goToLocation"
+    />
 
     <!-- 周边检索面板 -->
     <div class="poi-search-panel">
@@ -98,205 +72,48 @@
 
 
 
-    <!-- 显示门店开关 - 工具栏左侧 -->
-    <div class="store-toggle-panel">
-      <div class="store-toggle-header" @click="storeToggleExpanded = !storeToggleExpanded">
-        <span class="toggle-title">显示门店</span>
-        <span class="toggle-arrow" :class="{ expanded: storeToggleExpanded }">▼</span>
-      </div>
-      <div v-show="storeToggleExpanded" class="store-toggle-body">
-        <div class="toggle-row">
-          <span class="toggle-label">我的门店</span>
-          <el-switch v-model="showBusinessLayer" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">竞品门店</span>
-          <el-switch v-model="showCompetitorLayer" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">品牌门店</span>
-          <el-switch v-model="showBrandStoreLayer" />
-        </div>
-        <div class="toggle-row">
-          <span class="toggle-label">购物中心</span>
-          <el-switch v-model="showShoppingCenterLayer" />
-        </div>
-      </div>
-    </div>
-
-    <!-- 门店工具面板 - 右上角 -->
-    <div class="store-tools-panel">
-      <div class="store-tools-header" @click="storeToolsExpanded = !storeToolsExpanded">
-        <span class="store-tools-title">门店工具</span>
-        <span class="store-tools-arrow" :class="{ expanded: storeToolsExpanded }">▼</span>
-      </div>
-      <div v-show="storeToolsExpanded" class="store-tools-body">
-        <!-- 添加门店 -->
-        <el-tooltip content="添加门店" placement="left">
-          <div class="store-tools-item" :class="{ active: activeTool === 'marker' }" @click="setTool('marker')">
-            <el-icon><Location /></el-icon>
-            <span>添加门店</span>
-          </div>
-        </el-tooltip>
-        <!-- 定位门店 -->
-        <el-tooltip content="定位门店" placement="left">
-          <div class="store-tools-item" :class="{ active: storeSearchVisible }" @click="storeSearchVisible = !storeSearchVisible">
-            <el-icon><Search /></el-icon>
-            <span>定位门店</span>
-          </div>
-        </el-tooltip>
-        <!-- 按行政界查询 -->
-        <el-tooltip content="按行政界查询" placement="left">
-          <div class="store-tools-item" :class="{ active: districtVisible }" @click="districtVisible = !districtVisible">
-            <el-icon><Flag /></el-icon>
-            <span>按行政界查询</span>
-          </div>
-        </el-tooltip>
-        <!-- 按商圈查询 -->
-        <el-tooltip content="按商圈查询" placement="left">
-          <div class="store-tools-item" :class="{ active: commerceVisible }" @click="commerceVisible = !commerceVisible">
-            <el-icon><Shop /></el-icon>
-            <span>按商圈查询</span>
-          </div>
-        </el-tooltip>
-        <!-- 门店商圈 -->
-        <el-tooltip content="对可见门店统一生成半径圆" placement="left">
-          <div class="store-tools-item" :class="{ active: showStoreCircles }" @click="toggleStoreCircles">
-            <el-icon><Aim /></el-icon>
-            <span>门店商圈</span>
-          </div>
-        </el-tooltip>
-        <!-- 热力图 -->
-        <div class="store-tools-item" :class="{ active: showHeatmap }" @click="toggleHeatmap">
-          <el-icon><DataLine /></el-icon>
-          <span>热力图</span>
-        </div>
-        <!-- 聚合显示 -->
-        <el-tooltip content="聚合显示" placement="left">
-          <div class="store-tools-item" :class="{ active: showCluster }" @click="toggleCluster">
-            <el-icon><Grid /></el-icon>
-            <span>聚合显示</span>
-          </div>
-        </el-tooltip>
-      </div>
-    </div>
+    <!-- 显示门店 + 门店工具 -->
+    <StoreControlPanel
+      v-model:toggle-expanded="storeToggleExpanded"
+      v-model:tools-expanded="storeToolsExpanded"
+      v-model:show-business="showBusinessLayer"
+      v-model:show-competitor="showCompetitorLayer"
+      v-model:show-brand="showBrandStoreLayer"
+      v-model:show-center="showShoppingCenterLayer"
+      :active-tool="activeTool"
+      :store-search-visible="storeSearchVisible"
+      :district-visible="districtVisible"
+      :commerce-visible="commerceVisible"
+      :show-store-circles="showStoreCircles"
+      :show-heatmap="showHeatmap"
+      :show-cluster="showCluster"
+      @set-tool="setTool"
+      @toggle-store-search="storeSearchVisible = !storeSearchVisible"
+      @toggle-district="districtVisible = !districtVisible"
+      @toggle-commerce="commerceVisible = !commerceVisible"
+      @toggle-store-circles="toggleStoreCircles"
+      @toggle-heatmap="toggleHeatmap"
+      @toggle-cluster="toggleCluster"
+    />
 
     <!-- 工具栏 - 右上角收起/展开 -->
-    <div class="toolbar">
-      <div class="toolbar-header" @click="toolbarExpanded = !toolbarExpanded">
-        <span class="toolbar-title">地图工具箱</span>
-        <el-icon class="toolbar-arrow" :class="{ expanded: toolbarExpanded }">
-          <ArrowRight />
-        </el-icon>
-      </div>
-      <div v-show="toolbarExpanded" class="toolbar-body">
-        <!-- 测量距离 -->
-        <el-tooltip content="测量距离" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'measure' }" @click="setTool('measure')">
-            <el-icon><Odometer /></el-icon>
-            <span>测量距离</span>
-          </div>
-        </el-tooltip>
-        <!-- 测量面积 -->
-        <el-tooltip content="测量面积" placement="left">
-          <div class="tool-item" :class="{ active: activeTool === 'area' }" @click="setTool('area')">
-            <el-icon><Aim /></el-icon>
-            <span>测量面积</span>
-          </div>
-        </el-tooltip>
-        <!-- 城市商圈 -->
-        <el-tooltip content="城市商圈" placement="left">
-          <div class="tool-item" :class="{ active: cityTradeAreaLayer !== null }" @click="openCityTradeArea">
-            <el-icon><MapLocation /></el-icon>
-            <span>城市商圈</span>
-          </div>
-        </el-tooltip>
-        <el-divider style="margin: 6px 0;" />
-        <!-- 智慧足迹（已隐藏）
-        <el-tooltip content="智慧足迹人口分析" placement="left">
-          <div class="tool-item" :class="{ active: smartstepsVisible }" @click="smartstepsVisible = !smartstepsVisible">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>人口分析</span>
-          </div>
-        </el-tooltip>
-        -->
-        <!-- 图标样式（已隐藏） -->
-        <!-- 清除绘制 -->
-        <el-tooltip content="清除绘制" placement="left">
-          <div class="tool-item" @click="clearDrawings">
-            <el-icon><Delete /></el-icon>
-            <span>清除绘制</span>
-          </div>
-        </el-tooltip>
-      </div>
-      <!-- 测量结果显示 -->
-      <div v-if="measurementResult" class="measurement-result">
-        {{ measurementResult }}
-      </div>
-    </div>
+    <MapToolbar
+      v-model:expanded="toolbarExpanded"
+      :active-tool="activeTool"
+      :city-trade-area-layer-active="cityTradeAreaLayer !== null"
+      :measurement-result="measurementResult"
+      @set-tool="setTool"
+      @open-city-trade-area="openCityTradeArea"
+      @clear-drawings="clearDrawings"
+    />
 
     <!-- 城市商圈选择对话框 -->
-    <el-dialog v-model="cityTradeAreaVisible" title="选择城市商圈" width="450px" :close-on-click-modal="false" @close="cityTradeAreaVisible = false">
-      <div style="padding: 6px 0;">
-        <div v-if="cityTradeAreaLoading" style="text-align:center;padding:20px;">
-          <el-icon class="is-loading" style="font-size:20px;"><Loading /></el-icon>
-          <span style="margin-left:8px;color:#909399;font-size:13px;">加载中...</span>
-        </div>
-        <div v-else-if="cityTradeAreaList.length === 0" style="text-align:center;padding:20px;color:#909399;font-size:13px;">
-          暂无城市商圈数据
-        </div>
-        <template v-else>
-          <!-- 一线城市 -->
-          <div v-if="groupedTradeAreaCities['一线城市'] && groupedTradeAreaCities['一线城市'].length > 0" style="margin-bottom:18px;">
-            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-              <el-tag type="danger" round size="small">一线城市</el-tag>
-              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['一线城市'].length }}个城市</span>
-            </h3>
-            <el-checkbox-group v-model="selectedTradeAreaCities">
-              <div v-for="city in groupedTradeAreaCities['一线城市']" :key="city.name" style="margin-bottom:6px;">
-                <el-checkbox :label="city.name" :value="city.name">
-                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
-                </el-checkbox>
-              </div>
-            </el-checkbox-group>
-          </div>
-          <!-- 新一线城市 -->
-          <div v-if="groupedTradeAreaCities['新一线城市'] && groupedTradeAreaCities['新一线城市'].length > 0" style="margin-bottom:18px;">
-            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-              <el-tag type="warning" round size="small">新一线城市</el-tag>
-              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['新一线城市'].length }}个城市</span>
-            </h3>
-            <el-checkbox-group v-model="selectedTradeAreaCities">
-              <div v-for="city in groupedTradeAreaCities['新一线城市']" :key="city.name" style="margin-bottom:6px;">
-                <el-checkbox :label="city.name" :value="city.name">
-                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
-                </el-checkbox>
-              </div>
-            </el-checkbox-group>
-          </div>
-          <!-- 二三线城市 -->
-          <div v-if="groupedTradeAreaCities['二三线城市'] && groupedTradeAreaCities['二三线城市'].length > 0" style="margin-bottom:8px;">
-            <h3 style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
-              <el-tag type="info" round size="small">二三线城市</el-tag>
-              <span style="font-size:13px;color:#999;font-weight:normal;">{{ groupedTradeAreaCities['二三线城市'].length }}个城市</span>
-            </h3>
-            <el-checkbox-group v-model="selectedTradeAreaCities">
-              <div v-for="city in groupedTradeAreaCities['二三线城市']" :key="city.name" style="margin-bottom:6px;">
-                <el-checkbox :label="city.name" :value="city.name">
-                  <span style="font-size:14px;">{{ city.name }}（{{ city.count }} 个商圈）</span>
-                </el-checkbox>
-              </div>
-            </el-checkbox-group>
-          </div>
-        </template>
-      </div>
-      <template #footer>
-        <el-button @click="cityTradeAreaVisible = false">取消</el-button>
-        <el-button type="primary" :loading="cityTradeAreaLoading" :disabled="selectedTradeAreaCities.length === 0" @click="loadCityTradeArea">
-          显示商圈
-        </el-button>
-      </template>
-    </el-dialog>
+    <CityTradeAreaDialog
+      v-model:visible="cityTradeAreaVisible"
+      :loading="cityTradeAreaLoading"
+      :grouped-cities="groupedTradeAreaCities"
+      @confirm="onCityTradeAreaConfirm"
+    />
 
     <!-- 门店商圈模式选择对话框 -->
     <el-dialog v-model="storeCircleModeDialogVisible" title="门店商圈" width="380px" :close-on-click-modal="false">
@@ -1320,7 +1137,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Odometer, Aim, Search, Flag, Shop, ArrowRight, ArrowLeft, Collection, LocationFilled, Edit, Close
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -1338,13 +1155,17 @@ import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
 import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
 import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
+import MapToolbar from '@/components/map/MapToolbar.vue'
+import AddressSearchPanel from '@/components/map/AddressSearchPanel.vue'
+import StoreControlPanel from '@/components/map/StoreControlPanel.vue'
+import CityTradeAreaDialog from '@/components/map/dialogs/CityTradeAreaDialog.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor, getStoreTypeBorderColor, isStoreClosed,
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 import axios from 'axios'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 import * as turf from '@turf/turf'
 import { formatNumber } from '@/utils/populationStats'
 // 注意：public目录的中文名图片会被Vite直接复制到dist根目录
@@ -1359,6 +1180,32 @@ const route = useRoute()
 
 // AI 助手
 const aiAssistantRef = ref(null)
+
+// 性能优化：内存泄漏预防
+const cleanupResources = {
+  timers: new Set(),
+  abortControllers: new Set(),
+  eventListeners: []
+}
+
+// 安全的定时器封装
+const createSafeTimeout = (callback, delay) => {
+  const timer = setTimeout(() => {
+    callback()
+    cleanupResources.timers.delete(timer)
+  }, delay)
+  cleanupResources.timers.add(timer)
+  return timer
+}
+
+const clearAllTimers = () => {
+  cleanupResources.timers.forEach(timer => {
+    clearTimeout(timer)
+    clearInterval(timer)
+  })
+  cleanupResources.timers.clear()
+}
+
 const aiContext = computed(() => ({
   markers_count: markerStore.markers.length,
   competitors_count: competitorStore.competitors.length,
@@ -1411,7 +1258,6 @@ const toolbarExpanded = ref(false) // 默认收起
 const cityTradeAreaVisible = ref(false)
 const cityTradeAreaLoading = ref(false)
 const cityTradeAreaList = ref([])       // [{ name, ids: [], count }]
-const selectedTradeAreaCities = ref([])   // 选中的城市名
 let cityTradeAreaLayer = null           // Leaflet 图层组
 const CITY_TRADE_AREA_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9']
 
@@ -3294,8 +3140,7 @@ const markerStyleOptions = [
   { value: 'star', label: '星形', icon: '⭐' }
 ]
 
-// 地址搜索
-const searchKeyword = ref('')
+// 地址搜索结果
 const searchResults = ref([])
 
 // 当前城市名称
@@ -3473,23 +3318,24 @@ const initMap = async () => {
 }
 
 // 地址搜索（使用高德地图API，支持模糊检索）
-let searchTimer = null
-const searchAddress = async () => {
-  if (!searchKeyword.value.trim()) {
+const searchTimerRef = ref(null)
+const searchAddress = async (keyword) => {
+  if (!keyword || !keyword.trim()) {
     searchResults.value = []
     return
   }
 
   // 清除之前的定时器，实现防抖
-  if (searchTimer) {
-    clearTimeout(searchTimer)
+  if (searchTimerRef.value) {
+    clearTimeout(searchTimerRef.value)
+    cleanupResources.timers.delete(searchTimerRef.value)
   }
 
-  searchTimer = setTimeout(async () => {
+  searchTimerRef.value = createSafeTimeout(async () => {
     try {
-      const keyword = searchKeyword.value.trim()
+      const kw = keyword.trim()
       // 使用后端高德搜索建议API
-      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(keyword)}`)
+      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(kw)}`)
       const data = await response.json()
       if (data.success && data.results && data.results.length > 0) {
         searchResults.value = data.results
@@ -3518,7 +3364,7 @@ const goToLocation = (result) => {
     const marker = L.marker([parseFloat(result.lat), parseFloat(result.lon)], {
       icon: L.divIcon({
         className: 'temp-marker',
-        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + (result.name || searchKeyword.value) + '</div>',
+        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + (result.name || result.display_name || '搜索结果') + '</div>',
         iconSize: [120, 30]
       })
     }).addTo(map)
@@ -5459,7 +5305,6 @@ const openCityTradeArea = async () => {
     // 已显示，点击时清除
     map.removeLayer(cityTradeAreaLayer)
     cityTradeAreaLayer = null
-    selectedTradeAreaCities.value = []
     return
   }
   cityTradeAreaVisible.value = true
@@ -5485,7 +5330,6 @@ const openCityTradeArea = async () => {
       cityMap[cityName].count++
     })
     cityTradeAreaList.value = Object.values(cityMap)
-    selectedTradeAreaCities.value = []  // 默认全不选
   } catch (e) {
     console.error('[cityTradeArea] 获取城市列表失败:', e)
     ElMessage.error('获取城市商圈数据失败')
@@ -5494,7 +5338,12 @@ const openCityTradeArea = async () => {
   }
 }
 
-const loadCityTradeArea = async () => {
+// 城市商圈 - 对话框确认
+const onCityTradeAreaConfirm = (selectedCities) => {
+  loadCityTradeArea(selectedCities)
+}
+
+const loadCityTradeArea = async (selectedCities) => {
   if (!map) { ElMessage.warning('地图未初始化'); return }
   cityTradeAreaVisible.value = false
   cityTradeAreaLoading.value = true
@@ -5514,7 +5363,7 @@ const loadCityTradeArea = async () => {
     // 筛选出选中城市对应的文件
     const cityFileIds = []
     cityTradeAreaList.value.forEach(city => {
-      if (selectedTradeAreaCities.value.includes(city.name)) {
+      if (selectedCities.includes(city.name)) {
         cityFileIds.push(...city.ids)
       }
     })
@@ -5560,7 +5409,7 @@ const loadCityTradeArea = async () => {
       cityTradeAreaLayer.addLayer(layer)
       totalFeatures += geojson.features.length
     }
-    ElMessage.success(`已显示 ${selectedTradeAreaCities.value.length} 个城市的 ${totalFeatures} 个商圈面`)
+    ElMessage.success(`已显示 ${selectedCities.length} 个城市的 ${totalFeatures} 个商圈面`)
   } catch (e) {
     console.error('[cityTradeArea] 加载商圈数据失败:', e)
     ElMessage.error('加载商圈数据失败')
@@ -5630,7 +5479,6 @@ const clearDrawings = () => {
       map.removeLayer(cityTradeAreaLayer)
       cityTradeAreaLayer = null
     }
-    selectedTradeAreaCities.value = []
     // 清除多边形图层
     if (tempPolygonLayer) {
       map.removeLayer(tempPolygonLayer)
@@ -7797,11 +7645,20 @@ const renderBarChart = () => {
 }
 
 // 窗口大小变化时重绘柱状图
-window.addEventListener('resize', () => {
+const handleResize = () => {
   if (barChart) {
     barChart.resize()
   }
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
 // 暴露给window供弹窗调用
 // 强制引用POI搜索函数，确保打包时不被移除
 window.__poiSearchDebug = { startCircleSearch, startPolygonSearch, poiSearchExpanded, poiKeywords }
@@ -7897,7 +7754,38 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // 清理地图资源
   if (map) map.remove()
+  
+  // 清理 ECharts 实例
+  if (barChart) {
+    barChart.dispose()
+    barChart = null
+  }
+  
+  // 清理所有定时器
+  clearAllTimers()
+  
+  // 清理所有 AbortController
+  cleanupResources.abortControllers.forEach(controller => {
+    if (!controller.signal.aborted) {
+      controller.abort()
+    }
+  })
+  cleanupResources.abortControllers.clear()
+  
+  // 清理拖拽事件监听器
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+  document.removeEventListener('mousemove', onLegendDragMove)
+  document.removeEventListener('mouseup', onLegendDragEnd)
+  
+  // 清理动态创建的 DOM 元素事件监听器
+  if (completeBtnClickHandler && completeBtnElement) {
+    completeBtnElement.removeEventListener('click', completeBtnClickHandler)
+  }
+  
+  // 清理全局变量
   delete window.editMarkerExternal
   delete window.deleteMarkerExternal
   delete window.openStorePopulationDistribution
@@ -7905,7 +7793,12 @@ onUnmounted(() => {
   delete window.openStoreCompetitors
   delete window.openStorePoiSearch
   delete window.handleShapefileQueryFromGlobal
+  delete window.__poiSearchDebug
+  
   shapefileProcessing = false
+  
+  // 清理存储的临时数据
+  sessionStorage.removeItem('cityData_target')
 })
 
 // 热力图单元格样式（常住人口对比使用）
@@ -7930,103 +7823,6 @@ function getHeatmapCellStyle(nums, idx) {
   width: 100%;
   height: 100%;
   position: relative;
-}
-
-.toolbar {
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  overflow: hidden;
-  border: 2px solid #409eff;
-
-  .toolbar-header {
-    padding: 10px 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-
-    .toolbar-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
-    }
-
-    .toolbar-arrow {
-      transition: transform 0.3s;
-      font-size: 14px;
-      color: #fff;
-
-      &.expanded {
-        transform: rotate(90deg);
-      }
-    }
-  }
-
-  .toolbar-body {
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    position: relative;
-
-    .tool-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-      border: 1px solid transparent;
-
-      .el-icon {
-        font-size: 16px;
-        flex-shrink: 0;
-      }
-
-      span {
-        font-size: 12px;
-        color: #333;
-      }
-
-      &:hover {
-        background: #ecf5ff;
-        border-color: #409eff;
-      }
-
-      &.active {
-        background: #ecf5ff;
-        border-color: #409eff;
-        span {
-          color: #409eff;
-        }
-        .el-icon {
-          color: #409eff;
-        }
-      }
-    }
-
-    .el-divider {
-      margin: 4px 0;
-    }
-  }
-
-  .measurement-result {
-    background: #ecf5ff;
-    padding: 4px 10px;
-    font-size: 12px;
-    color: #409eff;
-    font-weight: 500;
-    text-align: center;
-    border-top: 1px solid #eee;
-  }
 }
 
 // 圆形内门店分析
@@ -8428,135 +8224,6 @@ function getHeatmapCellStyle(nums, idx) {
 }
 
 // 显示门店开关 - 样式参考地图工具箱
-.store-toggle-panel {
-  position: absolute;
-  bottom: 60px;
-  left: 10px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  min-width: 100px;
-  overflow: hidden;
-  border: 2px solid #409eff;
-}
-
-.store-toggle-header {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-
-  .toggle-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #fff;
-  }
-
-  .toggle-arrow {
-    margin-left: auto;
-    font-size: 10px;
-    color: #fff;
-    transition: transform 0.2s;
-    transform: rotate(-90deg);
-
-    &.expanded {
-      transform: rotate(0deg);
-    }
-  }
-}
-
-.store-toggle-body {
-  padding: 6px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-
-    .toggle-label {
-      font-size: 12px;
-      color: #606266;
-    }
-
-    .el-switch {
-      --el-switch-off-color: #c0c4cc;
-      font-size: 12px;
-    }
-  }
-}
-
-/* 门店工具面板 - 右上角 */
-.store-tools-panel {
-  position: absolute;
-  top: 10px;
-  right: 285px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  min-width: 96px;
-  overflow: hidden;
-  border: 2px solid #409eff;
-}
-.store-tools-header {
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
-}
-.store-tools-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-}
-.store-tools-arrow {
-  margin-left: auto;
-  font-size: 10px;
-  color: #fff;
-  transition: transform 0.2s;
-  transform: rotate(-90deg);
-}
-.store-tools-arrow.expanded {
-  transform: rotate(0deg);
-}
-.store-tools-body {
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.store-tools-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  color: #606266;
-  transition: all 0.15s;
-}
-.store-tools-item:hover {
-  background: #ecf5ff;
-  color: #409eff;
-}
-.store-tools-item.active {
-  background: #ecf5ff;
-  color: #409eff;
-  font-weight: 600;
-}
-
 // 自定义缩放控件 - 在图层控制上方
 .zoom-control-container {
   position: absolute;
@@ -8593,121 +8260,6 @@ function getHeatmapCellStyle(nums, idx) {
     width: 32px;
     height: 1px;
     background: #eee;
-  }
-}
-
-.search-panel {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 320px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
-  overflow: hidden;
-  border: 2px solid #409eff;
-
-  .search-body {
-    padding: 8px 12px;
-
-    ::deep(.el-input__wrapper) {
-      border-radius: 6px;
-      box-shadow: none;
-      border: 1px solid #dcdfe6;
-      transition: all 0.2s;
-
-      &:hover {
-        border-color: #409eff;
-      }
-
-      &.is-focus {
-        border-color: #409eff;
-        box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
-      }
-    }
-
-    ::deep(.el-input__inner) {
-      font-size: 13px;
-
-      &::placeholder {
-        color: #999;
-      }
-    }
-
-    ::deep(.el-input__prefix) {
-      color: #409eff;
-    }
-
-    ::deep(.el-input__clear) {
-      color: #999;
-
-      &:hover {
-        color: #409eff;
-      }
-    }
-  }
-
-  .search-results {
-    max-height: 300px;
-    overflow-y: auto;
-    border-top: 1px solid #eee;
-
-    .search-result-item {
-      padding: 10px 12px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      color: #333;
-      border-bottom: 1px solid #f0f0f0;
-      transition: background 0.15s;
-
-      &:last-child {
-        border-bottom: none;
-      }
-
-      &:hover {
-        background: #e6f4ff;
-      }
-
-      .result-icon {
-        flex-shrink: 0;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #f5f5f5;
-        border-radius: 50%;
-        color: #409eff;
-        font-size: 14px;
-      }
-
-      .result-info {
-        flex: 1;
-        min-width: 0;
-
-        .result-name {
-          font-size: 13px;
-          font-weight: 500;
-          color: #333;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .result-address {
-          font-size: 12px;
-          color: #999;
-          margin-top: 2px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-      }
-    }
   }
 }
 

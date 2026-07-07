@@ -479,7 +479,7 @@ import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, DataAnal
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import { formatNumber } from '@/utils/populationStats'
-import * as echarts from 'echarts'
+import echarts from '@/utils/echarts'
 
 const userStore = useUserStore()
 const store = useShoppingCenterStore()

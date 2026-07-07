@@ -571,7 +571,6 @@ import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
-import * as echarts from 'echarts'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
