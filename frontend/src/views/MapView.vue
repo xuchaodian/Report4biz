@@ -543,6 +543,19 @@
     <!-- 地图容器 -->
     <div id="map" class="map-container" />
 
+    <!-- 地图加载骨架屏 -->
+    <div v-if="mapLoading" class="map-loading-overlay">
+      <div class="map-loading-content">
+        <div class="map-loading-spinner"></div>
+        <div class="map-loading-text">地图加载中...</div>
+        <div class="map-loading-skeleton">
+          <div class="skeleton-bar skeleton-bar-1"></div>
+          <div class="skeleton-bar skeleton-bar-2"></div>
+          <div class="skeleton-bar skeleton-bar-3"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 坐标显示 -->
     <div class="coordinate-display">
       <span v-if="currentCityName" class="city-name">
@@ -1005,6 +1018,12 @@
               </el-table-column>
             </el-table>
           </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:13px;color:#909399;">对比柱状图</span>
+            <el-button size="small" text @click="exportBarChart">
+              <el-icon><Download /></el-icon> 导出图片
+            </el-button>
+          </div>
           <div style="width: 450px; height: 400px;" ref="barChartRef"></div>
         </div>
 
@@ -1132,6 +1151,8 @@ import axios from 'axios'
 import echarts from '@/utils/echarts'
 import * as turf from '@turf/turf'
 import { formatNumber } from '@/utils/populationStats'
+import { handleApiError } from '@/utils/errorHandler'
+import { exportChartImage } from '@/utils/chartExport'
 // 注意：public目录的中文名图片会被Vite直接复制到dist根目录
 
 const markerStore = useMarkerStore()
@@ -1381,6 +1402,55 @@ const selectedPopulationField = ref('')  // 用户选择的统计字段
 const populationAnalysisCompleted = ref(false)  // 标记分析是否已完成
 const populationFieldLoading = ref(false)  // 是否正在加载字段
 const loadingElapsedSeconds = ref(0)      // 加载已用时间（秒）
+
+// UI增强：地图加载状态
+const mapLoading = ref(true)
+
+// UI增强：键盘快捷键
+const handleKeyDown = (e) => {
+  const key = e.key
+  const isCtrlOrCmd = e.ctrlKey || e.metaKey
+
+  // Escape：关闭弹出面板
+  if (key === 'Escape') {
+    storeSearchVisible.value = false
+    districtVisible.value = false
+    commerceVisible.value = false
+    storeCircleDialogVisible.value = false
+    storeCircleModeDialogVisible.value = false
+    cityTradeAreaVisible.value = false
+    potentialVisible.value = false
+    return
+  }
+
+  // Ctrl+F / Cmd+F：聚焦搜索
+  if ((isCtrlOrCmd && key === 'f') || (isCtrlOrCmd && key === 'F')) {
+    e.preventDefault()
+    const searchInput = document.querySelector('.search-body input')
+    if (searchInput) searchInput.focus()
+    return
+  }
+
+  // Ctrl+K / Cmd+K：切换工具箱
+  if (isCtrlOrCmd && key === 'k') {
+    e.preventDefault()
+    toolbarExpanded.value = !toolbarExpanded.value
+    return
+  }
+
+  // R：半径圆搜索（需已输入关键词）
+  if (key === 'r' || key === 'R') {
+    if (document.activeElement?.tagName === 'INPUT') return // 不在输入框中触发
+    startCircleSearch()
+    return
+  }
+
+  // Q：清除绘制
+  if (key === 'q' || key === 'Q') {
+    if (document.activeElement?.tagName === 'INPUT') return
+    clearDrawings()
+  }
+}
 
 // 商圈内点位相关
 let tempCircleMarker = null  // 商圈内点位临时圆心标记
@@ -5376,7 +5446,7 @@ const loadCityTradeArea = async (selectedCities) => {
     ElMessage.success(`已显示 ${selectedCities.length} 个城市的 ${totalFeatures} 个商圈面`)
   } catch (e) {
     console.error('[cityTradeArea] 加载商圈数据失败:', e)
-    ElMessage.error('加载商圈数据失败')
+    handleApiError(e, { context: '加载商圈数据' })
   } finally {
     cityTradeAreaLoading.value = false
   }
@@ -5559,7 +5629,7 @@ const searchDistrict = async () => {
   } catch (e) {
     console.error('[District] 查询失败:', e)
     districtError.value = '查询失败: ' + e.message
-    ElMessage.error('行政边界查询失败')
+    handleApiError(e, { context: '行政边界查询' })
   } finally {
     districtLoading.value = false
   }
@@ -5757,7 +5827,7 @@ const searchCommerce = async () => {
   } catch (e) {
     console.error('[Commerce] 查询失败:', e)
     commerceError.value = '查询失败: ' + e.message
-    ElMessage.error('商圈查询失败')
+    handleApiError(e, { context: '商圈查询' })
   } finally {
     commerceLoading.value = false
   }
@@ -7557,6 +7627,15 @@ const renderBarChart = () => {
         params.forEach(p => {
           result += `${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b><br/>`
         })
+        // 计算差值
+        if (params.length === 2) {
+          const diff = params[0].value - params[1].value
+          const pct = params[1].value ? ((diff / params[1].value) * 100).toFixed(1) : '∞'
+          const sign = diff >= 0 ? '+' : ''
+          result += `<hr style="margin:4px 0;border:none;border-top:1px solid #eee;"/>`
+          result += `<span style="color:#909399;font-size:12px;">差值: ${sign}${formatNumber(Math.abs(diff))}</span><br/>`
+          result += `<span style="color:#909399;font-size:12px;">差异率: ${pct}%</span>`
+        }
         return result
       }
     },
@@ -7590,22 +7669,52 @@ const renderBarChart = () => {
         name: r1.name,
         type: 'bar',
         barGap: '5%',
-        itemStyle: { color: '#409EFF' },
+        itemStyle: {
+          color: '#409EFF',
+          emphasis: { color: '#66b1ff' }
+        },
         data: fields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)),
-        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 }
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
+        emphasis: { itemStyle: { color: '#66b1ff' } },
+        markLine: {
+          silent: true,
+          lineStyle: { type: 'dashed', color: '#409EFF', width: 1.5 },
+          data: [{ type: 'average', name: '平均值' }],
+          label: { formatter: '均值: {c}', fontSize: 10, color: '#409EFF' }
+        }
       },
       {
         name: r2.name,
         type: 'bar',
         barGap: '5%',
-        itemStyle: { color: '#67C23A' },
+        itemStyle: {
+          color: '#67C23A',
+          emphasis: { color: '#85ce61' }
+        },
         data: fields.map(f => f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)),
-        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 }
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
+        emphasis: { itemStyle: { color: '#85ce61' } },
+        markLine: {
+          silent: true,
+          lineStyle: { type: 'dashed', color: '#67C23A', width: 1.5 },
+          data: [{ type: 'average', name: '平均值' }],
+          label: { formatter: '均值: {c}', fontSize: 10, color: '#67C23A' }
+        }
       }
     ]
   }
 
   barChart.setOption(option)
+}
+
+// 导出对比图表为图片
+const exportBarChart = () => {
+  if (compareResults.value.length === 2) {
+    const [r1, r2] = compareResults.value
+    exportChartImage(barChart, `${r1.name}_vs_${r2.name}_对比`)
+  } else {
+    exportChartImage(barChart, '门店对比图表')
+  }
 }
 
 // 窗口大小变化时重绘柱状图
@@ -7617,10 +7726,13 @@ const handleResize = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  // 注册键盘快捷键
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  document.removeEventListener('keydown', handleKeyDown)
 })
 
 // 暴露给window供弹窗调用
@@ -7662,6 +7774,7 @@ onMounted(() => {
 
     // 确保 initMap 完成（使用 await）
     await initMap()
+    mapLoading.value = false  // 地图加载完成
 
     console.log('[MapView] 地图初始化完成')
 
@@ -7783,6 +7896,80 @@ function getHeatmapCellStyle(nums, idx) {
 </script>
 
 <style lang="scss" scoped>
+// 全局面板展开/收起过渡
+:global(.panel-slide-enter-active),
+:global(.panel-slide-leave-active) {
+  transition: opacity 0.2s ease, max-height 0.25s ease;
+  max-height: 400px;
+  overflow: hidden;
+}
+:global(.panel-slide-enter-from),
+:global(.panel-slide-leave-to) {
+  opacity: 0;
+  max-height: 0;
+}
+
+// 地图加载骨架屏
+.map-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #f0f2f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.map-loading-content {
+  text-align: center;
+}
+
+.map-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #409eff;
+  border-radius: 50%;
+  animation: map-loading-spin 0.8s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes map-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+.map-loading-text {
+  font-size: 14px;
+  color: #909399;
+  margin-bottom: 20px;
+}
+
+.map-loading-skeleton {
+  width: 240px;
+  margin: 0 auto;
+}
+
+.skeleton-bar {
+  height: 12px;
+  background: linear-gradient(90deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.skeleton-bar-1 { width: 80%; }
+.skeleton-bar-2 { width: 60%; }
+.skeleton-bar-3 { width: 70%; }
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 .map-view {
   width: 100%;
   height: 100%;
@@ -8010,8 +8197,8 @@ function getHeatmapCellStyle(nums, idx) {
   bottom: 110px;
   right: 10px;
   background: white;
-  border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   z-index: 1001;
   overflow: hidden;
   display: flex;

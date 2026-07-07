@@ -311,6 +311,12 @@
               </el-table-column>
             </el-table>
           </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:13px;color:#909399;">对比柱状图</span>
+            <el-button size="small" text @click="exportCompareChart">
+              <el-icon><Download /></el-icon> 导出图片
+            </el-button>
+          </div>
           <div style="width: 450px; height: 400px;" ref="chartRef"></div>
         </div>
         <div v-else style="margin-bottom: 16px;">
@@ -458,6 +464,12 @@
             <el-option v-for="m in tcSelectedList" :key="m" :label="m" :value="m" />
           </el-select>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-weight:600;font-size:14px;">商户类型分布</span>
+          <el-button size="small" text @click="exportTenantChart">
+            <el-icon><Download /></el-icon> 导出图片
+          </el-button>
+        </div>
         <div ref="tcChartRef" style="width:100%;height:350px;margin-top:12px"></div>
       </div>
       <template #footer>
@@ -480,6 +492,7 @@ import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import { formatNumber } from '@/utils/populationStats'
 import echarts from '@/utils/echarts'
+import { exportChartImage } from '@/utils/chartExport'
 
 const userStore = useUserStore()
 const store = useShoppingCenterStore()
@@ -982,16 +995,61 @@ const renderCompareChart = () => {
   const [r1, r2] = compareResults.value
   const uniqueFields = [...new Set(compareResults.value.flatMap(r => [r.statField, ...Object.keys(r.allFields || {})]))].filter(f => f !== 'RecID')
 
+  // 计算差异值
+  const diffMap = {}
+  uniqueFields.forEach(f => {
+    const v1 = f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)
+    const v2 = f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)
+    diffMap[f] = { v1, v2, diff: v1 - v2, pct: v2 ? (((v1 - v2) / v2) * 100).toFixed(1) : '∞' }
+  })
+
   compareChart.setOption({
     title: { text: `${r1.name} vs ${r2.name}`, left: 'center', textStyle: { fontSize: 14, fontWeight: 'bold' } },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (params) => { let r = `<b>${params[0].axisValue}</b><br/>`; params.forEach(p => { r += `${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b><br/>` }); return r } },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const field = params[0].axisValue
+        const d = diffMap[field] || {}
+        let r = `<b>${field}</b><br/>`
+        params.forEach(p => {
+          r += `${p.marker} ${p.seriesName}: <b>${formatNumber(p.value)}</b><br/>`
+        })
+        if (d.diff !== undefined) {
+          const absDiff = Math.abs(d.diff)
+          const sign = d.diff >= 0 ? '+' : ''
+          r += `<hr style="margin:4px 0;border:none;border-top:1px solid #eee;"/>`
+          r += `<span style="color:#909399;font-size:12px;">差值: ${sign}${formatNumber(absDiff)}</span><br/>`
+          r += `<span style="color:#909399;font-size:12px;">差异率: ${d.pct}%</span>`
+        }
+        return r
+      }
+    },
     legend: { data: [r1.name, r2.name], bottom: 0 },
     grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
     xAxis: { type: 'category', data: uniqueFields, axisLabel: { rotate: 15, fontSize: 11 } },
     yAxis: { type: 'value', axisLabel: { formatter: (val) => val >= 10000 ? (val / 10000) + '万' : val } },
     series: [
-      { name: r1.name, type: 'bar', barGap: '5%', itemStyle: { color: '#409EFF' }, data: uniqueFields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)), label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 } },
-      { name: r2.name, type: 'bar', barGap: '5%', itemStyle: { color: '#67C23A' }, data: uniqueFields.map(f => f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)), label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 } }
+      {
+        name: r1.name, type: 'bar', barGap: '5%',
+        itemStyle: {
+          color: '#409EFF',
+          emphasis: { color: '#66b1ff', shadowBlur: 8, shadowColor: 'rgba(64,158,255,0.4)' }
+        },
+        data: uniqueFields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)),
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
+        emphasis: { itemStyle: { color: '#66b1ff' } }
+      },
+      {
+        name: r2.name, type: 'bar', barGap: '5%',
+        itemStyle: {
+          color: '#67C23A',
+          emphasis: { color: '#85ce61', shadowBlur: 8, shadowColor: 'rgba(103,194,58,0.4)' }
+        },
+        data: uniqueFields.map(f => f === r2.statField ? r2.total : (r2.allFields?.[f] || 0)),
+        label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
+        emphasis: { itemStyle: { color: '#85ce61' } }
+      }
     ]
   })
 }
@@ -1139,15 +1197,36 @@ const renderTcPieChart = (mall) => {
     .filter(([_, count]) => count > 0)
     .map(([name, count]) => ({ name, value: count }))
     .sort((a, b) => b.value - a.value)
+  const total = data.reduce((s, d) => s + d.value, 0)
   tcChartInstance.setOption({
     title: { text: mall, left: 'center', textStyle: { fontSize: 14 } },
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    tooltip: {
+      trigger: 'item',
+      formatter: (p) => `<b>${p.name}</b><br/>数量: <b>${p.value}</b> 家<br/>占比: <b>${p.percent}%</b>`
+    },
     series: [{
       type: 'pie', radius: ['30%', '60%'], center: ['50%', '55%'],
       data,
-      label: { formatter: '{b}\n{d}%', fontSize: 11 },
-      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+      label: {
+        formatter: (p) => {
+          const pct = ((p.value / total) * 100).toFixed(1)
+          return `${p.name}\n${pct}%`
+        },
+        fontSize: 11
+      },
+      emphasis: {
+        label: { fontSize: 13, fontWeight: 'bold' },
+        itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0,0,0,0.4)' }
+      }
     }]
+  })
+  // 点击饼图扇区，跳转到指定分类
+  tcChartInstance.off('click')
+  tcChartInstance.on('click', (params) => {
+    tenantFilterType.value = params.name
+    tenantCurrentPage.value = 1
+    loadTenants()
+    ElMessage.info(`已筛选"${params.name}"分类的商户`)
   })
 }
 
@@ -1254,6 +1333,16 @@ watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCir
   tenantCurrentPage.value = 1
   loadTenants()
 })
+
+// 导出对比柱状图
+const exportCompareChart = () => {
+  exportChartImage(compareChart, '门店对比图表')
+}
+
+// 导出商户类型饼图
+const exportTenantChart = () => {
+  exportChartImage(tcChartInstance, '商户类型分布')
+}
 </script>
 
 <style lang="scss" scoped>

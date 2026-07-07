@@ -5,7 +5,7 @@
       <span class="poi-search-arrow" :class="{ expanded }">▼</span>
     </div>
     <div v-show="expanded" class="poi-search-body">
-      <div class="poi-search-input">
+        <div class="poi-search-input">
         <el-input
           :model-value="keyword"
           placeholder="输入关键词（如：咖啡厅、餐厅）"
@@ -42,6 +42,16 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
 </script>
 
 <style scoped>
+/* 面板展开/收起过渡动画 */
+@keyframes panelFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.poi-search-body {
+  animation: panelFadeIn 0.2s ease;
+}
+
 .poi-search-panel {
   position: absolute;
   top: 10px;
