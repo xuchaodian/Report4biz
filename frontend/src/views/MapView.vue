@@ -781,7 +781,7 @@
     <el-dialog
       v-model="circleDialogVisible"
       :title="circleDialogMode === 'population' ? '商圈人口分布' : '设置圆形半径'"
-      width="420px"
+      :width="circleDialogWidth"
       :show-close="true"
       draggable
       @close="closeCircleDialog"
@@ -1420,8 +1420,8 @@ const POPULATION_COLOR_SCHEMES = {
   },
   'mono-orange': {
     name: '橙色调',
-    colors: ['#feedde', '#fdbe85', '#fd8d3c', '#d94701'],
-    gradient: 'to bottom, #d94701, #fd8d3c, #fdbe85, #feedde'
+    colors: ['#fef0d9', '#fdd49e', '#fdbb84', '#fc8d59', '#d7301f'],
+    gradient: 'to bottom, #d7301f, #fc8d59, #fdbb84, #fdd49e, #fef0d9'
   },
   'green-tone': {
     name: '绿色调',
@@ -1430,6 +1430,13 @@ const POPULATION_COLOR_SCHEMES = {
   }
 }
 const populationColorScheme = ref('blue-green-yellow-orange-red')
+
+// 多半径时自动加宽对话框
+const circleDialogWidth = computed(() => {
+  if (circleDialogMode.value !== 'population') return '420px'
+  const count = [circleForm.radius, circleForm.radius2, circleForm.radius3].filter(r => r != null).length
+  return count >= 2 ? '580px' : '420px'
+})
 
 // 圆形内门店分析相关
 const circleAnalysisVisible = ref(false)
@@ -2491,7 +2498,7 @@ const analyzePopulationDistribution = async () => {
       console.log('已移除旧图层组')
     }
     console.log('创建新图层组，地图对象:', !!map)
-    populationLayerGroup = L.layerGroup().addTo(map)
+    populationLayerGroup = L.featureGroup().addTo(map)
     console.log('图层组创建成功:', !!populationLayerGroup)
     console.log('图层组已添加到地图:', map.hasLayer(populationLayerGroup))
 
@@ -2549,7 +2556,7 @@ const analyzePopulationDistribution = async () => {
 
       if (latlngs.length > 0) {
         const polygon = L.polygon(latlngs, {
-          color: '#ff7800', weight: 1, fillColor: color, fillOpacity: 0.7
+          color: '#888', weight: 1, fillColor: color, fillOpacity: 0.7
         })
         polygon.bindPopup(`
           <div style="font-size: 12px; min-width: 140px;">
@@ -2647,11 +2654,9 @@ const analyzePopulationDistribution = async () => {
       console.log('创建图钉图标作为圆心标记')
     }
 
-    // 格式化数字
+    // 格式化数字（显示完整数值，不缩写万）
     const formatNumber = (num) => {
-      const n = Math.round(num)
-      if (n >= 10000) return (n / 10000).toFixed(1) + '万'
-      return n.toLocaleString()
+      return Math.round(num).toLocaleString()
     }
 
     // 计算面板位置（多边形最右边的点，如果无多边形则使用圆心右侧）
@@ -2725,7 +2730,7 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `</div>`
 
     // 表头
-    statsHtml += `<table style="width:100%;border-collapse:collapse;font-size:10px;">`
+    statsHtml += `<table style="width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;">`
     statsHtml += `<tr style="background:#f5f7fa;">`
     statsHtml += `<th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">字段</th>`
     sortedRadii.forEach(r => {
@@ -2768,11 +2773,13 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `</div>`
 
     // 添加可拖动的统计面板
+    const radiusCount = sortedRadii.length
+    const panelWidth = radiusCount >= 3 ? 380 : radiusCount >= 2 ? 320 : 220
     const panelMarker = L.marker([panelLatLng[0], panelLatLng[1]], {
       icon: L.divIcon({
         className: 'draggable-panel',
         html: statsHtml,
-        iconSize: [220, 'auto'],
+        iconSize: [panelWidth, 'auto'],
         iconAnchor: [0, 0]
       }),
       draggable: true
@@ -3311,6 +3318,18 @@ const DEFAULT_CITY = '北京市'
 
 // 获取IP位置 - 通过后端接口（避免浏览器混合内容限制）
 const getLocationByIP = async () => {
+  // session级缓存，同标签页内刷新不重复请求外网
+  const cached = sessionStorage.getItem('__ip_location')
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached)
+      if (parsed.lat && parsed.lng) {
+        console.log('[IP定位] 使用缓存:', parsed.city)
+        return parsed
+      }
+    } catch (_) {}
+  }
+
   try {
     // 通过后端 /api/geocode/ip-location 获取位置
     // 后端会调用 HTTP 版本的 ip-api.com，不受浏览器 HTTPS 限制
@@ -3319,11 +3338,14 @@ const getLocationByIP = async () => {
     
     if (data.success && data.lat && data.lng) {
       console.log('[IP定位] 成功，位置:', data.city, '坐标:', data.lat, data.lng)
-      return {
+      const result = {
         lat: data.lat,
         lng: data.lng,
         city: data.city || DEFAULT_CITY
       }
+      // 写入缓存
+      sessionStorage.setItem('__ip_location', JSON.stringify(result))
+      return result
     } else {
       console.log('[IP定位] 后端返回失败:', data.message)
     }
@@ -3384,12 +3406,13 @@ const initMap = async () => {
     if (map) map.invalidateSize({ pan: false })
   }, 100)
 
-  // 【性能优化】并行拉取所有数据
+  // 【性能优化】并行拉取所有数据 + 品牌图标
   await Promise.all([
     markerStore.fetchMarkers(),
     competitorStore.fetchCompetitors(),
     brandStoreStore.fetchBrandStores(),
-    shoppingCenterStore.fetchShoppingCenters()
+    shoppingCenterStore.fetchShoppingCenters(),
+    brandIconStore.fetchBrandIcons()
   ])
 
   // 只渲染我的门店（默认可见），其余图层懒加载
@@ -7820,9 +7843,6 @@ onMounted(() => {
 
   // 等待DOM渲染完成后初始化地图
   nextTick(async () => {
-    // 先加载品牌图标
-    await brandIconStore.fetchBrandIcons()
-
     // 确保 initMap 完成（使用 await）
     await initMap()
     mapLoading.value = false  // 地图加载完成
