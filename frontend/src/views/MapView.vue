@@ -844,6 +844,26 @@
             {{ populationFieldLoading ? `正在扫描数据文件... (已用 ${loadingElapsedSeconds} 秒)` : '正在扫描数据文件...' }}
           </div>
         </el-form-item>
+        <!-- 色块方案选择（仅商圈人口分布模式显示） -->
+        <el-form-item v-if="circleDialogMode === 'population'" label="设置色块">
+          <el-select v-model="populationColorScheme" placeholder="选择色块方案" style="width: 100%;">
+            <el-option
+              v-for="(scheme, key) in POPULATION_COLOR_SCHEMES"
+              :key="key"
+              :label="scheme.name"
+              :value="key"
+            >
+              <span style="display:flex;align-items:center;gap:8px;">
+                <span>{{ scheme.name }}</span>
+                <span style="display:inline-flex;gap:2px;margin-left:auto;">
+                  <span v-for="(c, ci) in scheme.colors" :key="ci"
+                    :style="{ display:'inline-block', width:'14px', height:'14px', borderRadius:'2px', background:c, flexShrink:0 }"
+                  ></span>
+                </span>
+              </span>
+            </el-option>
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeCircleDialog">取消</el-button>
@@ -1380,6 +1400,36 @@ const circleForm = reactive({
   radius3: null,
   unit: 'km'
 })
+
+// 色块方案预设
+const POPULATION_COLOR_SCHEMES = {
+  'blue-green-yellow-orange-red': {
+    name: '蓝-绿-黄-橙-红（默认）',
+    colors: ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'],
+    gradient: 'to bottom, #d7191c, #fdae61, #ffffbf, #abdda4, #2b83f6'
+  },
+  'blue-tone': {
+    name: '蓝色调',
+    colors: ['#deebf7', '#9ecae1', '#6baed6', '#3182bd', '#08519c'],
+    gradient: 'to bottom, #08519c, #3182bd, #6baed6, #9ecae1, #deebf7'
+  },
+  'purple-tone': {
+    name: '紫色调',
+    colors: ['#efedf5', '#dadaeb', '#bcbddc', '#807dba', '#54278f'],
+    gradient: 'to bottom, #54278f, #807dba, #bcbddc, #dadaeb, #efedf5'
+  },
+  'mono-orange': {
+    name: '橙色调',
+    colors: ['#feedde', '#fdbe85', '#fd8d3c', '#d94701'],
+    gradient: 'to bottom, #d94701, #fd8d3c, #fdbe85, #feedde'
+  },
+  'green-tone': {
+    name: '绿色调',
+    colors: ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c'],
+    gradient: 'to bottom, #006d2c, #31a354, #74c476, #a1d99b, #e5f5e0'
+  }
+}
+const populationColorScheme = ref('blue-green-yellow-orange-red')
 
 // 圆形内门店分析相关
 const circleAnalysisVisible = ref(false)
@@ -2447,7 +2497,8 @@ const analyzePopulationDistribution = async () => {
 
     // 绘制多边形（基于最大半径数据做颜色分级）
     const maxRadiusData = radiusResults[maxRadiusMeters] || { matchingData: [], allFields: {} }
-    const colors = ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c']
+    const scheme = POPULATION_COLOR_SCHEMES[populationColorScheme.value] || POPULATION_COLOR_SCHEMES['blue-green-yellow-orange-red']
+    const colors = scheme.colors
     const allValues = maxRadiusData.matchingData.map(d => d.value)
 
     const getQuantile = (arr, q) => {
