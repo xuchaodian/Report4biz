@@ -2057,11 +2057,12 @@ const openStorePoiSearch = async (lat, lng) => {
     poiResults.value = result.pois || []
     poiResultVisible.value = true
     showPoiOnMap(result.pois, lat, lng, radiusM)
-    ElMessage.success(`找到 ${result.count} 个结果`)
+    ElMessage.success(`找到 ${result.pois ? result.pois.length : 0} 个结果`)
   } catch (err) {
     if (err === 'cancel') return
     console.error('[Store PoiSearch]', err)
-    ElMessage.error('搜索失败')
+    const errMsg = err.message || (typeof err === 'string' ? err : '请检查网络连接或稍后重试')
+    ElMessage.error(`搜索失败：${errMsg}`)
   }
 }
 
@@ -3234,6 +3235,7 @@ const markerStyleOptions = [
 
 // 地址搜索结果
 const searchResults = ref([])
+let searchMarkersLayer = null  // 地址搜索结果标记图层
 
 // 当前城市名称
 const currentCityName = ref('')
@@ -3430,6 +3432,7 @@ const searchTimerRef = ref(null)
 const searchAddress = async (keyword) => {
   if (!keyword || !keyword.trim()) {
     searchResults.value = []
+    clearSearchMarkers()
     return
   }
 
@@ -3447,14 +3450,84 @@ const searchAddress = async (keyword) => {
       const data = await response.json()
       if (data.success && data.results && data.results.length > 0) {
         searchResults.value = data.results
+        // 在地图上绘制搜索结果标记
+        drawSearchMarkers(data.results)
       } else {
         searchResults.value = []
+        clearSearchMarkers()
       }
     } catch (error) {
       console.error('搜索错误:', error)
       searchResults.value = []
+      clearSearchMarkers()
     }
   }, 300) // 300ms 防抖
+}
+
+// 在地图上绘制搜索结果标记
+const drawSearchMarkers = (results) => {
+  clearSearchMarkers()
+  // 清除旧的高亮标记
+  if (window._searchHighlightMarker && map) {
+    map.removeLayer(window._searchHighlightMarker)
+    window._searchHighlightMarker = null
+  }
+  if (!map || !results || results.length === 0) return
+
+  searchMarkersLayer = L.featureGroup().addTo(map)
+
+  results.forEach((result, idx) => {
+    if (!result.lat || !result.lon) return
+    const lat = parseFloat(result.lat)
+    const lon = parseFloat(result.lon)
+    if (isNaN(lat) || isNaN(lon)) return
+
+    const marker = L.marker([lat, lon], {
+      title: result.name || result.display_name || '',
+      icon: L.divIcon({
+        className: 'search-result-marker',
+        html: `<div style="
+          width:28px;height:28px;border-radius:50%;
+          background:#409eff;color:#fff;
+          display:flex;align-items:center;justify-content:center;
+          font-size:12px;font-weight:bold;
+          box-shadow:0 2px 6px rgba(64,158,255,0.4);
+          border:2px solid #fff;
+          cursor:pointer;
+        ">${idx + 1}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      })
+    })
+      .bindTooltip(result.name || result.display_name || '', {
+        direction: 'top',
+        offset: [0, -14],
+        className: 'search-tooltip'
+      })
+      .on('click', () => {
+        goToLocation(result)
+      })
+
+    searchMarkersLayer.addLayer(marker)
+  })
+
+  // 将所有搜索结果缩放到视野内
+  if (results.length > 0) {
+    try {
+      const bounds = searchMarkersLayer.getBounds()
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
+      }
+    } catch (_) {}
+  }
+}
+
+// 清除搜索结果标记
+const clearSearchMarkers = () => {
+  if (searchMarkersLayer && map) {
+    map.removeLayer(searchMarkersLayer)
+    searchMarkersLayer = null
+  }
 }
 
 // 回车键直接跳转到第一个结果
@@ -3464,22 +3537,22 @@ const handleEnterSearch = () => {
   }
 }
 
-// 跳转到搜索位置
+// 跳转到搜索位置（高亮目标标记）
 const goToLocation = (result) => {
   if (map && result.lat && result.lon) {
     map.setView([parseFloat(result.lat), parseFloat(result.lon)], 16)
-    // 添加临时标记
+    // 在目标位置添加高亮标记（始终显示，不自动移除）
     const marker = L.marker([parseFloat(result.lat), parseFloat(result.lon)], {
       icon: L.divIcon({
-        className: 'temp-marker',
-        html: '<div style="background:#f56c6c;color:white;padding:5px 10px;border-radius:4px;font-size:12px;">📍 ' + (result.name || result.display_name || '搜索结果') + '</div>',
-        iconSize: [120, 30]
+        className: 'search-highlight-marker',
+        html: '<div style="background:#f56c6c;color:white;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:600;box-shadow:0 3px 10px rgba(245,108,108,0.5);border:2px solid #fff;white-space:nowrap;">📍 ' + (result.name || result.display_name || '搜索结果') + '</div>',
+        iconSize: ['auto', 34],
+        iconAnchor: ['auto', 17]
       })
     }).addTo(map)
-    // 3秒后移除
-    setTimeout(() => map.removeLayer(marker), 3000)
+    // map操作不移除，搜索了新地点后自动覆盖
+    window._searchHighlightMarker = marker
   }
-  searchResults.value = []
 }
 
 // 缩放控制
@@ -6667,7 +6740,8 @@ const handleAiExecute = async (toolCall) => {
 
 // 在地图上显示POI标记
 const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
-  console.log('[showPoiOnMap] 调用参数:', { pois: pois?.length, centerLat, centerLng, radius })
+  try {
+    console.log('[showPoiOnMap] 调用参数:', { pois: pois?.length, centerLat, centerLng, radius })
   
   // 清除之前的POI标记
   console.log('[showPoiOnMap] 清除旧标记，当前数量:', poiMarkers.value.length)
@@ -6787,7 +6861,7 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
       const circleBounds = L.circle([centerLat, centerLng], { radius }).getBounds()
       if (bounds.length === 1) {
         // 只有圆心一个点，直接使用圆的范围
-        map.fitBounds(circleBounds, { padding: [50, 50] })
+        try { map.fitBounds(circleBounds, { padding: [50, 50] }) } catch (_) {}
         return
       } else {
         // 合并 POI 边界和圆的边界
@@ -6799,10 +6873,13 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
     }
     
     if (bounds.length === 1 && !radius) {
-      map.setView(bounds[0], 15)
+      try { map.setView(bounds[0], 15) } catch (_) {}
     } else {
-      map.fitBounds(targetBounds, { padding: [50, 50] })
+      try { map.fitBounds(targetBounds, { padding: [50, 50] }) } catch (_) {}
     }
+  }
+  } catch (e) {
+    console.warn('[showPoiOnMap] 显示POI标记时出错:', e)
   }
 }
 
@@ -6946,12 +7023,13 @@ const startCircleSearch = () => {
       poiResultVisible.value = true
       // 显示结果，包含中心点和半径
       showPoiOnMap(result.pois, lat, lng, radiusM)
-      ElMessage.success(`找到 ${result.count} 个结果`)
+      ElMessage.success(`找到 ${result.pois ? result.pois.length : 0} 个结果`)
       circleSearchActive = false
     } catch (err) {
       loadingMsg.close()
       console.error('[Circle Search]', err)
-      ElMessage.error('搜索失败')
+      const errMsg = err.message || (typeof err === 'string' ? err : '请检查网络连接或稍后重试')
+      ElMessage.error(`搜索失败：${errMsg}`)
       circleSearchActive = false
     }
   })
@@ -7155,11 +7233,12 @@ const finishPolygonSearch = async () => {
     poiResultVisible.value = true
     // 多边形搜索不在地图上显示中心点和半径圆
     showPoiOnMap(result.pois, null, null, null)
-    ElMessage.success(`找到 ${result.count} 个结果`)
+    ElMessage.success(`找到 ${result.pois ? result.pois.length : 0} 个结果`)
   } catch (err) {
     if (loadingMsg) loadingMsg.close()
     console.error('[Polygon Search]', err)
-    ElMessage.error('搜索失败')
+    const errMsg = err.message || (typeof err === 'string' ? err : '请检查网络连接或稍后重试')
+    ElMessage.error(`搜索失败：${errMsg}`)
   }
 }
 
