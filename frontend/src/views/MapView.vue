@@ -577,8 +577,8 @@
           :class="{ active: baseMapType === 'vec' }"
           @click="baseMapType = 'vec'"
         >
-          <img src="/高德地图.jpeg" alt="高德" />
-          <span>高德</span>
+          <img src="/高德地图.jpeg" alt="高德" style="filter:grayscale(1);" />
+          <span>黑白</span>
         </div>
         <div
           class="layer-option"
@@ -586,7 +586,7 @@
           @click="baseMapType = 'tencent'"
         >
           <img src="/腾讯地图.jpeg" alt="腾讯" />
-          <span>腾讯</span>
+          <span>标准</span>
         </div>
         <div
           class="layer-option"
