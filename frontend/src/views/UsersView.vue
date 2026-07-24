@@ -20,6 +20,10 @@
             <span class="label">剩余可分配次数</span>
             <span class="value">{{ quotaInfo.availableQuota }}</span>
           </div>
+          <div class="quota-card consumed">
+            <span class="label">消费总次数</span>
+            <span class="value">{{ totalConsumed }}</span>
+          </div>
         </div>
         <el-button type="info" @click="showMonthlyStatsDialog">
           📊 月度统计
@@ -243,6 +247,7 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
 const editingId = ref(null)
+const originalRemaining = ref(0) // 编辑前原始剩余次数
 const formRef = ref(null)
 const filterCompany = ref('')
 
@@ -253,6 +258,10 @@ const quotaInfo = ref({
   allocatedQuota: 0,  // 已分配
   availableQuota: 0   // 剩余可分配次数
 })
+// 所有用户消费次数的总和
+const totalConsumed = computed(() =>
+  users.value.reduce((sum, u) => sum + (u.usedQuota || 0), 0)
+)
 const quotaDialogVisible = ref(false)
 const quotaSaving = ref(false)
 const editTotalQuota = ref(0)
@@ -417,6 +426,7 @@ const handleEdit = (row) => {
     usedQuota: row.usedQuota || 0,
     remaining: editRemaining
   })
+  originalRemaining.value = editRemaining
   dialogVisible.value = true
 }
 
@@ -424,11 +434,29 @@ const handleSave = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
+  if (isEdit.value) {
+    const newRemaining = form.remaining || 0
+    const oldRemaining = originalRemaining.value
+    const diff = newRemaining - oldRemaining
+    if (diff !== 0) {
+      const action = diff > 0 ? '增加' : '减少'
+      try {
+        await ElMessageBox.confirm(
+          `本次${action} ${Math.abs(diff)} 次，是否继续？`,
+          '确认修改',
+          { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+        )
+      } catch {
+        return // 用户取消
+      }
+    }
+  }
+
   saving.value = true
   try {
     if (isEdit.value) {
-      // 将输入"剩余次数"换算为"配额总数"提交给后端
-      const totalQuota = (form.remaining || 0) + (form.usedQuota || 0)
+      // 将输入"剩余次数"作为配额总数提交（usedQuota已在purchases表中独立记录，不重复计算）
+      const totalQuota = (form.remaining || 0)
       const updateData = { email: form.email, role: form.role, company: form.company, quota: totalQuota }
       if (form.password) {
         updateData.password = form.password
@@ -549,6 +577,14 @@ onMounted(() => {
       }
 
       &.remaining {
+        border-color: #909399;
+        background: linear-gradient(135deg, #f4f4f5 0%, #f9f9fa 100%);
+
+        .label { color: #909399; }
+        .value { color: #909399; font-weight: bold; font-size: 18px; }
+      }
+
+      &.consumed {
         border-color: #e6a23c;
         background: linear-gradient(135deg, #fdf6ec 0%, #fef0e0 100%);
 
