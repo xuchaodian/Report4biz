@@ -23,6 +23,10 @@
           <el-icon><Edit /></el-icon>
           <span>多边形</span>
         </div>
+        <div class="poi-mode-btn" @click="$emit('viewport-search')">
+          <el-icon><FullScreen /></el-icon>
+          <span>视野内</span>
+        </div>
         <div class="poi-mode-btn" @click="$emit('clear-search')">
           <el-icon><Delete /></el-icon>
           <span>清除</span>
@@ -38,7 +42,7 @@ defineProps({
   keyword: { type: String, default: '' }
 })
 
-defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-search', 'clear-search'])
+defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-search', 'viewport-search', 'clear-search'])
 </script>
 
 <style scoped>

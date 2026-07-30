@@ -14,6 +14,7 @@
       v-model:keyword="poiKeywords"
       @circle-search="startCircleSearch"
       @polygon-search="startPolygonSearch"
+      @viewport-search="startViewportSearch"
       @clear-search="clearPoiSearch"
     />
 
@@ -1358,9 +1359,17 @@ const pinyinMap = {
   '青': 'Q', '东': 'D', '宁': 'N', '佛': 'F', '昆': 'K',
   '福': 'F', '厦': 'X', '海': 'H', '贵': 'G', '太': 'T',
   '济': 'J', '哈': 'H', '沈': 'S', '大': 'D', '兰': 'L',
-  '西': 'X', '拉': 'L', '银': 'Y', '乌': 'W', '桂': 'G',
+  '拉': 'L', '银': 'Y', '乌': 'W', '桂': 'G',
   '珠': 'Z', '中': 'Z', '浦': 'P', '月': 'Y', '彭': 'P',
-  '桃': 'T', '南': 'N', '周': 'Z'
+  '桃': 'T', '周': 'Z',
+  // 补充缺失的城市首字
+  '咸': 'X', '宜': 'Y', '绵': 'M',
+  '潍': 'W', '淄': 'Z', '芜': 'W', '蚌': 'B', '邯': 'H',
+  '洛': 'L', '襄': 'X', '岳': 'Y',
+  '泉': 'Q', '绍': 'S', '温': 'W', '嘉': 'J', '盐': 'Y',
+  '镇': 'Z', '扬': 'Y', '徐': 'X', '连': 'L', '赣': 'G',
+  '莞': 'D', '惠': 'H', '肇': 'Z', '汕': 'S', '湛': 'Z',
+  '茂': 'M', '椰': 'Y', '遵': 'Z'
 }
 // 获取汉字拼音首字母
 function getFirstLetter(char) {
@@ -7313,6 +7322,83 @@ const clearPoiSearch = () => {
   // 重置搜索状态
   circleSearchActive = false
   polygonSearchActive = false
+}
+
+// 视野内搜索：将当前地图视口四角转为多边形，调 polygon API
+const startViewportSearch = () => {
+  if (!poiKeywords.value.trim()) {
+    ElMessage.warning('请输入搜索关键词')
+    return
+  }
+  if (!map) {
+    ElMessage.warning('地图未加载')
+    return
+  }
+
+  // 获取当前视口边界
+  const bounds = map.getBounds()
+  const sw = bounds.getSouthWest()
+  const nw = { lat: bounds.getNorth(), lng: bounds.getWest() }
+  const ne = bounds.getNorthEast()
+  const se = { lat: bounds.getSouth(), lng: bounds.getEast() }
+
+  // 构建多边形：西北→东北→东南→西南（高德要求逆时针或顺时针闭合）
+  const coords = [nw, ne, se, sw]
+
+  // 关闭面板
+  poiSearchExpanded.value = false
+
+  // 清除旧结果
+  poiResultVisible.value = false
+  poiResults.value = []
+  poiMarkers.value.forEach(m => map.removeLayer(m))
+  poiMarkers.value = []
+  if (poiCenterMarker) { map.removeLayer(poiCenterMarker); poiCenterMarker = null }
+  if (poiRadiusCircle) { map.removeLayer(poiRadiusCircle); poiRadiusCircle = null }
+  if (tempPolygonLayer) { map.removeLayer(tempPolygonLayer); tempPolygonLayer = null }
+  if (tempPolygonMarker) { map.removeLayer(tempPolygonMarker); tempPolygonMarker = null }
+  tempPolygonPoints = []
+
+  // 在视口边缘画个虚线框提示用户搜索范围
+  const viewportLayer = L.polygon(coords, {
+    color: '#6366f1', fillColor: '#6366f1', fillOpacity: 0.08, weight: 2, dashArray: '5, 5'
+  }).addTo(map)
+  viewportLayer.on('click', () => { poiResultVisible.value = true })
+  tempPolygonLayer = viewportLayer
+
+  // 执行搜索
+  executeViewportSearch(coords)
+}
+
+const executeViewportSearch = async (coords) => {
+  let loadingMsg = null
+  try {
+    loadingMsg = ElMessage({ type: 'loading', message: '视野内搜索中...', duration: 0 })
+    const response = await fetch('/api/poi/polygon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        coordinates: coords.map(p => ({ lng: p.lng, lat: p.lat })),
+        keywords: poiKeywords.value.trim()
+      })
+    })
+    const result = await response.json()
+    loadingMsg.close()
+
+    if (result.error) {
+      ElMessage.error(result.error)
+      return
+    }
+
+    poiResults.value = result.pois || []
+    poiResultVisible.value = true
+    showPoiOnMap(result.pois, null, null, null)
+    ElMessage.success(`找到 ${result.pois ? result.pois.length : 0} 个结果`)
+  } catch (err) {
+    if (loadingMsg) loadingMsg.close()
+    const errMsg = err.message || '请检查网络连接或稍后重试'
+    ElMessage.error(`搜索失败：${errMsg}`)
+  }
 }
 
 // POI位置选择模式：在地图上选点后执行搜索
