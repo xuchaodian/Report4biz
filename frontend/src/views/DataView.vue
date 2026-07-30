@@ -935,21 +935,32 @@ const handleBatchDelete = async () => {
   }
 }
 
-// 全清除
+// 全清除（有筛选时只清筛选结果，无筛选时清全部）
 const handleClearAll = async () => {
   try {
-    await ElMessageBox.confirm(
-      '此操作将清空您所有的门店数据，不可恢复！确定继续吗？',
-      '危险操作',
+    const hasFilter = hasActiveFilters.value
+    const targetIds = hasFilter ? filteredMarkers.value.map(m => m.id) : null
+    const count = targetIds?.length || markerStore.markers.length
+    const msg = hasFilter
+      ? `将删除当前筛选条件下的 ${count} 条门店数据，不可恢复！确定继续吗？`
+      : `此操作将清空您所有的 ${count} 条门店数据，不可恢复！确定继续吗？`
+
+    await ElMessageBox.confirm(msg, '危险操作',
       { type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
     )
-    const result = await markerStore.clearAllMarkers()
+
+    let result
+    if (hasFilter && targetIds.length > 0) {
+      result = await markerStore.batchDeleteMarkers(targetIds)
+    } else {
+      result = await markerStore.clearAllMarkers()
+    }
+
     if (result.success) {
-      ElMessage.success(`已清空 ${result.count} 条门店数据`)
+      ElMessage.success(`已清除 ${result.count} 条门店数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
-      // 重置筛选条件
-      markerStore.clearFilters()
+      if (!hasFilter) markerStore.clearFilters()
     } else {
       ElMessage.error(result.message)
     }

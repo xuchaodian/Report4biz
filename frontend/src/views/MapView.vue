@@ -3361,12 +3361,39 @@ const getLocationByIP = async () => {
   return null
 }
 
+// 浏览器定位（HTML5 Geolocation，更精准）
+const getLocationByBrowser = () => {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null)
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords
+        console.log('[浏览器定位] 成功:', latitude, longitude)
+        resolve({ lat: latitude, lng: longitude, city: '' })
+      },
+      () => {
+        console.log('[浏览器定位] 被拒绝或失败')
+        resolve(null)
+      },
+      { timeout: 5000, enableHighAccuracy: false }
+    )
+  })
+}
+
 // 初始化地图
 const initMap = async () => {
-  // 先获取IP位置
+  // 第一步：IP定位（获取城市名）
   const ipLocation = await getLocationByIP()
-  const centerLat = ipLocation ? ipLocation.lat : DEFAULT_LAT
-  const centerLng = ipLocation ? ipLocation.lng : DEFAULT_LNG
+  
+  // 第二步：浏览器定位（坐标更精确，但可能被用户拒绝）
+  const browserLocation = await getLocationByBrowser()
+  
+  // 优先使用浏览器定位坐标，用IP定位的城市名
+  const centerLat = browserLocation ? browserLocation.lat : (ipLocation ? ipLocation.lat : DEFAULT_LAT)
+  const centerLng = browserLocation ? browserLocation.lng : (ipLocation ? ipLocation.lng : DEFAULT_LNG)
   const currentCity = ipLocation ? ipLocation.city : DEFAULT_CITY
 
   // 更新城市显示

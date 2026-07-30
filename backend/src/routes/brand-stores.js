@@ -27,7 +27,13 @@ router.get('/', authenticate, (req, res) => {
     if (keyword) { where += ' AND (name LIKE ? OR address LIKE ? OR store_code LIKE ? OR brand LIKE ?)'; const kw = `%${keyword}%`; params.push(kw, kw, kw, kw) }
     if (city) { where += ' AND city = ?'; params.push(city) }
     if (district) { where += ' AND district = ?'; params.push(district) }
-    if (brand) { where += ' AND brand = ?'; params.push(brand) }
+    if (brand) {
+      const brands = brand.split(',').map(b => b.trim()).filter(Boolean)
+      if (brands.length > 0) {
+        where += ` AND brand IN (${brands.map(() => '?').join(',')})`
+        params.push(...brands)
+      }
+    }
     if (category) { where += ' AND store_category = ?'; params.push(category) }
 
     // 无page参数 = 全量返回（兼容地图等）
@@ -263,26 +269,20 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue
 
-          const result = db.prepare(`
-            INSERT INTO brand_stores (
-              user_id, store_code, brand, name, store_type, store_category,
-              city, district, address,
-              description,
-              latitude, longitude, status, icon_color,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            req.user.id, row.store_code || '', row.brand || '', row.name, row.store_type || '品牌', row.store_category || '',
-            row.city || '', row.district || '', row.address || '',
-            row.description || '',
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#409eff'
-          )
+          // 使用 db.exec 直接执行，避免每行触发 saveDatabase()
+          const esc = (v) => { if (v === null || v === undefined) return 'NULL'; return `'${String(v).replace(/'/g, "''")}'` }
+          const sql = `INSERT INTO brand_stores (user_id, store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, created_at, updated_at) VALUES (${req.user.id}, ${esc(row.store_code || '')}, ${esc(row.brand || '')}, ${esc(row.name)}, ${esc(row.store_type || '品牌')}, ${esc(row.store_category || '')}, ${esc(row.city || '')}, ${esc(row.district || '')}, ${esc(row.address || '')}, ${esc(row.description || '')}, ${parseFloat(row.latitude)}, ${parseFloat(row.longitude)}, ${esc(row.status || '正常')}, ${esc(row.icon_color || '#409eff')}, datetime('now'), datetime('now'))`
+          db.execNoSave(sql)
 
-          const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(brandStore)
+          const lastId = db.exec('SELECT last_insert_rowid() as id')[0]?.values?.[0]?.[0]
+          if (lastId) {
+            const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(lastId)
+            imported.push(brandStore)
+          }
         }
+
+        // 批量写入完成后一次性保存
+        db.saveNow()
 
         fs.unlinkSync(req.file.path)
 

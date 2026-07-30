@@ -46,13 +46,8 @@
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 140px" clearable @change="handleSearch">
-        <el-option v-for="b in brandList" :key="b" :label="b" :value="b">
-          <span style="display: flex; align-items: center; gap: 6px;">
-            <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[b] || '#409eff' }"></span>
-            {{ b }}
-          </span>
-        </el-option>
+      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 200px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+        <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
       <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
@@ -79,10 +74,7 @@
         <el-table-column v-if="userStore.isAdmin" type="selection" width="45" reserve-selection />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
-            <span style="display: flex; align-items: center; gap: 5px;">
-              <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[row.brand] || '#409eff', flexShrink: 0 }"></span>
-              {{ row.brand }}
-            </span>
+            {{ row.brand }}
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip />
@@ -217,7 +209,8 @@
         <el-icon class="el-icon--upload"><Upload /></el-icon>
         <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
       </el-upload>
-      <el-progress v-if="importing" :percentage="importProgress" :stroke-width="16" style="margin: 16px 0" :status="importProgress >= 100 ? 'success' : undefined" />
+      <el-progress v-if="importing" :percentage="importProgress" :stroke-width="16" style="margin: 16px 0" :status="importProgress >= 100 && importStatus === 'done' ? 'success' : importStatus === 'error' ? 'exception' : undefined" />
+      <div v-if="importing" style="text-align:center;font-size:13px;color:#909399;margin-bottom:8px;">{{ importStatusText }}</div>
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>
@@ -244,7 +237,7 @@ const statusList = ['正常', '关注', '暂停', '关闭']
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
-const filterBrand = ref('')
+const filterBrand = ref([])
 const filterCategory = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
@@ -276,7 +269,7 @@ const restoreFiltersFromLS = () => {
     searchKeyword.value = filters.searchKeyword || ''
     filterCity.value = filters.filterCity || ''
     filterDistrict.value = filters.filterDistrict || ''
-    filterBrand.value = filters.filterBrand || ''
+    filterBrand.value = Array.isArray(filters.filterBrand) ? filters.filterBrand : (filters.filterBrand ? [filters.filterBrand] : [])
     filterCategory.value = filters.filterCategory || ''
     currentPage.value = filters.currentPage || 1
     return true
@@ -315,6 +308,11 @@ const isEdit = ref(false)
 const saving = ref(false)
 const importing = ref(false)
 const importProgress = ref(0)
+const importStatus = ref('')
+const importStatusText = computed(() => {
+  const map = { uploading: '上传文件中...', processing: '正在处理数据...', done: '导入完成', error: '导入失败' }
+  return map[importStatus.value] || ''
+})
 const editingId = ref(null)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
@@ -365,7 +363,7 @@ const filteredBrandStores = computed(() => {
       (store.brand && store.brand.toLowerCase().includes(searchKeyword.value.toLowerCase()))
     const matchCity = !filterCity.value || store.city === filterCity.value
     const matchDistrict = !filterDistrict.value || store.district === filterDistrict.value
-    const matchBrand = !filterBrand.value || store.brand === filterBrand.value
+    const matchBrand = !filterBrand.value.length || filterBrand.value.includes(store.brand)
     const matchCategory = !filterCategory.value || store.store_category === filterCategory.value
     return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory
   })
@@ -378,7 +376,7 @@ const loadBrandStoresTable = async () => {
     const params = new URLSearchParams({
       page: currentPage.value, pageSize: pageSize.value,
       keyword: searchKeyword.value, city: filterCity.value,
-      district: filterDistrict.value, brand: filterBrand.value,
+      district: filterDistrict.value, brand: filterBrand.value.join(','),
       category: filterCategory.value
     })
     const token = sessionStorage.getItem('token')
@@ -409,7 +407,7 @@ const syncVisibleIds = () => {
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value || filterCategory.value
+  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value.length || filterCategory.value
 })
 
 // 清除筛选条件
@@ -417,14 +415,13 @@ const handleClearFilters = () => {
   searchKeyword.value = ''
   filterCity.value = ''
   filterDistrict.value = ''
-  filterBrand.value = ''
+  filterBrand.value = []
   filterCategory.value = ''
   brandStoreStore.clearFilters()
   clearFiltersFromLS()
   currentPage.value = 1
   loadBrandStoresTable()
 }
-
 const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
@@ -499,11 +496,10 @@ const handleBatchDelete = async () => {
       searchKeyword.value = ''
       filterCity.value = ''
       filterDistrict.value = ''
-      filterBrand.value = ''
+      filterBrand.value = []
       filterCategory.value = ''
       brandStoreStore.setVisibleIds(null)
-    } else {
-      ElMessage.error(result.message)
+    } else {      ElMessage.error(result.message)
     }
   } catch {}
 }
@@ -514,25 +510,37 @@ const handleLocate = (row) => {
 
 const handleClearAll = async () => {
   try {
-    await ElMessageBox.confirm(
-      '此操作将清空所有品牌门店数据，不可恢复！确定继续吗？',
-      '危险操作',
+    const hasFilter = hasActiveFilters.value
+    const targetIds = hasFilter ? filteredBrandStores.value.map(m => m.id) : null
+    const count = targetIds?.length || brandStoreStore.brandStores.length
+    const msg = hasFilter
+      ? `将删除当前筛选条件下的 ${count} 条品牌门店数据，不可恢复！确定继续吗？`
+      : `此操作将清空所有 ${count} 条品牌门店数据，不可恢复！确定继续吗？`
+
+    await ElMessageBox.confirm(msg, '危险操作',
       { type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
     )
-    const result = await brandStoreStore.clearAllBrandStores()
+
+    let result
+    if (hasFilter && targetIds.length > 0) {
+      result = await brandStoreStore.batchDeleteBrandStores(targetIds)
+    } else {
+      result = await brandStoreStore.clearAllBrandStores()
+    }
+
     if (result.success) {
-      ElMessage.success(`已清空 ${result.count} 条品牌门店数据`)
+      ElMessage.success(`已清除 ${result.count} 条品牌门店数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
-      // 重置筛选条件
-      searchKeyword.value = ''
-      filterCity.value = ''
-      filterDistrict.value = ''
-      filterBrand.value = ''
-      filterCategory.value = ''
-      brandStoreStore.setVisibleIds(null)
-    } else {
-      ElMessage.error(result.message)
+      if (!hasFilter) {
+        searchKeyword.value = ''
+        filterCity.value = ''
+        filterDistrict.value = ''
+        filterBrand.value = []
+        filterCategory.value = ''
+        brandStoreStore.setVisibleIds(null)
+      }
+    } else {      ElMessage.error(result.message)
     }
   } catch {}
 }
@@ -547,18 +555,29 @@ const handleImportConfirm = async () => {
   if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
   importing.value = true
   importProgress.value = 0
+  importStatus.value = 'uploading'
   try {
     const onProgress = (event) => {
-      importProgress.value = Math.round((event.loaded / event.total) * 100)
+      const pct = Math.round((event.loaded / event.total) * 100)
+      importProgress.value = pct
+      // 上传完成后切换为"处理中"状态
+      if (pct >= 100 && importStatus.value === 'uploading') {
+        importStatus.value = 'processing'
+      }
     }
     const result = await brandStoreStore.importBrandStores(uploadFile.value, onProgress)
     if (result.success !== false) {
+      importStatus.value = 'done'
       ElMessage.success(result.message)
-      importDialogVisible.value = false
+      setTimeout(() => { importDialogVisible.value = false }, 800)
       await brandStoreStore.fetchBrandStores()
     } else {
+      importStatus.value = 'error'
       ElMessage.error(result.message)
     }
+  } catch (e) {
+    importStatus.value = 'error'
+    ElMessage.error('导入失败: ' + (e.message || '未知错误'))
   } finally {
     importing.value = false
   }

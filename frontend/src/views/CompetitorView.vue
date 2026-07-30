@@ -47,13 +47,8 @@
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 140px" clearable @change="handleSearch">
-        <el-option v-for="b in brandList" :key="b" :label="b" :value="b">
-          <span style="display: flex; align-items: center; gap: 6px;">
-            <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[b] || '#ff9800' }"></span>
-            {{ b }}
-          </span>
-        </el-option>
+      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 200px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+        <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
       <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
@@ -84,10 +79,7 @@
         <el-table-column type="selection" width="45" reserve-selection />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
-            <span style="display: flex; align-items: center; gap: 5px;">
-              <span :style="{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: brandColorMap[row.brand] || '#ff9800', flexShrink: 0 }"></span>
-              {{ row.brand }}
-            </span>
+            {{ row.brand }}
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
@@ -349,23 +341,56 @@ const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼�
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
-const filterBrand = ref('')
+const filterBrand = ref([])
 const filterCategory = ref('')
 const filterMinStars = ref(null)
 const filterMinReviews = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
+// localStorage 持久化（按用户隔离）
+const LS_KEY = () => `competitorFilters_${userStore.user?.id || 'anon'}`
+const SAVE_FIELDS = () => ({
+  searchKeyword: searchKeyword.value,
+  filterCity: filterCity.value,
+  filterDistrict: filterDistrict.value,
+  filterBrand: filterBrand.value,
+  filterCategory: filterCategory.value,
+  filterMinStars: filterMinStars.value,
+  filterMinReviews: filterMinReviews.value,
+  currentPage: currentPage.value
+})
+const saveFiltersToLS = () => localStorage.setItem(LS_KEY(), JSON.stringify(SAVE_FIELDS()))
+
+const restoreFiltersFromLS = () => {
+  const saved = localStorage.getItem(LS_KEY())
+  if (!saved) return false
+  try {
+    const f = JSON.parse(saved)
+    searchKeyword.value = f.searchKeyword || ''
+    filterCity.value = f.filterCity || ''
+    filterDistrict.value = f.filterDistrict || ''
+    filterBrand.value = Array.isArray(f.filterBrand) ? f.filterBrand : (f.filterBrand ? [f.filterBrand] : [])
+    filterCategory.value = f.filterCategory || ''
+    filterMinStars.value = f.filterMinStars ?? null
+    filterMinReviews.value = f.filterMinReviews ?? null
+    currentPage.value = f.currentPage || 1
+    return true
+  } catch { return false }
+}
+
+const clearFiltersFromLS = () => localStorage.removeItem(LS_KEY())
+
 // 监听 store 中 filters 的外部变化（如其他页面同步过来的筛选条件）
 watch(() => competitorStore.filters, (newFilters) => {
   searchKeyword.value = newFilters.searchKeyword
   filterCity.value = newFilters.filterCity
   filterDistrict.value = newFilters.filterDistrict
-  filterBrand.value = newFilters.filterBrand
+  filterBrand.value = Array.isArray(newFilters.filterBrand) ? newFilters.filterBrand : (newFilters.filterBrand ? [newFilters.filterBrand] : [])
   filterCategory.value = newFilters.filterCategory
 }, { deep: true })
 
-// 同步筛选条件到 store（持久化）
+// 同步筛选条件到 store + localStorage（持久化）
 const syncFiltersToStore = () => {
   competitorStore.setFilters({
     searchKeyword: searchKeyword.value,
@@ -374,22 +399,37 @@ const syncFiltersToStore = () => {
     filterBrand: filterBrand.value,
     filterCategory: filterCategory.value
   })
+  saveFiltersToLS()
 }
 
 // 组件挂载时从 store 恢复筛选条件
 onMounted(() => {
   competitorStore.fetchCompetitors()
-  // 从 store 恢复筛选条件
-  searchKeyword.value = competitorStore.filters.searchKeyword
-  filterCity.value = competitorStore.filters.filterCity
-  filterDistrict.value = competitorStore.filters.filterDistrict
-  filterBrand.value = competitorStore.filters.filterBrand
-  filterCategory.value = competitorStore.filters.filterCategory
+  // 优先从 localStorage 恢复（跨登录会话），其次是 store 内存
+  const restored = restoreFiltersFromLS()
+  if (restored) {
+    competitorStore.setFilters({
+      searchKeyword: searchKeyword.value,
+      filterCity: filterCity.value,
+      filterDistrict: filterDistrict.value,
+      filterBrand: filterBrand.value,
+      filterCategory: filterCategory.value
+    })
+  } else {
+    // 从 store 恢复筛选条件
+    searchKeyword.value = competitorStore.filters.searchKeyword
+    filterCity.value = competitorStore.filters.filterCity
+    filterDistrict.value = competitorStore.filters.filterDistrict
+    filterBrand.value = Array.isArray(competitorStore.filters.filterBrand)
+      ? competitorStore.filters.filterBrand
+      : (competitorStore.filters.filterBrand ? [competitorStore.filters.filterBrand] : [])
+    filterCategory.value = competitorStore.filters.filterCategory
+  }
 })
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
+  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value.length || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
 })
 
 // 品牌颜色映射
@@ -482,7 +522,7 @@ const filteredCompetitors = computed(() => {
       (comp.brand && comp.brand.toLowerCase().includes(searchKeyword.value.toLowerCase()))
     const matchCity = !filterCity.value || comp.city === filterCity.value
     const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
-    const matchBrand = !filterBrand.value || comp.brand === filterBrand.value
+    const matchBrand = !filterBrand.value.length || filterBrand.value.includes(comp.brand)
     const matchCategory = !filterCategory.value || comp.store_category === filterCategory.value
     const matchStars = !filterMinStars.value || (comp.rating && comp.rating >= filterMinStars.value)
     const matchReviews = !filterMinReviews.value || (comp.reviews && comp.reviews >= filterMinReviews.value)
@@ -507,7 +547,7 @@ const handleSearch = () => {
 
 const syncVisibleIds = () => {
   const hasFilter = searchKeyword.value || filterCity.value || filterDistrict.value ||
-    filterBrand.value || filterCategory.value
+    filterBrand.value.length || filterCategory.value
   if (!hasFilter) {
     competitorStore.setVisibleIds(null)
   } else {
@@ -520,11 +560,12 @@ const handleClearFilters = () => {
   searchKeyword.value = ''
   filterCity.value = ''
   filterDistrict.value = ''
-  filterBrand.value = ''
+  filterBrand.value = []
   filterCategory.value = ''
   filterMinStars.value = null
   filterMinReviews.value = null
   competitorStore.clearFilters()
+  clearFiltersFromLS()
   currentPage.value = 1
 }
 
