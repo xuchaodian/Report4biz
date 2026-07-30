@@ -202,48 +202,65 @@ router.get('/ip-location', (req, res) => {
     return { lat: wgLat + dLat, lng: wgLon + dLon }
   }
 
-  // 主方法：使用 ip-api.com（HTTP版本，支持查询指定IP）
-  const queryWithIpApi = () => {
-    // 如果有 clientIP，查询指定IP；否则查询服务器IP
-    const apiUrl = clientIP 
-      ? `http://ip-api.com/json/${clientIP}?fields=status,country,countryCode,region,regionName,city,lat,lon`
-      : 'http://ip-api.com/json/?fields=status,country,countryCode,region,regionName,city,lat,lon'
+  // 主方法：使用高德IP定位API（国内可访问，返回GCJ-02坐标系）
+  const queryAMapIP = () => {
+    const apiUrl = clientIP
+      ? `https://restapi.amap.com/v3/ip?key=${AMap_KEY}&ip=${encodeURIComponent(clientIP)}`
+      : `https://restapi.amap.com/v3/ip?key=${AMap_KEY}`
     
-    console.log('[IP定位] 查询 ip-api.com:', apiUrl)
+    console.log('[IP定位] 查询高德API:', apiUrl.replace(AMap_KEY, '***'))
     
-    http.get(apiUrl, (apiRes) => {
+    const req = https.get(apiUrl, (apiRes) => {
       let data = ''
       apiRes.on('data', chunk => { data += chunk })
       apiRes.on('end', () => {
         try {
           const json = JSON.parse(data)
-          if (json.status === 'success') {
-            const gcj = wgs2gcj(json.lat, json.lon)
-            console.log('[IP定位] ip-api.com 成功:', json.city, json.lat, json.lon)
+          if (json.status === '1' && json.city) {
+            // 从 rectangle 解析中心坐标（rectangle 格式: "minX,minY;maxX,maxY"）
+            let lat = defaultLocation.lat
+            let lng = defaultLocation.lng
+            if (json.rectangle) {
+              const parts = json.rectangle.split(';')
+              if (parts.length === 2) {
+                const min = parts[0].split(',').map(Number)
+                const max = parts[1].split(',').map(Number)
+                if (min.length === 2 && max.length === 2) {
+                  lng = (min[0] + max[0]) / 2
+                  lat = (min[1] + max[1]) / 2
+                }
+              }
+            }
+            console.log('[IP定位] 高德API 成功:', json.city, lat, lng)
             res.json({
               success: true,
-              lat: gcj.lat,
-              lng: gcj.lng,
-              city: json.city || json.regionName || '未知城市',
-              province: json.regionName || '',
+              lat, lng,
+              city: json.city || defaultLocation.city,
+              province: json.province || '',
             })
           } else {
-            console.log('[IP定位] ip-api.com 返回失败，返回默认位置')
+            console.log('[IP定位] 高德API 返回失败:', json.info || json.city, '，返回默认位置')
             res.json(defaultLocation)
           }
         } catch (e) {
-          console.error('[IP定位] ip-api JSON 解析失败:', e)
+          console.error('[IP定位] 高德API JSON解析失败:', e)
           res.json(defaultLocation)
         }
       })
-    }).on('error', (error) => {
-      console.error('[IP定位] ip-api 网络错误:', error)
+    })
+    req.setTimeout(5000, () => {
+      console.error('[IP定位] 高德API 请求超时(5s)，返回默认位置')
+      req.destroy()
+      res.json(defaultLocation)
+    })
+    req.on('error', (error) => {
+      console.error('[IP定位] 高德API 网络错误:', error)
       res.json(defaultLocation)
     })
   }
 
-  // 主方法：先使用 ip-api.com
-  queryWithIpApi()
+  // 主方法：使用高德IP定位
+  queryAMapIP()
 })
 
 // 行政区域边界查询 - 使用高德行政区域API

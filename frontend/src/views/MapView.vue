@@ -2066,6 +2066,7 @@ const openStorePoiSearch = async (lat, lng) => {
   }
 }
 
+// 门店评分表（从门店popup调用）
 // ====== 共用门店弹窗HTML（三处统一，改一处即全部生效） ======
 function getStorePopupHtml(markerData) {
   const isClosed = isStoreClosed(markerData.store_status)
@@ -2090,6 +2091,7 @@ function getStorePopupHtml(markerData) {
         <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">人口分布</button>
         <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">竞品分布</button>
         <button onclick="window.openStorePoiSearch(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #6366f1; color: white; border: none; border-radius: 4px; font-size: 12px;">周边检索</button>
+      </div>
       </div>
     </div>`
 }

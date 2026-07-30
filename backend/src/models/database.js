@@ -438,6 +438,132 @@ export async function initDatabase() {
     console.warn('创建 ai_usage 表失败:', e.message)
   }
 
+  // 门店潜力评分相关表
+  try {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scoring_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        weight_population REAL DEFAULT 0.40,
+        weight_competition REAL DEFAULT 0.25,
+        weight_support REAL DEFAULT 0.20,
+        weight_transport REAL DEFAULT 0.15,
+        radius_km REAL DEFAULT 1.0,
+        competition_threshold INTEGER DEFAULT 10,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS site_candidates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_id INTEGER REFERENCES scoring_configs(id),
+        user_id INTEGER NOT NULL,
+        city TEXT NOT NULL,
+        district TEXT,
+        grid_id TEXT,
+        lng REAL NOT NULL,
+        lat REAL NOT NULL,
+        score REAL NOT NULL,
+        score_population REAL,
+        score_competition REAL,
+        score_support REAL,
+        score_transport REAL,
+        population_density REAL,
+        competitor_count INTEGER,
+        poi_count INTEGER,
+        address TEXT,
+        status TEXT DEFAULT 'candidate',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_sc_city ON site_candidates(city)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_sc_score ON site_candidates(score DESC)`)
+  } catch (e) {
+    console.warn('创建评分相关表失败:', e.message)
+  }
+
+  // 门店评分表相关表
+  try {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scoring_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        category TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS scoring_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER REFERENCES scoring_templates(id),
+        dimension TEXT NOT NULL,
+        name TEXT NOT NULL,
+        data_source TEXT DEFAULT 'manual',
+        max_score REAL NOT NULL DEFAULT 10,
+        input_type TEXT DEFAULT 'score',
+        options TEXT,
+        sort_order INTEGER DEFAULT 0
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS store_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER REFERENCES scoring_templates(id),
+        user_id INTEGER NOT NULL,
+        store_id INTEGER,
+        lng REAL NOT NULL,
+        lat REAL NOT NULL,
+        address TEXT,
+        total_score REAL DEFAULT 0,
+        premium INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'draft',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    db.run(`
+      CREATE TABLE IF NOT EXISTS score_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        score_id INTEGER REFERENCES store_scores(id),
+        item_id INTEGER REFERENCES scoring_items(id),
+        auto_value REAL,
+        manual_value REAL,
+        final_score REAL DEFAULT 0,
+        remark TEXT
+      )
+    `)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ss_user ON store_scores(user_id)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_sd_score ON score_details(score_id)`)
+
+    // 插入默认餐饮模板
+    const templateExists = db.prepare('SELECT id FROM scoring_templates WHERE name = ?').get('餐饮通用')
+    if (!templateExists) {
+      const insertTpl = db.prepare('INSERT INTO scoring_templates (name, category) VALUES (?, ?)')
+      insertTpl.run(['餐饮通用', '餐饮'])
+      const lastIdResult = db.exec('SELECT last_insert_rowid() as id')
+      const templateId = lastIdResult[0]?.values[0]?.[0] || 1
+
+      const items = [
+        ['trade_area', '人口密度', 'smartsteps', 15, 'auto', null,  1],
+        ['trade_area', '竞争强度', 'competitors', 15, 'auto', null,  2],
+        ['trade_area', '配套丰富度', 'poi', 10, 'auto', null,  3],
+        ['trade_area', '交通便利度', 'poi', 10, 'auto', null,  4],
+        ['site', '可达性', 'manual', 10, 'score', null,  5],
+        ['site', '可视性', 'manual', 10, 'score', null,  6],
+        ['site', '门前客流(人/天)', 'manual', 10, 'number', null,  7],
+        ['site', '月租金(元)', 'manual', 10, 'number', null,  8],
+        ['site', '楼层位置', 'manual', 5, 'select', JSON.stringify([{label:'一楼',value:5},{label:'负一层',value:3},{label:'其他',value:1}]), 9],
+        ['site', '停车便利度', 'manual', 5, 'select', JSON.stringify([{label:'方便',value:5},{label:'一般',value:3},{label:'困难',value:1}]), 10],
+      ]
+
+      const insertItem = db.prepare('INSERT INTO scoring_items (template_id, dimension, name, data_source, max_score, input_type, options, sort_order) VALUES (?,?,?,?,?,?,?,?)')
+      items.forEach(item => insertItem.run([templateId, ...item]))
+    }
+  } catch (e) {
+    console.warn('创建门店评分表失败:', e.message)
+  }
+
   // 保存数据库
   saveDatabase()
 

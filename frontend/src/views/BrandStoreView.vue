@@ -252,6 +252,43 @@ const tableData = ref([])
 const tableTotal = ref(0)
 const tableLoading = ref(false)
 
+const LS_KEY = () => `brandStoreFilters_${userStore.user?.id || 'anon'}`
+
+// 保存筛选条件到 localStorage（持久化，按用户隔离）
+const saveFiltersToLS = () => {
+  const filters = {
+    searchKeyword: searchKeyword.value,
+    filterCity: filterCity.value,
+    filterDistrict: filterDistrict.value,
+    filterBrand: filterBrand.value,
+    filterCategory: filterCategory.value,
+    currentPage: currentPage.value
+  }
+  localStorage.setItem(LS_KEY(), JSON.stringify(filters))
+}
+
+// 从 localStorage 恢复筛选条件
+const restoreFiltersFromLS = () => {
+  const saved = localStorage.getItem(LS_KEY())
+  if (!saved) return false
+  try {
+    const filters = JSON.parse(saved)
+    searchKeyword.value = filters.searchKeyword || ''
+    filterCity.value = filters.filterCity || ''
+    filterDistrict.value = filters.filterDistrict || ''
+    filterBrand.value = filters.filterBrand || ''
+    filterCategory.value = filters.filterCategory || ''
+    currentPage.value = filters.currentPage || 1
+    return true
+  } catch {
+    return false
+  }
+}
+
+const clearFiltersFromLS = () => {
+  localStorage.removeItem(LS_KEY())
+}
+
 // 同步筛选条件到 store（用于地图 visibleIds 联动，不持久化到其他用户）
 const syncFiltersToStore = () => {
   brandStoreStore.setFilters({
@@ -261,6 +298,7 @@ const syncFiltersToStore = () => {
     filterBrand: filterBrand.value,
     filterCategory: filterCategory.value
   })
+  saveFiltersToLS()
 }
 
 const brandColorMap = {
@@ -382,6 +420,7 @@ const handleClearFilters = () => {
   filterBrand.value = ''
   filterCategory.value = ''
   brandStoreStore.clearFilters()
+  clearFiltersFromLS()
   currentPage.value = 1
   loadBrandStoresTable()
 }
@@ -553,13 +592,22 @@ BRAND001,某品牌,某品牌门店,商场店,北京市,朝阳区,示例地址,�
 
 onMounted(async () => {
   console.log('🏪 BrandStoreView 已加载！')
-  // 进入页面时重置筛选条件，避免管理员的筛选状态影响其他用户
-  searchKeyword.value = ''
-  filterCity.value = ''
-  filterDistrict.value = ''
-  filterBrand.value = ''
-  filterCategory.value = ''
-  brandStoreStore.clearFilters()
+  // 尝试从 localStorage 恢复上次的筛选条件（跨登录会话持久化）
+  const restored = restoreFiltersFromLS()
+  if (restored) {
+    // 恢复成功后同步到 store 和 visibleIds
+    brandStoreStore.setFilters({
+      searchKeyword: searchKeyword.value,
+      filterCity: filterCity.value,
+      filterDistrict: filterDistrict.value,
+      filterBrand: filterBrand.value,
+      filterCategory: filterCategory.value
+    })
+    syncVisibleIds()
+  } else {
+    // 无持久化记录时保持筛选为空
+    brandStoreStore.clearFilters()
+  }
   await brandStoreStore.fetchBrandStores()
   console.log('✅ 门店列表加载完成')
   loadBrandStoresTable()
