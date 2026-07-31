@@ -99,31 +99,53 @@
           <el-form-item label="半径(km)">
             <el-input-number v-model="storeCircleRadius" :min="0.5" :max="10" :step="0.5" :precision="1" style="width:200px" />
           </el-form-item>
+          <template v-if="storeCircleMode === 'overlap'">
+            <el-form-item label="高阈值(%)">
+              <el-input-number v-model="overlapHighThreshold" :min="10" :max="100" :step="5" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="低阈值(%)">
+              <el-input-number v-model="overlapLowThreshold" :min="1" :max="95" :step="5" style="width:200px" />
+            </el-form-item>
+          </template>
         </el-form>
         <!-- 分类筛选勾选框 -->
         <div style="margin-top:12px;padding:0 10px;">
           <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px;">显示分类</div>
           <template v-if="storeCircleMode === 'overlap'">
-            <el-checkbox v-model="storeCircleFilters.overlap.overlap30" style="display:block;margin-bottom:6px;font-size:13px;">
+            <el-checkbox v-model="storeCircleFilters.overlap.overlapHigh" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e6a23c;"></span>
-                重叠率 ≥30%
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f56c6c;"></span>
+                重叠率 ≥{{ overlapHighThreshold }}%
               </span>
             </el-checkbox>
-            <el-checkbox v-model="storeCircleFilters.overlap.overlapLess" style="display:block;margin-bottom:6px;font-size:13px;">
+            <el-checkbox v-model="storeCircleFilters.overlap.overlapMid" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e6a23c;"></span>
+                {{ overlapLowThreshold }}% ≤ 重叠率 &lt; {{ overlapHighThreshold }}%
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.overlap.overlapLow" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
                 <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#409eff;"></span>
-                重叠率 &lt;30%
+                0 &lt; 重叠率 &lt; {{ overlapLowThreshold }}%
               </span>
             </el-checkbox>
             <el-checkbox v-model="storeCircleFilters.overlap.overlapNone" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f56c6c;"></span>
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#909399;"></span>
                 无重叠
               </span>
             </el-checkbox>
           </template>
           <template v-else>
+            <!-- 竞争品牌多选 -->
+            <div style="margin-bottom:10px;">
+              <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px;">竞争品牌（可多选）</div>
+              <el-select v-model="competitionBrands" placeholder="不选 = 统计全部竞品" style="width:100%" multiple collapse-tags collapse-tags-tooltip clearable>
+                <el-option v-for="b in competitionBrandList" :key="b" :label="b" :value="b" />
+              </el-select>
+              <div style="font-size:12px;color:#909399;margin-top:4px;">仅统计所选品牌的竞品门店，不选则统计全部</div>
+            </div>
             <el-checkbox v-model="storeCircleFilters.competition.noMyNoComp" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
                 <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f59e0b;"></span>
@@ -193,22 +215,64 @@
         </el-button>
       </div>
       <div :style="{ padding: '4px 10px 10px' }">
-        <div v-for="(item, idx) in storeCircleLegendItems" :key="idx"
-          :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' }"
-        >
-          <span
-            :style="{
-              background: item.color,
-              width: '14px',
-              height: '14px',
-              borderRadius: '50%',
-              flexShrink: 0,
-              border: '1px solid rgba(0,0,0,0.1)',
-              display: 'inline-block'
-            }"
-          ></span>
-          <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
-        </div>
+        <template v-if="storeCircleMode === 'competition'">
+          <!-- 竞争关系模式：可展开城市分布 -->
+          <div v-for="(item, idx) in storeCircleLegendItems" :key="idx">
+            <div
+              :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', userSelect: 'none' }"
+              @click="toggleLegendCategory(item.key)"
+            >
+              <span
+                :style="{
+                  background: item.color,
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  display: 'inline-block'
+                }"
+              ></span>
+              <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
+              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ getCategoryTotal(item.key) }}家</span>
+              <span :style="{ color: '#c0c4cc', fontSize: '10px', transform: expandedLegendCategory === item.key ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }">▶</span>
+            </div>
+            <div v-if="expandedLegendCategory === item.key" :style="{ padding: '2px 0 6px 22px' }">
+              <div
+                v-for="(count, city) in competitionCityStats[item.key] || {}"
+                :key="city"
+                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#606266' }"
+                @mouseover="$event.currentTarget.style.background = '#f5f7fa'"
+                @mouseout="$event.currentTarget.style.background = 'transparent'"
+                @click="locateCompetitionCity(item.key, city)"
+              >
+                <el-icon style="font-size:12px;color:#409eff;"><Location /></el-icon>
+                <span>{{ city }}</span>
+                <span :style="{ marginLeft: 'auto', color: '#909399' }">{{ count }}家</span>
+                <el-icon style="font-size:11px;color:#c0c4cc;"><ArrowRight /></el-icon>
+              </div>
+              <div v-if="Object.keys(competitionCityStats[item.key] || {}).length === 0" :style="{ fontSize: '12px', color: '#c0c4cc', padding: '2px 0' }">暂无</div>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div v-for="(item, idx) in storeCircleLegendItems" :key="idx"
+            :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' }"
+          >
+            <span
+              :style="{
+                background: item.color,
+                width: '14px',
+                height: '14px',
+                borderRadius: '50%',
+                flexShrink: 0,
+                border: '1px solid rgba(0,0,0,0.1)',
+                display: 'inline-block'
+              }"
+            ></span>
+            <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -1293,15 +1357,77 @@ const showCluster = ref(false)
 const showStoreCircles = ref(false)
 const storeCircleMode = ref('overlap')     // 'overlap'=门店重合度, 'competition'=门店竞争数
 const storeCircleRadius = ref(1)
+const overlapHighThreshold = ref(60)   // 高重叠阈值(%)，可手动设置
+const overlapLowThreshold = ref(30)    // 低重叠阈值(%)，可手动设置
 const storeCircleDialogVisible = ref(false)
 const storeCircleModeDialogVisible = ref(false)
 const storeCircleLegendItems = ref([])   // 门店商圈图例
 const storeCircleLegendVisible = ref(false)  // 图例弹窗可见性
 // 门店商圈分类筛选（默认全选）
 const storeCircleFilters = ref({
-  overlap: { overlap30: true, overlapLess: true, overlapNone: true },
+  overlap: { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true },
   competition: { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true }
 })
+// 竞争品牌多选（空数组 = 统计全部竞品）
+const competitionBrands = ref([])
+const competitionBrandList = computed(() => {
+  const brands = new Set()
+  competitorStore.competitors.forEach(c => { if (c.brand) brands.add(c.brand) })
+  return [...brands].sort()
+})
+// 竞争数结果：城市分布统计 + 门店坐标（用于图例展开定位）
+const competitionCityStats = ref({})       // { filterKey: { city: count } }
+const competitionStoreResults = ref([])    // [{ lat, lng, city, filterKey, name, _type }]
+const expandedLegendCategory = ref(null)   // 当前展开的图例分类 key
+const toggleLegendCategory = (key) => {
+  expandedLegendCategory.value = expandedLegendCategory.value === key ? null : key
+}
+const getCategoryTotal = (key) => {
+  const cities = competitionCityStats.value[key]
+  if (!cities) return 0
+  return Object.values(cities).reduce((a, b) => a + b, 0)
+}
+// 定位到某分类某城市的门店
+const locateCompetitionCity = (filterKey, city) => {
+  const matched = competitionStoreResults.value.filter(r => r.filterKey === filterKey && r.city === city)
+  if (matched.length === 0) { ElMessage.warning('该城市暂无此分类的门店'); return }
+  const bounds = L.latLngBounds(matched.map(r => [r.lat, r.lng]))
+  try { map.fitBounds(bounds, { padding: [80, 80], maxZoom: 13 }) } catch (_) {
+    map.setView([matched[0].lat, matched[0].lng], 12)
+  }
+  ElMessage.success(`${city} 有 ${matched.length} 家「${filterKeyLabel(filterKey)}」`)
+}
+const filterKeyLabel = (key) => {
+  const map = {
+    noMyNoComp: '无我的门店+无竞品',
+    hasMyNoComp: '有我的门店+无竞品',
+    noMyHasComp: '无我的门店+有竞品',
+    hasMyHasComp: '有我的门店+有竞品'
+  }
+  return map[key] || key
+}
+
+// 重叠率阈值持久化（localStorage，按用户隔离）
+const OVERLAP_THRESHOLD_KEY = () => `overlapThresholds_${userStore.user?.id || 'anon'}`
+const saveOverlapThresholds = () => {
+  try {
+    localStorage.setItem(OVERLAP_THRESHOLD_KEY(), JSON.stringify({
+      high: overlapHighThreshold.value,
+      low: overlapLowThreshold.value
+    }))
+  } catch (_) {}
+}
+const restoreOverlapThresholds = () => {
+  try {
+    const saved = localStorage.getItem(OVERLAP_THRESHOLD_KEY())
+    if (!saved) return
+    const t = JSON.parse(saved)
+    if (t.high && t.low) {
+      overlapHighThreshold.value = t.high
+      overlapLowThreshold.value = t.low
+    }
+  } catch (_) {}
+}
 
 const showBusinessLayer = ref(true)
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
@@ -5296,7 +5422,8 @@ const selectStoreCircleMode = (mode) => {
   storeCircleModeDialogVisible.value = false
   // 重置筛选为全选
   if (mode === 'overlap') {
-    storeCircleFilters.value.overlap = { overlap30: true, overlapLess: true, overlapNone: true }
+    storeCircleFilters.value.overlap = { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true }
+    restoreOverlapThresholds()  // 恢复上次设置的重叠率阈值
   } else {
     storeCircleFilters.value.competition = { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true }
   }
@@ -5321,7 +5448,7 @@ const applyStoreCircles = () => {
     }
     ms.forEach(m => {
       if (m.latitude && m.longitude) {
-        allStores.push({ latitude: m.latitude, longitude: m.longitude, name: m.name, _type: '我的门店' })
+        allStores.push({ latitude: m.latitude, longitude: m.longitude, name: m.name, _type: '我的门店', city: m.city || '' })
       }
     })
   }
@@ -5334,7 +5461,7 @@ const applyStoreCircles = () => {
     }
     cs.forEach(c => {
       if (c.latitude && c.longitude) {
-        allStores.push({ latitude: c.latitude, longitude: c.longitude, name: c.name, _type: '竞品' })
+        allStores.push({ latitude: c.latitude, longitude: c.longitude, name: c.name, _type: '竞品', city: c.city || '' })
       }
     })
   }
@@ -5347,7 +5474,7 @@ const applyStoreCircles = () => {
     }
     bs.forEach(b => {
       if (b.latitude && b.longitude) {
-        allStores.push({ latitude: b.latitude, longitude: b.longitude, name: b.name, _type: '品牌门店' })
+        allStores.push({ latitude: b.latitude, longitude: b.longitude, name: b.name, _type: '品牌门店', city: b.city || '' })
       }
     })
   }
@@ -5360,7 +5487,7 @@ const applyStoreCircles = () => {
     }
     sc.forEach(s => {
       if (s.latitude && s.longitude) {
-        allStores.push({ latitude: s.latitude, longitude: s.longitude, name: s.name, _type: '购物中心' })
+        allStores.push({ latitude: s.latitude, longitude: s.longitude, name: s.name, _type: '购物中心', city: s.city || '' })
       }
     })
   }
@@ -5390,6 +5517,10 @@ const applyStoreCircles = () => {
       if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
         allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
       }
+      // 按选择的竞争品牌过滤（空 = 全部）
+      if (competitionBrands.value.length > 0) {
+        allComps = allComps.filter(c => competitionBrands.value.includes(c.brand))
+      }
     }
     const myStorePoints = allMyStores.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
     const compPoints = allComps.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
@@ -5397,17 +5528,20 @@ const applyStoreCircles = () => {
     storeCircleLayer = L.layerGroup().addTo(map)
     const compFilters = storeCircleFilters.value.competition
     let drawnCount = 0
+    // 重置城市分布统计
+    const stats = { noMyNoComp: {}, hasMyNoComp: {}, noMyHasComp: {}, hasMyHasComp: {} }
+    const results = []
     validStores.forEach((store) => {
-      // 计算该店半径内有多少我的门店和竞品
+      // 计算该店半径内有多少"其他"我的门店和竞品（排除圆心门店自身，d>0）
       let myCount = 0
       let compCount = 0
       for (const p of myStorePoints) {
         const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
-        if (d <= radiusM) myCount++
+        if (d > 0 && d <= radiusM) myCount++
       }
       for (const p of compPoints) {
         const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
-        if (d <= radiusM) compCount++
+        if (d > 0 && d <= radiusM) compCount++
       }
 
       let color
@@ -5431,6 +5565,11 @@ const applyStoreCircles = () => {
         filterKey = 'hasMyHasComp'
       }
 
+      // 记录分类+城市（供图例城市分布统计与定位）
+      const city = store.city || '未知'
+      results.push({ lat: store.latitude, lng: store.longitude, city, filterKey, name: store.name, _type: store._type })
+      stats[filterKey][city] = (stats[filterKey][city] || 0) + 1
+
       // 根据筛选条件决定是否绘制
       if (!compFilters[filterKey]) return
       drawnCount++
@@ -5445,6 +5584,9 @@ const applyStoreCircles = () => {
       circle.bindTooltip(`[${store._type}] ${store.name || '未知'} - ${label}`, { sticky: true })
       storeCircleLayer.addLayer(circle)
     })
+    competitionCityStats.value = stats
+    competitionStoreResults.value = results
+    expandedLegendCategory.value = null
     showStoreCircles.value = true
     // 构建图例——只显示已勾选的项
     const compLegendMap = [
@@ -5453,7 +5595,7 @@ const applyStoreCircles = () => {
       { key: 'noMyHasComp', color: '#ff69b4', label: '无我的门店 + 有竞品' },
       { key: 'hasMyHasComp', color: '#67c23a', label: '有我的门店 + 有竞品' }
     ]
-    storeCircleLegendItems.value = compLegendMap.filter(item => compFilters[item.key]).map(item => ({ color: item.color, label: item.label }))
+    storeCircleLegendItems.value = compLegendMap.filter(item => compFilters[item.key]).map(item => ({ key: item.key, color: item.color, label: item.label }))
     storeCircleLegendVisible.value = true
     console.log('[legend] competition mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
     const totalInFilter = drawnCount
@@ -5461,7 +5603,18 @@ const applyStoreCircles = () => {
     return
   }
 
-  // ==== 门店重合度模式（原有逻辑） ====
+  // ==== 门店重合度模式（4档分类，阈值可手动设置） ====
+  // 阈值校验：高阈值必须大于低阈值
+  const highPct = overlapHighThreshold.value
+  const lowPct = overlapLowThreshold.value
+  if (highPct <= lowPct) {
+    ElMessage.warning('高阈值必须大于低阈值')
+    storeCircleDialogVisible.value = true
+    return
+  }
+  const highRatio = highPct / 100
+  const lowRatio = lowPct / 100
+
   // 计算任意两个门店之间的距离
   const distMatrix = validStores.map((a, i) =>
     validStores.map((b, j) => {
@@ -5476,7 +5629,7 @@ const applyStoreCircles = () => {
     })
   )
 
-  // 计算每个门店的最大重叠百分比
+  // 计算每个门店的最大重叠百分比（4档着色）
   const circleColors = validStores.map((store, idx) => {
     let maxOverlap = 0
     for (let j = 0; j < validStores.length; j++) {
@@ -5487,9 +5640,10 @@ const applyStoreCircles = () => {
       const overlapPct = overlapArea / (Math.PI * R2)
       if (overlapPct > maxOverlap) maxOverlap = overlapPct
     }
-    if (maxOverlap >= 0.30) return '#e6a23c'  // 黄色：≥30%
-    if (maxOverlap > 0) return '#409eff'       // 蓝色：<30%
-    return '#f56c6c'                            // 红色：不重叠
+    if (maxOverlap >= highRatio) return '#f56c6c'  // 高重叠：≥高阈值
+    if (maxOverlap >= lowRatio) return '#e6a23c'   // 中重叠：低阈值~高阈值
+    if (maxOverlap > 0) return '#409eff'           // 低重叠：0~低阈值
+    return '#909399'                               // 无重叠
   })
 
   storeCircleLayer = L.layerGroup().addTo(map)
@@ -5499,8 +5653,9 @@ const applyStoreCircles = () => {
     const color = circleColors[idx]
     // 根据筛选条件决定是否绘制
     let filterKey
-    if (color === '#e6a23c') filterKey = 'overlap30'
-    else if (color === '#409eff') filterKey = 'overlapLess'
+    if (color === '#f56c6c') filterKey = 'overlapHigh'
+    else if (color === '#e6a23c') filterKey = 'overlapMid'
+    else if (color === '#409eff') filterKey = 'overlapLow'
     else filterKey = 'overlapNone'
     if (!overlapFilters[filterKey]) return
     drawnCount++
@@ -5518,12 +5673,14 @@ const applyStoreCircles = () => {
   showStoreCircles.value = true
   // 构建图例——只显示已勾选的项
   const overlapLegendMap = [
-    { key: 'overlap30', color: '#e6a23c', label: '重叠率 ≥30%' },
-    { key: 'overlapLess', color: '#409eff', label: '重叠率 <30%' },
-    { key: 'overlapNone', color: '#f56c6c', label: '无重叠' }
+    { key: 'overlapHigh', color: '#f56c6c', label: `重叠率 ≥${highPct}%` },
+    { key: 'overlapMid', color: '#e6a23c', label: `${lowPct}% ≤ 重叠率 < ${highPct}%` },
+    { key: 'overlapLow', color: '#409eff', label: `0 < 重叠率 < ${lowPct}%` },
+    { key: 'overlapNone', color: '#909399', label: '无重叠' }
   ]
   storeCircleLegendItems.value = overlapLegendMap.filter(item => overlapFilters[item.key]).map(item => ({ color: item.color, label: item.label }))
   storeCircleLegendVisible.value = true
+  saveOverlapThresholds()  // 保存本次设置的重叠率阈值
   console.log('[legend] overlap mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
   ElMessage.success(`已为 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 商圈${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因筛选未显示）` : ''}`)
 }

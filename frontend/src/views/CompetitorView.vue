@@ -348,8 +348,8 @@ const filterMinReviews = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-// localStorage 持久化（按用户隔离）
-const LS_KEY = () => `competitorFilters_${userStore.user?.id || 'anon'}`
+// localStorage 持久化（按用户隔离，userId 从 localStorage 读取保证跨刷新稳定）
+const LS_KEY = () => `competitorFilters_${localStorage.getItem('userId') || 'anon'}`
 const SAVE_FIELDS = () => ({
   searchKeyword: searchKeyword.value,
   filterCity: filterCity.value,

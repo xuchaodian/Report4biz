@@ -20,7 +20,9 @@ export const useMarkerStore = defineStore('marker', {
       filterCity: '',
       filterDistrict: '',
       filterStoreCategory: '',
-      filterBrand: ''
+      filterBrand: '',
+      filterStoreStatus: [],
+      filterMallType: ''
     }
   }),
   
@@ -145,7 +147,9 @@ export const useMarkerStore = defineStore('marker', {
         filterCity: '',
         filterDistrict: '',
         filterStoreCategory: '',
-        filterBrand: ''
+        filterBrand: '',
+        filterStoreStatus: [],
+        filterMallType: ''
       }
       this.visibleIds = null
     }

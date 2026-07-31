@@ -245,7 +245,7 @@ const tableData = ref([])
 const tableTotal = ref(0)
 const tableLoading = ref(false)
 
-const LS_KEY = () => `brandStoreFilters_${userStore.user?.id || 'anon'}`
+const LS_KEY = () => `brandStoreFilters_${localStorage.getItem('userId') || 'anon'}`
 
 // 保存筛选条件到 localStorage（持久化，按用户隔离）
 const saveFiltersToLS = () => {

@@ -26,6 +26,7 @@ export const useUserStore = defineStore('user', {
         this.token = data.token
         this.user = data.user
         sessionStorage.setItem('token', data.token)
+        localStorage.setItem('userId', String(data.user.id || ''))  // 持久化 userId，供筛选隔离key使用
         axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
         // 登录后获取配额
         await this.fetchQuota()
@@ -82,6 +83,7 @@ export const useUserStore = defineStore('user', {
       this.user = null
       this.quota = null
       sessionStorage.removeItem('token')
+      localStorage.removeItem('userId')
       delete axios.defaults.headers.common['Authorization']
     }
   }

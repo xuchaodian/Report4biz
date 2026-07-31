@@ -80,7 +80,7 @@
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
-      <el-select v-model="filterStoreStatus" placeholder="按门店状态" style="width: 130px" clearable @change="handleSearch">
+      <el-select v-model="filterStoreStatus" placeholder="按门店状态" style="width: 190px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="s in storeStatusList" :key="s" :label="s" :value="s" />
       </el-select>
 
@@ -574,10 +574,12 @@ import Papa from 'papaparse'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
+const userStore = useUserStore()
 
 // 门店购买次数映射 {门店名称: 购买次数}
 const storePurchaseCount = ref({})
@@ -590,10 +592,45 @@ const filterCity = ref('')
 const filterDistrict = ref('')
 const filterStoreCategory = ref('')
 const filterBrand = ref('')
-const filterStoreStatus = ref('')
+const filterStoreStatus = ref([])
 const filterMallType = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
+
+// localStorage 持久化（按用户隔离，userId 从 localStorage 读取保证跨刷新稳定）
+const LS_KEY = () => `markerFilters_${localStorage.getItem('userId') || 'anon'}`
+const SAVE_FIELDS = () => ({
+  searchKeyword: searchKeyword.value,
+  filterStoreType: filterStoreType.value,
+  filterCity: filterCity.value,
+  filterDistrict: filterDistrict.value,
+  filterStoreCategory: filterStoreCategory.value,
+  filterBrand: filterBrand.value,
+  filterStoreStatus: filterStoreStatus.value,
+  filterMallType: filterMallType.value,
+  currentPage: currentPage.value
+})
+const saveFiltersToLS = () => localStorage.setItem(LS_KEY(), JSON.stringify(SAVE_FIELDS()))
+
+const restoreFiltersFromLS = () => {
+  const saved = localStorage.getItem(LS_KEY())
+  if (!saved) return false
+  try {
+    const f = JSON.parse(saved)
+    searchKeyword.value = f.searchKeyword || ''
+    filterStoreType.value = f.filterStoreType || ''
+    filterCity.value = f.filterCity || ''
+    filterDistrict.value = f.filterDistrict || ''
+    filterStoreCategory.value = f.filterStoreCategory || ''
+    filterBrand.value = f.filterBrand || ''
+    filterStoreStatus.value = Array.isArray(f.filterStoreStatus) ? f.filterStoreStatus : (f.filterStoreStatus ? [f.filterStoreStatus] : [])
+    filterMallType.value = f.filterMallType || ''
+    currentPage.value = f.currentPage || 1
+    return true
+  } catch { return false }
+}
+
+const clearFiltersFromLS = () => localStorage.removeItem(LS_KEY())
 
 // 监听 store 中 filters 的外部变化
 watch(() => markerStore.filters, (newFilters) => {
@@ -603,9 +640,11 @@ watch(() => markerStore.filters, (newFilters) => {
   filterDistrict.value = newFilters.filterDistrict
   filterStoreCategory.value = newFilters.filterStoreCategory
   filterBrand.value = newFilters.filterBrand
+  filterStoreStatus.value = Array.isArray(newFilters.filterStoreStatus) ? newFilters.filterStoreStatus : (newFilters.filterStoreStatus ? [newFilters.filterStoreStatus] : [])
+  filterMallType.value = newFilters.filterMallType
 }, { deep: true })
 
-// 同步筛选条件到 store（持久化）
+// 同步筛选条件到 store + localStorage（持久化）
 const syncFiltersToStore = () => {
   markerStore.setFilters({
     searchKeyword: searchKeyword.value,
@@ -613,13 +652,16 @@ const syncFiltersToStore = () => {
     filterCity: filterCity.value,
     filterDistrict: filterDistrict.value,
     filterStoreCategory: filterStoreCategory.value,
-    filterBrand: filterBrand.value
+    filterBrand: filterBrand.value,
+    filterStoreStatus: filterStoreStatus.value,
+    filterMallType: filterMallType.value
   })
+  saveFiltersToLS()
 }
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value || filterMallType.value
+  return searchKeyword.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterStoreCategory.value || filterBrand.value || filterStoreStatus.value.length || filterMallType.value
 })
 
 // 弹窗状态
@@ -739,7 +781,7 @@ const filteredMarkers = computed(() => {
     const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
     const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
     const matchBrand = !filterBrand.value || marker.brand === filterBrand.value
-    const matchStoreStatus = !filterStoreStatus.value || marker.store_status === filterStoreStatus.value
+    const matchStoreStatus = !filterStoreStatus.value.length || filterStoreStatus.value.includes(marker.store_status)
     const matchMallType = !filterMallType.value || marker.mall_type === filterMallType.value
     return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand && matchStoreStatus && matchMallType
   })
@@ -774,7 +816,8 @@ const handleSearch = () => {
 // 同步可见ID到地图
 const syncVisibleIds = () => {
   const hasFilter = searchKeyword.value || filterStoreType.value || filterCity.value ||
-    filterDistrict.value || filterStoreCategory.value || filterBrand.value
+    filterDistrict.value || filterStoreCategory.value || filterBrand.value ||
+    filterStoreStatus.value.length || filterMallType.value
   if (!hasFilter) {
     markerStore.setVisibleIds(null)  // 无筛选 → 显示全部
   } else {
@@ -791,9 +834,10 @@ const handleClearFilters = () => {
   filterDistrict.value = ''
   filterStoreCategory.value = ''
   filterBrand.value = ''
-  filterStoreStatus.value = ''
+  filterStoreStatus.value = []
   filterMallType.value = ''
   markerStore.clearFilters()
+  clearFiltersFromLS()
   currentPage.value = 1
 }
 
@@ -1239,13 +1283,19 @@ onMounted(async () => {
   console.log('🏪 DataView 已加载！', new Date().toISOString())
   await markerStore.fetchMarkers()
   console.log('✅ 门店列表加载完成，准备获取购买次数', markerStore.markers.length, '条')
-  // 从 store 恢复筛选条件
-  searchKeyword.value = markerStore.filters.searchKeyword
-  filterStoreType.value = markerStore.filters.filterStoreType
-  filterCity.value = markerStore.filters.filterCity
-  filterDistrict.value = markerStore.filters.filterDistrict
-  filterStoreCategory.value = markerStore.filters.filterStoreCategory
-  filterBrand.value = markerStore.filters.filterBrand
+  // 恢复筛选条件：优先 localStorage（跨登录会话），否则从 store 恢复
+  const restored = restoreFiltersFromLS()
+  if (!restored) {
+    searchKeyword.value = markerStore.filters.searchKeyword
+    filterStoreType.value = markerStore.filters.filterStoreType
+    filterCity.value = markerStore.filters.filterCity
+    filterDistrict.value = markerStore.filters.filterDistrict
+    filterStoreCategory.value = markerStore.filters.filterStoreCategory
+    filterBrand.value = markerStore.filters.filterBrand
+    filterStoreStatus.value = Array.isArray(markerStore.filters.filterStoreStatus) ? markerStore.filters.filterStoreStatus : (markerStore.filters.filterStoreStatus ? [markerStore.filters.filterStoreStatus] : [])
+    filterMallType.value = markerStore.filters.filterMallType || ''
+  }
+  syncFiltersToStore()
   // 获取门店购买次数
   await fetchStorePurchaseCounts()
   console.log('✅ 购买次数获取完成')
