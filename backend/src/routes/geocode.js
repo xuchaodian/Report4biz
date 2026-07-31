@@ -138,6 +138,10 @@ router.get('/suggest', (req, res) => {
   })
 })
 
+// IP定位缓存：{ ip: { result, expireAt } }，24小时有效
+const ipLocCache = new Map()
+const IP_CACHE_TTL = 24 * 60 * 60 * 1000
+
 // IP定位：使用 ip-api.com（主）+ 高德API（备）
 router.get('/ip-location', (req, res) => {
   // 获取客户端真实IP（考虑代理）
@@ -159,6 +163,15 @@ router.get('/ip-location', (req, res) => {
   }
 
   console.log('[IP定位] 客户端IP:', clientIP)
+
+  // 命中缓存直接返回（避免每次登录都请求高德API）
+  if (clientIP) {
+    const cached = ipLocCache.get(clientIP)
+    if (cached && cached.expireAt > Date.now()) {
+      console.log('[IP定位] 命中缓存:', cached.result.city)
+      return res.json(cached.result)
+    }
+  }
 
   // 默认位置（北京）
   const defaultLocation = {
@@ -232,12 +245,14 @@ router.get('/ip-location', (req, res) => {
               }
             }
             console.log('[IP定位] 高德API 成功:', json.city, lat, lng)
-            res.json({
+            const result = {
               success: true,
               lat, lng,
               city: json.city || defaultLocation.city,
               province: json.province || '',
-            })
+            }
+            if (clientIP) ipLocCache.set(clientIP, { result, expireAt: Date.now() + IP_CACHE_TTL })
+            res.json(result)
           } else {
             console.log('[IP定位] 高德API 返回失败:', json.info || json.city, '，返回默认位置')
             res.json(defaultLocation)

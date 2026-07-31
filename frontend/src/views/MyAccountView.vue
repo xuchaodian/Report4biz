@@ -68,15 +68,15 @@
         <div class="quota-info">
           <p>• 1个位置 + 1个半径 + 1个年月 = 1次</p>
           <p>• 每次查询扣减1次配额</p>
-          <p v-if="userStore.quota">• 管理员分配: {{ userStore.quota.total }} 次</p>
-          <p v-if="userStore.quota">• 已使用: {{ userStore.quota.used }} 次</p>
+          <p v-if="userStore.quota">• 当前配额: {{ userStore.quota.total }} 次（累计配额: {{ userStore.quota.cumulativeTotal }} 次）</p>
+          <p v-if="userStore.quota">• 当前已使用: {{ userStore.quota.used }} 次（累计使用: {{ userStore.quota.cumulativeUsed }} 次）</p>
         </div>
         <div class="quota-actions">
           <el-button type="text" @click="refreshQuota" :loading="quotaLoading">
             🔄 刷新配额
           </el-button>
-          <el-button type="text" @click="showRechargeDialog">
-            💳 充值
+          <el-button type="text" @click="showQuotaHistoryDialog">
+            📜 充值履历
           </el-button>
           <el-button type="text" @click="showHistoryDialog">
             📋 购买履历
@@ -196,6 +196,41 @@
           </template>
         </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- 充值履历对话框（管理员分配配额历史） -->
+    <el-dialog v-model="quotaHistoryDialogVisible" title="📜 充值履历（管理员分配配额记录）" width="700px" :close-on-click-modal="false">
+      <div v-if="quotaHistoryLoading" style="text-align:center;padding:30px;color:#909399;">加载中...</div>
+      <template v-else>
+        <el-table :data="quotaHistoryList" stripe border style="width:100%" :max-height="420">
+          <el-table-column label="时间" width="160">
+            <template #default="{ row }">
+              {{ row.created_at ? formatDate(row.created_at) : '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.change_amount >= 0 ? 'success' : 'danger'" size="small">
+                {{ row.change_amount >= 0 ? '分配' : '退款' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="变化量" width="100" align="center">
+            <template #default="{ row }">
+              <span :style="{ color: row.change_amount >= 0 ? '#67c23a' : '#f56c6c', fontWeight: 600 }">
+                {{ row.change_amount >= 0 ? '+' : '' }}{{ row.change_amount }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="变化前" width="90" align="center">
+            <template #default="{ row }">{{ row.old_quota }}</template>
+          </el-table-column>
+          <el-table-column label="变化后" width="90" align="center">
+            <template #default="{ row }">{{ row.new_quota }}</template>
+          </el-table-column>
+        </el-table>
+        <div v-if="quotaHistoryList.length === 0" style="text-align:center;padding:30px;color:#909399;">暂无配额分配记录</div>
+      </template>
     </el-dialog>
 
     <!-- 查看结果对话框 -->
@@ -324,6 +359,11 @@ const quotaLoading = ref(false)
 const historyDialogVisible = ref(false)
 const historyLoading = ref(false)
 const historyList = ref([])
+
+// 充值履历（配额分配历史）相关
+const quotaHistoryDialogVisible = ref(false)
+const quotaHistoryLoading = ref(false)
+const quotaHistoryList = ref([])
 
 // 筛选相关
 const filterKeywords = ref('')
@@ -508,19 +548,21 @@ const refreshQuota = async () => {
   }
 }
 
-// 显示充值联系方式对话框
-const showRechargeDialog = () => {
-  ElMessageBox.alert(
-    `请联系徐经理采购联通人口大数据<br><br>
-    联系电话：138 1779 1741（同微信号）<br>
-    电子邮件：jyo@youshi-tech.com`,
-    '💳 充值',
-    {
-      confirmButtonText: '知道了',
-      dangerouslyUseHTMLString: true,
-      center: true
-    }
-  )
+// 显示充值履历对话框（管理员分配配额历史）
+const showQuotaHistoryDialog = async () => {
+  quotaHistoryDialogVisible.value = true
+  quotaHistoryLoading.value = true
+  quotaHistoryList.value = []
+  try {
+    const { data } = await axios.get('/api/purchase/quota-history')
+    quotaHistoryList.value = data.history || []
+  } catch (e) {
+    console.error('加载充值履历失败:', e)
+    ElMessage.error('加载充值履历失败')
+    quotaHistoryList.value = []
+  } finally {
+    quotaHistoryLoading.value = false
+  }
 }
 
 // 显示购买履历对话框

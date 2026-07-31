@@ -3330,18 +3330,22 @@ const DEFAULT_LNG = 116.4074
 const DEFAULT_CITY = '北京市'
 
 // 获取IP位置 - 通过后端接口（避免浏览器混合内容限制）
+// PC端固定场所使用，localStorage 缓存30天，避免每次登录都定位
+const IP_LOC_CACHE_KEY = '__ip_location'
+const IP_LOC_CACHE_TTL = 30 * 24 * 60 * 60 * 1000 // 30天
+
 const getLocationByIP = async () => {
-  // session级缓存，同标签页内刷新不重复请求外网
-  const cached = sessionStorage.getItem('__ip_location')
-  if (cached) {
-    try {
+  // 长期缓存：30天内不重复请求定位（使用场所固定）
+  try {
+    const cached = localStorage.getItem(IP_LOC_CACHE_KEY)
+    if (cached) {
       const parsed = JSON.parse(cached)
-      if (parsed.lat && parsed.lng) {
-        console.log('[IP定位] 使用缓存:', parsed.city)
+      if (parsed.lat && parsed.lng && parsed.expireAt > Date.now()) {
+        console.log('[IP定位] 使用长期缓存:', parsed.city)
         return parsed
       }
-    } catch (_) {}
-  }
+    }
+  } catch (_) {}
 
   try {
     // 通过后端 /api/geocode/ip-location 获取位置
@@ -3354,10 +3358,11 @@ const getLocationByIP = async () => {
       const result = {
         lat: data.lat,
         lng: data.lng,
-        city: data.city || DEFAULT_CITY
+        city: data.city || DEFAULT_CITY,
+        expireAt: Date.now() + IP_LOC_CACHE_TTL
       }
-      // 写入缓存
-      sessionStorage.setItem('__ip_location', JSON.stringify(result))
+      // 写入长期缓存（30天）
+      localStorage.setItem(IP_LOC_CACHE_KEY, JSON.stringify(result))
       return result
     } else {
       console.log('[IP定位] 后端返回失败:', data.message)
@@ -3394,15 +3399,12 @@ const getLocationByBrowser = () => {
 
 // 初始化地图
 const initMap = async () => {
-  // 第一步：IP定位（获取城市名）
+  // IP定位（有sessionStorage缓存，通常很快；城市名从IP获取）
   const ipLocation = await getLocationByIP()
-  
-  // 第二步：浏览器定位（坐标更精确，但可能被用户拒绝）
-  const browserLocation = await getLocationByBrowser()
-  
-  // 优先使用浏览器定位坐标，用IP定位的城市名
-  const centerLat = browserLocation ? browserLocation.lat : (ipLocation ? ipLocation.lat : DEFAULT_LAT)
-  const centerLng = browserLocation ? browserLocation.lng : (ipLocation ? ipLocation.lng : DEFAULT_LNG)
+
+  // 初始中心：IP定位坐标（无缓存时后端可能耗时，但比浏览器定位快）
+  const centerLat = ipLocation ? ipLocation.lat : DEFAULT_LAT
+  const centerLng = ipLocation ? ipLocation.lng : DEFAULT_LNG
   const currentCity = ipLocation ? ipLocation.city : DEFAULT_CITY
 
   // 更新城市显示
@@ -3427,6 +3429,14 @@ const initMap = async () => {
 
   // 加载底图
   loadBaseMap()
+
+  // 浏览器定位（后台执行，不阻塞地图初始化；授权后自动平移地图到精确位置）
+  getLocationByBrowser().then((browserLocation) => {
+    if (browserLocation && map) {
+      map.setView([browserLocation.lat, browserLocation.lng], Math.max(map.getZoom(), 12))
+      console.log('[浏览器定位] 地图已平移到精确位置')
+    }
+  })
 
   // 初始化绘制层
   drawnItems = new L.FeatureGroup()

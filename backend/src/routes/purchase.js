@@ -23,21 +23,37 @@ router.get('/quota', authenticate, (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
     
-    // 计算已使用的配额
+    // 计算已使用的配额（当前，仅 active）
     const usedResult = db.prepare(`
       SELECT COALESCE(SUM(quota_used), 0) as used
       FROM purchases
       WHERE user_id = ? AND status = 'active'
     `).get(req.user.id)
-    
+
+    // 累计已使用（含软删除的 inactive 记录）
+    const cumUsedResult = db.prepare(`
+      SELECT COALESCE(SUM(quota_used), 0) as used
+      FROM purchases
+      WHERE user_id = ?
+    `).get(req.user.id)
+
+    // 累计分配（净购买 = 所有变化的代数和：购买+，退款-）
+    const cumResult = db.prepare(`
+      SELECT COALESCE(SUM(change_amount), 0) as cum
+      FROM quota_history WHERE user_id = ?
+    `).get(req.user.id)
+    const cumulativeTotal = cumResult?.cum || (user.quota || 0)
+
     // 获取运营商当前剩余配额
     const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
     const initialQuota = quotaRecord?.initial_quota || 0
     const remainingQuota = quotaRecord?.remaining_quota || 0
     
     res.json({
-      total: user.quota || 0,  // 用户已分配次数
-      used: usedResult?.used || 0,  // 用户已使用次数
+      total: user.quota || 0,  // 当前配额（管理员最近一次设定值）
+      cumulativeTotal,  // 累计分配（净购买：购买+，退款-）
+      used: usedResult?.used || 0,  // 当前已使用（active）
+      cumulativeUsed: cumUsedResult?.used || 0,  // 累计已使用（含软删除）
       available: (user.quota || 0) - (usedResult?.used || 0),  // 用户剩余次数（仅展示用）
       initialQuota,  // 初始总配额
       remainingQuota  // 运营商当前剩余配额
@@ -45,6 +61,25 @@ router.get('/quota', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取配额失败:', error)
     res.status(500).json({ message: '获取配额失败' })
+  }
+})
+
+/**
+ * 获取用户配额分配履历（管理员分配/退款记录）
+ */
+router.get('/quota-history', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const history = db.prepare(`
+      SELECT id, old_quota, new_quota, change_amount, action, created_at
+      FROM quota_history
+      WHERE user_id = ?
+      ORDER BY created_at DESC, id DESC
+    `).all(req.user.id)
+    res.json({ history })
+  } catch (error) {
+    console.error('获取配额履历失败:', error)
+    res.status(500).json({ message: '获取配额履历失败' })
   }
 })
 

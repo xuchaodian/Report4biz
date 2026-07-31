@@ -295,8 +295,20 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
 
     if (quota !== undefined) {
       // 设定模式：直接设为输入值
+      const newQuota = parseInt(quota) || 0
+      const oldQuota = existingUser.quota || 0
+      const changeAmount = newQuota - oldQuota
       updates.push('quota = ?')
-      params.push(parseInt(quota) || 0)
+      params.push(newQuota)
+      // 记录配额变更历史（用于累计配额统计）
+      try {
+        db.prepare(`
+          INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(userId, oldQuota, newQuota, changeAmount, changeAmount >= 0 ? 'increase' : 'decrease')
+      } catch (e) {
+        console.error('写入配额历史失败:', e)
+      }
     }
 
     if (updates.length === 0) {

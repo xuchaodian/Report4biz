@@ -39,7 +39,7 @@
       </nav>
 
       <div class="header-right">
-        <el-dropdown @command="handleCommand">
+        <el-dropdown @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
             <el-avatar :size="32" :icon="UserFilled" />
             <span class="username">{{ userStore.username }}</span>
@@ -59,6 +59,14 @@
               <el-dropdown-item command="purchase">
                 <el-icon><Document /></el-icon>购买履历
               </el-dropdown-item>
+              <li class="quota-dropdown-item" @click.stop>
+                <div class="quota-dropdown-row">
+                  <el-icon style="color:#409eff;"><Odometer /></el-icon>
+                  <span v-if="quotaLoading" class="quota-value" style="color:#909399;">加载中...</span>
+                  <span v-else-if="userStore.quota" class="quota-value">剩余 <b style="color:#409eff;">{{ userStore.availableQuota }}</b> 次</span>
+                  <span v-else class="quota-value" style="color:#f56c6c;">--</span>
+                </div>
+              </li>
               <el-dropdown-item command="logout" divided>
                 <el-icon><SwitchButton /></el-icon>退出登录
               </el-dropdown-item>
@@ -104,13 +112,27 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+// 配额显示
+const quotaLoading = ref(false)
+const handleDropdownVisible = (visible) => {
+  if (visible) refreshQuota()
+}
+const refreshQuota = async () => {
+  quotaLoading.value = true
+  try {
+    await userStore.fetchQuota()
+  } catch (_) {} finally {
+    quotaLoading.value = false
+  }
+}
 
 // 模板上传
 const templateDialogVisible = ref(false)
@@ -253,6 +275,33 @@ const handleCommand = async (command) => {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* 配额显示项（下拉菜单渲染在body下，需全局样式） */
+.quota-dropdown-item {
+  padding: 8px 16px;
+  cursor: default;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fff;
+  list-style: none;
+}
+.quota-dropdown-item:hover {
+  background: #f5f7fa;
+}
+.quota-dropdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.quota-label {
+  font-size: 12px;
+  color: #606266;
+  font-weight: 600;
+}
+.quota-value {
+  font-size: 13px;
+  color: #333;
 }
 
 .template-upload-tips {

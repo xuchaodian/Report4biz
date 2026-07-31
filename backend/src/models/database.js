@@ -73,6 +73,30 @@ export async function initDatabase() {
     // 已存在，忽略
   }
 
+  // 创建配额分配历史表（记录管理员每次设定/追加配额的变更）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quota_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      old_quota INTEGER DEFAULT 0,
+      new_quota INTEGER DEFAULT 0,
+      change_amount INTEGER DEFAULT 0,
+      action TEXT DEFAULT 'set',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  // 为已有用户写入基线历史记录（累计配额以当前配额为起点）
+  try {
+    db.run(`
+      INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action)
+      SELECT id, 0, quota, quota, 'set' FROM users
+      WHERE quota > 0 AND id NOT IN (SELECT DISTINCT user_id FROM quota_history)
+    `)
+  } catch (e) {
+    // 忽略
+  }
+
   // 创建点位表 - 门店管理
   db.run(`
     CREATE TABLE IF NOT EXISTS markers (
