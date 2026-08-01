@@ -474,8 +474,9 @@ router.post('/query', authenticate, async (req, res) => {
     const actualQuotaUsed = isEmptyData ? 0 : quotaUsed
     
     // 记录到purchases表
+    let purchaseId = null
     try {
-      db.prepare(`
+      const insertResult = db.prepare(`
         INSERT INTO purchases (
           user_id, store_name, store_type, center_lng, center_lat, radius,
           city_month, quota_used, status, result_data
@@ -491,6 +492,7 @@ router.post('/query', authenticate, async (req, res) => {
         actualQuotaUsed,
         JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
       )
+      purchaseId = insertResult.lastInsertRowid
       
       // 仅在查询成功且非空数据时扣减配额和缓存
       if (querySuccess && !isEmptyData) {
@@ -511,7 +513,8 @@ router.post('/query', authenticate, async (req, res) => {
       centerWgs: gcj02ToWgs84(centerLng, centerLat),
       data: result,
       quotaUsed: actualQuotaUsed,
-      remainingQuota: available  // 返还时配额不变
+      remainingQuota: available,  // 返还时配额不变
+      purchaseId: purchaseId || null  // 本次查询产生的记录ID（供导出报表使用）
     })
   } catch (error) {
     console.error('智慧足迹查询失败:', error)

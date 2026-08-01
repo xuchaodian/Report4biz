@@ -59,6 +59,9 @@
               <el-dropdown-item command="purchase">
                 <el-icon><Document /></el-icon>购买履历
               </el-dropdown-item>
+              <el-dropdown-item command="export">
+                <el-icon><Download /></el-icon>导出报表
+              </el-dropdown-item>
               <li class="quota-dropdown-item" @click.stop>
                 <div class="quota-dropdown-row">
                   <el-icon style="color:#409eff;"><Odometer /></el-icon>
@@ -107,6 +110,58 @@
         </el-button>
         <el-button @click="templateDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="templateUploading" @click="handleTemplateUpload">确定上传</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导出报表对话框 -->
+    <el-dialog v-model="exportDialogVisible" title="📊 导出报表" width="900px" :close-on-click-modal="false">
+      <div class="export-dialog-tips" style="margin-bottom:10px;font-size:12px;color:#909399;">
+        勾选要导出的购买记录（可多选），然后选择导出格式
+      </div>
+      <el-table
+        ref="exportTableRef"
+        :data="exportList"
+        stripe
+        border
+        style="width:100%"
+        max-height="420"
+        @selection-change="handleExportSelectionChange"
+      >
+        <el-table-column type="selection" width="45" fixed />
+        <el-table-column label="订单ID" width="170" fixed>
+          <template #default="{ row }">
+            <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="门店名称" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.store_name || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="购买时间" width="150">
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.created_at ? String(row.created_at).slice(0, 16) : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="城市" width="100">
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.city || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="数据年月" width="100">
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.city_month || '-' }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top:10px;font-size:12px;color:#606266;">
+        已选 <b style="color:#409eff;">{{ exportSelected.length }}</b> 条记录
+      </div>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="success" :loading="exportLoading" @click="doExport('excel')">📊 导出Excel</el-button>
+        <el-button type="danger" :loading="exportLoading" @click="doExport('pdf')">📄 导出PDF</el-button>
+        <el-button type="primary" :loading="exportLoading" @click="doExport('both')">导出Excel+PDF</el-button>
       </template>
     </el-dialog>
   </div>
@@ -211,12 +266,143 @@ const handleCommand = async (command) => {
   } else if (command === 'purchase') {
     // 跳转到个人中心并自动打开购买履历
     router.push('/account?openHistory=true')
+  } else if (command === 'export') {
+    openExportDialog()
   } else if (command === 'logout') {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
       type: 'warning'
     })
     userStore.logout()
     router.push('/login')
+  }
+}
+
+// ===== 导出报表对话框 =====
+const exportDialogVisible = ref(false)
+const exportList = ref([])
+const exportSelected = ref([])
+const exportLoading = ref(false)
+const exportTableRef = ref(null)
+
+const openExportDialog = async () => {
+  exportDialogVisible.value = true
+  exportList.value = []
+  exportSelected.value = []
+  try {
+    const { data } = await axios.get('/api/purchase/history')
+    exportList.value = data.purchases || []
+  } catch (e) {
+    console.error('加载购买记录失败:', e)
+    ElMessage.error('加载购买记录失败')
+  }
+}
+
+const handleExportSelectionChange = (selection) => {
+  exportSelected.value = selection
+}
+
+// 下载 blob 文件
+const downloadBlob = (blob, filename) => {
+  const url = window.URL.createObjectURL(new Blob([blob]))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+// 获取导出文件名（优先从 content-disposition 解析）
+const parseFileName = (response, fallback) => {
+  const disposition = response.headers['content-disposition']
+  if (disposition) {
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+    if (match) return decodeURIComponent(match[1])
+  }
+  return fallback
+}
+
+// 导出单条记录（type: excel / pdf / both）
+const exportOneRecord = async (row, type) => {
+  const id = row.id
+  // 拉取详情
+  const detail = (await axios.get(`/api/purchase/${id}`)).data
+
+  // 截图（复用个人中心挂载的截图函数，未挂载时回退无截图导出）
+  let competitorScreenshot = null
+  let shoppingCenterScreenshot = null
+  let mapScreenshot = null
+  try {
+    const [compResp, shopResp] = await Promise.all([
+      axios.get(`/api/purchase/${id}/competitors-for-map`),
+      axios.get(`/api/purchase/${id}/shopping-centers-for-map`)
+    ])
+    const mapData = compResp.data
+    const centerLat = mapData.center.lat
+    const centerLng = mapData.center.lng
+    if (window.__captureMapToCanvas) {
+      competitorScreenshot = await window.__captureMapToCanvas(centerLat, centerLng, 3000, mapData.competitors || [], 14)
+    }
+    try {
+      const centerList = (shopResp.data.centers && Array.isArray(shopResp.data.centers)) ? shopResp.data.centers : []
+      if (window.__captureShoppingCenterMap) {
+        shoppingCenterScreenshot = await window.__captureShoppingCenterMap(centerLat, centerLng, centerList, 14)
+      }
+    } catch (scErr) { console.warn('购物中心截图失败:', scErr) }
+    try {
+      const actualRadius = Array.isArray(detail.radii) ? detail.radii[0] : 3000
+      if (window.__captureMapOnlyCanvas) {
+        mapScreenshot = await window.__captureMapOnlyCanvas(centerLat, centerLng, actualRadius)
+      }
+    } catch (mErr) { console.warn('地图截图失败:', mErr) }
+  } catch (mapErr) {
+    console.warn('地图数据获取失败:', mapErr)
+  }
+
+  const radiiStr = Array.isArray(detail.radii) ? detail.radii.join('_') + '米' : (detail.radii || '未知') + '米'
+  const baseName = `${detail.store_name || '门店'}_${radiiStr}_${detail.city_month || ''}`
+
+  // Excel
+  if (type === 'excel' || type === 'both') {
+    let response
+    if (competitorScreenshot || shoppingCenterScreenshot) {
+      response = await axios.post(`/api/purchase/${id}/export-map-excel`, {
+        competitorScreenshot, shoppingCenterScreenshot, mapScreenshot
+      }, { responseType: 'blob' })
+    } else {
+      response = await axios.get(`/api/purchase/${id}/export-excel`, { responseType: 'blob' })
+    }
+    downloadBlob(response.data, parseFileName(response, `${baseName}_商圈数据.xlsx`))
+  }
+
+  // PDF
+  if (type === 'pdf' || type === 'both') {
+    const response = await axios.post(`/api/purchase/${id}/export-pdf-report`, {
+      competitorScreenshot, shoppingCenterScreenshot, mapScreenshot,
+      filename: `${baseName}_报表`
+    }, { responseType: 'blob' })
+    downloadBlob(response.data, parseFileName(response, `${baseName}_报表.pdf`))
+  }
+}
+
+const doExport = async (type) => {
+  if (exportSelected.value.length === 0) {
+    ElMessage.warning('请先勾选要导出的记录')
+    return
+  }
+  exportLoading.value = true
+  try {
+    ElMessage.info(`正在导出 ${exportSelected.value.length} 条记录，请稍候...`)
+    for (const row of exportSelected.value) {
+      await exportOneRecord(row, type)
+    }
+    ElMessage.success(`导出完成，共 ${exportSelected.value.length} 条${type === 'both' ? '（每条含Excel+PDF）' : ''}`)
+  } catch (e) {
+    console.error('导出失败:', e)
+    ElMessage.error('导出失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    exportLoading.value = false
   }
 }
 </script>

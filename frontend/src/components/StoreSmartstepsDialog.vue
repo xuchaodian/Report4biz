@@ -102,7 +102,19 @@
       width="800px"
       draggable
       append-to-body
+      class="query-result-dialog"
     >
+      <template #header>
+        <span>{{ storeInfo?.name || '' }} - 查询结果</span>
+        <span style="float:right;margin-right:28px;">
+          <el-button type="success" size="small" :loading="exportingExcel" :disabled="!queryPurchaseId" @click="handleExportExcelResult" style="margin-right:8px;">
+            📊 导出Excel
+          </el-button>
+          <el-button type="danger" size="small" :loading="exportingPdf" :disabled="!queryPurchaseId" @click="handleExportPDFResult">
+            📄 PDF报表
+          </el-button>
+        </span>
+      </template>
       <div v-if="queryResult" class="result-dialog-content">
         <div class="result-dialog-data" v-html="formatResult(queryResult)"></div>
       </div>
@@ -290,6 +302,9 @@ const isLoading = ref(false)
 const queryResult = ref(null)
 const showConfirmDialog = ref(false)
 const showQueryResultDialog = ref(false) // 新增：查询结果对话框
+const queryPurchaseId = ref(null) // 本次查询产生的 purchase 记录 ID（用于导出报表）
+const exportingExcel = ref(false)
+const exportingPdf = ref(false)
 
 // 门店购买履历
 const storePurchases = ref([])
@@ -1783,6 +1798,7 @@ async function executeQuery(event) {
       })
 
       queryResult.value = res.data
+      queryPurchaseId.value = res.data.purchaseId || null  // 保存本次查询记录ID，供导出
       if (res.data.refunded) {
         ElMessage.warning('该月份暂无数据，配额已返还')
       } else {
@@ -1798,6 +1814,163 @@ async function executeQuery(event) {
     ElMessage.error(e.response?.data?.message || '查询失败')
   } finally {
     isLoading.value = false
+  }
+}
+
+// ===== 查询结果导出 Excel / PDF（复用购买履历详情导出逻辑） =====
+// 截图函数：从 MyAccountView 复制同款实现（基于地图离屏渲染）
+const exportCaptureCompetitors = async (centerLat, centerLng, radius, competitors) => {
+  // 简单占位实现：通过地图隐藏图层截图（依赖页面地图实例）
+  try {
+    // 复用 MyAccountView 的 captureMapToCanvas，如果全局挂载则使用
+    if (window.__captureMapToCanvas) {
+      return await window.__captureMapToCanvas(centerLat, centerLng, radius, competitors || [], 14)
+    }
+  } catch (e) { console.warn('竞品截图失败:', e) }
+  return null
+}
+
+const exportCaptureShopping = async (centerLat, centerLng, centers) => {
+  try {
+    if (window.__captureShoppingCenterMap) {
+      return await window.__captureShoppingCenterMap(centerLat, centerLng, centers || [], 14)
+    }
+  } catch (e) { console.warn('购物中心截图失败:', e) }
+  return null
+}
+
+const exportCaptureMapOnly = async (centerLat, centerLng, radius) => {
+  try {
+    if (window.__captureMapOnlyCanvas) {
+      return await window.__captureMapOnlyCanvas(centerLat, centerLng, radius)
+    }
+  } catch (e) { console.warn('地图截图失败:', e) }
+  return null
+}
+
+// 从 queryPurchaseId 拉取详情并导出
+const exportResultReport = async (type) => {
+  if (!queryPurchaseId.value) {
+    ElMessage.info('本次查询未生成记录，无法导出')
+    return null
+  }
+  try {
+    const { data } = await axios.get(`/api/purchase/${queryPurchaseId.value}`)
+    currentDetail.value = data
+    return data
+  } catch (e) {
+    ElMessage.error('获取查询详情失败: ' + (e.response?.data?.message || e.message))
+    return null
+  }
+}
+
+const handleExportExcelResult = async () => {
+  exportingExcel.value = true
+  try {
+    ElMessage.info('正在生成Excel报表，请稍候...')
+    const detail = await exportResultReport('excel')
+    if (!detail) return
+    const id = queryPurchaseId.value
+
+    // 获取地图数据并截图
+    let competitorScreenshot = null, shoppingCenterScreenshot = null, mapScreenshot = null
+    try {
+      const [compResp, shopResp] = await Promise.all([
+        axios.get(`/api/purchase/${id}/competitors-for-map`),
+        axios.get(`/api/purchase/${id}/shopping-centers-for-map`)
+      ])
+      const mapData = compResp.data
+      const centerLat = mapData.center.lat
+      const centerLng = mapData.center.lng
+      competitorScreenshot = await exportCaptureCompetitors(centerLat, centerLng, 3000, mapData.competitors)
+      try {
+        const centerList = (shopResp.data.centers && Array.isArray(shopResp.data.centers)) ? shopResp.data.centers : []
+        shoppingCenterScreenshot = await exportCaptureShopping(centerLat, centerLng, centerList)
+      } catch (scErr) { console.warn('购物中心截图失败:', scErr) }
+      try {
+        const actualRadius = Array.isArray(detail.radii) ? detail.radii[0] : 3000
+        mapScreenshot = await exportCaptureMapOnly(centerLat, centerLng, actualRadius)
+      } catch (mErr) { console.warn('地图截图失败:', mErr) }
+    } catch (mapErr) { console.warn('地图数据获取失败:', mapErr) }
+
+    let response
+    if (competitorScreenshot || shoppingCenterScreenshot) {
+      response = await axios.post(`/api/purchase/${id}/export-map-excel`, {
+        competitorScreenshot, shoppingCenterScreenshot, mapScreenshot
+      }, { responseType: 'blob' })
+    } else {
+      response = await axios.get(`/api/purchase/${id}/export-excel`, { responseType: 'blob' })
+    }
+
+    const disposition = response.headers['content-disposition']
+    let fileName = `${detail.store_name || '门店'}_${detail.city_month || ''}_商圈数据.xlsx`
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+      if (match) fileName = decodeURIComponent(match[1])
+    }
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url; link.download = fileName; link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('Excel导出成功')
+  } catch (e) {
+    console.error('导出Excel失败:', e)
+    ElMessage.error(e.response?.data?.message || '导出Excel失败')
+  } finally {
+    exportingExcel.value = false
+  }
+}
+
+const handleExportPDFResult = async () => {
+  exportingPdf.value = true
+  try {
+    ElMessage.info('正在生成报表PDF，请稍候...')
+    const detail = await exportResultReport('pdf')
+    if (!detail) return
+    const id = queryPurchaseId.value
+
+    let competitorScreenshot = null, shoppingCenterScreenshot = null, mapScreenshot = null
+    try {
+      const [compResp, shopResp] = await Promise.all([
+        axios.get(`/api/purchase/${id}/competitors-for-map`),
+        axios.get(`/api/purchase/${id}/shopping-centers-for-map`)
+      ])
+      const mapData = compResp.data
+      const centerLat = mapData.center.lat
+      const centerLng = mapData.center.lng
+      competitorScreenshot = await exportCaptureCompetitors(centerLat, centerLng, 3000, mapData.competitors)
+      try {
+        const centerList = (shopResp.data.centers && Array.isArray(shopResp.data.centers)) ? shopResp.data.centers : []
+        shoppingCenterScreenshot = await exportCaptureShopping(centerLat, centerLng, centerList)
+      } catch (scErr) { console.warn('购物中心截图失败:', scErr) }
+      try {
+        const actualRadius = Array.isArray(detail.radii) ? detail.radii[0] : 3000
+        mapScreenshot = await exportCaptureMapOnly(centerLat, centerLng, actualRadius)
+      } catch (mErr) { console.warn('地图截图失败:', mErr) }
+    } catch (mapErr) { console.warn('地图数据获取失败:', mapErr) }
+
+    const radiiStr = Array.isArray(detail.radii) ? detail.radii.join('_') + '米' : (detail.radii || '未知') + '米'
+    const response = await axios.post(`/api/purchase/${id}/export-pdf-report`, {
+      competitorScreenshot, shoppingCenterScreenshot, mapScreenshot,
+      filename: `${detail.store_name || '门店'}_${radiiStr}_${detail.city_month || ''}_报表`
+    }, { responseType: 'blob' })
+
+    const disposition = response.headers['content-disposition']
+    let pdfName = `${detail.store_name || '门店'}_${radiiStr}_${detail.city_month || ''}_报表.pdf`
+    if (disposition) {
+      const match = disposition.match(/filename\*=UTF-8''([^;]+)/)
+      if (match) pdfName = decodeURIComponent(match[1])
+    }
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url; link.download = pdfName; link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('报表PDF导出成功')
+  } catch (e) {
+    console.error('报表PDF导出失败:', e)
+    ElMessage.error('报表PDF导出失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    exportingPdf.value = false
   }
 }
 

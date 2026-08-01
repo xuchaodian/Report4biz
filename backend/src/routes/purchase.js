@@ -174,7 +174,7 @@ router.get('/history', authenticate, (req, res) => {
     const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
     const totalQuota = user?.quota || 0
 
-    // 查询购买记录，关联门店表获取城市和区县
+    // 查询购买记录，关联门店表获取城市/区县/门店编号，并计算当日流水号
     const purchases = db.prepare(`
       SELECT
         p.id,
@@ -187,7 +187,13 @@ router.get('/history', authenticate, (req, res) => {
         p.quota_used,
         p.created_at,
         m.city,
-        m.district
+        m.district,
+        m.store_code,
+        substr(p.created_at, 1, 10) as order_date,
+        (SELECT COUNT(*) FROM purchases p2
+          WHERE p2.user_id = p.user_id AND p2.status = 'active'
+            AND substr(p2.created_at, 1, 10) = substr(p.created_at, 1, 10)
+            AND p2.id <= p.id) as day_seq
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
       WHERE p.user_id = ? AND p.status = 'active'
@@ -207,8 +213,13 @@ router.get('/history', authenticate, (req, res) => {
     orderedRemaining.reverse()
 
     const formatted = purchases.map((p, idx) => {
+      // 订单编号 = 门店编号 + 日期(YYYYMMDD) + 当日流水(3位)
+      const dateStr = String(p.order_date || '').replace(/-/g, '')
+      const seqStr = String(p.day_seq || 0).padStart(3, '0')
+      const order_no = `${p.store_code || p.store_name || 'XXXX'}${dateStr}${seqStr}`
       return {
         id: p.id,
+        order_no,
         store_name: p.store_name || '-',
         store_type: p.store_type || '-',
         center_lng: p.center_lng,

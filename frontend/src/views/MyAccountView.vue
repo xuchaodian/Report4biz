@@ -89,7 +89,7 @@
     <el-dialog
       v-model="historyDialogVisible"
       title="📋 购买履历"
-      width="1200px"
+      width="1300px"
       :close-on-click-modal="false"
       class="history-dialog"
     >
@@ -139,15 +139,18 @@
         stripe
         border
         style="width: 100%"
-        :max-height="450"
       >
-        <el-table-column prop="id" label="订单ID" width="70" fixed />
-        <el-table-column label="购买时间" width="150">
+        <el-table-column label="订单ID" width="170" fixed>
+          <template #default="{ row }">
+            <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="购买时间" width="140">
           <template #default="{ row }">
             {{ row.created_at ? formatDate(row.created_at) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="门店名称" min-width="130">
+        <el-table-column label="门店名称" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             <span>{{ row.store_name || '-' }}</span>
           </template>
@@ -178,12 +181,12 @@
             {{ row.city_month || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="扣除次数" width="100" align="center">
+        <el-table-column label="扣除次数" width="90" align="center">
           <template #default="{ row }">
             <span class="quota-used">{{ row.quota_used ? '-' + row.quota_used : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="剩余次数" width="100" align="center">
+        <el-table-column label="剩余次数" width="90" align="center">
           <template #default="{ row }">
             <span class="quota-remaining">{{ row.remaining ?? '-' }}</span>
           </template>
@@ -1744,12 +1747,17 @@ const initAllCharts = () => {
     const rawData = apiResult[item.serviceCode]
     if (!rawData) continue
     
-    const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
-    if (!option) continue
-    
-    const chart = echarts.init(dom)
-    chart.setOption(option)
-    chartInst.value[item.chartKey] = chart
+    // 单个图表渲染失败不影响其他图表（防止未注册类型等异常中断循环）
+    try {
+      const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
+      if (!option) continue
+      
+      const chart = echarts.init(dom)
+      chart.setOption(option)
+      chartInst.value[item.chartKey] = chart
+    } catch (e) {
+      console.warn(`[图表渲染失败] ${item.title}:`, e)
+    }
   }
 }
 
@@ -3244,6 +3252,11 @@ const captureHiddenMap = async () => {
   const { centerLat, centerLng, radius, competitors } = lastMapParams.value
   return captureMapToCanvas(centerLat, centerLng, radius, competitors, 14)
 }
+
+// 挂载到全局，供其他组件（如门店联通人口结果框导出）复用截图能力
+window.__captureMapToCanvas = captureMapToCanvas
+window.__captureMapOnlyCanvas = captureMapOnlyCanvas
+window.__captureShoppingCenterMap = captureShoppingCenterMap
 
 // 导出Excel（含竞品地图截图）
 const handleExportExcel = async () => {
