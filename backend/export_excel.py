@@ -186,8 +186,27 @@ def main():
             # 按距离排序
             nearby.sort(key=lambda c: c['distance'])
 
+            # ---- 品牌汇总：按品牌分组计数，写入 C3:J4（8个槽位，品牌奇数列/数量偶数列） ----
+            from collections import Counter
+            brand_counter = Counter()
+            for comp in nearby:
+                b = comp.get('brand') or '未知'
+                brand_counter[b] += 1
+            top_brands = brand_counter.most_common(8)  # [(品牌, 数量)]，按数量降序
+
+            brand_cells = ['C3', 'E3', 'G3', 'I3', 'C4', 'E4', 'G4', 'I4']
+            count_cells = ['D3', 'F3', 'H3', 'J3', 'D4', 'F4', 'H4', 'J4']
+            for i, (bname, bcount) in enumerate(top_brands):
+                ws[brand_cells[i]] = bname
+                ws[count_cells[i]] = bcount
+            # 剩余槽位清空，避免旧数据残留
+            for i in range(len(top_brands), 8):
+                ws[brand_cells[i]] = None
+                ws[count_cells[i]] = None
+
+            # ---- 竞品明细：从第7行开始输出（第3-4行为品牌汇总区，第5-6行预留） ----
             # 列映射：A=店名, B=地址, C=分类, D=价格, E=星级, F=评论数, G=口味, H=环境, I=服务, J=距离
-            row_idx = 4  # 从第4行开始输出
+            row_idx = 7  # 从第7行开始输出
             for comp in nearby:
                 ws.cell(row=row_idx, column=1, value=comp.get('name', ''))
                 ws.cell(row=row_idx, column=2, value=comp.get('address', ''))

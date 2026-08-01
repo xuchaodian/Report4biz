@@ -102,6 +102,9 @@
         </template>
       </el-upload>
       <template #footer>
+        <el-button :loading="templateDownloading" @click="handleTemplateDownload">
+          <el-icon style="margin-right:4px;"><Download /></el-icon>下载当前模板
+        </el-button>
         <el-button @click="templateDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="templateUploading" @click="handleTemplateUpload">确定上传</el-button>
       </template>
@@ -112,7 +115,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
@@ -137,11 +140,41 @@ const refreshQuota = async () => {
 // 模板上传
 const templateDialogVisible = ref(false)
 const templateUploading = ref(false)
+const templateDownloading = ref(false)
 const uploadRef = ref(null)
 const templateFile = ref(null)
 
 const handleTemplateFileChange = (file) => {
   templateFile.value = file.raw
+}
+
+// 下载当前系统里的模板
+const handleTemplateDownload = async () => {
+  templateDownloading.value = true
+  try {
+    const res = await axios.get('/api/template/download', { responseType: 'blob' })
+    // 后端返回 JSON 错误（模板不存在时）
+    if (res.data.type === 'application/json') {
+      const text = await res.data.text()
+      let msg = '模板不存在'
+      try { msg = JSON.parse(text).message || msg } catch (_) {}
+      ElMessage.error(msg)
+      return
+    }
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'report_template.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('模板下载成功')
+  } catch (e) {
+    ElMessage.error('下载失败，请确认系统已上传模板')
+  } finally {
+    templateDownloading.value = false
+  }
 }
 
 const handleTemplateUpload = async () => {

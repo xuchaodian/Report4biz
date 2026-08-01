@@ -24,6 +24,7 @@ import cityDataRoutes from './routes/city-data.js'
 import mallTenantsRoutes from './routes/mall-tenants.js'
 import scoringRoutes from './routes/scoring.js'
 import storeScoresRoutes from './routes/store-scores.js'
+import templateRoutes from './routes/template.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -69,6 +70,7 @@ async function start() {
     app.use('/api/mall-tenants', mallTenantsRoutes)
     app.use('/api/scoring', scoringRoutes)
     app.use('/api/store-scores', storeScoresRoutes)
+    app.use('/api/template', templateRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {
