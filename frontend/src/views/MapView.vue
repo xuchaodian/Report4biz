@@ -84,16 +84,21 @@
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('competition')">
           <el-icon style="margin-right:6px;"><DataLine /></el-icon>门店竞争数
         </el-button>
+        <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('track')">
+          <el-icon style="margin-right:6px;"><Aim /></el-icon>竞争追踪
+        </el-button>
       </div>
     </el-dialog>
 
     <!-- 门店商圈半径设置对话框 -->
-    <el-dialog v-model="storeCircleDialogVisible" :title="storeCircleMode === 'overlap' ? '设置门店商圈半径' : '设置竞争分析半径'" width="420px" :close-on-click-modal="false">
+    <el-dialog v-model="storeCircleDialogVisible" :title="storeCircleDialogTitle" width="420px" :close-on-click-modal="false">
       <div style="padding: 10px 0;">
         <p style="margin-bottom:12px;font-size:14px;color:#606266;">
           {{ storeCircleMode === 'overlap'
             ? '为地图上所有可见门店生成半径圆，按重叠率着色'
-            : '为地图上所有可见门店生成半径圆，按竞争关系着色' }}
+            : storeCircleMode === 'track'
+              ? '以指定竞争品牌的门店为中心，分析半径内的我的门店与其他竞品情况'
+              : '为地图上所有可见门店生成半径圆，按竞争关系着色' }}
         </p>
         <el-form label-width="80px">
           <el-form-item label="半径(km)">
@@ -105,6 +110,13 @@
             </el-form-item>
             <el-form-item label="低阈值(%)">
               <el-input-number v-model="overlapLowThreshold" :min="1" :max="95" :step="5" style="width:200px" />
+            </el-form-item>
+          </template>
+          <template v-if="storeCircleMode === 'track'">
+            <el-form-item label="竞争品牌">
+              <el-select v-model="trackBrand" placeholder="请选择要追踪的竞争品牌" style="width:200px" clearable filterable>
+                <el-option v-for="b in competitionBrandList" :key="b" :label="b" :value="b" />
+              </el-select>
             </el-form-item>
           </template>
         </el-form>
@@ -137,7 +149,7 @@
               </span>
             </el-checkbox>
           </template>
-          <template v-else>
+          <template v-else-if="storeCircleMode === 'competition'">
             <!-- 竞争品牌多选 -->
             <div style="margin-bottom:10px;">
               <div style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px;">竞争品牌（可多选）</div>
@@ -168,6 +180,33 @@
               <span style="display:inline-flex;align-items:center;gap:6px;">
                 <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#67c23a;"></span>
                 有我的门店 + 有竞品
+              </span>
+            </el-checkbox>
+          </template>
+          <template v-else>
+            <!-- 竞争追踪：4分类 -->
+            <el-checkbox v-model="storeCircleFilters.track.noMyNoOther" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f59e0b;"></span>
+                无我的门店 + 无其他竞品
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.track.hasMyNoOther" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#409eff;"></span>
+                有我的门店 + 无其他竞品
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.track.noMyHasOther" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ff69b4;"></span>
+                无我的门店 + 有其他竞品
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.track.hasMyHasOther" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#67c23a;"></span>
+                有我的门店 + 有其他竞品
               </span>
             </el-checkbox>
           </template>
@@ -209,14 +248,14 @@
           userSelect: 'none'
         }"
       >
-        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : '竞争关系图例' }}</span>
+        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争追踪图例' : '竞争关系图例' }}</span>
         <el-button link size="small" @click="onStoreCircleLegendClose">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
       <div :style="{ padding: '4px 10px 10px' }">
-        <template v-if="storeCircleMode === 'competition'">
-          <!-- 竞争关系模式：可展开城市分布 -->
+        <template v-if="storeCircleMode === 'competition' || storeCircleMode === 'track'">
+          <!-- 竞争关系/追踪模式：可展开城市分布 -->
           <div v-for="(item, idx) in storeCircleLegendItems" :key="idx">
             <div
               :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', userSelect: 'none' }"
@@ -1366,7 +1405,15 @@ const storeCircleLegendVisible = ref(false)  // 图例弹窗可见性
 // 门店商圈分类筛选（默认全选）
 const storeCircleFilters = ref({
   overlap: { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true },
-  competition: { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true }
+  competition: { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true },
+  track: { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true }
+})
+// 竞争追踪：指定竞争品牌（单选）
+const trackBrand = ref('')
+const storeCircleDialogTitle = computed(() => {
+  if (storeCircleMode.value === 'overlap') return '设置门店商圈半径'
+  if (storeCircleMode.value === 'track') return '设置竞争追踪半径'
+  return '设置竞争分析半径'
 })
 // 竞争品牌多选（空数组 = 统计全部竞品）
 const competitionBrands = ref([])
@@ -1402,7 +1449,11 @@ const filterKeyLabel = (key) => {
     noMyNoComp: '无我的门店+无竞品',
     hasMyNoComp: '有我的门店+无竞品',
     noMyHasComp: '无我的门店+有竞品',
-    hasMyHasComp: '有我的门店+有竞品'
+    hasMyHasComp: '有我的门店+有竞品',
+    noMyNoOther: '无我的门店+无其他竞品',
+    hasMyNoOther: '有我的门店+无其他竞品',
+    noMyHasOther: '无我的门店+有其他竞品',
+    hasMyHasOther: '有我的门店+有其他竞品'
   }
   return map[key] || key
 }
@@ -5424,6 +5475,8 @@ const selectStoreCircleMode = (mode) => {
   if (mode === 'overlap') {
     storeCircleFilters.value.overlap = { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true }
     restoreOverlapThresholds()  // 恢复上次设置的重叠率阈值
+  } else if (mode === 'track') {
+    storeCircleFilters.value.track = { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true }
   } else {
     storeCircleFilters.value.competition = { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true }
   }
@@ -5600,6 +5653,121 @@ const applyStoreCircles = () => {
     console.log('[legend] competition mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
     const totalInFilter = drawnCount
     ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因筛选未显示）` : ''}`)
+    return
+  }
+
+  if (storeCircleMode.value === 'track') {
+    // ==== 竞争追踪模式：以指定竞争品牌门店为中心 ====
+    if (!trackBrand.value) {
+      ElMessage.warning('请选择要追踪的竞争品牌')
+      storeCircleDialogVisible.value = true
+      return
+    }
+
+    // 圆心：指定品牌的竞品门店（可见过滤）
+    let trackStores = []
+    if (competitorStore.competitors) {
+      trackStores = competitorStore.competitors.filter(c => c.brand === trackBrand.value)
+      if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
+        trackStores = trackStores.filter(c => competitorStore.visibleIds.includes(c.id))
+      }
+    }
+    trackStores = trackStores.filter(c => c.latitude && c.longitude)
+    if (trackStores.length === 0) {
+      ElMessage.warning(`没有找到品牌「${trackBrand.value}」的门店`)
+      storeCircleDialogVisible.value = true
+      return
+    }
+
+    // 我的门店（可见过滤）
+    let allMyStores = []
+    if (markerStore.markers) {
+      allMyStores = markerStore.markers
+      if (markerStore.visibleIds !== null && markerStore.visibleIds !== undefined) {
+        allMyStores = allMyStores.filter(m => markerStore.visibleIds.includes(m.id))
+      }
+    }
+    const myStorePoints = allMyStores.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
+
+    // 其他竞品（排除指定品牌，可见过滤）
+    let otherComps = []
+    if (competitorStore.competitors) {
+      otherComps = competitorStore.competitors.filter(c => c.brand !== trackBrand.value)
+      if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
+        otherComps = otherComps.filter(c => competitorStore.visibleIds.includes(c.id))
+      }
+    }
+    const otherCompPoints = otherComps.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
+
+    storeCircleLayer = L.layerGroup().addTo(map)
+    const trackFilters = storeCircleFilters.value.track
+    let drawnCount = 0
+    const stats = { noMyNoOther: {}, hasMyNoOther: {}, noMyHasOther: {}, hasMyHasOther: {} }
+    const results = []
+    trackStores.forEach((store) => {
+      // 半径内我的门店数（排除自身，自身是竞品不在myStorePoints）
+      let myCount = 0
+      let compCount = 0
+      for (const p of myStorePoints) {
+        const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
+        if (d > 0 && d <= radiusM) myCount++
+      }
+      for (const p of otherCompPoints) {
+        const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
+        if (d > 0 && d <= radiusM) compCount++
+      }
+
+      let color
+      let label
+      let filterKey
+      if (myCount === 0 && compCount === 0) {
+        color = '#f59e0b'    // 橙色：无我的门店无其他竞品
+        label = `我的:${myCount} 其他竞品:${compCount}`
+        filterKey = 'noMyNoOther'
+      } else if (myCount > 0 && compCount === 0) {
+        color = '#409eff'    // 蓝色：有我的门店无其他竞品
+        label = `我的:${myCount} 其他竞品:${compCount}`
+        filterKey = 'hasMyNoOther'
+      } else if (myCount === 0 && compCount > 0) {
+        color = '#ff69b4'    // 粉色：无我的门店有其他竞品
+        label = `我的:${myCount} 其他竞品:${compCount}`
+        filterKey = 'noMyHasOther'
+      } else {
+        color = '#67c23a'    // 绿色：有我的门店有其他竞品
+        label = `我的:${myCount} 其他竞品:${compCount}`
+        filterKey = 'hasMyHasOther'
+      }
+
+      const city = store.city || '未知'
+      results.push({ lat: store.latitude, lng: store.longitude, city, filterKey, name: store.name, _type: store._type })
+      stats[filterKey][city] = (stats[filterKey][city] || 0) + 1
+
+      // 根据筛选条件决定是否绘制
+      if (!trackFilters[filterKey]) return
+      drawnCount++
+      const circle = L.circle([store.latitude, store.longitude], {
+        radius: radiusM,
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.12,
+        weight: 2
+      })
+      circle.bindTooltip(`[${store._type}] ${store.name || '未知'} - ${label}`, { sticky: true })
+      storeCircleLayer.addLayer(circle)
+    })
+    competitionCityStats.value = stats
+    competitionStoreResults.value = results
+    expandedLegendCategory.value = null
+    showStoreCircles.value = true
+    const trackLegendMap = [
+      { key: 'noMyNoOther', color: '#f59e0b', label: '无我的门店 + 无其他竞品' },
+      { key: 'hasMyNoOther', color: '#409eff', label: '有我的门店 + 无其他竞品' },
+      { key: 'noMyHasOther', color: '#ff69b4', label: '无我的门店 + 有其他竞品' },
+      { key: 'hasMyHasOther', color: '#67c23a', label: '有我的门店 + 有其他竞品' }
+    ]
+    storeCircleLegendItems.value = trackLegendMap.filter(item => trackFilters[item.key]).map(item => ({ key: item.key, color: item.color, label: item.label }))
+    storeCircleLegendVisible.value = true
+    ElMessage.success(`已为 ${trackBrand.value} 的 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 竞争追踪${drawnCount < trackStores.length ? `（${trackStores.length - drawnCount} 家因筛选未显示）` : ''}`)
     return
   }
 
