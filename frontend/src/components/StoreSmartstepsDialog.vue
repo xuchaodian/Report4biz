@@ -248,6 +248,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -1817,33 +1818,24 @@ async function executeQuery(event) {
   }
 }
 
-// ===== 查询结果导出 Excel / PDF（复用购买履历详情导出逻辑） =====
-// 截图函数：从 MyAccountView 复制同款实现（基于地图离屏渲染）
+// ===== 查询结果导出 Excel / PDF（复用公共截图引擎） =====
 const exportCaptureCompetitors = async (centerLat, centerLng, radius, competitors) => {
-  // 简单占位实现：通过地图隐藏图层截图（依赖页面地图实例）
   try {
-    // 复用 MyAccountView 的 captureMapToCanvas，如果全局挂载则使用
-    if (window.__captureMapToCanvas) {
-      return await window.__captureMapToCanvas(centerLat, centerLng, radius, competitors || [], 14)
-    }
+    return await captureMapToCanvas(centerLat, centerLng, radius, competitors || [], 14)
   } catch (e) { console.warn('竞品截图失败:', e) }
   return null
 }
 
 const exportCaptureShopping = async (centerLat, centerLng, centers) => {
   try {
-    if (window.__captureShoppingCenterMap) {
-      return await window.__captureShoppingCenterMap(centerLat, centerLng, centers || [], 14)
-    }
+    return await captureShoppingCenterMap(centerLat, centerLng, centers || [], 14)
   } catch (e) { console.warn('购物中心截图失败:', e) }
   return null
 }
 
 const exportCaptureMapOnly = async (centerLat, centerLng, radius) => {
   try {
-    if (window.__captureMapOnlyCanvas) {
-      return await window.__captureMapOnlyCanvas(centerLat, centerLng, radius)
-    }
+    return await captureMapOnlyCanvas(centerLat, centerLng, radius)
   } catch (e) { console.warn('地图截图失败:', e) }
   return null
 }

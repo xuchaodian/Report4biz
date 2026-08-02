@@ -169,6 +169,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
 import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
@@ -341,20 +342,14 @@ const exportOneRecord = async (row, type) => {
     const mapData = compResp.data
     const centerLat = mapData.center.lat
     const centerLng = mapData.center.lng
-    if (window.__captureMapToCanvas) {
-      competitorScreenshot = await window.__captureMapToCanvas(centerLat, centerLng, 3000, mapData.competitors || [], 14)
-    }
+    competitorScreenshot = await captureMapToCanvas(centerLat, centerLng, 3000, mapData.competitors || [], 14)
     try {
       const centerList = (shopResp.data.centers && Array.isArray(shopResp.data.centers)) ? shopResp.data.centers : []
-      if (window.__captureShoppingCenterMap) {
-        shoppingCenterScreenshot = await window.__captureShoppingCenterMap(centerLat, centerLng, centerList, 14)
-      }
+      shoppingCenterScreenshot = await captureShoppingCenterMap(centerLat, centerLng, centerList, 14)
     } catch (scErr) { console.warn('购物中心截图失败:', scErr) }
     try {
       const actualRadius = Array.isArray(detail.radii) ? detail.radii[0] : 3000
-      if (window.__captureMapOnlyCanvas) {
-        mapScreenshot = await window.__captureMapOnlyCanvas(centerLat, centerLng, actualRadius)
-      }
+      mapScreenshot = await captureMapOnlyCanvas(centerLat, centerLng, actualRadius)
     } catch (mErr) { console.warn('地图截图失败:', mErr) }
   } catch (mapErr) {
     console.warn('地图数据获取失败:', mapErr)
