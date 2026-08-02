@@ -546,18 +546,25 @@ function formatResultData(data) {
 
     // 1002 上网标签分布
     if (key === '1002' && Array.isArray(value) && value.length > 0) {
-      // 按 tag_value 降序排序，取前10
-      const sorted = [...value]
-        .filter(row => row && typeof row === 'object' && row.tag_name && row.tag_value !== undefined)
-        .sort((a, b) => Number(b.tag_value) - Number(a.tag_value))
-        .slice(0, 10);
-      if (sorted.length > 0) {
+      // 按 popu_type 分组（0=到访 1=居住 2=工作），标签并集按"到访"值降序取前10
+      const byPop = { 0: {}, 1: {}, 2: {} }
+      for (const item of value) {
+        if (item && typeof item === 'object' && item.tag_name && item.tag_value !== undefined && byPop[item.popu_type]) {
+          byPop[item.popu_type][item.tag_name] = Number(item.tag_value)
+        }
+      }
+      const tagNames = [...new Set(value.filter(d => d && d.tag_name).map(d => d.tag_name))]
+      const rows = tagNames
+        .map(name => ({ name, v0: byPop[0][name] || 0, v1: byPop[1][name] || 0, v2: byPop[2][name] || 0 }))
+        .sort((a, b) => b.v0 - a.v0)
+        .slice(0, 10)
+      if (rows.length > 0) {
         html += `<div class="detail-result-item">
           <div class="section-title">上网标签分布</div>
           <table class="data-table cross-table">
             <thead><tr><th>标签</th><th>到访</th><th>居住</th><th>工作</th></tr></thead>
             <tbody>
-              ${sorted.map(r => `<tr><td>${r.tag_name}</td><td class="num">${Number(r.tag_value).toLocaleString()}</td><td class="num">0</td><td class="num">0</td></tr>`).join('')}
+              ${rows.map(r => `<tr><td>${r.name}</td><td class="num">${r.v0.toLocaleString()}</td><td class="num">${r.v1.toLocaleString()}</td><td class="num">${r.v2.toLocaleString()}</td></tr>`).join('')}
             </tbody>
           </table>
         </div>`;
@@ -1790,8 +1797,8 @@ async function executeQuery(event) {
         centerLat: storeInfo.value.latitude,
         radius: radii[0],
         radii: radii,
-        // 请求全部23个服务
-        services: ['1001','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1019'],
+        // 请求全部23个服务（1002 上网标签分布：结果框不展示，但报表导出需要）
+        services: ['1001','1002','1003','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1019'],
         cityMonth: queryForm.value.cityMonth,
         quotaUsed: getQuotaToUse(),
         storeName: storeInfo.value.name,

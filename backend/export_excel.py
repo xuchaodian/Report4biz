@@ -93,15 +93,24 @@ def main():
                 for k, v in api_result['1001'].items():
                     field_map[k.lower()] = v
 
-            # 1002 - 标签
+            # 1002 - 标签（按人群类型分开：0=到访 1=居住 2=工作）
             if '1002' in api_result and isinstance(api_result['1002'], list):
                 tag_names = ['网上购物', '时政要闻', '商务办公', '金融理财', '手机游戏', '旅游出行', '外卖送餐', '餐饮美食', '求职招聘']
                 for item in api_result['1002']:
                     name = item.get('tag_name', '')
                     val = item.get('tag_value', 0)
+                    pop = item.get('popu_type', 0)
+                    # 1. 精确匹配优先（如"求职招聘"，避免被子串"招聘"覆盖）
+                    if name in tag_names:
+                        idx = tag_names.index(name)
+                        field_map[f'webtag{pop}_{idx + 1}'] = val
+                        continue
+                    # 2. 包含匹配（如"时政要闻"等），已写过的槽位不覆盖
                     for i, tn in enumerate(tag_names, 1):
                         if tn in name or name in tn:
-                            field_map[f'webtag0_{i}'] = val
+                            key = f'webtag{pop}_{i}'
+                            if key not in field_map:
+                                field_map[key] = val
                             break
 
             # 1005 - 小时段

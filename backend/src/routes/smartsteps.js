@@ -473,14 +473,15 @@ router.post('/query', authenticate, async (req, res) => {
     // 实际扣减的配额（查询失败或空数据时为0）
     const actualQuotaUsed = isEmptyData ? 0 : quotaUsed
     
-    // 记录到purchases表
+    // 记录到purchases表（查询成功且有数据才标记 active，否则 failed，避免计入已购报表/购买履历）
     let purchaseId = null
     try {
+      const recordStatus = (querySuccess && !isEmptyData) ? 'active' : 'failed'
       const insertResult = db.prepare(`
         INSERT INTO purchases (
           user_id, store_name, store_type, center_lng, center_lat, radius,
           city_month, quota_used, status, result_data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         req.user.id,
         storeName || '',
@@ -490,6 +491,7 @@ router.post('/query', authenticate, async (req, res) => {
         JSON.stringify(radii || [radius]),
         cityMonth || '',
         actualQuotaUsed,
+        recordStatus,
         JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
       )
       purchaseId = insertResult.lastInsertRowid

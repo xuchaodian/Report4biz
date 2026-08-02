@@ -672,6 +672,11 @@ const buildChartList = (data) => {
       list.push({ serviceCode: '1015', chartKey: '1015-a', title: '资产预测 - 到访' })
       list.push({ serviceCode: '1015', chartKey: '1015-b', title: '资产预测 - 居住' })
       list.push({ serviceCode: '1015', chartKey: '1015-c', title: '资产预测 - 工作' })
+    } else if (key === '1002') {
+      // 1002 上网标签分布拆分为3张子图表（到访/居住/工作）
+      list.push({ serviceCode: '1002', chartKey: '1002-a', title: '上网标签分布 - 到访' })
+      list.push({ serviceCode: '1002', chartKey: '1002-b', title: '上网标签分布 - 居住' })
+      list.push({ serviceCode: '1002', chartKey: '1002-c', title: '上网标签分布 - 工作' })
     } else {
       list.push({ serviceCode: key, chartKey: key, title: getServiceName(key) })
     }
@@ -1256,19 +1261,26 @@ const formatArrayData = (data, serviceCode) => {
     return html
   }
   
-    // 1002: 上网标签分布格式 {popu_type, tag_value, tag_name} - 按 tag_value 降序取前10
+    // 1002: 上网标签分布格式 {popu_type, tag_value, tag_name} - 按人群类型分别显示前10
   if (firstItem.tag_value !== undefined && firstItem.tag_name !== undefined) {
-    // 按 tag_value 降序排序，取前10
-    const sortedData = [...data]
-      .filter(item => item && typeof item === 'object' && item.tag_name && item.tag_value !== undefined)
-      .sort((a, b) => Number(b.tag_value) - Number(a.tag_value))
+    // 按 popu_type 分组（0=到访 1=居住 2=工作）
+    const byPop = { 0: {}, 1: {}, 2: {} }
+    for (const item of data) {
+      if (item && typeof item === 'object' && item.tag_name && item.tag_value !== undefined && byPop[item.popu_type]) {
+        byPop[item.popu_type][item.tag_name] = Number(item.tag_value)
+      }
+    }
+    // 标签并集，按"到访"值降序取前10
+    const tagNames = [...new Set(data.filter(d => d && d.tag_name).map(d => d.tag_name))]
+    const rows = tagNames
+      .map(name => ({ name, v0: byPop[0][name] || 0, v1: byPop[1][name] || 0, v2: byPop[2][name] || 0 }))
+      .sort((a, b) => b.v0 - a.v0)
       .slice(0, 10)
 
     let html = `<div class="pop-group">
       <table class="data-table cross-table"><thead><tr><th>标签</th><th>到访</th><th>居住</th><th>工作</th></tr></thead><tbody>`
-    for (const item of sortedData) {
-      const value = Number(item.tag_value).toLocaleString()
-      html += `<tr><td>${item.tag_name}</td><td class="num">${value}</td><td class="num">0</td><td class="num">0</td></tr>`
+    for (const row of rows) {
+      html += `<tr><td>${row.name}</td><td class="num">${row.v0.toLocaleString()}</td><td class="num">${row.v1.toLocaleString()}</td><td class="num">${row.v2.toLocaleString()}</td></tr>`
     }
     html += '</tbody></table></div>'
     return html
@@ -1794,7 +1806,7 @@ const buildChartOption = (code, data, chartKey) => {
   }
   switch (code) {
     case '1001': return null // 已在上面通过子图分发
-    case '1002': return buildOption1002(data)
+    case '1002': return buildOption1002ByPop(data, chartKey)
     case '1005': return null // 已在上面通过子图分发
     case '1006': return null // 已在上面通过子图分发
     case '1007': return buildOption1007(data)
@@ -1951,10 +1963,16 @@ const buildOption1001_Gender = (data) => {
   }
 }
 
-// 1002 上网标签分布 - 水平柱状图 Top10
-const buildOption1002 = (data) => {
+// 1002 上网标签分布 - 按人群类型(popu_type)拆分的水平柱状图 Top10
+const buildOption1002ByPop = (data, chartKey) => {
   if (!Array.isArray(data) || data.length === 0) return null
-  const sorted = [...data].sort((a, b) => (b.tag_value || 0) - (a.tag_value || 0)).slice(0, 10)
+  // chartKey: 1002-a=到访(0) 1002-b=居住(1) 1002-c=工作(2)
+  const popMap = { '1002-a': 0, '1002-b': 1, '1002-c': 2 }
+  const popType = popMap[chartKey]
+  if (popType === undefined) return null
+  const filtered = data.filter(d => d && d.popu_type === popType && d.tag_name !== undefined)
+  if (filtered.length === 0) return null
+  const sorted = [...filtered].sort((a, b) => (b.tag_value || 0) - (a.tag_value || 0)).slice(0, 10)
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: '3%', right: '8%', bottom: '3%', top: '3%', containLabel: true },
