@@ -9,6 +9,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
+import { textSearchAll } from '../utils/amapPoi.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -653,7 +654,7 @@ router.post('/search-commerce', (req, res) => {
  * POST /api/shapefiles/calculate-potential
  * 开店余地分析
  */
-router.post('/calculate-potential', (req, res) => {
+router.post('/calculate-potential', async (req, res) => {
   try {
     const userId = req.headers['x-user-id'] || 1
     const { cityName, radius, myStoreMin, competitorMin, conditions } = req.body
@@ -664,10 +665,33 @@ router.post('/calculate-potential', (req, res) => {
     if (!rows || !rows.length) return res.json({ success: false, error: `未找到${cityName}的数据` })
     const geojson = JSON.parse(rows[0].geojson)
     const features = geojson.features || []
-    const markers = db.prepare('SELECT id, latitude, longitude, store_status FROM markers').all()
+    const markers = db.prepare('SELECT id, latitude, longitude, store_status, brand FROM markers').all()
     const comps = db.prepare('SELECT id, brand, latitude, longitude FROM competitors').all()
+    // 品牌筛选（多选，空数组=不限品牌）
+    const myBrands = Array.isArray(req.body.myStoreBrands) ? req.body.myStoreBrands.filter(Boolean) : []
+    const compBrands = Array.isArray(req.body.compBrands) ? req.body.compBrands.filter(Boolean) : []
+    // 其他品牌（高德关键词检索，可两个）
+    const otherBrands = [req.body.otherBrand1, req.body.otherBrand2].map(ob => {
+      if (!ob || !ob.name || !String(ob.name).trim()) return null
+      return { name: String(ob.name).trim(), op: ob.op || '>', val: parseFloat(ob.val) || 1, pois: [] }
+    })
+    // 高德检索其他品牌 POI（高德返回 GCJ-02，与网格/门店坐标一致，直接用）
+    for (let i = 0; i < otherBrands.length; i++) {
+      const ob = otherBrands[i]
+      if (!ob) continue
+      try {
+        const sres = await textSearchAll(cityName, ob.name)
+        ob.pois = sres.pois || []
+        console.log(`[calculate-potential] 其他品牌检索 "${ob.name}" 城市${cityName}: 高德count=${sres.count}, 收集${ob.pois.length}点`)
+      } catch (e) {
+        console.warn(`[calculate-potential] 高德检索"${ob.name}"失败:`, e.message)
+      }
+    }
     const myStores = markers.filter(m => m.latitude && m.longitude)
     const compStores = comps.filter(c => c.latitude && c.longitude)
+    // 品牌过滤后的门店集合（仅统计所选品牌）
+    const myStoresFiltered = myBrands.length ? myStores.filter(s => myBrands.includes(s.brand)) : myStores
+    const compStoresFiltered = compBrands.length ? compStores.filter(c => compBrands.includes(c.brand)) : compStores
     const closedKeywords = ['闭店','停业','歇业','休业','结业','暂停营业']
     const results = []
     for (let i = 0; i < features.length; i++) {
@@ -705,7 +729,7 @@ router.post('/calculate-potential', (req, res) => {
       if (!popOk) continue
       let mc = 0, ccCount = 0
       const bCounts = {}
-      for (const s of myStores) { if (turf.booleanPointInPolygon(turf.point([s.longitude, s.latitude]), circle)) mc++ }
+      for (const s of myStoresFiltered) { if (turf.booleanPointInPolygon(turf.point([s.longitude, s.latitude]), circle)) mc++ }
       const myStoreOp = req.body.myStoreOp || '>'
       const myStoreVal = parseFloat(req.body.myStoreVal) || parseFloat(req.body.myStoreMin) || 1
       const compOp = req.body.competitorOp || '>'
@@ -716,7 +740,7 @@ router.post('/calculate-potential', (req, res) => {
       else if (myStoreOp === '<' && !(mc < myStoreVal)) continue
       else if (myStoreOp === '<=' && !(mc <= myStoreVal)) continue
       else if (myStoreOp === '=' && !(Math.abs(mc - myStoreVal) < 1)) continue
-      for (const c of compStores) {
+      for (const c of compStoresFiltered) {
         if (turf.booleanPointInPolygon(turf.point([c.longitude, c.latitude]), circle)) {
           ccCount++; const b = c.brand || '未知'; bCounts[b] = (bCounts[b] || 0) + 1
         }
@@ -727,7 +751,26 @@ router.post('/calculate-potential', (req, res) => {
       else if (compOp === '<' && !(ccCount < compVal)) continue
       else if (compOp === '<=' && !(ccCount <= compVal)) continue
       else if (compOp === '=' && !(Math.abs(ccCount - compVal) < 1)) continue
-      results.push({ index: i, center: cc, radius: r, myStores: mc, competitors: ccCount, competitorBrands: bCounts })
+      // 其他品牌（高德POI）条件
+      const otherCounts = []
+      let otherOk = true
+      for (const ob of otherBrands) {
+        if (!ob || ob.pois.length === 0) { otherCounts.push(0); continue }
+        let cnt = 0
+        for (const p of ob.pois) {
+          if (turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), circle)) cnt++
+        }
+        otherCounts.push(cnt)
+        const v = ob.val
+        if (ob.op === '>' && !(cnt > v)) { otherOk = false }
+        else if (ob.op === '>=' && !(cnt >= v)) { otherOk = false }
+        else if (ob.op === '<' && !(cnt < v)) { otherOk = false }
+        else if (ob.op === '<=' && !(cnt <= v)) { otherOk = false }
+        else if (ob.op === '=' && !(Math.abs(cnt - v) < 1)) { otherOk = false }
+      }
+      if (!otherOk) continue
+      results.push({ index: i, center: cc, radius: r, myStores: mc, competitors: ccCount, competitorBrands: bCounts,
+        otherStores: otherBrands.map((ob, oi) => ob ? { name: ob.name, count: otherCounts[oi] } : null).filter(Boolean) })
     }
     res.json({ success: true, data: { cityName, total: features.length, matched: results.length, results } })
   } catch (error) {

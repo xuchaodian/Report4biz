@@ -46,6 +46,22 @@ function transformLng(x, y) {
   return ret;
 }
 
+// GCJ-02 转 WGS-84（高德 POI 返回 GCJ-02，转回 WGS-84 用于与数据库门店坐标统一）
+function gcj02ToWgs84(lng, lat) {
+  const PI = 3.1415926535897932384626;
+  const a = 6378245.0;
+  const ee = 0.00669342162296594323;
+  let dLat = transformLat(lng - 105.0, lat - 35.0);
+  let dLng = transformLng(lng - 105.0, lat - 35.0);
+  const radLat = lat / 180.0 * PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - ee * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / (a / magic * sqrtMagic * PI);
+  dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * PI);
+  return [lng - dLng, lat - dLat];
+}
+
 /**
  * 地理编码：将地址转换为坐标
  * @param {string} address - 地址字符串
@@ -149,6 +165,41 @@ async function textSearch(city, keywords, types) {
 }
 
 /**
+ * 关键词全量检索（分页收集，最多 maxPages×20 个点）
+ * 高德 POI 返回 GCJ-02；系统内人口网格（上传时 WGS84→GCJ-02）、
+ * 门店坐标均为 GCJ-02，三者坐标系一致，POI 坐标直接使用、无需转换。
+ * @param {string} city - 城市名称
+ * @param {string} keywords - 品牌关键词
+ * @param {number} maxPages - 最多翻页数（默认 8 页 = 160 个点）
+ * @returns {Promise<{count: number, pois: Array<{name, lng, lat}>}>}
+ */
+async function textSearchAll(city, keywords, maxPages = 8) {
+  const all = []
+  let count = 0
+  for (let page = 1; page <= maxPages; page++) {
+    const params = {
+      key: AMAP_KEY,
+      city: city || '全国',
+      keywords: keywords || '',
+      types: '',
+      offset: 20,
+      page,
+      extensions: 'all'
+    }
+    const resp = await axios.get(`${AMAP_PLACE_URL}/text`, { params })
+    if (resp.data.status !== '1') break
+    const pois = (resp.data.pois || []).map(p => {
+      const parts = (p.location || '0,0').split(',')
+      return { name: p.name || '', lng: parseFloat(parts[0]), lat: parseFloat(parts[1]) }
+    })
+    count = parseInt(resp.data.count || 0)
+    all.push(...pois)
+    if (pois.length < 20 || all.length >= count || all.length >= maxPages * 20) break
+  }
+  return { count, pois: all }
+}
+
+/**
  * 解析高德API响应
  */
 function parseResponse(data) {
@@ -180,6 +231,8 @@ export {
   aroundSearch,
   polygonSearch,
   textSearch,
+  textSearchAll,
   geocode,
-  wgs84ToGcj02
+  wgs84ToGcj02,
+  gcj02ToWgs84
 }

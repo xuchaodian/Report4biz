@@ -593,6 +593,9 @@
               <el-option label="=" value="=" />
             </el-select>
             <el-input v-model="potentialMyStoreVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+            <el-select v-model="potentialMyBrands" multiple collapse-tags collapse-tags-tooltip placeholder="品牌(可多选)" style="width:130px;flex-shrink:0" clearable>
+              <el-option v-for="b in potentialMyBrandOptions" :key="b" :label="b" :value="b" />
+            </el-select>
           </div>
         </el-form-item>
         <el-form-item label="竞品门店数">
@@ -605,6 +608,35 @@
               <el-option label="=" value="=" />
             </el-select>
             <el-input v-model="potentialCompVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+            <el-select v-model="potentialCompBrands" multiple collapse-tags collapse-tags-tooltip placeholder="品牌(可多选)" style="width:130px;flex-shrink:0" clearable>
+              <el-option v-for="b in potentialCompBrandOptions" :key="b" :label="b" :value="b" />
+            </el-select>
+          </div>
+        </el-form-item>
+        <el-form-item label="其他品牌1">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="potentialOther1Name" placeholder="品牌名(如肯德基)" clearable style="flex:1;min-width:0" />
+            <el-select v-model="potentialOther1Op" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialOther1Val" type="number" placeholder="数量" style="width:70px;flex-shrink:0" />
+          </div>
+        </el-form-item>
+        <el-form-item label="其他品牌2">
+          <div style="display:flex;gap:8px;width:100%">
+            <el-input v-model="potentialOther2Name" placeholder="品牌名(如麦当劳)" clearable style="flex:1;min-width:0" />
+            <el-select v-model="potentialOther2Op" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label=">" value=">" />
+              <el-option label=">=" value=">=" />
+              <el-option label="<" value="<" />
+              <el-option label="<=" value="<=" />
+              <el-option label="=" value="=" />
+            </el-select>
+            <el-input v-model="potentialOther2Val" type="number" placeholder="数量" style="width:70px;flex-shrink:0" />
           </div>
         </el-form-item>
         <el-form-item label="人口数量1">
@@ -1517,6 +1549,18 @@ const potentialMyStoreOp = ref('>')
 const potentialMyStoreVal = ref(1)
 const potentialCompOp = ref('>')
 const potentialCompVal = ref(1)
+// 品牌筛选（我的门店/竞品，可多选）
+const potentialMyBrands = ref([])
+const potentialCompBrands = ref([])
+const potentialMyBrandOptions = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))])
+const potentialCompBrandOptions = computed(() => [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))])
+// 其他品牌（高德关键词检索）
+const potentialOther1Name = ref('')
+const potentialOther1Op = ref('>')
+const potentialOther1Val = ref(1)
+const potentialOther2Name = ref('')
+const potentialOther2Op = ref('>')
+const potentialOther2Val = ref(1)
 const potentialNumericFields = ref([])
 const potentialCond1Field = ref('')
 const potentialCond1Op = ref('>')
@@ -6455,6 +6499,10 @@ const calculatePotential = async () => {
         myStoreVal: potentialMyStoreVal.value,
         competitorOp: potentialCompOp.value || '>',
         competitorVal: potentialCompVal.value,
+        myStoreBrands: potentialMyBrands.value,
+        compBrands: potentialCompBrands.value,
+        otherBrand1: potentialOther1Name.value ? { name: potentialOther1Name.value.trim(), op: potentialOther1Op.value || '>', val: potentialOther1Val.value || 1 } : null,
+        otherBrand2: potentialOther2Name.value ? { name: potentialOther2Name.value.trim(), op: potentialOther2Op.value || '>', val: potentialOther2Val.value || 1 } : null,
         conditions
       })
     })
@@ -6473,7 +6521,8 @@ const calculatePotential = async () => {
           fillOpacity: 0.12,
           interactive: false
         })
-        circle.bindTooltip('门店:' + r.myStores + ' 竞品:' + r.competitors, {
+        const otherText = (r.otherStores || []).map(o => o.name + ':' + o.count).join(' ')
+        circle.bindTooltip('门店:' + r.myStores + ' 竞品:' + r.competitors + (otherText ? ' ' + otherText : ''), {
           permanent: false, direction: 'center', className: 'potential-tooltip'
         })
         circles.push(circle)
