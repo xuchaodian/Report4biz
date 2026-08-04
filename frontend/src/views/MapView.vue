@@ -4203,8 +4203,10 @@ const loadCompetitors = async (skipFetch = false) => {
     ? competitorStore.competitors
     : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
 
-  // 创建竞品图层
-  competitorLayer = L.layerGroup()
+  // 创建竞品图层（超过 500 条自动聚合，避免大量 marker 导致卡顿）
+  competitorLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
 
   // 竞品品牌颜色映射（避免暗色系，使用鲜艳颜色）
   const brandColors = {
@@ -4308,7 +4310,9 @@ const reloadCompetitorLayer = () => {
   const wasOnMap = map.hasLayer(competitorLayer)
   if (competitorLayer) { try { map.removeLayer(competitorLayer) } catch(e) {} }
 
-  competitorLayer = L.layerGroup()
+  competitorLayer = dataToShow.length > 500
+    ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
+    : L.layerGroup()
   const brandColors = {
     '大米先生': '#e6a23c', '谷田稻香': '#f56c6c', '吉野家': '#409eff',
     '老乡鸡': '#67c23a', '米村拌饭': '#9c27b0', '其他': '#ff9800'
