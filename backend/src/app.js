@@ -80,6 +80,10 @@ async function start() {
     // 错误处理中间件
     app.use((err, req, res, next) => {
       console.error('Error:', err)
+      // multer 文件大小超限
+      if (err && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: '文件大小超过限制（最大 5MB），请拆分后上传' })
+      }
       res.status(err.status || 500).json({
         message: err.message || '服务器内部错误'
       })

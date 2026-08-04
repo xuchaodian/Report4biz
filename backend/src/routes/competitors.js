@@ -6,7 +6,12 @@ import { getDb, saveDatabase } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
-const upload = multer({ dest: 'uploads/' })
+// 竞品导入限制：单文件最大 5MB（约1万+行），防止超大 CSV 阻塞服务
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 5 * 1024 * 1024 }
+})
+const MAX_IMPORT_ROWS = 10000 // 单次导入数据行上限
 
 // 获取所有竞品门店（只看自己的数据）
 router.get('/', authenticate, (req, res) => {
@@ -229,6 +234,15 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       skipEmptyLines: true,
       complete: (results) => {
         console.log(`[竞品导入] CSV解析完成, ${results.data.length} 行, 错误: ${results.errors?.length || 0}`)
+
+        // 单次导入行数上限校验（含表头，超出直接拒绝）
+        if (results.data.length > MAX_IMPORT_ROWS) {
+          try { fs.unlinkSync(req.file.path) } catch (e) { /* 忽略清理失败 */ }
+          return res.status(400).json({
+            message: `导入失败：数据行数（${results.data.length}）超过单次上限 ${MAX_IMPORT_ROWS} 行，请拆分文件后分批导入`
+          })
+        }
+
         const db = getDb()
         let imported = 0
 
@@ -259,8 +273,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         saveDatabase()
 
         console.log(`[竞品导入] 成功导入 ${imported} 条数据`)
-        // 删除上传的文件
-        fs.unlinkSync(req.file.path)
+        // 删除上传的文件（清理失败不影响响应）
+        try { fs.unlinkSync(req.file.path) } catch (e) { /* 忽略清理失败 */ }
 
         res.json({
           message: `成功导入 ${imported} 条数据`,

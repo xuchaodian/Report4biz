@@ -303,6 +303,9 @@
         </ul>
         <el-link type="primary" @click="downloadTemplate">下载模板</el-link>
       </div>
+      <div class="import-tips" style="color: #e6a23c; font-size: 12px; margin-top: -8px;">
+        <p>⚠️ 限制：单文件最大 5MB，单次最多 10000 条数据。超限请拆分后分批导入。</p>
+      </div>
       <el-upload
         ref="uploadRef"
         :auto-upload="false"
@@ -691,7 +694,18 @@ const handleImport = () => {
   importDialogVisible.value = true
 }
 
-const handleFileChange = (file) => { uploadFile.value = file.raw }
+const handleFileChange = (file) => {
+  // 前端预校验：文件大小 ≤ 5MB
+  const MAX_FILE_SIZE = 5 * 1024 * 1024
+  if (file.raw && file.raw.size > MAX_FILE_SIZE) {
+    ElMessage.error('文件大小超过 5MB 限制，请拆分后分批上传')
+    uploadFile.value = null
+    // 清除已选文件
+    if (uploadRef.value) uploadRef.value.clearFiles()
+    return
+  }
+  uploadFile.value = file.raw
+}
 
 const handleImportConfirm = async () => {
   if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
