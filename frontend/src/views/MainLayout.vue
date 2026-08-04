@@ -79,6 +79,9 @@
       </div>
     </header>
     
+    <!-- 新手引导（顶部引导条 + 首次使用向导） -->
+    <OnboardingGuide />
+
     <!-- 主体内容区 -->
     <main class="main-content">
       <router-view />
@@ -174,6 +177,7 @@ import { useRouter } from 'vue-router'
 import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
 import axios from 'axios'
 
 const router = useRouter()
