@@ -96,7 +96,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // 后端目标可通过环境变量覆盖（如本地验收时指向测试实例）
+        target: process.env.VITE_API_TARGET || 'http://localhost:3000',
         changeOrigin: true
       }
     }
