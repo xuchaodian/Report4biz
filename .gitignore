@@ -6,6 +6,8 @@ node_modules/
 # 构建产物
 dist/
 dist-ssr/
+*.timestamp-*.mjs
+*.timestamp-*.mjs.map
 
 # 环境变量
 .env
