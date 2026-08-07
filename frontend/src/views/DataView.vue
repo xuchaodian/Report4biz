@@ -3,7 +3,7 @@
     <div class="data-header">
       <h2>门店管理</h2>
       <div class="header-actions">
-        <el-button type="warning" @click="showStoreSimilarDialog">
+        <el-button type="warning" style="min-width: 102px;" @click="showStoreSimilarDialog">
           <el-icon><Aim /></el-icon>相似店
         </el-button>
         <el-button type="warning" @click="showStoreRankingDialog">
