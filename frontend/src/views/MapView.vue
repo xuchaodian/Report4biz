@@ -79,7 +79,7 @@
     <el-dialog v-model="storeCircleModeDialogVisible" title="网点优化" width="380px" :close-on-click-modal="false">
       <div style="padding: 10px 0; display: flex; flex-direction: column; gap: 12px;">
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('overlap')">
-          <el-icon style="margin-right:6px;"><Connection /></el-icon>门店重合度
+          <el-icon style="margin-right:6px;"><Connection /></el-icon>相互蚕食
         </el-button>
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('competition')">
           <el-icon style="margin-right:6px;"><DataLine /></el-icon>门店竞争数
