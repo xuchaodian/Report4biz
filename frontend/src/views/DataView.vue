@@ -3,6 +3,9 @@
     <div class="data-header">
       <h2>门店管理</h2>
       <div class="header-actions">
+        <el-button type="danger" plain @click="showStoreSimilarDialog">
+          <el-icon><Aim /></el-icon>相似店
+        </el-button>
         <el-button type="warning" @click="showStoreRankingDialog">
           <el-icon><TrendCharts /></el-icon>门店排名
         </el-button>
@@ -505,6 +508,82 @@
       </template>
     </el-dialog>
 
+    <!-- 相似店对话框 -->
+    <el-dialog v-model="storeSimilarVisible" title="相似店" width="800px" draggable :show-close="true" @close="storeSimilarVisible = false">
+      <template v-if="!storeSimilarDone">
+        <el-form label-width="120px" style="margin-bottom: 12px;">
+          <el-form-item label="选择半径">
+            <el-select v-model="storeSimilarRadius" placeholder="请选择分析半径" style="width: 200px;">
+              <el-option v-for="r in storeSimilarRadiusOptions" :key="r" :label="r + '公里'" :value="r" />
+            </el-select>
+            <span style="margin-left: 10px; font-size: 12px; color: #999;">从购买履历中读取</span>
+          </el-form-item>
+          <el-form-item label="基准门店">
+            <el-input v-model="storeSimilarKeyword" placeholder="输入门店名称搜索" style="width: 260px;" clearable>
+              <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+            <span style="margin-left: 10px; font-size: 12px; color: #999;">选择一家门店作为相似度基准</span>
+          </el-form-item>
+        </el-form>
+        <div style="max-height: 260px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px; margin-bottom: 12px;">
+          <div v-for="store in storeSimilarFiltered" :key="store.id"
+            style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
+            :style="{ background: storeSimilarSelected?.id === store.id ? '#ecf5ff' : 'white' }"
+            @click="storeSimilarSelected = store">
+            <el-button :type="storeSimilarSelected?.id === store.id ? 'primary' : 'default'" size="small" style="margin-right: 12px;">
+              {{ storeSimilarSelected?.id === store.id ? '已选' : '选择' }}
+            </el-button>
+            <div>
+              <div style="font-size: 14px; font-weight: 500;">{{ store.name }}</div>
+              <div style="font-size: 12px; color: #999;">
+                {{ store.brand || '-' }} | {{ store.city || '-' }}{{ store.district ? ' ' + store.district : '' }}
+              </div>
+            </div>
+          </div>
+          <div v-if="storeSimilarFiltered.length === 0" style="text-align:center;padding:24px;color:#999;font-size:13px;">无匹配门店</div>
+        </div>
+        <div style="font-size: 12px; color: #999;">共 {{ storeSimilarFiltered.length }} 家门店</div>
+        <div v-if="storeSimilarLoading" style="text-align: center; padding: 30px;">
+          <el-icon class="is-loading" style="font-size: 28px;"><Loading /></el-icon>
+          <p style="margin-top: 10px; color: #666;">正在寻找相似门店...</p>
+        </div>
+      </template>
+
+      <template v-if="storeSimilarDone">
+        <div style="max-height: 500px; overflow-y: auto;">
+          <div v-if="storeSimilarResults.length === 0" style="text-align:center;padding:40px;color:#999;">
+            未找到相似门店
+          </div>
+          <div v-else>
+            <div style="margin-bottom: 12px; padding: 10px 14px; background: #f5f7fa; border-radius: 6px; font-size: 13px; color: #666;">
+              基准门店：<b style="color: #e64545;">{{ storeSimilarSelected?.name }}</b>（半径 {{ storeSimilarRadius }} 公里），按数据相似度排序
+            </div>
+            <div v-for="(r, rIdx) in storeSimilarResults" :key="r.name"
+              style="display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f0f0f0;"
+              :style="{ background: rIdx === 0 ? '#fdf6ec' : 'white' }">
+              <span style="width: 28px; font-size: 15px; font-weight: bold; color: #e64545;">{{ rIdx + 1 }}</span>
+              <div style="flex: 1;">
+                <div style="font-size: 14px; font-weight: 500;">{{ r.name }}</div>
+                <div style="font-size: 12px; color: #999;">
+                  到访 {{ (r.visit || 0).toLocaleString() }} · 居住 {{ (r.live || 0).toLocaleString() }} · 工作 {{ (r.work || 0).toLocaleString() }}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: bold; color: #e64545;">{{ r.similarity }}%</div>
+                <div style="font-size: 11px; color: #999;">相似度</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="storeSimilarVisible = false">关闭</el-button>
+        <el-button v-if="!storeSimilarDone" type="primary" :disabled="!storeSimilarRadius || !storeSimilarSelected || storeSimilarLoading" :loading="storeSimilarLoading" @click="startStoreSimilar">寻找</el-button>
+        <el-button v-if="storeSimilarDone" @click="resetStoreSimilar">重新选择</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 门店排名对话框 -->
     <el-dialog v-model="rankingVisible" title="门店排名" width="750px" draggable :show-close="true" @close="rankingVisible = false">
       <div v-if="!rankingDone">
@@ -568,7 +647,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
 
@@ -1577,6 +1656,162 @@ function getCompareCellStyle(nums, idx) {
   return validNums[idx] >= maxVal ? '#e64545' : '#333'
 }
 const isTwoStoreCompare = computed(() => storeCompareResults.value.length === 2)
+
+// ====== 相似店 ======
+const storeSimilarVisible = ref(false)
+const storeSimilarRadius = ref(null)
+const storeSimilarRadiusOptions = ref([])
+const storeSimilarKeyword = ref('')
+const storeSimilarSelected = ref(null)
+const storeSimilarLoading = ref(false)
+const storeSimilarDone = ref(false)
+const storeSimilarResults = ref([])
+
+// 筛选门店列表（单选）
+const storeSimilarFiltered = computed(() => {
+  const kw = storeSimilarKeyword.value?.toLowerCase() || ''
+  return markerStore.markers.filter(s => {
+    if (!kw) return true
+    return (s.name || '').toLowerCase().includes(kw) || (s.brand || '').toLowerCase().includes(kw)
+  })
+})
+
+const showStoreSimilarDialog = () => {
+  storeSimilarRadius.value = null
+  storeSimilarRadiusOptions.value = []
+  storeSimilarKeyword.value = ''
+  storeSimilarSelected.value = null
+  storeSimilarLoading.value = false
+  storeSimilarDone.value = false
+  storeSimilarResults.value = []
+  storeSimilarVisible.value = true
+  nextTick(() => loadStoreSimilarRadiusOptions())
+}
+
+// 从购买履历读取所有可用半径（与门店排名共用逻辑）
+const loadStoreSimilarRadiusOptions = async () => {
+  try {
+    const res = await axios.get('/api/purchase/store-counts')
+    const counts = res.data.counts || {}
+    const storeNames = Object.keys(counts)
+    const radiusSet = new Set()
+    for (const name of storeNames.slice(0, 50)) {
+      try {
+        const r = await axios.get(`/api/purchase/by-store/${encodeURIComponent(name)}`)
+        for (const p of (r.data?.purchases || [])) {
+          let pr = p.radius
+          try { pr = JSON.parse(pr) } catch (e) {}
+          const radii = Array.isArray(pr) ? pr : [pr]
+          radii.forEach(rd => { const n = Number(rd); if (n > 0) radiusSet.add(n) })
+        }
+      } catch (e) {}
+    }
+    storeSimilarRadiusOptions.value = [...radiusSet].sort((a, b) => a - b).map(r => Math.round(r / 100) / 10)
+  } catch (e) {
+    console.error('获取半径选项失败:', e)
+  }
+}
+
+// 获取指定门店在指定半径下的人口数据（无购买记录返回 null）
+const fetchStorePopData = async (store, radiusM) => {
+  try {
+    const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(store.name)}`)
+    const purchases = res.data?.purchases || []
+    let matched = null
+    for (const p of purchases) {
+      let pr = p.radius
+      try { pr = JSON.parse(pr) } catch (e) {}
+      const radii = Array.isArray(pr) ? pr : [pr]
+      if (radii.some(r => Math.abs(Number(r) - radiusM) <= 500)) { matched = p; break }
+    }
+    if (!matched) return null
+    const detailRes = await axios.get(`/api/purchase/${matched.id}`)
+    const resultData = detailRes.data?.result_data
+    if (!resultData) return null
+    const pop = extractPopData(resultData)
+    if (!pop) return null
+    return { visit: pop.visit || 0, live: pop.live || 0, work: pop.work || 0, out: pop.out || 0, entertain: pop.entertain || 0 }
+  } catch (e) { return null }
+}
+
+// 计算两门店数据向量的相似度（欧氏距离 → 百分比）
+const calcStoreSimilarity = (base, other) => {
+  const keys = ['visit', 'live', 'work', 'out', 'entertain']
+  // 欧氏距离（按比例缩放）
+  let sqSum = 0
+  let weightSum = 0
+  for (const k of keys) {
+    const b = base[k] || 0
+    const o = other[k] || 0
+    const maxV = Math.max(b, o)
+    if (maxV <= 0) continue
+    const diff = Math.abs(b - o) / maxV
+    sqSum += diff * diff
+    weightSum += 1
+  }
+  if (weightSum === 0) return 0
+  const dist = Math.sqrt(sqSum / weightSum) // 0~1
+  return Math.max(0, Math.round((1 - dist) * 100))
+}
+
+// 开始寻找相似店
+const startStoreSimilar = async () => {
+  if (!storeSimilarRadius.value) { ElMessage.warning('请选择分析半径'); return }
+  if (!storeSimilarSelected.value) { ElMessage.warning('请选择基准门店'); return }
+  storeSimilarLoading.value = true
+  storeSimilarDone.value = false
+
+  try {
+    const radiusM = storeSimilarRadius.value * 1000
+    const baseStore = storeSimilarSelected.value
+    // 获取基准门店数据
+    const basePop = await fetchStorePopData(baseStore, radiusM)
+    if (!basePop) {
+      ElMessage.warning(`基准门店「${baseStore.name}」在该半径下无购买履历数据`)
+      storeSimilarLoading.value = false
+      return
+    }
+
+    // 遍历其他门店（排除基准门店自身），分批并发
+    const candidates = markerStore.markers.filter(s => s.id !== baseStore.id)
+    const results = []
+    const batchSize = 5
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize)
+      const batchResults = await Promise.all(batch.map(async (store) => {
+        const pop = await fetchStorePopData(store, radiusM)
+        if (!pop) return null
+        return {
+          name: store.name,
+          brand: store.brand || '-',
+          city: store.city || '',
+          district: store.district || '',
+          visit: pop.visit, live: pop.live, work: pop.work,
+          similarity: calcStoreSimilarity(basePop, pop)
+        }
+      }))
+      results.push(...batchResults.filter(Boolean))
+    }
+
+    // 按相似度降序，取前 15
+    results.sort((a, b) => b.similarity - a.similarity)
+    storeSimilarResults.value = results.slice(0, 15)
+    storeSimilarDone.value = true
+    if (results.length === 0) {
+      ElMessage.info('未找到在相同半径下有购买履历的其他门店')
+    }
+  } catch (e) {
+    console.error('寻找相似店失败:', e)
+    ElMessage.error('寻找相似店失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    storeSimilarLoading.value = false
+  }
+}
+
+const resetStoreSimilar = () => {
+  storeSimilarDone.value = false
+  storeSimilarResults.value = []
+}
 
 // ====== 门店排名 ======
 const rankingVisible = ref(false)
