@@ -79,13 +79,13 @@
     <el-dialog v-model="storeCircleModeDialogVisible" title="网点优化" width="380px" :close-on-click-modal="false">
       <div style="padding: 10px 0; display: flex; flex-direction: column; gap: 12px;">
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('overlap')">
-          <el-icon style="margin-right:6px;"><Connection /></el-icon>相互蚕食
+          <el-icon style="margin-right:6px;"><Connection /></el-icon>自家相互蚕食
         </el-button>
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('competition')">
-          <el-icon style="margin-right:6px;"><DataLine /></el-icon>门店竞争数
+          <el-icon style="margin-right:6px;"><DataLine /></el-icon>周边竞争强度
         </el-button>
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('track')">
-          <el-icon style="margin-right:6px;"><Aim /></el-icon>竞争追踪
+          <el-icon style="margin-right:6px;"><Aim /></el-icon>竞争门店追踪
         </el-button>
       </div>
     </el-dialog>
@@ -248,7 +248,7 @@
           userSelect: 'none'
         }"
       >
-        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争追踪图例' : '竞争关系图例' }}</span>
+        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争门店追踪图例' : '竞争关系图例' }}</span>
         <el-button link size="small" @click="onStoreCircleLegendClose">
           <el-icon><Close /></el-icon>
         </el-button>
@@ -1467,7 +1467,7 @@ const storeCircleFilters = ref({
 const trackBrand = ref('')
 const storeCircleDialogTitle = computed(() => {
   if (storeCircleMode.value === 'overlap') return '我的门店重叠度'
-  if (storeCircleMode.value === 'track') return '设置竞争追踪半径'
+  if (storeCircleMode.value === 'track') return '设置竞争门店追踪半径'
   return '设置竞争分析半径'
 })
 // 竞争品牌多选（空数组 = 统计全部竞品）
@@ -5866,7 +5866,7 @@ const applyStoreCircles = () => {
     ]
     storeCircleLegendItems.value = trackLegendMap.filter(item => trackFilters[item.key]).map(item => ({ key: item.key, color: item.color, label: item.label }))
     storeCircleLegendVisible.value = true
-    ElMessage.success(`已为 ${trackBrand.value} 的 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 竞争追踪${drawnCount < trackStores.length ? `（${trackStores.length - drawnCount} 家因筛选未显示）` : ''}`)
+    ElMessage.success(`已为 ${trackBrand.value} 的 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 竞争门店追踪${drawnCount < trackStores.length ? `（${trackStores.length - drawnCount} 家因筛选未显示）` : ''}`)
     return
   }
 
