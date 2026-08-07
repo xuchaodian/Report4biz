@@ -295,21 +295,44 @@
           </div>
         </template>
         <template v-else>
-          <div v-for="(item, idx) in storeCircleLegendItems" :key="idx"
-            :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' }"
-          >
-            <span
-              :style="{
-                background: item.color,
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                flexShrink: 0,
-                border: '1px solid rgba(0,0,0,0.1)',
-                display: 'inline-block'
-              }"
-            ></span>
-            <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
+          <!-- 相互蚕食（重叠度）模式：可折叠展开门店列表，支持复制 -->
+          <div v-for="(item, idx) in storeCircleLegendItems" :key="idx">
+            <div
+              :style="{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', cursor: 'pointer', userSelect: 'none' }"
+              @click="toggleLegendCategory(item.key)"
+            >
+              <span
+                :style="{
+                  background: item.color,
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  display: 'inline-block'
+                }"
+              ></span>
+              <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
+              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ item.stores ? item.stores.length : 0 }}家</span>
+              <span :style="{ color: '#c0c4cc', fontSize: '10px', transform: expandedLegendCategory === item.key ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }">▶</span>
+            </div>
+            <div v-if="expandedLegendCategory === item.key" :style="{ padding: '2px 0 6px 22px' }">
+              <div :style="{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }">
+                <span :style="{ fontSize: '11px', color: '#909399' }">门店列表（{{ (item.stores || []).length }}家）</span>
+                <el-button link size="small" type="primary" :style="{ fontSize: '11px' }" @click="copyOverlapStores(item)">
+                  <el-icon style="margin-right:2px;"><CopyDocument /></el-icon>复制
+                </el-button>
+              </div>
+              <div
+                v-for="(sname, si) in item.stores"
+                :key="si"
+                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0', fontSize: '12px', color: '#606266' }"
+              >
+                <span :style="{ width: '4px', height: '4px', borderRadius: '50%', background: item.color, flexShrink: 0 }"></span>
+                <span :style="{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }">{{ sname }}</span>
+              </div>
+              <div v-if="!item.stores || item.stores.length === 0" :style="{ fontSize: '12px', color: '#c0c4cc', padding: '2px 0' }">暂无</div>
+            </div>
           </div>
         </template>
       </div>
@@ -1274,7 +1297,7 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -1443,7 +1466,7 @@ const storeCircleFilters = ref({
 // 竞争追踪：指定竞争品牌（单选）
 const trackBrand = ref('')
 const storeCircleDialogTitle = computed(() => {
-  if (storeCircleMode.value === 'overlap') return '设置网点优化半径'
+  if (storeCircleMode.value === 'overlap') return '我的门店重叠度'
   if (storeCircleMode.value === 'track') return '设置竞争追踪半径'
   return '设置竞争分析半径'
 })
@@ -1460,6 +1483,34 @@ const competitionStoreResults = ref([])    // [{ lat, lng, city, filterKey, name
 const expandedLegendCategory = ref(null)   // 当前展开的图例分类 key
 const toggleLegendCategory = (key) => {
   expandedLegendCategory.value = expandedLegendCategory.value === key ? null : key
+}
+// 复制相互蚕食（重叠度）分类下的门店列表
+const copyOverlapStores = async (item) => {
+  const stores = item.stores || []
+  if (stores.length === 0) {
+    ElMessage.info('该分类下暂无门店')
+    return
+  }
+  const text = stores.join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(`已复制 ${stores.length} 家门店名称`)
+  } catch (e) {
+    // 剪贴板 API 不可用时降级：创建临时 textarea
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      ElMessage.success(`已复制 ${stores.length} 家门店名称`)
+    } catch (e2) {
+      ElMessage.error('复制失败，请手动选择复制')
+    }
+  }
 }
 const getCategoryTotal = (key) => {
   const cities = competitionCityStats.value[key]
@@ -5887,14 +5938,24 @@ const applyStoreCircles = () => {
     storeCircleLayer.addLayer(circle)
   })
   showStoreCircles.value = true
-  // 构建图例——只显示已勾选的项
+  // 构建图例——只显示已勾选的项，并附带各分类下的门店列表（供展开/复制）
   const overlapLegendMap = [
     { key: 'overlapHigh', color: '#f56c6c', label: `重叠率 ≥${highPct}%` },
     { key: 'overlapMid', color: '#e6a23c', label: `${lowPct}% ≤ 重叠率 < ${highPct}%` },
     { key: 'overlapLow', color: '#409eff', label: `0 < 重叠率 < ${lowPct}%` },
     { key: 'overlapNone', color: '#909399', label: '无重叠' }
   ]
-  storeCircleLegendItems.value = overlapLegendMap.filter(item => overlapFilters[item.key]).map(item => ({ color: item.color, label: item.label }))
+  // 将门店按重叠档位分组（使用 validStores 与 circleColors 一一对应）
+  const overlapGroups = {}
+  validStores.forEach((store, idx) => {
+    const color = circleColors[idx]
+    const key = overlapLegendMap.find(m => m.color === color)?.key || 'overlapNone'
+    if (!overlapGroups[key]) overlapGroups[key] = []
+    overlapGroups[key].push(store.name || '未知门店')
+  })
+  storeCircleLegendItems.value = overlapLegendMap
+    .filter(item => overlapFilters[item.key])
+    .map(item => ({ key: item.key, color: item.color, label: item.label, stores: overlapGroups[item.key] || [] }))
   storeCircleLegendVisible.value = true
   saveOverlapThresholds()  // 保存本次设置的重叠率阈值
   console.log('[legend] overlap mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
