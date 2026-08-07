@@ -787,6 +787,60 @@
       @update:visible="storeSmartstepsVisible = $event"
     />
 
+    <!-- 相似店对话框（从门店弹窗进入，基准门店固定） -->
+    <el-dialog v-model="storeSimilarVisible" title="相似店" width="760px" draggable :show-close="true" @close="resetStoreSimilarDialog">
+      <template v-if="!storeSimilarDone">
+        <div style="margin-bottom: 14px; padding: 10px 14px; background: #f5f7fa; border-radius: 6px; font-size: 13px; color: #666;">
+          基准门店：<b style="color: #e64545;">{{ storeSimilarBaseName }}</b>
+        </div>
+        <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 13px; color: #666;">分析半径：</span>
+          <el-select v-model="storeSimilarRadius" placeholder="请选择分析半径" style="width: 180px;">
+            <el-option v-for="r in storeSimilarRadiusOptions" :key="r" :label="r + '公里'" :value="r" />
+          </el-select>
+          <span style="font-size: 12px; color: #999;">从购买履历中读取</span>
+        </div>
+        <div v-if="storeSimilarLoading" style="text-align: center; padding: 30px;">
+          <el-icon class="is-loading" style="font-size: 28px;"><Loading /></el-icon>
+          <p style="margin-top: 10px; color: #666;">正在寻找相似门店...</p>
+        </div>
+      </template>
+
+      <template v-if="storeSimilarDone">
+        <div style="max-height: 480px; overflow-y: auto;">
+          <div v-if="storeSimilarResults.length === 0" style="text-align:center;padding:40px;color:#999;">
+            未找到相似门店
+          </div>
+          <div v-else>
+            <div style="margin-bottom: 12px; padding: 10px 14px; background: #f5f7fa; border-radius: 6px; font-size: 13px; color: #666;">
+              基准门店：<b style="color: #e64545;">{{ storeSimilarBaseName }}</b>（半径 {{ storeSimilarRadius }} 公里），共 {{ storeSimilarResults.length }} 家相似门店
+            </div>
+            <div v-for="(r, rIdx) in storeSimilarResults" :key="r.name"
+              style="display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f0f0f0;"
+              :style="{ background: rIdx === 0 ? '#fdf6ec' : 'white' }">
+              <span style="width: 28px; font-size: 15px; font-weight: bold; color: #e64545;">{{ rIdx + 1 }}</span>
+              <div style="flex: 1;">
+                <div style="font-size: 14px; font-weight: 500;">{{ r.name }}</div>
+                <div style="font-size: 12px; color: #999;">
+                  到访 {{ (r.visit || 0).toLocaleString() }} · 居住 {{ (r.live || 0).toLocaleString() }} · 工作 {{ (r.work || 0).toLocaleString() }}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: bold; color: #e64545;">{{ r.similarity }}%</div>
+                <div style="font-size: 11px; color: #999;">相似度</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <el-button @click="storeSimilarVisible = false">关闭</el-button>
+        <el-button v-if="!storeSimilarDone" type="primary" :disabled="!storeSimilarRadius || storeSimilarLoading" :loading="storeSimilarLoading" @click="startStoreSimilarFromMap">寻找</el-button>
+        <el-button v-if="storeSimilarDone" @click="resetStoreSimilarDialog">重新选择</el-button>
+      </template>
+    </el-dialog>
+
     <!-- POI位置选择提示 -->
     <div v-if="poiPickLocationMode" class="poi-pick-location-overlay">
       <div class="poi-pick-location-hint">
@@ -1297,7 +1351,7 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -2267,6 +2321,177 @@ const openStoreSmartsteps = (storeId) => {
   storeSmartstepsVisible.value = true
 }
 
+// ====== 相似店（从门店弹窗进入，基准门店固定为当前门店） ======
+const storeSimilarVisible = ref(false)
+const storeSimilarBaseId = ref(null)
+const storeSimilarBaseName = ref('')
+const storeSimilarRadius = ref(null)
+const storeSimilarRadiusOptions = ref([])
+const storeSimilarLoading = ref(false)
+const storeSimilarDone = ref(false)
+const storeSimilarResults = ref([])
+
+// 从购买履历读取所有可用半径（与 /data 相似店一致）
+const loadStoreSimilarRadiusOptions = async () => {
+  try {
+    const res = await axios.get('/api/purchase/store-counts')
+    const counts = res.data.counts || {}
+    const storeNames = Object.keys(counts)
+    const radiusSet = new Set()
+    for (const name of storeNames.slice(0, 50)) {
+      try {
+        const r = await axios.get(`/api/purchase/by-store/${encodeURIComponent(name)}`)
+        for (const p of (r.data?.purchases || [])) {
+          let pr = p.radius
+          try { pr = JSON.parse(pr) } catch (e) {}
+          const radii = Array.isArray(pr) ? pr : [pr]
+          radii.forEach(rd => { const n = Number(rd); if (n > 0) radiusSet.add(n) })
+        }
+      } catch (e) {}
+    }
+    storeSimilarRadiusOptions.value = [...radiusSet].sort((a, b) => a - b).map(r => Math.round(r / 100) / 10)
+  } catch (e) {
+    console.error('获取半径选项失败:', e)
+  }
+}
+
+// 从 result_data 提取 1001 人口字段（与 /data 一致）
+const extractPopDataFromMap = (resultData) => {
+  if (!resultData) return null
+  let apiResult = resultData
+  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return null } }
+  if (apiResult?.apiResult) apiResult = apiResult.apiResult
+  const d = apiResult?.['1001']
+  if (!d || typeof d !== 'object') return null
+  const findField = (pattern) => {
+    for (const [k, v] of Object.entries(d)) {
+      if (typeof v === 'number' && pattern.test(k)) return v
+    }
+    return null
+  }
+  return {
+    visit: findField(/^P0_SUM\d*$/i),
+    live: findField(/^P1_SUM\d*$/i),
+    work: findField(/^P2_SUM\d*$/i),
+    out: findField(/^P3_SUM\d*$/i),
+    entertain: findField(/^P4_SUM\d*$/i)
+  }
+}
+
+// 获取指定门店在指定半径下的人口数据
+const fetchStorePopDataFromMap = async (storeName, radiusM) => {
+  try {
+    const res = await axios.get(`/api/purchase/by-store/${encodeURIComponent(storeName)}`)
+    const purchases = res.data?.purchases || []
+    let matched = null
+    for (const p of purchases) {
+      let pr = p.radius
+      try { pr = JSON.parse(pr) } catch (e) {}
+      const radii = Array.isArray(pr) ? pr : [pr]
+      if (radii.some(r => Math.abs(Number(r) - radiusM) <= 500)) { matched = p; break }
+    }
+    if (!matched) return null
+    const detailRes = await axios.get(`/api/purchase/${matched.id}`)
+    const resultData = detailRes.data?.result_data
+    if (!resultData) return null
+    const pop = extractPopDataFromMap(resultData)
+    if (!pop) return null
+    return { visit: pop.visit || 0, live: pop.live || 0, work: pop.work || 0, out: pop.out || 0, entertain: pop.entertain || 0 }
+  } catch (e) { return null }
+}
+
+// 相似度计算（欧氏距离归一化）
+const calcStoreSimilarityFromMap = (base, other) => {
+  const keys = ['visit', 'live', 'work', 'out', 'entertain']
+  let sqSum = 0
+  let weightSum = 0
+  for (const k of keys) {
+    const b = base[k] || 0
+    const o = other[k] || 0
+    const maxV = Math.max(b, o)
+    if (maxV <= 0) continue
+    const diff = Math.abs(b - o) / maxV
+    sqSum += diff * diff
+    weightSum += 1
+  }
+  if (weightSum === 0) return 0
+  const dist = Math.sqrt(sqSum / weightSum)
+  return Math.max(0, Math.round((1 - dist) * 100))
+}
+
+// 门店popup"相似店"按钮 - 以当前门店为基准，寻找数据相似的门店
+const openStoreSimilarStores = (storeId) => {
+  const store = markerStore.markers.find(m => m.id === storeId)
+  if (!store) {
+    ElMessage.error('未找到门店信息')
+    return
+  }
+  storeSimilarBaseId.value = store.id
+  storeSimilarBaseName.value = store.name
+  storeSimilarRadius.value = null
+  storeSimilarRadiusOptions.value = []
+  storeSimilarLoading.value = false
+  storeSimilarDone.value = false
+  storeSimilarResults.value = []
+  storeSimilarVisible.value = true
+  loadStoreSimilarRadiusOptions()
+}
+
+const startStoreSimilarFromMap = async () => {
+  if (!storeSimilarRadius.value) { ElMessage.warning('请选择分析半径'); return }
+  storeSimilarLoading.value = true
+  storeSimilarDone.value = false
+
+  try {
+    const radiusM = storeSimilarRadius.value * 1000
+    const baseStore = markerStore.markers.find(m => m.id === storeSimilarBaseId.value)
+    if (!baseStore) { ElMessage.error('未找到基准门店'); return }
+
+    const basePop = await fetchStorePopDataFromMap(baseStore.name, radiusM)
+    if (!basePop) {
+      ElMessage.warning(`基准门店「${baseStore.name}」在该半径下无购买履历数据`)
+      storeSimilarLoading.value = false
+      return
+    }
+
+    const candidates = markerStore.markers.filter(s => s.id !== baseStore.id)
+    const results = []
+    const batchSize = 5
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize)
+      const batchResults = await Promise.all(batch.map(async (store) => {
+        const pop = await fetchStorePopDataFromMap(store.name, radiusM)
+        if (!pop) return null
+        return {
+          name: store.name,
+          brand: store.brand || '-',
+          visit: pop.visit, live: pop.live, work: pop.work,
+          similarity: calcStoreSimilarityFromMap(basePop, pop)
+        }
+      }))
+      results.push(...batchResults.filter(Boolean))
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity)
+    storeSimilarResults.value = results.slice(0, 15)
+    storeSimilarDone.value = true
+    if (results.length === 0) {
+      ElMessage.info('未找到在相同半径下有购买履历的其他门店')
+    }
+  } catch (e) {
+    console.error('寻找相似店失败:', e)
+    ElMessage.error('寻找相似店失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    storeSimilarLoading.value = false
+  }
+}
+
+const resetStoreSimilarDialog = () => {
+  storeSimilarVisible.value = false
+  storeSimilarDone.value = false
+  storeSimilarResults.value = []
+}
+
 // 门店popup"竞品分布"按钮 - 以门店坐标为圆心分析周边竞品
 const openStoreCompetitors = (lat, lng) => {
   if (!map) return
@@ -2369,6 +2594,7 @@ function getStorePopupHtml(markerData) {
         <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
         <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
         <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px; font-size: 12px;">联通人口</button>
+        <button onclick="window.openStoreSimilarStores(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #e6a23c; color: white; border: none; border-radius: 4px; font-size: 12px;">相似店</button>
         <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">人口分布</button>
         <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">竞品分布</button>
         <button onclick="window.openStorePoiSearch(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #6366f1; color: white; border: none; border-radius: 4px; font-size: 12px;">周边检索</button>
@@ -8464,6 +8690,7 @@ onMounted(() => {
   window.deleteMarkerExternal = deleteMarker
   window.openStorePopulationDistribution = openStorePopulationDistribution
   window.openStoreSmartsteps = openStoreSmartsteps
+  window.openStoreSimilarStores = openStoreSimilarStores
   window.openStoreCompetitors = openStoreCompetitors
   window.openStorePoiSearch = openStorePoiSearch
   window.storeHasPurchaseHistory = storeHasPurchaseHistory
@@ -8581,6 +8808,7 @@ onUnmounted(() => {
   delete window.deleteMarkerExternal
   delete window.openStorePopulationDistribution
   delete window.openStoreSmartsteps
+  delete window.openStoreSimilarStores
   delete window.openStoreCompetitors
   delete window.openStorePoiSearch
   delete window.handleShapefileQueryFromGlobal
