@@ -61,11 +61,11 @@
             <span>按商圈查询</span>
           </div>
         </el-tooltip>
-        <!-- 门店商圈 -->
+        <!-- 网点优化 -->
         <el-tooltip content="对可见门店统一生成半径圆" placement="left">
           <div class="store-tools-item" :class="{ active: showStoreCircles }" @click="$emit('toggle-store-circles')">
             <el-icon><Aim /></el-icon>
-            <span>门店商圈</span>
+            <span>网点优化</span>
           </div>
         </el-tooltip>
         <!-- 热力图 -->

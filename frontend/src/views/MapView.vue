@@ -75,8 +75,8 @@
       @confirm="onCityTradeAreaConfirm"
     />
 
-    <!-- 门店商圈模式选择对话框 -->
-    <el-dialog v-model="storeCircleModeDialogVisible" title="门店商圈" width="380px" :close-on-click-modal="false">
+    <!-- 网点优化模式选择对话框 -->
+    <el-dialog v-model="storeCircleModeDialogVisible" title="网点优化" width="380px" :close-on-click-modal="false">
       <div style="padding: 10px 0; display: flex; flex-direction: column; gap: 12px;">
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('overlap')">
           <el-icon style="margin-right:6px;"><Connection /></el-icon>门店重合度
@@ -1443,7 +1443,7 @@ const storeCircleFilters = ref({
 // 竞争追踪：指定竞争品牌（单选）
 const trackBrand = ref('')
 const storeCircleDialogTitle = computed(() => {
-  if (storeCircleMode.value === 'overlap') return '设置门店商圈半径'
+  if (storeCircleMode.value === 'overlap') return '设置网点优化半径'
   if (storeCircleMode.value === 'track') return '设置竞争追踪半径'
   return '设置竞争分析半径'
 })
