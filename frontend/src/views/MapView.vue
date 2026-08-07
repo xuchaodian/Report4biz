@@ -2577,7 +2577,7 @@ const openStorePoiSearch = async (lat, lng) => {
 function getStorePopupHtml(markerData) {
   const isClosed = isStoreClosed(markerData.store_status)
   return `
-    <div style="min-width: 220px; font-size: 13px;${isClosed ? ' opacity: 0.6;' : ''}">
+    <div style="min-width: 232px; font-size: 13px;${isClosed ? ' opacity: 0.6;' : ''}">
       <h4 style="margin: 0 0 8px 0; color: #333;">${markerData.brand || ''} ${markerData.name}</h4>
       <p style="margin: 4px 0;"><strong>编号:</strong> ${markerData.store_code || '-'}</p>
       <p style="margin: 4px 0;"><strong>类型:</strong> <span style="color: ${markerData.store_type === '已开业' ? '#67c23a' : markerData.store_type === '重点候选' ? '#f56c6c' : '#e6a23c'}">${markerData.store_type || '-'}</span></p>
