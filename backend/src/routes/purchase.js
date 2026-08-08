@@ -268,20 +268,24 @@ router.get('/store-counts', authenticate, (req, res) => {
   try {
     const db = getDb()
 
-    // 查询所有门店的购买次数（按 store_name 分组）
+    // 查询所有门店的购买次数与最近数据年月（按 store_name 分组，city_month 为 YYYYMM 字符串可排序取 MAX）
     const counts = db.prepare(`
       SELECT 
         store_name,
-        COUNT(*) as count
+        COUNT(*) as count,
+        MAX(city_month) as latest_city_month
       FROM purchases
       WHERE user_id = ? AND status = 'active' AND store_name IS NOT NULL AND store_name != ''
       GROUP BY store_name
     `).all(req.user.id)
 
-    // 转换为 {门店名称: 次数} 的格式
+    // 转换为 {门店名称: {count, latest_city_month}} 的格式
     const result = {}
     counts.forEach(item => {
-      result[item.store_name] = item.count
+      result[item.store_name] = {
+        count: item.count,
+        latest_city_month: item.latest_city_month || null
+      }
     })
 
     res.json({ counts: result })

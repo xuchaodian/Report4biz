@@ -120,6 +120,18 @@
             </template>
           </template>
         </el-table-column>
+        <el-table-column label="数据年月" width="110" align="center">
+          <template #default="{ row }">
+            <template v-if="getStoreLatestMonth(row.name)">
+              <el-tooltip :content="isStoreMonthExpired(row.name) ? '数据距今超过12个月，建议更新' : '最近一次购买的数据年月'" placement="top">
+                <span :style="isStoreMonthExpired(row.name) ? { color: '#f56c6c', fontWeight: 'bold', cursor: 'pointer' } : { color: '#67c23a', cursor: 'pointer' }">
+                  <span v-if="isStoreMonthExpired(row.name)" style="margin-right: 2px;">⏰</span>{{ getStoreLatestMonth(row.name) }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else style="color: #c0c4cc;">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="store_type" label="类型" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="getStoreTypeTag(row.store_type)">{{ row.store_type || '-' }}</el-tag>
@@ -1410,7 +1422,7 @@ onMounted(async () => {
   }
 })
 
-// 获取所有门店的购买次数（批量查询，一次API调用）
+// 获取所有门店的购买次数与最近数据年月（批量查询，一次API调用）
 async function fetchStorePurchaseCounts() {
   try {
     console.log('开始获取购买次数...')
@@ -1422,9 +1434,33 @@ async function fetchStorePurchaseCounts() {
   }
 }
 
-// 获取门店名称的星星数量
+// 获取门店名称的星星数量（counts[storeName] 现为 {count, latest_city_month} 对象）
 function getStoreStars(storeName) {
-  return storePurchaseCount.value[storeName] || 0
+  const info = storePurchaseCount.value[storeName]
+  return (info && typeof info === 'object') ? (info.count || 0) : (info || 0)
+}
+
+// 获取门店最近数据年月（YYYYMM → YYYY年MM月）
+function getStoreLatestMonth(storeName) {
+  const info = storePurchaseCount.value[storeName]
+  if (!info || typeof info !== 'object' || !info.latest_city_month) return null
+  const m = String(info.latest_city_month)
+  if (m.length !== 6) return m
+  return `${m.slice(0, 4)}年${m.slice(4)}月`
+}
+
+// 判断数据年月是否过期（距今 >12 个月）
+function isStoreMonthExpired(storeName) {
+  const info = storePurchaseCount.value[storeName]
+  if (!info || typeof info !== 'object' || !info.latest_city_month) return false
+  const m = String(info.latest_city_month)
+  if (m.length !== 6 || !/^\d{6}$/.test(m)) return false
+  const year = parseInt(m.slice(0, 4), 10)
+  const month = parseInt(m.slice(4), 10)
+  if (year < 2000 || month < 1 || month > 12) return false
+  const now = new Date()
+  const monthsDiff = (now.getFullYear() - year) * 12 + (now.getMonth() + 1 - month)
+  return monthsDiff > 12
 }
 
 // ====== 门店对比 ======

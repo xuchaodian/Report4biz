@@ -176,9 +176,16 @@
             {{ row.radius_display || (row.radius ? row.radius + '米' : '-') }}
           </template>
         </el-table-column>
-        <el-table-column label="数据年月" width="90">
+        <el-table-column label="数据年月" width="110" align="center">
           <template #default="{ row }">
-            {{ row.city_month || '-' }}
+            <template v-if="row.city_month">
+              <el-tooltip :content="isCityMonthExpired(row.city_month) ? '数据距今超过12个月，建议更新' : '数据年月'" placement="top">
+                <span :style="isCityMonthExpired(row.city_month) ? { color: '#f56c6c', fontWeight: 'bold', cursor: 'pointer' } : { color: '#67c23a', cursor: 'pointer' }">
+                  <span v-if="isCityMonthExpired(row.city_month)" style="margin-right: 2px;">⏰</span>{{ row.city_month }}
+                </span>
+              </el-tooltip>
+            </template>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column label="扣除次数" width="90" align="center">
@@ -566,6 +573,19 @@ const showHistoryDialog = async () => {
   } finally {
     historyLoading.value = false
   }
+}
+
+// 判断数据年月是否过期（YYYYMM 格式，距今 >12 个月）
+const isCityMonthExpired = (cityMonth) => {
+  if (!cityMonth) return false
+  const m = String(cityMonth)
+  if (m.length !== 6 || !/^\d{6}$/.test(m)) return false
+  const year = parseInt(m.slice(0, 4), 10)
+  const month = parseInt(m.slice(4), 10)
+  if (year < 2000 || month < 1 || month > 12) return false
+  const now = new Date()
+  const monthsDiff = (now.getFullYear() - year) * 12 + (now.getMonth() + 1 - month)
+  return monthsDiff > 12
 }
 
 // 格式化日期
