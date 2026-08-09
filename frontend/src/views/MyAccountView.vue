@@ -793,8 +793,8 @@ const renderCompareCharts = async () => {
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: dims.map(d => d.name) },
-      grid: { left: 80, right: 20, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 20 } },
+      grid: { left: 80, right: 20, top: 40, bottom: 70 },
+      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 30, margin: 14, fontSize: 12 } },
       yAxis: { type: 'value', name: '人数' },
       series
     })
@@ -826,8 +826,8 @@ const renderCompareCharts = async () => {
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: orders.map(o => o.store_name), type: 'scroll' },
-      grid: { left: 80, right: 20, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: flowX },
+      grid: { left: 80, right: 20, top: 40, bottom: 60 },
+      xAxis: { type: 'category', data: flowX, axisLabel: { fontSize: 11 } },
       yAxis: { type: 'value', name: '到访人次' },
       series
     })
@@ -855,8 +855,8 @@ const renderCompareCharts = async () => {
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: levels.map(l => l.name) },
-      grid: { left: 80, right: 20, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 20 } },
+      grid: { left: 80, right: 20, top: 40, bottom: 70 },
+      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 30, margin: 14, fontSize: 12 } },
       yAxis: { type: 'value', name: '人数' },
       series
     })
@@ -3630,7 +3630,7 @@ const handleExportExcel = async () => {
 
 .compare-chart-box {
   width: 100%;
-  height: 320px;
+  height: 360px;
   border: 1px solid #ebeef5;
   border-radius: 8px;
   background: #fff;
