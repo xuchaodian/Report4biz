@@ -2806,7 +2806,8 @@ const buildPdfReportHeader = () => {
 
   const logoWrap = document.createElement('div')
   logoWrap.id = 'pdf-report-logo-wrap'
-  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px;min-width:120px;max-width:160px;'
+  // padding-top:20px 与 .detail-info 内容顶部对齐（padding 12px + 首行 p margin-top 8px）
+  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 4px 4px;min-width:120px;max-width:160px;'
   if (logo) {
     const img = document.createElement('img')
     img.src = logo
