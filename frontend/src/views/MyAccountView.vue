@@ -2782,29 +2782,45 @@ const handleExportPDFAsReport = async () => {
 }
 
 // ====== PDF 导出 ======
-// 生成 PDF 报告头部（Logo + 公司名），截图前插入，截图后移除
+// 生成 PDF 报告 Logo 区：插入到「订单信息」右侧，与订单信息并排显示
+// 返回 { host, infoEl, hostOriginalDisplay, infoElOriginalFlex } 用于 finally 还原
 const buildPdfReportHeader = () => {
   const container = pdfContentRef.value
   if (!container) return null
-  const header = document.createElement('div')
-  header.id = 'pdf-report-header'
-  header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 14px;margin-bottom:14px;background:#f8f9fa;border:1px solid #ebeef5;border-radius:6px;'
+  const infoEl = container.querySelector('.detail-info')
+  if (!infoEl) return null
   const logo = form.logo || userStore.user?.logo
+  const company = form.company || userStore.user?.company || ''
+  // 既无 Logo 也无公司名，则不插入
+  if (!logo && !company) return null
+
+  // 临时把 .detail-info 改为 flex 布局，让原 p 列表在左、Logo 区在右
+  const host = infoEl.parentElement
+  const hostOriginalDisplay = host.style.display
+  const infoElOriginalFlex = infoEl.style.flex
+  host.style.display = 'flex'
+  host.style.gap = '12px'
+  host.style.alignItems = 'flex-start'
+  infoEl.style.flex = '1'
+
+  const logoWrap = document.createElement('div')
+  logoWrap.id = 'pdf-report-logo-wrap'
+  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;min-width:120px;max-width:160px;'
   if (logo) {
     const img = document.createElement('img')
     img.src = logo
     img.alt = 'Logo'
-    img.style.cssText = 'height:36px;max-width:120px;object-fit:contain;'
-    header.appendChild(img)
+    img.style.cssText = 'max-height:60px;max-width:140px;object-fit:contain;'
+    logoWrap.appendChild(img)
   }
-  const name = document.createElement('span')
-  name.style.cssText = 'font-size:16px;font-weight:bold;color:#333;'
-  name.textContent = form.company || userStore.user?.company || ''
-  if (name.textContent) header.appendChild(name)
-  // 若既无 Logo 也无公司名，则不插入头部
-  if (!logo && !name.textContent) return null
-  container.insertBefore(header, container.firstChild)
-  return header
+  if (company) {
+    const name = document.createElement('span')
+    name.style.cssText = 'font-size:13px;font-weight:bold;color:#333;margin-top:6px;text-align:center;'
+    name.textContent = company
+    logoWrap.appendChild(name)
+  }
+  host.appendChild(logoWrap)
+  return { host, infoEl, hostOriginalDisplay, infoElOriginalFlex }
 }
 
 const handleExportPDF = async () => {
@@ -2852,9 +2868,16 @@ const handleExportPDF = async () => {
     console.error('PDF导出失败:', e)
     ElMessage.error('PDF导出失败: ' + e.message)
   } finally {
-    // 移除临时报告头部，恢复原始 DOM
-    if (reportHeader && reportHeader.parentNode) {
-      reportHeader.parentNode.removeChild(reportHeader)
+    // 移除临时 Logo 区，恢复原始 DOM 样式
+    const wrap = document.getElementById('pdf-report-logo-wrap')
+    if (wrap && wrap.parentNode) {
+      wrap.parentNode.removeChild(wrap)
+    }
+    if (reportHeader) {
+      reportHeader.host.style.display = reportHeader.hostOriginalDisplay
+      reportHeader.host.style.gap = ''
+      reportHeader.host.style.alignItems = ''
+      reportHeader.infoEl.style.flex = reportHeader.infoElOriginalFlex
     }
   }
 }
