@@ -576,10 +576,21 @@ const openCompareDialog = async () => {
     for (const row of compareSelected.value) {
       try {
         const { data } = await axios.get(`/api/purchase/${row.id}`)
+        // 半径：后端返回 radii 数组（兼容旧的 radius 单值）
+        let radiusText = '-'
+        if (Array.isArray(data.radii) && data.radii.length > 0) {
+          radiusText = data.radii.join('/') + '米'
+        } else if (data.radius) {
+          radiusText = data.radius + '米'
+        } else if (row.radius_display) {
+          radiusText = row.radius_display
+        } else if (row.radius) {
+          radiusText = row.radius + '米'
+        }
         loaded.push({
           id: data.id,
           store_name: data.store_name || row.store_name || '订单' + data.id,
-          radius_display: data.radius_display || (data.radius ? data.radius + '米' : ''),
+          radius_display: radiusText,
           city_month: data.city_month,
           result_data: data.result_data
         })
@@ -592,6 +603,15 @@ const openCompareDialog = async () => {
       ElMessage.warning('加载成功的订单不足 2 笔，无法对比')
       compareLoading.value = false
       return
+    }
+    // 调试：输出首个订单的 result_data 结构便于排查
+    if (loaded[0]?.result_data) {
+      console.log('[Compare] 首单 result_data 类型:', typeof loaded[0].result_data, 'keys:', loaded[0].result_data ? Object.keys(loaded[0].result_data).slice(0,8) : 'null')
+      const api = extractApiResult(loaded[0].result_data)
+      console.log('[Compare] 提取的服务数据 keys:', api ? Object.keys(api) : 'null')
+      console.log('[Compare] 人口提取:', extractPopSums(api))
+      console.log('[Compare] 客流提取:', extractFlowData(api))
+      console.log('[Compare] 消费提取:', extractConsumeData(api))
     }
     await nextTick()
     renderCompareCharts()
@@ -613,13 +633,20 @@ const removeCompareOrder = (id) => {
   nextTick(() => renderCompareCharts())
 }
 
-// 提取 result_data.apiResult 服务数据
+// 提取 result_data 服务数据 —— 兼容多种格式
+// 格式1: {apiResult: {1001:...,1005:...}}（完整结构）
+// 格式2: {1001:...,1005:...}（直接服务号字典）
+// 格式3: 字符串 JSON（自动 parse）
 const extractApiResult = (resultData) => {
   if (!resultData) return null
   let api = resultData
   if (typeof api === 'string') { try { api = JSON.parse(api) } catch (e) { return null } }
-  if (api && api.apiResult) api = api.apiResult
-  return api && typeof api === 'object' ? api : null
+  if (!api || typeof api !== 'object') return null
+  if (api.apiResult && typeof api.apiResult === 'object') return api.apiResult
+  // 检查是否直接含服务号键（如 1001/1005/1009/1010/1011/1013/1015 等）
+  const serviceKeys = Object.keys(api).filter(k => /^(100[0-9]|101[0-9]|102[0-9])$/.test(k))
+  if (serviceKeys.length > 0) return api
+  return null
 }
 
 // 1001 人口汇总提取：P0_SUM/到访 P1_SUM/居住 P2_SUM/工作
