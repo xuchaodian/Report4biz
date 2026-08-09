@@ -181,7 +181,7 @@ const handleLogin = async () => {
   
   .login-logo {
     width: 64px;
-    height: 64px;
+    height: auto;
     margin-bottom: 12px;
   }
   

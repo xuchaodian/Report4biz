@@ -230,7 +230,7 @@ const skipWizard = () => {
 }
 .wizard-logo {
   width: 64px;
-  height: 64px;
+  height: auto;
   border-radius: 12px;
 }
 .wizard-title {

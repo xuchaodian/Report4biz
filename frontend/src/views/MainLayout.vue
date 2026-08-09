@@ -427,6 +427,12 @@ const doExport = async (type) => {
     width: var(--sidebar-width);
     display: flex;
     align-items: center;
+
+    .header-logo {
+      width: auto;
+      height: 30px;
+      margin-right: 8px;
+    }
     
     .logo-text {
       font-size: 14px;
