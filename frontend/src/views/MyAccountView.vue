@@ -2794,18 +2794,19 @@ const buildPdfReportHeader = () => {
   // 既无 Logo 也无公司名，则不插入
   if (!logo && !company) return null
 
-  // 临时把 .detail-info 改为 flex 布局，让原 p 列表在左、Logo 区在右
-  const host = infoEl.parentElement
-  const hostOriginalDisplay = host.style.display
-  const infoElOriginalFlex = infoEl.style.flex
-  host.style.display = 'flex'
-  host.style.gap = '12px'
-  host.style.alignItems = 'flex-start'
-  infoEl.style.flex = '1'
+  // 临时把 .detail-info 包到一个 flex wrapper：左 = 原 .detail-info（保持原样），右 = logoWrap
+  // 不动 .detail-info 自身样式，也不动它的父级布局，避免影响其他兄弟节点
+  const parent = infoEl.parentElement
+  const nextSibling = infoEl.nextElementSibling
+  const wrapper = document.createElement('div')
+  wrapper.id = 'pdf-report-info-wrapper'
+  wrapper.style.cssText = 'display:flex;gap:16px;align-items:flex-start;'
+  parent.insertBefore(wrapper, infoEl)
+  wrapper.appendChild(infoEl) // 左侧 = 原 .detail-info
 
   const logoWrap = document.createElement('div')
   logoWrap.id = 'pdf-report-logo-wrap'
-  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;min-width:120px;max-width:160px;'
+  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px;min-width:120px;max-width:160px;'
   if (logo) {
     const img = document.createElement('img')
     img.src = logo
@@ -2819,8 +2820,10 @@ const buildPdfReportHeader = () => {
     name.textContent = company
     logoWrap.appendChild(name)
   }
-  host.appendChild(logoWrap)
-  return { host, infoEl, hostOriginalDisplay, infoElOriginalFlex }
+  wrapper.appendChild(logoWrap)
+
+  // 返回还原所需句柄：wrapper 与其位置（前一个兄弟 = infoEl 原位置之前）
+  return { wrapper, parent, nextSibling }
 }
 
 const handleExportPDF = async () => {
@@ -2868,16 +2871,19 @@ const handleExportPDF = async () => {
     console.error('PDF导出失败:', e)
     ElMessage.error('PDF导出失败: ' + e.message)
   } finally {
-    // 移除临时 Logo 区，恢复原始 DOM 样式
-    const wrap = document.getElementById('pdf-report-logo-wrap')
-    if (wrap && wrap.parentNode) {
-      wrap.parentNode.removeChild(wrap)
-    }
+    // 还原 DOM：把 .detail-info 移回 wrapper 原位置（wrapper 之前），并删除 wrapper
     if (reportHeader) {
-      reportHeader.host.style.display = reportHeader.hostOriginalDisplay
-      reportHeader.host.style.gap = ''
-      reportHeader.host.style.alignItems = ''
-      reportHeader.infoEl.style.flex = reportHeader.infoElOriginalFlex
+      const infoEl = reportHeader.wrapper.querySelector('.detail-info')
+      if (infoEl) {
+        if (reportHeader.nextSibling && reportHeader.nextSibling.parentNode === reportHeader.parent) {
+          reportHeader.parent.insertBefore(infoEl, reportHeader.nextSibling)
+        } else {
+          reportHeader.parent.appendChild(infoEl)
+        }
+      }
+      if (reportHeader.wrapper.parentNode) {
+        reportHeader.wrapper.parentNode.removeChild(reportHeader.wrapper)
+      }
     }
   }
 }
