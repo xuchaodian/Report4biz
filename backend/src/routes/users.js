@@ -169,7 +169,7 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
 // 用户修改自己的信息（只需要登录，不需要 admin）
 router.put('/me', authenticate, (req, res) => {
   try {
-    const { email, password, company } = req.body
+    const { email, password, company, logo } = req.body
     const userId = req.user.id
 
     const db = getDb()
@@ -207,6 +207,11 @@ router.put('/me', authenticate, (req, res) => {
       params.push(company)
     }
 
+    if (logo !== undefined) {
+      updates.push('logo = ?')
+      params.push(logo)
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({ message: '没有需要更新的字段' })
     }
@@ -214,7 +219,7 @@ router.put('/me', authenticate, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(userId)
+    const user = db.prepare('SELECT id, username, email, role, company, logo, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '修改成功',

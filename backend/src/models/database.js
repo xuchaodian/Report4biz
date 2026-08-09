@@ -49,6 +49,13 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 为已有数据库添加 logo 字段（如果不存在）——自定义报告 Logo（base64 data URL 或路径）
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN logo TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 为已有数据库添加 quota 字段（如果不存在）
   try {
     db.run(`ALTER TABLE users ADD COLUMN quota INTEGER DEFAULT 0`)

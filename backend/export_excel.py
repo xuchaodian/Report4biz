@@ -79,6 +79,47 @@ def main():
             ws = wb['封面']
             ws['E21'] = store_name
 
+            # 读取用户公司名与自定义Logo（users 表 company/logo 字段）
+            user_company = ''
+            user_logo = ''
+            logo_tmp = None
+            try:
+                user_row = db.execute(
+                    "SELECT company, logo FROM users WHERE id = ?",
+                    (user_id,)
+                ).fetchone()
+                if user_row:
+                    user_row = dict(user_row)
+                    user_company = (user_row.get('company') or '').strip()
+                    user_logo = user_row.get('logo') or ''
+            except Exception as e:
+                print(f'[EXPORT_WARN] 读取用户信息失败: {e}')
+
+            # 封面写公司名（若有）
+            if user_company:
+                ws['E22'] = user_company
+
+            # 封面插入自定义 Logo（base64 data URL → 临时PNG → 嵌入）
+            if user_logo and ',' in user_logo:
+                try:
+                    import base64
+                    logo_data = base64.b64decode(user_logo.split(',', 1)[1])
+                    if len(logo_data) >= 100:
+                        logo_tmp = os.path.join(
+                            os.path.dirname(output_path),
+                            f'logo_{purchase_id}_{user_id}.png'
+                        )
+                        with open(logo_tmp, 'wb') as f:
+                            f.write(logo_data)
+                        logo_img = XLImage(logo_tmp)
+                        logo_img.width = 120
+                        logo_img.height = 120
+                        # 封面左上角嵌入 Logo（按模板实际布局可调整锚点）
+                        ws.add_image(logo_img, 'G1')
+                except Exception as e:
+                    print(f'[EXPORT_WARN] Logo嵌入失败: {e}')
+                    logo_tmp = None
+
         # ===== 2. 商圈数据 =====
         if '商圈数据' in wb.sheetnames:
             ws = wb['商圈数据']
@@ -300,6 +341,11 @@ def main():
             if fp and os.path.exists(fp):
                 try: os.remove(fp)
                 except: pass
+
+        # 清理临时 Logo 文件
+        if logo_tmp and os.path.exists(logo_tmp):
+            try: os.remove(logo_tmp)
+            except: pass
 
         # 输出文件名信息（给Node.js使用）
         file_name = f"{store_name}_{radius_str}_{city_month}.xlsx"

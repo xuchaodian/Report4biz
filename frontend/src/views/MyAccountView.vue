@@ -22,6 +22,25 @@
           <el-input v-model="form.company" placeholder="请输入公司名称" />
         </el-form-item>
 
+        <el-form-item label="报告Logo">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div v-if="form.logoPreview" style="width: 56px; height: 56px; border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #fff; flex-shrink: 0;">
+              <img :src="form.logoPreview" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo预览" />
+            </div>
+            <div v-else style="width: 56px; height: 56px; border: 1px dashed #dcdfe6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 11px; flex-shrink: 0;">无Logo</div>
+            <div>
+              <el-upload
+                :show-file-list="false"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                :before-upload="handleLogoUpload"
+              >
+                <el-button size="small">上传 Logo</el-button>
+              </el-upload>
+              <div style="font-size: 11px; color: #999; margin-top: 4px;">PNG/JPG/WEBP/SVG，建议正方形（≤500KB）。用于 PDF 速览 / 导出报表头部</div>
+            </div>
+          </div>
+        </el-form-item>
+
         <el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" placeholder="请输入新邮箱" />
         </el-form-item>
@@ -470,6 +489,8 @@ const registerChartEl = (el, serviceCode) => {
 const form = reactive({
   email: '',
   company: '',
+  logo: '',          // 存储 base64 data URL（提交用）
+  logoPreview: '',   // 预览用（可能带缩放压缩）
   newPassword: '',
   confirmPassword: ''
 })
@@ -502,6 +523,10 @@ onMounted(async () => {
   }
   if (userStore.user?.company) {
     form.company = userStore.user.company
+  }
+  if (userStore.user?.logo) {
+    form.logo = userStore.user.logo
+    form.logoPreview = userStore.user.logo
   }
   // 获取配额信息
   if (!userStore.quota) {
@@ -1668,6 +1693,46 @@ const formatResultData = (data) => {
   return html || '<p>暂无数据</p>'
 }
 
+// Logo 上传处理：读取文件 → 压缩到 ≤400px → base64 data URL
+const handleLogoUpload = (file) => {
+  if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) {
+    ElMessage.warning('仅支持 PNG/JPG/WEBP/SVG 图片')
+    return false
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    ElMessage.warning('图片不能超过 2MB')
+    return false
+  }
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const img = new Image()
+    img.onload = () => {
+      // 压缩：最长边 ≤ 400px，保持比例
+      const MAX = 400
+      let { width, height } = img
+      if (width > MAX || height > MAX) {
+        const ratio = Math.min(MAX / width, MAX / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, width, height)
+      const dataUrl = canvas.toDataURL('image/png')
+      form.logo = dataUrl
+      form.logoPreview = dataUrl
+    }
+    img.onerror = () => ElMessage.error('图片读取失败')
+    img.src = e.target.result
+  }
+  reader.onerror = () => ElMessage.error('文件读取失败')
+  reader.readAsDataURL(file)
+  return false
+}
+
 const handleSubmit = async () => {
   try {
     await formRef.value.validate()
@@ -1675,7 +1740,7 @@ const handleSubmit = async () => {
     return
   }
 
-  if (!form.email && !form.newPassword && form.company === userStore.user?.company) {
+  if (!form.email && !form.newPassword && form.company === userStore.user?.company && form.logo === (userStore.user?.logo || '')) {
     ElMessage.warning('请至少修改一项信息')
     return
   }
@@ -1692,6 +1757,9 @@ const handleSubmit = async () => {
     }
     if (form.company !== undefined) {
       updateData.company = form.company
+    }
+    if (form.logo !== (userStore.user?.logo || '')) {
+      updateData.logo = form.logo
     }
 
     const { data } = await axios.put('/api/users/me', updateData)
@@ -2714,8 +2782,34 @@ const handleExportPDFAsReport = async () => {
 }
 
 // ====== PDF 导出 ======
+// 生成 PDF 报告头部（Logo + 公司名），截图前插入，截图后移除
+const buildPdfReportHeader = () => {
+  const container = pdfContentRef.value
+  if (!container) return null
+  const header = document.createElement('div')
+  header.id = 'pdf-report-header'
+  header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 14px;margin-bottom:14px;background:#f8f9fa;border:1px solid #ebeef5;border-radius:6px;'
+  const logo = form.logo || userStore.user?.logo
+  if (logo) {
+    const img = document.createElement('img')
+    img.src = logo
+    img.alt = 'Logo'
+    img.style.cssText = 'height:36px;max-width:120px;object-fit:contain;'
+    header.appendChild(img)
+  }
+  const name = document.createElement('span')
+  name.style.cssText = 'font-size:16px;font-weight:bold;color:#333;'
+  name.textContent = form.company || userStore.user?.company || ''
+  if (name.textContent) header.appendChild(name)
+  // 若既无 Logo 也无公司名，则不插入头部
+  if (!logo && !name.textContent) return null
+  container.insertBefore(header, container.firstChild)
+  return header
+}
+
 const handleExportPDF = async () => {
   if (!pdfContentRef.value) return
+  const reportHeader = buildPdfReportHeader()
   try {
     ElMessage.info('正在生成PDF，请稍候...')
     // 确保所有图表已渲染
@@ -2757,6 +2851,11 @@ const handleExportPDF = async () => {
   } catch (e) {
     console.error('PDF导出失败:', e)
     ElMessage.error('PDF导出失败: ' + e.message)
+  } finally {
+    // 移除临时报告头部，恢复原始 DOM
+    if (reportHeader && reportHeader.parentNode) {
+      reportHeader.parentNode.removeChild(reportHeader)
+    }
   }
 }
 
