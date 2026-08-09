@@ -563,9 +563,47 @@ const clearCompareSelection = () => {
 }
 
 // 打开对比对话框：加载所选订单的 result_data
+// 解析订单半径（兼容 JSON 数组字符串/数字/radius_display）→ 返回归一化后的半径数组
+const parseOrderRadius = (row) => {
+  let raw = row.radius
+  if (raw === undefined || raw === null || raw === '') {
+    const rd = row.radius_display || ''
+    const m = rd.match(/(\d+(?:\.\d+)?)/g)
+    return m ? m.map(Number) : null
+  }
+  if (Array.isArray(raw)) return raw.map(Number)
+  if (typeof raw === 'number') return [raw]
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.map(Number)
+    const n = Number(parsed)
+    if (!isNaN(n)) return [n]
+  } catch (e) {}
+  const n = Number(raw)
+  if (!isNaN(n)) return [n]
+  return null
+}
+
+// 半径是否一致：归一化后数组排序 join 比较
+const isSameRadius = (a, b) => {
+  const ra = parseOrderRadius(a)
+  const rb = parseOrderRadius(b)
+  if (!ra || !rb) return false
+  return [...ra].sort((x, y) => x - y).join(',') === [...rb].sort((x, y) => x - y).join(',')
+}
+
 const openCompareDialog = async () => {
   if (compareSelected.value.length < 2) {
     ElMessage.warning('请至少选择 2 笔订单进行对比')
+    return
+  }
+  // 半径一致性检查：不同半径的数据口径不同，直接对比会误导
+  const firstRow = compareSelected.value[0]
+  const inconsistent = compareSelected.value.slice(1).filter(r => !isSameRadius(firstRow, r))
+  if (inconsistent.length > 0) {
+    const firstR = parseOrderRadius(firstRow) || []
+    const badR = parseOrderRadius(inconsistent[0]) || []
+    ElMessage.warning(`所选订单半径不一致（${firstR.join('/')}米 vs ${badR.join('/')}米），请选择相同半径的订单进行对比`)
     return
   }
   compareDialogVisible.value = true
