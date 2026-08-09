@@ -146,6 +146,12 @@
           <el-icon><Close /></el-icon>清除筛选
         </el-button>
         <span class="filter-count">共 {{ filteredHistoryList.length }} 条</span>
+        <el-button type="primary" size="small" style="margin-left: 12px;" :disabled="compareSelected.length < 2" @click="openCompareDialog">
+          📊 对比分析{{ compareSelected.length > 0 ? ` (${compareSelected.length})` : '' }}
+        </el-button>
+        <el-button v-if="compareSelected.length > 0" size="small" @click="clearCompareSelection">
+          清空选择
+        </el-button>
       </div>
 
       <div v-if="historyLoading" class="history-loading">
@@ -158,7 +164,9 @@
         stripe
         border
         style="width: 100%"
+        @selection-change="handleCompareSelectionChange"
       >
+        <el-table-column type="selection" width="45" />
         <el-table-column label="订单ID" width="170" fixed>
           <template #default="{ row }">
             <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
@@ -225,6 +233,47 @@
           </template>
         </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- 查询结果对比对话框（多订单同图对比） -->
+    <el-dialog v-model="compareDialogVisible" title="📊 查询结果对比" width="960px" :close-on-click-modal="false" @closed="disposeCompareCharts">
+      <div v-if="compareLoading" style="text-align:center;padding:40px;color:#909399;">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <p style="margin-top:8px;">正在加载对比数据...</p>
+      </div>
+      <template v-else>
+        <!-- 对比订单信息 -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          <el-tag v-for="(item, idx) in compareOrders" :key="item.id" :type="['primary','success','warning','danger','info'][idx % 5]" effect="light" closable @close="removeCompareOrder(item.id)">
+            {{ item.store_name || '订单' + item.id }}（{{ item.radius_display || item.radius + '米' }}）
+          </el-tag>
+        </div>
+
+        <div v-if="compareOrders.length < 2" style="text-align:center;padding:30px;color:#999;">
+          请至少选择 2 笔订单进行对比（在购买履历列表勾选）
+        </div>
+
+        <template v-else>
+          <!-- 人口规模对比 -->
+          <div class="compare-chart-block">
+            <h4 style="margin:0 0 8px;font-size:14px;color:#333;">👥 人口规模对比（到访/居住/工作）</h4>
+            <div ref="comparePopEl" class="compare-chart-box"></div>
+          </div>
+          <!-- 客流活跃度对比 -->
+          <div class="compare-chart-block">
+            <h4 style="margin:16px 0 8px;font-size:14px;color:#333;">⏰ 客流活跃度对比（小时段到访）</h4>
+            <div ref="compareFlowEl" class="compare-chart-box"></div>
+          </div>
+          <!-- 消费能力对比 -->
+          <div class="compare-chart-block">
+            <h4 style="margin:16px 0 8px;font-size:14px;color:#333;">💰 消费水平对比（居住+工作）</h4>
+            <div ref="compareConsumeEl" class="compare-chart-box"></div>
+          </div>
+        </template>
+      </template>
+      <template #footer>
+        <el-button @click="compareDialogVisible = false">关闭</el-button>
+      </template>
     </el-dialog>
 
     <!-- 充值履历对话框（管理员分配配额历史） -->
@@ -492,6 +541,239 @@ const pdfContentRef = ref(null)
 const insights = ref([])
 const insightLoading = ref(false)
 let chartResizeHandler = null
+
+// ====== 查询结果对比（多订单同图对比） ======
+const compareDialogVisible = ref(false)
+const compareLoading = ref(false)
+const compareSelected = ref([])     // 履历列表勾选的订单（用于计数/按钮状态）
+const compareOrders = ref([])       // 实际参与对比的订单（含完整数据）
+const compareCharts = {}            // {key: echarts实例}
+const comparePopEl = ref(null)
+const compareFlowEl = ref(null)
+const compareConsumeEl = ref(null)
+
+// 勾选变化
+const handleCompareSelectionChange = (rows) => {
+  compareSelected.value = rows
+}
+
+const clearCompareSelection = () => {
+  compareSelected.value = []
+  compareOrders.value = []
+}
+
+// 打开对比对话框：加载所选订单的 result_data
+const openCompareDialog = async () => {
+  if (compareSelected.value.length < 2) {
+    ElMessage.warning('请至少选择 2 笔订单进行对比')
+    return
+  }
+  compareDialogVisible.value = true
+  compareLoading.value = true
+  compareOrders.value = []
+  try {
+    const loaded = []
+    for (const row of compareSelected.value) {
+      try {
+        const { data } = await axios.get(`/api/purchase/${row.id}`)
+        loaded.push({
+          id: data.id,
+          store_name: data.store_name || row.store_name || '订单' + data.id,
+          radius_display: data.radius_display || (data.radius ? data.radius + '米' : ''),
+          city_month: data.city_month,
+          result_data: data.result_data
+        })
+      } catch (e) {
+        console.error('加载对比订单失败:', row.id, e)
+      }
+    }
+    compareOrders.value = loaded
+    if (loaded.length < 2) {
+      ElMessage.warning('加载成功的订单不足 2 笔，无法对比')
+      compareLoading.value = false
+      return
+    }
+    await nextTick()
+    renderCompareCharts()
+  } catch (e) {
+    console.error('对比加载失败:', e)
+    ElMessage.error('对比加载失败: ' + e.message)
+  } finally {
+    compareLoading.value = false
+  }
+}
+
+const removeCompareOrder = (id) => {
+  compareOrders.value = compareOrders.value.filter(o => o.id !== id)
+  compareSelected.value = compareSelected.value.filter(s => s.id !== id)
+  if (compareOrders.value.length < 2) {
+    disposeCompareCharts()
+    return
+  }
+  nextTick(() => renderCompareCharts())
+}
+
+// 提取 result_data.apiResult 服务数据
+const extractApiResult = (resultData) => {
+  if (!resultData) return null
+  let api = resultData
+  if (typeof api === 'string') { try { api = JSON.parse(api) } catch (e) { return null } }
+  if (api && api.apiResult) api = api.apiResult
+  return api && typeof api === 'object' ? api : null
+}
+
+// 1001 人口汇总提取：P0_SUM/到访 P1_SUM/居住 P2_SUM/工作
+const extractPopSums = (apiResult) => {
+  const d = apiResult && apiResult['1001']
+  if (!d || typeof d !== 'object') return null
+  const find = (pattern) => {
+    for (const [k, v] of Object.entries(d)) {
+      if (typeof v === 'number' && pattern.test(k)) return v
+    }
+    return null
+  }
+  return {
+    visit: find(/^P0_SUM\d*$/i),
+    live: find(/^P1_SUM\d*$/i),
+    work: find(/^P2_SUM\d*$/i)
+  }
+}
+
+// 1005 小时段到访提取：day_type + hour_period + hour_visit
+const extractFlowData = (apiResult) => {
+  const arr = apiResult && apiResult['1005']
+  if (!Array.isArray(arr) || arr.length === 0) return null
+  const hourMap = new Map()
+  for (const item of arr) {
+    if (!item || typeof item !== 'object') continue
+    const hour = item.hour_period
+    if (item.day_type === 0 && typeof item.hour_visit === 'number') {
+      if (!hourMap.has(hour)) hourMap.set(hour, 0)
+      hourMap.set(hour, hourMap.get(hour) + item.hour_visit)
+    }
+  }
+  if (hourMap.size === 0) return null
+  const sorted = [...hourMap.entries()].sort((a, b) => a[0] - b[0])
+  return { hours: sorted.map(([h]) => h + '点'), values: sorted.map(([, v]) => v) }
+}
+
+// 1009 消费水平提取：consume_1/2/3（或对应字段）
+const extractConsumeData = (apiResult) => {
+  const d = apiResult && apiResult['1009']
+  if (!d || typeof d !== 'object') return null
+  let c1 = 0, c2 = 0, c3 = 0
+  for (const [k, v] of Object.entries(d)) {
+    if (typeof v !== 'number') continue
+    if (/consume_1|低/i.test(k)) c1 += v
+    else if (/consume_2|中/i.test(k)) c2 += v
+    else if (/consume_3|高/i.test(k)) c3 += v
+  }
+  if (c1 === 0 && c2 === 0 && c3 === 0) return null
+  return { low: c1, mid: c2, high: c3 }
+}
+
+// 渲染3张对比图
+const renderCompareCharts = async () => {
+  disposeCompareCharts()
+  const orders = compareOrders.value
+  if (orders.length < 2) return
+
+  const colorPalette = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399']
+
+  // 1. 人口规模对比（分组柱状图）
+  const popEl = comparePopEl.value
+  if (popEl) {
+    const series = []
+    const dims = [
+      { key: 'visit', name: '到访' },
+      { key: 'live', name: '居住' },
+      { key: 'work', name: '工作' }
+    ]
+    dims.forEach((dim, di) => {
+      series.push({
+        name: dim.name,
+        type: 'bar',
+        data: orders.map(o => {
+          const p = extractPopSums(extractApiResult(o.result_data))
+          return p ? (p[dim.key] || 0) : 0
+        }),
+        itemStyle: { color: colorPalette[di] }
+      })
+    })
+    const chart = echarts.init(popEl)
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: dims.map(d => d.name) },
+      grid: { left: 80, right: 20, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 20 } },
+      yAxis: { type: 'value', name: '人数' },
+      series
+    })
+    compareCharts.pop = chart
+  }
+
+  // 2. 客流活跃度对比（多折线）
+  const flowEl = compareFlowEl.value
+  if (flowEl) {
+    const series = []
+    orders.forEach((o, oi) => {
+      const f = extractFlowData(extractApiResult(o.result_data))
+      series.push({
+        name: o.store_name,
+        type: 'line',
+        smooth: true,
+        data: f ? f.values : [],
+        itemStyle: { color: colorPalette[oi % 5] },
+        lineStyle: { width: 2 }
+      })
+    })
+    const chart = echarts.init(flowEl)
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: orders.map(o => o.store_name), type: 'scroll' },
+      grid: { left: 80, right: 20, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: extractFlowData(extractApiResult(orders[0].result_data))?.hours || [] },
+      yAxis: { type: 'value', name: '到访人次' },
+      series
+    })
+    compareCharts.flow = chart
+  }
+
+  // 3. 消费水平对比（分组柱状图 低/中/高）
+  const consumeEl = compareConsumeEl.value
+  if (consumeEl) {
+    const levels = [
+      { key: 'low', name: '低消费' },
+      { key: 'mid', name: '中消费' },
+      { key: 'high', name: '高消费' }
+    ]
+    const series = levels.map((lv, li) => ({
+      name: lv.name,
+      type: 'bar',
+      data: orders.map(o => {
+        const c = extractConsumeData(extractApiResult(o.result_data))
+        return c ? (c[lv.key] || 0) : 0
+      }),
+      itemStyle: { color: colorPalette[li] }
+    }))
+    const chart = echarts.init(consumeEl)
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: levels.map(l => l.name) },
+      grid: { left: 80, right: 20, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: orders.map(o => o.store_name), axisLabel: { interval: 0, rotate: 20 } },
+      yAxis: { type: 'value', name: '人数' },
+      series
+    })
+    compareCharts.consume = chart
+  }
+}
+
+const disposeCompareCharts = () => {
+  Object.values(compareCharts).forEach(c => c?.dispose())
+  for (const k of Object.keys(compareCharts)) delete compareCharts[k]
+}
+
 
 // Canvas 地图截图缓存参数（用于导出竞品地图）
 const lastMapParams = ref(null)
@@ -3244,6 +3526,19 @@ const handleExportExcel = async () => {
   background: #fffdf6;
   border: 1px solid #f0e6c8;
   border-radius: 8px;
+}
+
+/* 查询结果对比 */
+.compare-chart-block {
+  margin-bottom: 8px;
+}
+
+.compare-chart-box {
+  width: 100%;
+  height: 320px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .score-grid {
