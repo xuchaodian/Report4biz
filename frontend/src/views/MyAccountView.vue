@@ -651,14 +651,16 @@ const openCompareDialog = async () => {
       console.log('[Compare] 客流提取:', extractFlowData(api))
       console.log('[Compare] 消费提取:', extractConsumeData(api))
     }
-    await nextTick()
-    renderCompareCharts()
   } catch (e) {
     console.error('对比加载失败:', e)
     ElMessage.error('对比加载失败: ' + e.message)
   } finally {
     compareLoading.value = false
   }
+  // 等待 loading 关闭、图表 DOM 渲染完成后再绘图
+  await nextTick()
+  await nextTick()
+  renderCompareCharts()
 }
 
 const removeCompareOrder = (id) => {
@@ -722,19 +724,41 @@ const extractFlowData = (apiResult) => {
   return { hours: sorted.map(([h]) => h + '点'), values: sorted.map(([, v]) => v) }
 }
 
-// 1009 消费水平提取：consume_1/2/3（或对应字段）
+// 1009 消费水平提取：兼容两种格式
+// 格式A（旧）: {consume_1: n, consume_2: n, consume_3: n} → 低/中/高
+// 格式B（联通实际）: [{popu_type, spendpower:"1"~"8", spendpower_value}, ...] → 高消费=spendpower≥5 人数，低消费=spendpower≤3
 const extractConsumeData = (apiResult) => {
   const d = apiResult && apiResult['1009']
-  if (!d || typeof d !== 'object') return null
-  let c1 = 0, c2 = 0, c3 = 0
-  for (const [k, v] of Object.entries(d)) {
-    if (typeof v !== 'number') continue
-    if (/consume_1|低/i.test(k)) c1 += v
-    else if (/consume_2|中/i.test(k)) c2 += v
-    else if (/consume_3|高/i.test(k)) c3 += v
+  if (!d) return null
+
+  // 格式B：spendpower 数组（popu_type 0/1/2 全人群合计）
+  if (Array.isArray(d) && d.length > 0 && typeof d[0] === 'object' && d[0].spendpower !== undefined) {
+    let low = 0, mid = 0, high = 0
+    for (const item of d) {
+      const v = Number(item.spendpower_value)
+      if (isNaN(v)) continue
+      const level = Number(item.spendpower)
+      if (level <= 3) low += v
+      else if (level <= 5) mid += v
+      else high += v
+    }
+    if (low === 0 && mid === 0 && high === 0) return null
+    return { low, mid, high }
   }
-  if (c1 === 0 && c2 === 0 && c3 === 0) return null
-  return { low: c1, mid: c2, high: c3 }
+
+  // 格式A：consume_1/2/3 或 低/中/高 文本键
+  if (typeof d === 'object') {
+    let c1 = 0, c2 = 0, c3 = 0
+    for (const [k, v] of Object.entries(d)) {
+      if (typeof v !== 'number') continue
+      if (/consume_1|低/i.test(k)) c1 += v
+      else if (/consume_2|中/i.test(k)) c2 += v
+      else if (/consume_3|高/i.test(k)) c3 += v
+    }
+    if (c1 === 0 && c2 === 0 && c3 === 0) return null
+    return { low: c1, mid: c2, high: c3 }
+  }
+  return null
 }
 
 // 渲染3张对比图
@@ -780,6 +804,12 @@ const renderCompareCharts = async () => {
   // 2. 客流活跃度对比（多折线）
   const flowEl = compareFlowEl.value
   if (flowEl) {
+    // 取第一个有客流数据的订单作为 x 轴（保护：首个订单无 1005 时）
+    let flowX = []
+    for (const o of orders) {
+      const f = extractFlowData(extractApiResult(o.result_data))
+      if (f && f.hours.length > 0) { flowX = f.hours; break }
+    }
     const series = []
     orders.forEach((o, oi) => {
       const f = extractFlowData(extractApiResult(o.result_data))
@@ -797,7 +827,7 @@ const renderCompareCharts = async () => {
       tooltip: { trigger: 'axis' },
       legend: { data: orders.map(o => o.store_name), type: 'scroll' },
       grid: { left: 80, right: 20, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: extractFlowData(extractApiResult(orders[0].result_data))?.hours || [] },
+      xAxis: { type: 'category', data: flowX },
       yAxis: { type: 'value', name: '到访人次' },
       series
     })
