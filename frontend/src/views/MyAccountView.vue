@@ -312,6 +312,19 @@
             <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
             <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
           </div>
+          <!-- 商圈评分（横向 5 指标评分卡，方案A布局已预留；数据量充足后启用 storeScoreVisible） -->
+          <div v-if="storeScoreVisible && storeScoreItems.length > 0" class="score-section">
+            <h4 style="margin:0 0 10px;font-size:14px;color:#333;">⭐ 商圈评分</h4>
+            <div class="score-grid">
+              <div v-for="(item, idx) in storeScoreItems" :key="idx" class="score-card">
+                <div class="score-label">{{ item.label }}</div>
+                <div class="score-stars">
+                  <span v-for="n in 5" :key="n" class="star" :class="{ 'star-on': n <= item.stars, 'star-off': n > item.stars }">★</span>
+                </div>
+                <div class="score-value">{{ item.value }}</div>
+              </div>
+            </div>
+          </div>
           <!-- 数据洞察 -->
           <div v-if="insights.length > 0" class="insight-section">
             <h4 style="margin:0 0 10px;font-size:14px;color:#333;">📋 数据洞察</h4>
@@ -466,6 +479,10 @@ const detailDialogVisible = ref(false)
 const detailLoading = ref(false)
 const currentDetail = ref(null)
 const resultData = ref(null)
+
+// 商圈评分（方案A布局预留）：storeScoreVisible 开启后显示；storeScoreItems = [{label, stars(1-5), value}]
+const storeScoreVisible = ref(false)
+const storeScoreItems = ref([])
 
 // 图表相关
 const chartList = ref([])
@@ -3218,6 +3235,57 @@ const handleExportExcel = async () => {
     font-size: 14px;
     color: #666;
   }
+}
+
+/* 商圈评分（方案A：订单信息下方横向评分卡） */
+.score-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #fffdf6;
+  border: 1px solid #f0e6c8;
+  border-radius: 8px;
+}
+
+.score-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.score-card {
+  flex: 1;
+  min-width: 100px;
+  max-width: 180px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.score-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.score-stars {
+  font-size: 16px;
+  line-height: 1;
+  margin-bottom: 6px;
+  letter-spacing: 2px;
+}
+
+.star-on { color: #f7ba2a; }
+.star-off { color: #e0e0e0; }
+
+.score-value {
+  font-size: 12px;
+  color: #999;
 }
 
 .detail-result :deep(h4) {
