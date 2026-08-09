@@ -2794,20 +2794,14 @@ const buildPdfReportHeader = () => {
   // 既无 Logo 也无公司名，则不插入
   if (!logo && !company) return null
 
-  // 临时把 .detail-info 包到一个 flex wrapper：左 = 原 .detail-info（保持原样），右 = logoWrap
-  // 不动 .detail-info 自身样式，也不动它的父级布局，避免影响其他兄弟节点
-  const parent = infoEl.parentElement
-  const nextSibling = infoEl.nextElementSibling
-  const wrapper = document.createElement('div')
-  wrapper.id = 'pdf-report-info-wrapper'
-  wrapper.style.cssText = 'display:flex;gap:16px;align-items:flex-start;'
-  parent.insertBefore(wrapper, infoEl)
-  wrapper.appendChild(infoEl) // 左侧 = 原 .detail-info
+  // 给 .detail-info 临时加 position:relative，让 logoWrap 绝对定位锚定其右上角
+  const infoElOriginalPosition = infoEl.style.position
+  infoEl.style.position = 'relative'
 
+  // logoWrap 用绝对定位：top:12px right:12px 与 .detail-info 内边距对齐，垂直居中于 infoEl 上半区
   const logoWrap = document.createElement('div')
   logoWrap.id = 'pdf-report-logo-wrap'
-  // padding-top:20px 与 .detail-info 内容顶部对齐（padding 12px + 首行 p margin-top 8px）
-  logoWrap.style.cssText = 'flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 4px 4px;min-width:120px;max-width:160px;'
+  logoWrap.style.cssText = 'position:absolute;top:12px;right:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:0;min-width:120px;max-width:160px;'
   if (logo) {
     const img = document.createElement('img')
     img.src = logo
@@ -2821,10 +2815,10 @@ const buildPdfReportHeader = () => {
     name.textContent = company
     logoWrap.appendChild(name)
   }
-  wrapper.appendChild(logoWrap)
+  infoEl.appendChild(logoWrap)
 
-  // 返回还原所需句柄：wrapper 与其位置（前一个兄弟 = infoEl 原位置之前）
-  return { wrapper, parent, nextSibling }
+  // 返回还原所需句柄
+  return { infoEl, infoElOriginalPosition }
 }
 
 const handleExportPDF = async () => {
@@ -2872,19 +2866,13 @@ const handleExportPDF = async () => {
     console.error('PDF导出失败:', e)
     ElMessage.error('PDF导出失败: ' + e.message)
   } finally {
-    // 还原 DOM：把 .detail-info 移回 wrapper 原位置（wrapper 之前），并删除 wrapper
+    // 移除临时 Logo 区，还原 .detail-info 原 position
+    const wrap = document.getElementById('pdf-report-logo-wrap')
+    if (wrap && wrap.parentNode) {
+      wrap.parentNode.removeChild(wrap)
+    }
     if (reportHeader) {
-      const infoEl = reportHeader.wrapper.querySelector('.detail-info')
-      if (infoEl) {
-        if (reportHeader.nextSibling && reportHeader.nextSibling.parentNode === reportHeader.parent) {
-          reportHeader.parent.insertBefore(infoEl, reportHeader.nextSibling)
-        } else {
-          reportHeader.parent.appendChild(infoEl)
-        }
-      }
-      if (reportHeader.wrapper.parentNode) {
-        reportHeader.wrapper.parentNode.removeChild(reportHeader.wrapper)
-      }
+      reportHeader.infoEl.style.position = reportHeader.infoElOriginalPosition
     }
   }
 }
