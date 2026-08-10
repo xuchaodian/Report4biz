@@ -324,6 +324,9 @@
         <div class="dialog-header-flex">
           <span>📊 查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}</span>
           <div class="dialog-header-actions">
+            <el-button type="danger" size="small" @click="handleStoreScore" :disabled="detailLoading || !currentDetail">
+              ⭐ 商圈评分
+            </el-button>
             <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight" :disabled="!resultData || insightLoading">
               {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
             </el-button>
@@ -361,9 +364,13 @@
             <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
             <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
           </div>
-          <!-- 商圈评分（横向 5 指标评分卡，方案A布局已预留；数据量充足后启用 storeScoreVisible） -->
+          <!-- 商圈评分（横向 5 指标评分卡，点击「商圈评分」按钮后显示） -->
           <div v-if="storeScoreVisible && storeScoreItems.length > 0" class="score-section">
             <h4 style="margin:0 0 10px;font-size:14px;color:#333;">⭐ 商圈评分</h4>
+            <div v-if="storeScoreInsufficient" class="score-insufficient">
+              <span>⚠️</span>
+              <span>评分用数据不足（所在城市、不同位置、相同半径的订单少于 10 次），评分结果仅供参考</span>
+            </div>
             <div class="score-grid">
               <div v-for="(item, idx) in storeScoreItems" :key="idx" class="score-card">
                 <div class="score-label">{{ item.label }}</div>
@@ -529,9 +536,88 @@ const detailLoading = ref(false)
 const currentDetail = ref(null)
 const resultData = ref(null)
 
-// 商圈评分（方案A布局预留）：storeScoreVisible 开启后显示；storeScoreItems = [{label, stars(1-5), value}]
+// 商圈评分：点击「商圈评分」按钮后显示评分卡片；storeScoreInsufficient 标记同城同半径订单 <10
 const storeScoreVisible = ref(false)
 const storeScoreItems = ref([])
+const storeScoreInsufficient = ref(false)
+
+// 点击「商圈评分」：提示 → 统计同城同半径订单数 → 显示评分卡（<10 笔标记数据不足）
+const handleStoreScore = async () => {
+  if (!currentDetail.value) return
+  // 提示文案（用户确认）
+  let confirmed = false
+  try {
+    await ElMessageBox.confirm(
+      '建议所在城市、不同位置、相同半径数据查询 10 次以上使用。是否继续？',
+      '⭐ 商圈评分',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
+    )
+    confirmed = true
+  } catch (e) {
+    // 用户取消
+  }
+  if (!confirmed) return
+
+  // 统计同城、不同位置、相同半径的订单数（含当前订单）
+  const cur = currentDetail.value
+  const curCity = cur.city || cur.district || ''
+  const curRadius = parseOrderRadius(cur) || []
+  const curRadiusKey = [...curRadius].sort((a, b) => a - b).join(',')
+  let sameCount = 0
+  for (const h of historyList.value) {
+    if (h.id === cur.id) continue
+    const hCity = h.city || h.district || ''
+    if (curCity && hCity && hCity !== curCity) continue
+    const hR = parseOrderRadius(h) || []
+    const hKey = [...hR].sort((a, b) => a - b).join(',')
+    if (curRadiusKey && hKey !== curRadiusKey) continue
+    sameCount++
+  }
+  sameCount += 1 // 加当前订单本身
+  storeScoreInsufficient.value = sameCount < 10
+
+  // 生成评分卡片数据（星级算法：简版——数据充足时后续可升级为相对分位法）
+  storeScoreItems.value = buildStoreScoreItems(cur.result_data, sameCount)
+  storeScoreVisible.value = true
+  ElMessage.success(storeScoreInsufficient.value ? '评分用数据不足，结果仅供参考' : `基于 ${sameCount} 笔同城同半径订单评分`)
+}
+
+// 简版评分生成：人口规模/客流活跃度/消费能力 基于本单 result_data 绝对值分档；商业成熟度/竞争压力基于 POI 与竞品（暂用占位）
+const buildStoreScoreItems = (resultData, orderCount) => {
+  const api = extractApiResult(resultData)
+  const items = []
+
+  // 1. 人口规模：居住+工作
+  const pops = extractPopSums(api)
+  const rwPop = pops ? (pops.live || 0) + (pops.work || 0) : 0
+  const popStars = rwPop >= 20000 ? 5 : rwPop >= 10000 ? 4 : rwPop >= 5000 ? 3 : rwPop >= 2000 ? 2 : 1
+  items.push({ label: '人口规模', stars: popStars, value: rwPop > 0 ? (rwPop / 10000).toFixed(1) + '万(居住+工作)' : '暂无数据' })
+
+  // 2. 客流活跃度：工作日午晚餐时段(11-13 + 17-19 点)到访合计
+  const flow = extractFlowData(api)
+  const lunchDinner = (flow?.values || []).reduce((acc, v, i) => {
+    const h = parseInt(flow.hours[i])
+    if ((h >= 11 && h <= 13) || (h >= 17 && h <= 19)) return acc + v
+    return acc
+  }, 0)
+  const flowStars = lunchDinner >= 8000 ? 5 : lunchDinner >= 4000 ? 4 : lunchDinner >= 2000 ? 3 : lunchDinner >= 800 ? 2 : 1
+  items.push({ label: '客流活跃度', stars: flowStars, value: lunchDinner > 0 ? '午晚餐时段 ' + lunchDinner.toLocaleString() + ' 人次' : '暂无数据' })
+
+  // 3. 消费能力：1009 spendpower 高消费段占比（spendpower ≥6）
+  const cons = extractConsumeData(api)
+  const totalCons = cons ? cons.low + cons.mid + cons.high : 0
+  const highRatio = cons && totalCons > 0 ? cons.high / totalCons : 0
+  const consStars = highRatio >= 0.5 ? 5 : highRatio >= 0.35 ? 4 : highRatio >= 0.2 ? 3 : highRatio >= 0.1 ? 2 : 1
+  items.push({ label: '消费能力', stars: consStars, value: cons ? '高消费占比 ' + Math.round(highRatio * 100) + '%' : '暂无数据' })
+
+  // 4. 商业成熟度：POI 计数（需后端高德代理，暂用占位）
+  items.push({ label: '商业成熟度', stars: 0, value: '待接入' })
+
+  // 5. 竞争压力：同品牌/竞品计数（反向指标，本地门店可查，暂用占位）
+  items.push({ label: '竞争压力', stars: 0, value: '待接入' })
+
+  return items
+}
 
 // 图表相关
 const chartList = ref([])
@@ -3621,6 +3707,19 @@ const handleExportExcel = async () => {
   background: #fffdf6;
   border: 1px solid #f0e6c8;
   border-radius: 8px;
+}
+
+.score-insufficient {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: #fdf0e3;
+  border: 1px solid #f5d6a8;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #b07d2b;
 }
 
 /* 查询结果对比 */
