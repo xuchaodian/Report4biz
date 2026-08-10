@@ -625,47 +625,68 @@ const buildStoreScoreItems = async (resultData, orderCount, centerLat, centerLng
   const consStars = highRatio >= 0.5 ? 5 : highRatio >= 0.35 ? 4 : highRatio >= 0.2 ? 3 : highRatio >= 0.1 ? 2 : 1
   items.push({ label: '消费能力', stars: consStars, value: cons ? '高消费占比 ' + Math.round(highRatio * 100) + '%' : '暂无数据' })
 
-  // 4. 商业成熟度：POI 计数（需后端高德代理，暂用占位）
-  items.push({ label: '商业成熟度', stars: 0, value: '待接入' })
-
-  // 5. 竞争压力：2km 范围内 同品牌门店数 + 竞品门店数（反向指标，压力越大星越少）
+  // 4. 商业成熟度：0.5km 内 商场/写字楼/学校/医院/酒店 POI 计数（后端高德代理）
+  // 5. 竞争压力：0.5km 范围内 同品牌门店数 + 竞品门店数（反向指标，压力越大星越少）
+  let poiCounts = null
   let sameBrand = 0
   let competitorCnt = 0
   try {
-    const [markersRes, competitorsRes] = await Promise.all([
+    const [poiRes, markersRes, competitorsRes] = await Promise.all([
+      centerLat != null && centerLng != null
+        ? axios.post('/api/poi/business-count', { lng: centerLng, lat: centerLat, radius: 500 })
+        : Promise.resolve({ data: null }),
       axios.get('/api/markers'),
       axios.get('/api/competitors')
     ])
+    if (poiRes.data && poiRes.data.success) {
+      poiCounts = poiRes.data.counts
+    }
     const curStoreName = currentDetail.value?.store_name || ''
     const markers = markersRes.data.markers || []
     // 先找当前订单对应的门店 marker，取其品牌
     const curMarker = markers.find(m => m.name === curStoreName)
     const curBrand = curMarker?.brand || ''
-    // 我的门店：同品牌（brand 相同）且在 2km 内
+    // 我的门店：同品牌（brand 相同）且在 0.5km 内
     for (const m of markers) {
       if (!m || typeof m.latitude !== 'number' || typeof m.longitude !== 'number') continue
       if (m.name === curStoreName) continue
-      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, m.latitude, m.longitude) <= 2000) {
+      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, m.latitude, m.longitude) <= 500) {
         // 同品牌判断：品牌字段一致（markers 有 brand 字段）
         if (curBrand && m.brand && m.brand === curBrand) sameBrand++
       }
     }
-    // 竞品：2km 内全部计为竞争（竞品本身代表竞争压力）
+    // 竞品：0.5km 内全部计为竞争（竞品本身代表竞争压力）
     for (const c of competitorsRes.data.competitors || []) {
       if (!c || typeof c.latitude !== 'number' || typeof c.longitude !== 'number') continue
-      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, c.latitude, c.longitude) <= 2000) {
+      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, c.latitude, c.longitude) <= 500) {
         competitorCnt++
       }
     }
   } catch (e) {
-    console.error('获取门店/竞品失败:', e)
+    console.error('获取POI/门店/竞品失败:', e)
   }
+
+  // 商业成熟度星级：POI 总数分档
+  if (poiCounts) {
+    const poiTotal = (poiCounts.mall || 0) + (poiCounts.office || 0) + (poiCounts.school || 0) + (poiCounts.hospital || 0) + (poiCounts.hotel || 0)
+    const poiStars = poiTotal >= 10 ? 5 : poiTotal >= 6 ? 4 : poiTotal >= 3 ? 3 : poiTotal >= 1 ? 2 : 1
+    const detail = []
+    if (poiCounts.mall) detail.push(`商场${poiCounts.mall}`)
+    if (poiCounts.office) detail.push(`写字楼${poiCounts.office}`)
+    if (poiCounts.school) detail.push(`学校${poiCounts.school}`)
+    if (poiCounts.hospital) detail.push(`医院${poiCounts.hospital}`)
+    if (poiCounts.hotel) detail.push(`酒店${poiCounts.hotel}`)
+    items.push({ label: '商业成熟度', stars: poiStars, value: `0.5km内 ${detail.join(' ')}` })
+  } else {
+    items.push({ label: '商业成熟度', stars: 0, value: '暂无数据' })
+  }
+
   const pressureScore = sameBrand + competitorCnt * 2 // 竞品权重更高
   const pressureStars = pressureScore <= 0 ? 5 : pressureScore <= 2 ? 4 : pressureScore <= 4 ? 3 : pressureScore <= 6 ? 2 : 1
   items.push({
     label: '竞争压力',
     stars: pressureStars,
-    value: `2km内 同品牌${sameBrand}家 + 竞品${competitorCnt}家`
+    value: `0.5km内 同品牌${sameBrand}家 + 竞品${competitorCnt}家`
   })
 
   return items

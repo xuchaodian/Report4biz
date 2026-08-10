@@ -118,7 +118,11 @@ async function aroundSearch(locationLng, locationLat, radius, keywords, types) {
     extensions: 'all'
   };
   
-  const response = await axios.get(`${AMAP_PLACE_URL}/around`, { params });
+  // 高德要求 location 的逗号不能被 URL 编码（%2C 会返回 400），需禁用 axios 参数编码
+  const query = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v).replace(/%2C/gi, ',')}`)
+    .join('&')
+  const response = await axios.get(`${AMAP_PLACE_URL}/around?${query}`);
   return parseResponse(response.data);
 }
 

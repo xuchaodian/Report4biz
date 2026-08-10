@@ -3,6 +3,59 @@ import { aroundSearch, polygonSearch, textSearch, geocode, wgs84ToGcj02 } from '
 
 const router = express.Router()
 
+// 商业成熟度 POI 分类（高德 typecode 大类码，兼容子类）
+const BUSINESS_POI_TYPES = [
+  { key: 'mall', label: '商场', types: '060100' },
+  { key: 'office', label: '写字楼', types: '120200' },
+  { key: 'school', label: '学校', types: '141200' },
+  { key: 'hospital', label: '医院', types: '090100' },
+  { key: 'hotel', label: '酒店', types: '100100' }
+]
+
+/**
+ * 商业成熟度统计：统计指定半径内的商场/写字楼/学校/医院/酒店数量
+ * POST /api/poi/business-count
+ * Body: { lng, lat, radius }
+ */
+router.post('/business-count', async (req, res) => {
+  try {
+    const { lng, lat, radius = 500 } = req.body
+    if (!lng || !lat) {
+      return res.status(400).json({ error: '缺少经纬度参数' })
+    }
+
+    // 转换为高德坐标（GCJ-02）
+    const [gcjLng, gcjLat] = wgs84ToGcj02(parseFloat(lng), parseFloat(lat))
+
+    // 按分类分别查询（高德 around 单次返回有限，分类查询更准；限流时重试一次）
+    const counts = {}
+    let total = 0
+    for (const cat of BUSINESS_POI_TYPES) {
+      let count = 0
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const result = await aroundSearch(gcjLng, gcjLat, radius, '', cat.types)
+          count = result.count || 0
+          break
+        } catch (e) {
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 500))
+            continue
+          }
+          console.warn(`POI分类[${cat.key}]查询失败:`, e.message)
+        }
+      }
+      counts[cat.key] = count
+      total += count
+    }
+
+    res.json({ success: true, radius, counts, total })
+  } catch (error) {
+    console.error('商业成熟度统计失败:', error.message)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 /**
  * 周边搜索
  * POST /api/poi/around
