@@ -577,13 +577,28 @@ const handleStoreScore = async () => {
   storeScoreInsufficient.value = sameCount < 10
 
   // 生成评分卡片数据（星级算法：简版——数据充足时后续可升级为相对分位法）
-  storeScoreItems.value = buildStoreScoreItems(cur.result_data, sameCount)
+  try {
+    storeScoreItems.value = await buildStoreScoreItems(cur.result_data, sameCount, cur.center_lat, cur.center_lng)
+  } catch (e) {
+    console.error('生成商圈评分失败:', e)
+    storeScoreItems.value = []
+  }
   storeScoreVisible.value = true
   ElMessage.success(storeScoreInsufficient.value ? '评分用数据不足，结果仅供参考' : `基于 ${sameCount} 笔同城同半径订单评分`)
 }
 
-// 简版评分生成：人口规模/客流活跃度/消费能力 基于本单 result_data 绝对值分档；商业成熟度/竞争压力基于 POI 与竞品（暂用占位）
-const buildStoreScoreItems = (resultData, orderCount) => {
+// Haversine 距离（米）
+const calcDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371000
+  const rad = d => d * Math.PI / 180
+  const dLat = rad(lat2 - lat1)
+  const dLng = rad(lng2 - lng1)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// 简版评分生成：人口/客流/消费基于本单 result_data 分档；竞争压力基于本地门店+竞品（2km范围）；商业成熟度需 POI（暂占位）
+const buildStoreScoreItems = async (resultData, orderCount, centerLat, centerLng) => {
   const api = extractApiResult(resultData)
   const items = []
 
@@ -613,8 +628,45 @@ const buildStoreScoreItems = (resultData, orderCount) => {
   // 4. 商业成熟度：POI 计数（需后端高德代理，暂用占位）
   items.push({ label: '商业成熟度', stars: 0, value: '待接入' })
 
-  // 5. 竞争压力：同品牌/竞品计数（反向指标，本地门店可查，暂用占位）
-  items.push({ label: '竞争压力', stars: 0, value: '待接入' })
+  // 5. 竞争压力：2km 范围内 同品牌门店数 + 竞品门店数（反向指标，压力越大星越少）
+  let sameBrand = 0
+  let competitorCnt = 0
+  try {
+    const [markersRes, competitorsRes] = await Promise.all([
+      axios.get('/api/markers'),
+      axios.get('/api/competitors')
+    ])
+    const curStoreName = currentDetail.value?.store_name || ''
+    const markers = markersRes.data.markers || []
+    // 先找当前订单对应的门店 marker，取其品牌
+    const curMarker = markers.find(m => m.name === curStoreName)
+    const curBrand = curMarker?.brand || ''
+    // 我的门店：同品牌（brand 相同）且在 2km 内
+    for (const m of markers) {
+      if (!m || typeof m.latitude !== 'number' || typeof m.longitude !== 'number') continue
+      if (m.name === curStoreName) continue
+      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, m.latitude, m.longitude) <= 2000) {
+        // 同品牌判断：品牌字段一致（markers 有 brand 字段）
+        if (curBrand && m.brand && m.brand === curBrand) sameBrand++
+      }
+    }
+    // 竞品：2km 内全部计为竞争（竞品本身代表竞争压力）
+    for (const c of competitorsRes.data.competitors || []) {
+      if (!c || typeof c.latitude !== 'number' || typeof c.longitude !== 'number') continue
+      if (centerLat != null && centerLng != null && calcDistance(centerLat, centerLng, c.latitude, c.longitude) <= 2000) {
+        competitorCnt++
+      }
+    }
+  } catch (e) {
+    console.error('获取门店/竞品失败:', e)
+  }
+  const pressureScore = sameBrand + competitorCnt * 2 // 竞品权重更高
+  const pressureStars = pressureScore <= 0 ? 5 : pressureScore <= 2 ? 4 : pressureScore <= 4 ? 3 : pressureScore <= 6 ? 2 : 1
+  items.push({
+    label: '竞争压力',
+    stars: pressureStars,
+    value: `2km内 同品牌${sameBrand}家 + 竞品${competitorCnt}家`
+  })
 
   return items
 }
