@@ -38,7 +38,7 @@
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/resale" class="nav-item" :class="{ active: $route.path === '/resale' }">
           <el-icon><Key /></el-icon>
-          <span>转售客户</span>
+          <span>API开放</span>
         </router-link>
       </nav>
 

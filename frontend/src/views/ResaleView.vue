@@ -2,7 +2,7 @@
   <div class="resale-view">
     <div class="page-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🔑 转售客户管理</h2>
+        <h2 style="margin:0;font-size:18px;">🔑 API开放</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           第三方调用联通人口数据（/api/v1/population）的 API Key 管理，按次计费 60 元/次，最低 100 次起充
         </p>
