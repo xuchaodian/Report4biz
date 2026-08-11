@@ -56,6 +56,85 @@ router.post('/business-count', async (req, res) => {
   }
 })
 
+// 周边环境打分卡 POI 分类（8 类）
+const ENV_POI_TYPES = [
+  { key: 'mall', label: '购物中心', types: '060100' },
+  { key: 'restaurant', label: '餐饮', types: '050000' },
+  { key: 'office', label: '写字楼', types: '120200' },
+  { key: 'school', label: '学校', types: '141200' },
+  { key: 'hospital', label: '医院', types: '090100' },
+  { key: 'hotel', label: '酒店', types: '100100' },
+  { key: 'bank', label: '银行', types: '160100' },
+  { key: 'transit', label: '地铁/公交', types: '150500' }
+]
+
+// 环境打分卡缓存（内存 Map，简单够用）
+const envScoreCache = new Map()
+const ENV_CACHE_TTL = 24 * 60 * 60 * 1000 // 24h
+
+/**
+ * 周边环境打分卡：统计指定半径内 8 类商业 POI 数量
+ * POST /api/poi/environment-score
+ * Body: { lng, lat, radius }
+ */
+router.post('/environment-score', async (req, res) => {
+  try {
+    const { lng, lat, radius = 500 } = req.body
+    if (!lng || !lat) {
+      return res.status(400).json({ error: '缺少经纬度参数' })
+    }
+    const lngN = Number(lng)
+    const latN = Number(lat)
+    const rN = Number(radius)
+    if (rN > 5000) {
+      return res.status(400).json({ error: '半径最大 5000 米' })
+    }
+
+    // 缓存命中
+    const cacheKey = `${lngN.toFixed(5)},${latN.toFixed(5)},${rN}`
+    const cached = envScoreCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < ENV_CACHE_TTL) {
+      return res.json({ success: true, radius: rN, counts: cached.counts, total: cached.total, fromCache: true })
+    }
+
+    const [gcjLng, gcjLat] = wgs84ToGcj02(lngN, latN)
+
+    const counts = {}
+    let total = 0
+    for (const cat of ENV_POI_TYPES) {
+      let count = 0
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const result = await aroundSearch(gcjLng, gcjLat, rN, '', cat.types)
+          count = result.count || 0
+          break
+        } catch (e) {
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 400))
+            continue
+          }
+          console.warn(`环境POI[${cat.key}]查询失败:`, e.message)
+        }
+      }
+      counts[cat.key] = count
+      total += count
+    }
+
+    // 写缓存
+    envScoreCache.set(cacheKey, { counts, total, ts: Date.now() })
+    if (envScoreCache.size > 5000) {
+      // 简单清理：删除最早一半
+      const keys = [...envScoreCache.keys()].slice(0, 2500)
+      keys.forEach(k => envScoreCache.delete(k))
+    }
+
+    res.json({ success: true, radius: rN, counts, total, fromCache: false })
+  } catch (error) {
+    console.error('环境打分统计失败:', error.message)
+    res.status(500).json({ error: error.message })
+  }
+})
+
 /**
  * 周边搜索
  * POST /api/poi/around

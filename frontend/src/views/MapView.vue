@@ -15,6 +15,7 @@
       @circle-search="startCircleSearch"
       @polygon-search="startPolygonSearch"
       @viewport-search="startViewportSearch"
+      @env-score="startEnvScore"
       @clear-search="clearPoiSearch"
     />
 
@@ -891,6 +892,55 @@
         <el-button size="small" text @click="cancelPoiPickLocation">取消</el-button>
       </div>
     </div>
+
+    <!-- 环境打分卡选点提示 -->
+    <div v-if="envScorePickMode" class="poi-pick-location-overlay">
+      <div class="poi-pick-location-hint">
+        <el-icon><Star /></el-icon>
+        <span>请在地图上点击要评估的位置</span>
+        <el-button size="small" text @click="envScorePickMode = false">取消</el-button>
+      </div>
+    </div>
+
+    <!-- 周边环境打分卡弹窗 -->
+    <el-dialog v-model="envScoreDialogVisible" title="🏙️ 周边环境打分卡" width="560px" :close-on-click-modal="false" draggable>
+      <div v-if="envScoreLoading" style="text-align:center;padding:40px;color:#909399;">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <p style="margin-top:8px;">正在评估周边环境...</p>
+      </div>
+      <template v-else-if="envScoreData">
+        <!-- 综合分 -->
+        <div style="display:flex;align-items:center;gap:16px;padding:14px;background:#f5f7fa;border-radius:8px;margin-bottom:14px;">
+          <div style="text-align:center;flex-shrink:0;">
+            <div style="font-size:32px;font-weight:600;color:#409eff;line-height:1;">{{ envScoreTotal.toFixed(1) }}</div>
+            <div style="font-size:11px;color:#909399;margin-top:4px;">综合分 / 5.0</div>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:14px;font-weight:600;color:#333;">{{ envScoreLevel }}</div>
+            <div style="font-size:12px;color:#909399;margin-top:4px;">
+              位置：{{ envScorePoint?.lat?.toFixed(5) }}, {{ envScorePoint?.lng?.toFixed(5) }} · 半径 {{ envScoreRadius }}m
+            </div>
+          </div>
+          <el-radio-group v-model="envScoreRadius" size="small" @change="fetchEnvScore">
+            <el-radio-button :value="500">500m</el-radio-button>
+            <el-radio-button :value="1000">1km</el-radio-button>
+            <el-radio-button :value="2000">2km</el-radio-button>
+          </el-radio-group>
+        </div>
+        <!-- 8 项指标 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div v-for="item in envScoreItems" :key="item.key" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fafafa;border:0.5px solid #ebeef5;border-radius:6px;">
+            <span style="width:52px;font-size:12px;color:#606266;flex-shrink:0;">{{ item.label }}</span>
+            <span style="color:#ba7517;font-size:13px;letter-spacing:1px;white-space:nowrap;">{{ '★'.repeat(item.stars) }}<span style="color:#ddd;">{{ '★'.repeat(5 - item.stars) }}</span></span>
+            <span style="margin-left:auto;font-size:12px;color:#909399;">{{ item.count }}个</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#c0c4cc;margin-top:10px;">数据来源：高德地图 POI · 免费 · 已缓存 24h</div>
+      </template>
+      <template v-else>
+        <div style="text-align:center;padding:30px;color:#999;">暂无数据</div>
+      </template>
+    </el-dialog>
 
     <!-- 缩放控件容器 -->
     <div class="zoom-control-container">
@@ -1947,6 +1997,14 @@ const addPolygonPoint = (e) => {
 // POI位置选择模式（用户需点击地图）
 const poiPickLocationMode = ref(false)
 const poiPendingSearch = ref(null) // 待执行的搜索参数
+
+// 周边环境打分卡：选点模式 + 结果弹窗
+const envScorePickMode = ref(false)
+const envScoreDialogVisible = ref(false)
+const envScoreLoading = ref(false)
+const envScoreRadius = ref(500)
+const envScoreData = ref(null)          // { counts, total }
+const envScorePoint = ref(null)         // { lat, lng }
 
 const circleAnalysisParams = reactive({
   center: null,
@@ -5238,6 +5296,14 @@ const setTool = (tool) => {
 // 地图点击处理（通过两次click间隔自己判断双击，绕过Leaflet的dblclick限制）
 let lastClickTime = 0
 const handleMapClick = (e) => {
+  // 环境打分卡选点模式
+  if (envScorePickMode.value) {
+    envScorePoint.value = { lat: e.latlng.lat, lng: e.latlng.lng }
+    envScorePickMode.value = false
+    fetchEnvScore()
+    return
+  }
+
   // POI位置选择模式
   if (poiPickLocationMode.value && poiPendingSearch.value) {
     cancelPoiPickLocation()
@@ -7757,6 +7823,100 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
     console.warn('[showPoiOnMap] 显示POI标记时出错:', e)
   }
 }
+
+// ===== 周边环境打分卡 =====
+const ENV_DIMENSIONS = [
+  { key: 'mall', label: '购物中心', weight: 0.25 },
+  { key: 'restaurant', label: '餐饮', weight: 0.25 },
+  { key: 'office', label: '写字楼', weight: 0.15 },
+  { key: 'school', label: '学校', weight: 0.10 },
+  { key: 'hospital', label: '医院', weight: 0.10 },
+  { key: 'hotel', label: '酒店', weight: 0.05 },
+  { key: 'bank', label: '银行', weight: 0.05 },
+  { key: 'transit', label: '地铁/公交', weight: 0.05 }
+]
+
+// 各维度星级分档（500m 基准；radius 越大阈值按比例放大）
+const envStarRule = (key, count, radius) => {
+  const k = radius / 500
+  const t = (n) => Math.max(1, Math.round(n * k))
+  switch (key) {
+    case 'mall': return count >= t(5) ? 5 : count >= t(3) ? 4 : count >= t(2) ? 3 : count >= t(1) ? 2 : 1
+    case 'restaurant': return count >= t(30) ? 5 : count >= t(15) ? 4 : count >= t(5) ? 3 : count >= t(1) ? 2 : 1
+    case 'office': return count >= t(10) ? 5 : count >= t(5) ? 4 : count >= t(2) ? 3 : count >= t(1) ? 2 : 1
+    case 'school': return count >= t(5) ? 5 : count >= t(3) ? 4 : count >= t(2) ? 3 : count >= t(1) ? 2 : 1
+    case 'hospital': return count >= t(2) ? 5 : count >= t(1) ? 4 : 1
+    case 'hotel': return count >= t(5) ? 5 : count >= t(3) ? 4 : count >= t(1) ? 3 : 1
+    case 'bank': return count >= t(5) ? 5 : count >= t(3) ? 4 : count >= t(1) ? 3 : 1
+    case 'transit': return count >= t(2) ? 5 : count >= t(1) ? 4 : 1
+    default: return 1
+  }
+}
+
+// 开始环境打分：进入选点模式
+const startEnvScore = () => {
+  if (!map) { ElMessage.warning('地图未初始化'); return }
+  envScorePickMode.value = true
+  envScoreDialogVisible.value = false
+  ElMessage.info('请在地图上点击要评估的位置')
+}
+
+// 获取打分数据
+const fetchEnvScore = async () => {
+  if (!envScorePoint.value) return
+  envScoreLoading.value = true
+  envScoreDialogVisible.value = true
+  try {
+    const { data } = await axios.post('/api/poi/environment-score', {
+      lng: envScorePoint.value.lng,
+      lat: envScorePoint.value.lat,
+      radius: envScoreRadius.value
+    })
+    if (data.success) {
+      envScoreData.value = data
+    } else {
+      envScoreData.value = null
+      ElMessage.error(data.error || '评估失败')
+    }
+  } catch (e) {
+    envScoreData.value = null
+    ElMessage.error('评估失败: ' + (e.response?.data?.error || e.message))
+  } finally {
+    envScoreLoading.value = false
+  }
+}
+
+// 打分卡各项（含星级）
+const envScoreItems = computed(() => {
+  if (!envScoreData.value?.counts) return []
+  return ENV_DIMENSIONS.map(d => ({
+    key: d.key,
+    label: d.label,
+    count: envScoreData.value.counts[d.key] || 0,
+    stars: envStarRule(d.key, envScoreData.value.counts[d.key] || 0, envScoreRadius.value)
+  }))
+})
+
+// 综合分（星级×权重加权）
+const envScoreTotal = computed(() => {
+  const items = envScoreItems.value
+  if (items.length === 0) return 0
+  let sum = 0
+  items.forEach(item => {
+    const dim = ENV_DIMENSIONS.find(d => d.key === item.key)
+    sum += item.stars * (dim?.weight || 0)
+  })
+  return sum
+})
+
+// 综合评语
+const envScoreLevel = computed(() => {
+  const s = envScoreTotal.value
+  if (s >= 4.5) return '优秀 · 商业配套非常完善'
+  if (s >= 3.5) return '良好 · 商业配套较完善'
+  if (s >= 2.5) return '中等 · 商业配套一般'
+  return '较差 · 商业配套不足'
+})
 
 // 开始半径圆搜索
 const startCircleSearch = () => {

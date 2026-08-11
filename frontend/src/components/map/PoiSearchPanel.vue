@@ -27,6 +27,10 @@
           <el-icon><FullScreen /></el-icon>
           <span>视野内</span>
         </div>
+        <div class="poi-mode-btn" @click="$emit('env-score')">
+          <el-icon><Star /></el-icon>
+          <span>环境打分</span>
+        </div>
         <div class="poi-mode-btn" @click="$emit('clear-search')">
           <el-icon><Delete /></el-icon>
           <span>清除</span>
@@ -42,7 +46,7 @@ defineProps({
   keyword: { type: String, default: '' }
 })
 
-defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-search', 'viewport-search', 'clear-search'])
+defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-search', 'viewport-search', 'env-score', 'clear-search'])
 </script>
 
 <style scoped>
