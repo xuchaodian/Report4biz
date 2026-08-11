@@ -262,6 +262,33 @@ adminRouter.post('/recharge', authenticate, async (req, res) => {
 })
 
 /**
+ * 启停用客户 Key
+ * POST /api/v1/resale/toggle-status
+ * Body: { keyId }
+ */
+adminRouter.post('/toggle-status', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '仅管理员可操作' })
+    }
+    const { keyId } = req.body
+    if (!keyId) {
+      return res.status(400).json({ message: '缺少 keyId' })
+    }
+    const db = getDb()
+    const client = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
+    if (!client) {
+      return res.status(404).json({ message: '客户不存在' })
+    }
+    const newStatus = client.status === 'active' ? 'disabled' : 'active'
+    db.prepare(`UPDATE api_keys SET status = ? WHERE id = ?`).run(newStatus, keyId)
+    res.json({ success: true, message: newStatus === 'active' ? '已启用' : '已停用', status: newStatus })
+  } catch (e) {
+    res.status(500).json({ message: '操作失败: ' + e.message })
+  }
+})
+
+/**
  * 客户列表（含余额）
  * GET /api/v1/resale/keys
  */

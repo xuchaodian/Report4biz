@@ -36,6 +36,10 @@
           <el-icon><User /></el-icon>
           <span>用户</span>
         </router-link>
+        <router-link v-if="userStore.isAdmin" to="/resale" class="nav-item" :class="{ active: $route.path === '/resale' }">
+          <el-icon><Key /></el-icon>
+          <span>转售客户</span>
+        </router-link>
       </nav>
 
       <div class="header-right">
@@ -174,7 +178,7 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'

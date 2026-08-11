@@ -62,6 +62,12 @@ const routes = [
         meta: { requiresAdmin: true }
       },
       {
+        path: 'resale',
+        name: 'Resale',
+        component: () => import('@/views/ResaleView.vue'),
+        meta: { requiresAdmin: true }
+      },
+      {
         path: 'account',
         name: 'Account',
         component: () => import('@/views/MyAccountView.vue')
