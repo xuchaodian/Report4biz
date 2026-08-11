@@ -9,6 +9,10 @@
         <el-icon><Coordinate /></el-icon>
         <span>商圈内点位</span>
       </div>
+      <div class="business-circle-btn" :class="{ active: envScoreActive }" @click="$emit('env-score')">
+        <el-icon><Star /></el-icon>
+        <span>周边商业配套</span>
+      </div>
       <div class="business-circle-btn" @click="$emit('population-dist')">
         <el-icon><DataAnalysis /></el-icon>
         <span>常住人口分布</span>
@@ -33,12 +37,14 @@
 defineProps({
   expanded: Boolean,
   activeTool: { type: String, default: '' },
-  potentialVisible: Boolean
+  potentialVisible: Boolean,
+  envScoreActive: Boolean
 })
 
 defineEmits([
   'update:expanded',
   'set-tool',
+  'env-score',
   'population-dist',
   'population-compare',
   'toggle-smartsteps',

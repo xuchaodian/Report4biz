@@ -15,7 +15,6 @@
       @circle-search="startCircleSearch"
       @polygon-search="startPolygonSearch"
       @viewport-search="startViewportSearch"
-      @env-score="startEnvScore"
       @clear-search="clearPoiSearch"
     />
 
@@ -24,7 +23,9 @@
       v-model:expanded="businessCircleExpanded"
       :active-tool="activeTool"
       :potential-visible="potentialVisible"
+      :env-score-active="envScorePickMode"
       @set-tool="setTool"
+      @env-score="startEnvScore"
       @population-dist="openPopulationDistribution"
       @population-compare="openPopulationCompare"
       @toggle-smartsteps="smartstepsVisible = !smartstepsVisible"
@@ -898,7 +899,7 @@
       <div class="poi-pick-location-hint">
         <el-icon><Star /></el-icon>
         <span>请在地图上点击要评估的位置</span>
-        <el-button size="small" text @click="envScorePickMode = false">取消</el-button>
+        <el-button size="small" text @click="cancelEnvScorePick">取消</el-button>
       </div>
     </div>
 
@@ -2005,6 +2006,7 @@ const envScoreLoading = ref(false)
 const envScoreRadius = ref(500)
 const envScoreData = ref(null)          // { counts, total }
 const envScorePoint = ref(null)         // { lat, lng }
+let envScoreLayer = null                // 地图图标 + 半径圆图层
 
 const circleAnalysisParams = reactive({
   center: null,
@@ -5300,6 +5302,8 @@ const handleMapClick = (e) => {
   if (envScorePickMode.value) {
     envScorePoint.value = { lat: e.latlng.lat, lng: e.latlng.lng }
     envScorePickMode.value = false
+    if (map) map.getContainer().style.cursor = ''
+    drawEnvScoreLayer()
     fetchEnvScore()
     return
   }
@@ -7853,17 +7857,66 @@ const envStarRule = (key, count, radius) => {
   }
 }
 
-// 开始环境打分：进入选点模式
+// 开始周边商业配套：进入选点模式（十字光标）
 const startEnvScore = () => {
   if (!map) { ElMessage.warning('地图未初始化'); return }
+  // 清除旧图层
+  if (envScoreLayer) {
+    try { map.removeLayer(envScoreLayer) } catch(e) {}
+    envScoreLayer = null
+  }
+  envScoreData.value = null
+  envScorePoint.value = null
   envScorePickMode.value = true
   envScoreDialogVisible.value = false
+  map.getContainer().style.cursor = 'crosshair'
   ElMessage.info('请在地图上点击要评估的位置')
+}
+
+// 取消选点模式（恢复光标，清理图层）
+const cancelEnvScorePick = () => {
+  envScorePickMode.value = false
+  envScorePoint.value = null
+  if (map) map.getContainer().style.cursor = ''
+  if (envScoreLayer) {
+    try { map.removeLayer(envScoreLayer) } catch(e) {}
+    envScoreLayer = null
+  }
+}
+
+// 绘制地图图标 + 半径圆
+const drawEnvScoreLayer = () => {
+  if (!map || !envScorePoint.value) return
+  if (envScoreLayer) {
+    try { map.removeLayer(envScoreLayer) } catch(e) {}
+    envScoreLayer = null
+  }
+  const { lat, lng } = envScorePoint.value
+  const group = L.layerGroup().addTo(map)
+  // 地图图标（红色定位点）
+  const icon = L.divIcon({
+    className: 'env-score-icon',
+    html: '<div style="width:22px;height:22px;background:#409eff;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
+  })
+  L.marker([lat, lng], { icon }).addTo(group)
+  // 半径圆
+  L.circle([lat, lng], {
+    radius: envScoreRadius.value,
+    color: '#409eff',
+    weight: 1.5,
+    fillColor: '#409eff',
+    fillOpacity: 0.08,
+    interactive: false
+  }).addTo(group)
+  envScoreLayer = group
 }
 
 // 获取打分数据
 const fetchEnvScore = async () => {
   if (!envScorePoint.value) return
+  drawEnvScoreLayer()  // 半径切换时同步重绘圆
   envScoreLoading.value = true
   envScoreDialogVisible.value = true
   try {
