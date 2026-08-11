@@ -87,9 +87,12 @@
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('track')">
           <el-icon style="margin-right:6px;"><Aim /></el-icon>竞争门店追踪
         </el-button>
+        <!-- 机会区分析（v1.7.36 开发后暂隐藏，保留代码便于恢复） -->
+        <!--
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('opportunity')">
           <el-icon style="margin-right:6px;"><MapLocation /></el-icon>机会区分析
         </el-button>
+        -->
       </div>
     </el-dialog>
 
