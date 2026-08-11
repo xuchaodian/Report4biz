@@ -87,6 +87,9 @@
         <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('track')">
           <el-icon style="margin-right:6px;"><Aim /></el-icon>竞争门店追踪
         </el-button>
+        <el-button size="large" style="height:48px; font-size:15px;" @click="selectStoreCircleMode('opportunity')">
+          <el-icon style="margin-right:6px;"><MapLocation /></el-icon>机会区分析
+        </el-button>
       </div>
     </el-dialog>
 
@@ -98,12 +101,26 @@
             ? '为地图上所有可见门店生成半径圆，按重叠率着色'
             : storeCircleMode === 'track'
               ? '以指定竞争品牌的门店为中心，分析半径内的我的门店与其他竞品情况'
+              : storeCircleMode === 'opportunity'
+                ? '在当前地图视野内扫描竞品密度，识别竞品稀疏的机会区（0 成本）'
               : '为地图上所有可见门店生成半径圆，按竞争关系着色' }}
         </p>
         <el-form label-width="80px">
-          <el-form-item label="半径(km)">
+          <el-form-item :label="storeCircleMode === 'opportunity' ? '网格大小(km)' : '半径(km)'">
             <el-input-number v-model="storeCircleRadius" :min="0.5" :max="10" :step="0.5" :precision="1" style="width:200px" />
           </el-form-item>
+          <template v-if="storeCircleMode === 'opportunity'">
+            <el-form-item label="密度阈值">
+              <el-input-number v-model="opportunityDensityThreshold" :min="1" :max="20" :step="1" style="width:200px" />
+              <span style="margin-left:8px;font-size:12px;color:#909399;">网格内竞品≤该值视为机会区</span>
+            </el-form-item>
+            <el-form-item label="数据范围">
+              <el-radio-group v-model="opportunityScope">
+                <el-radio value="viewport">当前视野</el-radio>
+                <el-radio value="city">全城</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </template>
           <template v-if="storeCircleMode === 'overlap'">
             <el-form-item label="高阈值(%)">
               <el-input-number v-model="overlapHighThreshold" :min="10" :max="100" :step="5" style="width:200px" />
@@ -183,7 +200,7 @@
               </span>
             </el-checkbox>
           </template>
-          <template v-else>
+          <template v-else-if="storeCircleMode === 'track'">
             <!-- 竞争追踪：4分类 -->
             <el-checkbox v-model="storeCircleFilters.track.noMyNoOther" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
@@ -209,6 +226,28 @@
                 有我的门店 + 有其他竞品
               </span>
             </el-checkbox>
+          </template>
+          <template v-else-if="storeCircleMode === 'opportunity'">
+            <!-- 机会区分析：3 个密度分级 -->
+            <el-checkbox v-model="storeCircleFilters.opportunity.lowDensity" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#67c23a;"></span>
+                机会区（竞品≤{{ opportunityDensityThreshold }}）
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.opportunity.mediumDensity" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e6a23c;"></span>
+                中密度区
+              </span>
+            </el-checkbox>
+            <el-checkbox v-model="storeCircleFilters.opportunity.highDensity" style="display:block;margin-bottom:6px;font-size:13px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f56c6c;"></span>
+                高密度区
+              </span>
+            </el-checkbox>
+            <div style="font-size:12px;color:#909399;margin-top:6px;">密度分级基于当前竞品数据相对分位，纯本地计算 0 成本</div>
           </template>
         </div>
       </div>
@@ -248,7 +287,7 @@
           userSelect: 'none'
         }"
       >
-        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争门店追踪图例' : '竞争关系图例' }}</span>
+        <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争门店追踪图例' : storeCircleMode === 'opportunity' ? '机会区分析图例' : '竞争关系图例' }}</span>
         <el-button link size="small" @click="onStoreCircleLegendClose">
           <el-icon><Close /></el-icon>
         </el-button>
@@ -313,7 +352,7 @@
                 }"
               ></span>
               <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
-              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ item.stores ? item.stores.length : 0 }}家</span>
+              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ item.count !== undefined ? item.count + '格' : (item.stores ? item.stores.length : 0) + '家' }}</span>
               <span :style="{ color: '#c0c4cc', fontSize: '10px', transform: expandedLegendCategory === item.key ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }">▶</span>
             </div>
             <div v-if="expandedLegendCategory === item.key" :style="{ padding: '2px 0 6px 22px' }">
@@ -1351,7 +1390,7 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading, MapLocation
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -1515,13 +1554,19 @@ const storeCircleLegendVisible = ref(false)  // 图例弹窗可见性
 const storeCircleFilters = ref({
   overlap: { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true },
   competition: { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true },
-  track: { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true }
+  track: { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true },
+  opportunity: { lowDensity: true, mediumDensity: true, highDensity: true }
 })
+// 机会区分析参数
+const opportunityDensityThreshold = ref(2)   // 网格内竞品 ≤ 该值 → 机会区
+const opportunityScope = ref('viewport')     // 'viewport'=当前视野, 'city'=全城
+let opportunityLayer = null                  // 机会区网格图层
 // 竞争追踪：指定竞争品牌（单选）
 const trackBrand = ref('')
 const storeCircleDialogTitle = computed(() => {
   if (storeCircleMode.value === 'overlap') return '我的门店重叠度'
   if (storeCircleMode.value === 'track') return '设置竞争门店追踪半径'
+  if (storeCircleMode.value === 'opportunity') return '机会区分析设置'
   return '设置竞争分析半径'
 })
 // 竞争品牌多选（空数组 = 统计全部竞品）
@@ -5802,6 +5847,10 @@ const selectStoreCircleMode = (mode) => {
     restoreOverlapThresholds()  // 恢复上次设置的重叠率阈值
   } else if (mode === 'track') {
     storeCircleFilters.value.track = { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true }
+  } else if (mode === 'opportunity') {
+    storeCircleFilters.value.opportunity = { lowDensity: true, mediumDensity: true, highDensity: true }
+    opportunityDensityThreshold.value = 2
+    opportunityScope.value = 'viewport'
   } else {
     storeCircleFilters.value.competition = { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true }
   }
@@ -5878,6 +5927,116 @@ const applyStoreCircles = () => {
   const radiusM = storeCircleRadius.value * 1000
   const R = radiusM
   const R2 = R * R
+
+  if (storeCircleMode.value === 'opportunity') {
+    // ==== 机会区分析模式：网格扫描竞品密度（0 成本，纯本地计算） ====
+    // 竞品数据（不受显示开关影响，确保分析完整；按可见过滤）
+    let allComps = []
+    if (competitorStore.competitors) {
+      allComps = competitorStore.competitors
+      if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
+        allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
+      }
+    }
+    const compPoints = allComps.filter(c => c.latitude && c.longitude)
+    if (compPoints.length === 0) {
+      ElMessage.warning('没有竞品门店数据，无法分析机会区')
+      return
+    }
+
+    // 确定扫描范围：当前视野（默认）或全部竞品外扩
+    let bounds
+    if (opportunityScope.value === 'viewport') {
+      const b = map.getBounds()
+      bounds = { minLat: b.getSouth(), maxLat: b.getNorth(), minLng: b.getWest(), maxLng: b.getEast() }
+    } else {
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity
+      compPoints.forEach(c => {
+        if (c.latitude < minLat) minLat = c.latitude
+        if (c.latitude > maxLat) maxLat = c.latitude
+        if (c.longitude < minLng) minLng = c.longitude
+        if (c.longitude > maxLng) maxLng = c.longitude
+      })
+      const pad = 0.05
+      bounds = { minLat: minLat - pad, maxLat: maxLat + pad, minLng: minLng - pad, maxLng: maxLng + pad }
+    }
+
+    // 网格化：1 度经度 ≈ 111km×cos(lat)，1 度纬度 ≈ 111km
+    const gridKm = storeCircleRadius.value || 1
+    const avgLat = (bounds.minLat + bounds.maxLat) / 2
+    const latStep = gridKm / 111
+    const lngStep = gridKm / (111 * Math.cos(avgLat * Math.PI / 180))
+
+    // 统计每个网格的竞品数
+    const gridCounts = {}
+    compPoints.forEach(c => {
+      const gi = Math.floor(c.latitude / latStep)
+      const gj = Math.floor(c.longitude / lngStep)
+      const key = gi + '_' + gj
+      gridCounts[key] = (gridCounts[key] || 0) + 1
+    })
+
+    // 计算全部网格的竞品数（含 0 竞品网格），用于分位分级
+    const allCounts = []
+    for (let gi = Math.floor(bounds.minLat / latStep); gi <= Math.floor(bounds.maxLat / latStep); gi++) {
+      for (let gj = Math.floor(bounds.minLng / lngStep); gj <= Math.floor(bounds.maxLng / lngStep); gj++) {
+        const key = gi + '_' + gj
+        allCounts.push({ gi, gj, count: gridCounts[key] || 0 })
+      }
+    }
+    if (allCounts.length > 400) {
+      ElMessage.warning(`扫描区域过大（${allCounts.length} 个网格），请缩小视野或调大网格大小`)
+      return
+    }
+
+    // 密度分级：0=机会区(≤阈值)，1=中密度(≤2×阈值)，2=高密度(>2×阈值)
+    const threshold = opportunityDensityThreshold.value || 2
+    const layer = L.layerGroup().addTo(map)
+    const oppFilters = storeCircleFilters.value.opportunity
+    let oppCount = 0, midCount = 0, highCount = 0
+
+    allCounts.forEach(({ gi, gj, count }) => {
+      const lat = (gi + 0.5) * latStep
+      const lng = (gj + 0.5) * lngStep
+      // 网格中心在视野外跳过（避免边缘半格）
+      if (opportunityScope.value === 'viewport') {
+        if (lat < bounds.minLat || lat > bounds.maxLat || lng < bounds.minLng || lng > bounds.maxLng) return
+      }
+      let color, level
+      if (count <= threshold) {
+        color = '#67c23a'; level = 'lowDensity'; oppCount++
+      } else if (count <= threshold * 2) {
+        color = '#e6a23c'; level = 'mediumDensity'; midCount++
+      } else {
+        color = '#f56c6c'; level = 'highDensity'; highCount++
+      }
+      if (!oppFilters[level]) return
+      const rect = L.rectangle([[lat - latStep / 2, lng - lngStep / 2], [lat + latStep / 2, lng + lngStep / 2]], {
+        color: color,
+        weight: 1,
+        fillColor: color,
+        fillOpacity: count === 0 ? 0.25 : 0.4,
+        interactive: false
+      })
+      rect.bindTooltip(`竞品 ${count} 家`, { permanent: false, direction: 'center' })
+      layer.addLayer(rect)
+    })
+
+    // 图例
+    const legendMap = [
+      { key: 'lowDensity', color: '#67c23a', label: `机会区（竞品≤${threshold}）`, count: oppCount },
+      { key: 'mediumDensity', color: '#e6a23c', label: `中密度区（${threshold}~${threshold * 2}）`, count: midCount },
+      { key: 'highDensity', color: '#f56c6c', label: `高密度区（>${threshold * 2}）`, count: highCount }
+    ]
+    storeCircleLegendItems.value = legendMap
+      .filter(item => oppFilters[item.key])
+      .map(item => ({ key: item.key, color: item.color, label: item.label, stores: [], count: item.count }))
+    storeCircleLegendVisible.value = true
+    storeCircleLayer = layer
+    expandedLegendCategory.value = null
+    ElMessage.success(`分析完成：机会区 ${oppCount} 个网格、中密度 ${midCount} 个、高密度 ${highCount} 个（0 成本）`)
+    return
+  }
 
   if (storeCircleMode.value === 'competition') {
     // ==== 门店竞争数模式 ====
