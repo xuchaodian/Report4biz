@@ -80,6 +80,35 @@ export async function initDatabase() {
     // 已存在，忽略
   }
 
+  // 转售 API 客户表（第三方调用联通人口数据）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_name TEXT NOT NULL,
+      api_key TEXT NOT NULL UNIQUE,
+      balance INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // 转售 API 调用记录表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS api_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key_id INTEGER NOT NULL,
+      services TEXT,
+      center_lng REAL,
+      center_lat REAL,
+      radius INTEGER,
+      city_month TEXT,
+      from_cache INTEGER DEFAULT 0,
+      cost INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage(api_key_id, created_at)`)
+
   // 创建配额分配历史表（记录管理员每次设定/追加配额的变更）
   db.run(`
     CREATE TABLE IF NOT EXISTS quota_history (
