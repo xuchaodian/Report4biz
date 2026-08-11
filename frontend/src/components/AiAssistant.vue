@@ -91,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, onMounted } from 'vue'
 import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { getActionDescription } from '@/utils/aiExecutor'
@@ -113,8 +113,60 @@ const inputText = ref('')
 const messages = ref([])
 const messagesRef = ref(null)
 
-const MAX_HISTORY = 6  // 减少历史消息数，节省token
-const MAX_TOTAL_MSGS = 20  // 总消息上限
+const MAX_HISTORY = 12  // 多轮对话历史条数（v1.7.35 从6提升至12，配合localStorage持久化）
+const MAX_TOTAL_MSGS = 24  // 总消息上限
+
+// ===== 对话历史持久化（localStorage，按用户隔离） =====
+const HISTORY_KEY = 'aiChatHistory'
+
+const historyStorageKey = () => {
+  const uid = localStorage.getItem('userId') || 'anonymous'
+  return `${HISTORY_KEY}_${uid}`
+}
+
+// 加载历史（仅恢复 user/assistant 纯文本消息，截断到 MAX_TOTAL_MSGS）
+const loadHistory = () => {
+  try {
+    const raw = localStorage.getItem(historyStorageKey())
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-MAX_TOTAL_MSGS)
+  } catch (e) {
+    return []
+  }
+}
+
+// 保存历史（仅纯文本 user/assistant，不存 actions/工具调用大对象）
+const saveHistory = () => {
+  try {
+    const slim = messages.value
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: m.content }))
+      .slice(-MAX_TOTAL_MSGS)
+    localStorage.setItem(historyStorageKey(), JSON.stringify(slim))
+  } catch (e) {
+    console.error('保存AI对话历史失败:', e)
+  }
+}
+
+// 组件挂载时恢复历史
+onMounted(() => {
+  const restored = loadHistory()
+  if (restored.length > 0) {
+    messages.value = restored
+  }
+})
+
+// 消息变化时自动保存（防抖 500ms）
+let saveTimer = null
+watch(messages, () => {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(saveHistory, 500)
+}, { deep: true })
+
 
 const quickQuestions = [
   '显示北京的已开业门店',
@@ -164,6 +216,9 @@ watch(messages, () => scrollToBottom(), { deep: true })
 // 清空对话
 function clearMessages() {
   messages.value = []
+  try {
+    localStorage.removeItem(historyStorageKey())
+  } catch (e) {}
 }
 
 // 发送消息
