@@ -32,8 +32,17 @@ router.get('/summary', authenticate, async (req, res) => {
     // 我的门店类型分布
     const markerTypes = db.prepare('SELECT store_type AS name, COUNT(*) AS value FROM markers GROUP BY store_type ORDER BY value DESC LIMIT 8').all()
 
-    // 我的门店城市 TOP10
-    const markerCityTop = db.prepare('SELECT city AS name, COUNT(*) AS value FROM markers WHERE city IS NOT NULL AND city != "" GROUP BY city ORDER BY value DESC LIMIT 10').all()
+    // 我的门店城市 TOP10（城市归一化：去掉"市"后缀，合并 上海/上海市）
+    const cityRows = db.prepare('SELECT city, COUNT(*) AS c FROM markers WHERE city IS NOT NULL AND city != "" GROUP BY city').all()
+    const cityAgg = {}
+    cityRows.forEach(r => {
+      const key = String(r.city).replace(/市$/, '')
+      cityAgg[key] = (cityAgg[key] || 0) + r.c
+    })
+    const markerCityTop = Object.entries(cityAgg)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10)
 
     // 竞品品牌 TOP10
     const compBrandTop = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all()
@@ -44,6 +53,18 @@ router.get('/summary', authenticate, async (req, res) => {
       const d = new Date(Date.now() - i * 24 * 3600 * 1000)
       trend.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, my: 0, comp: 0 })
     }
+
+    // ===== 真实坐标（抽样最多 500 个，避免传输过大） =====
+    const markerPoints = db.prepare(`
+      SELECT latitude, longitude FROM markers
+      WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
+      ORDER BY RANDOM() LIMIT 500
+    `).all().map(r => [r.latitude, r.longitude])
+    const compPoints = db.prepare(`
+      SELECT latitude, longitude FROM competitors
+      WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
+      ORDER BY RANDOM() LIMIT 500
+    `).all().map(r => [r.latitude, r.longitude])
 
     // ===== 用户购买/配额 =====
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
@@ -77,6 +98,10 @@ router.get('/summary', authenticate, async (req, res) => {
         markerCityTop,
         compBrandTop,
         trend
+      },
+      points: {
+        markers: markerPoints,
+        competitors: compPoints
       },
       cityData: cityData.slice(0, 50),
       updatedAt: new Date().toISOString()

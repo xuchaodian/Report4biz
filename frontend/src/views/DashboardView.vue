@@ -93,6 +93,7 @@ let refreshTimer = null
 let map = null
 let markerLayer = null
 let heatLayer = null
+let mapFitted = false
 let charts = []
 
 // KPI 卡片
@@ -213,26 +214,20 @@ const renderMap = async () => {
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
 
   const k = data.value?.kpi || {}
-  const myCount = Math.min(k.markers ?? 0, 300)
-  const compCount = Math.min(k.competitors ?? 0, 200)
 
-  // 随机生成分布点（基于城市中心随机撒点，大屏示意用）
-  const cityCenters = [
-    [39.9, 116.4], [31.23, 121.47], [23.13, 113.26], [22.54, 114.06], [30.57, 104.06],
-    [30.27, 120.15], [28.68, 115.86], [32.06, 118.78], [36.65, 117.0], [34.34, 108.94],
-    [29.56, 106.55], [26.65, 106.63], [24.48, 118.08], [25.03, 102.72], [43.82, 87.61]
-  ]
-  const rand = (c, spread) => [c[0] + (Math.random() - 0.5) * spread, c[1] + (Math.random() - 0.5) * spread]
+  // 真实坐标（后端已抽样最多 500 点）
+  const myPoints = (data.value?.points?.markers || []).slice(0, 500)
+  const compPoints = (data.value?.points?.competitors || []).slice(0, 500)
 
-  const myPoints = []
-  for (let i = 0; i < myCount; i++) {
-    const c = cityCenters[Math.floor(Math.random() * cityCenters.length)]
-    myPoints.push(rand(c, 3))
-  }
-  const compPoints = []
-  for (let i = 0; i < compCount; i++) {
-    const c = cityCenters[Math.floor(Math.random() * cityCenters.length)]
-    compPoints.push(rand(c, 3))
+  // 首次渲染：有真实坐标则缩放地图到数据范围（后续刷新保持用户视野）
+  if (!mapFitted && myPoints.length + compPoints.length > 0) {
+    const allPts = myPoints.concat(compPoints)
+    const lats = allPts.map(p => p[0])
+    const lngs = allPts.map(p => p[1])
+    try {
+      map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { padding: [30, 30] })
+      mapFitted = true
+    } catch (_) {}
   }
 
   markerLayer = L.layerGroup()
