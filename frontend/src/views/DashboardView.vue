@@ -108,6 +108,7 @@ let clockTimer = null
 let refreshTimer = null
 let map = null
 let chinaLayer = null
+let provinceLabelLayer = null  // 省份名称标签图层（独立于底图）
 let markerLayer = null
 let heatLayer = null
 let mapFitted = false
@@ -236,11 +237,12 @@ const renderMap = async () => {
       }
     })
   }
-  // 加载中国省界底图（灰色，一次性）+ 省份名称标签
+  // 加载中国省界底图（灰色，一次性）
   if (!chinaLoaded) {
     try {
       const res = await fetch('/china.json')
       const geo = await res.json()
+      // 先建底图层（onEachFeature 里不能引用 chinaLayer，会因未赋值抛错导致地图消失）
       chinaLayer = L.geoJSON(geo, {
         style: {
           color: 'rgba(140,160,190,0.9)',
@@ -248,22 +250,24 @@ const renderMap = async () => {
           fillColor: 'rgba(30,55,90,0.55)',
           fillOpacity: 0.6
         },
-        interactive: false,
-        // 省份名称标签（放省份中心，仅省级视图显示，切城市级时由 CSS 隐藏）
-        onEachFeature: (feature, layer) => {
-          const name = feature.properties?.name
-          const center = feature.properties?.center
-          if (name && center) {
-            const icon = L.divIcon({
-              className: 'ds-province-label',
-              html: `<div>${name}</div>`,
-              iconSize: [0, 0],
-              iconAnchor: [0, 0]
-            })
-            L.marker([center[1], center[0]], { icon, interactive: false }).addTo(chinaLayer)
-          }
-        }
+        interactive: false
       }).addTo(map)
+      // 底图创建完成后，单独添加省份名称标签（独立 layerGroup，便于显隐控制）
+      provinceLabelLayer = L.layerGroup()
+      geo.features.forEach(f => {
+        const name = f.properties?.name
+        const center = f.properties?.center
+        if (name && center) {
+          const icon = L.divIcon({
+            className: 'ds-province-label',
+            html: `<div>${name}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
+          })
+          L.marker([center[1], center[0]], { icon, interactive: false }).addTo(provinceLabelLayer)
+        }
+      })
+      provinceLabelLayer.addTo(map)
       chinaLoaded = true
       map.setView([35, 108], 4)
       mapFitted = false  // 底图就绪后重新按数据fitBounds
@@ -272,11 +276,11 @@ const renderMap = async () => {
     }
   }
   // 切换聚合级别时同步显隐省份名（省级视图显示，城市级隐藏避免叠标签）
-  if (chinaLayer) {
-    chinaLayer.eachLayer(l => {
-      if (l.options?.icon?.options?.className === 'ds-province-label') {
-        l.getElement?.()?.style?.setProperty?.('display', aggLevel === 'province' ? '' : 'none')
-      }
+  if (provinceLabelLayer) {
+    const show = aggLevel === 'province'
+    provinceLabelLayer.eachLayer(l => {
+      const el = l.getElement?.()
+      if (el) el.style.display = show ? '' : 'none'
     })
   }
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
