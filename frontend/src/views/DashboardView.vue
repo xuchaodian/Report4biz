@@ -84,7 +84,7 @@
       <div class="ds-col ds-col-right">
         <div class="ds-chart-grid">
           <div class="ds-panel ds-chart-panel ds-chart-panel-lg">
-            <div class="ds-chart-title">门店城市 TOP10</div>
+            <div class="ds-chart-title">门店城市（已开业） TOP10</div>
             <div ref="cityChartRef" class="ds-chart"></div>
           </div>
           <div class="ds-panel ds-chart-panel">
@@ -129,7 +129,7 @@ const showCompLayer = ref(false)  // 竞品聚合默认不显示
 
 // 门店类型颜色（我的门店）
 const typeColors = { '已开业': '#40c4ff', '重点候选': '#ffd166', '一般候选': '#9aa5b5' }
-const showMyTypes = reactive({ '已开业': true, '重点候选': true, '一般候选': true })
+const showMyTypes = reactive({ '已开业': true, '重点候选': false, '一般候选': false })  // 默认只显示已开业
 const myTypeKeys = ['已开业', '重点候选', '一般候选']
 // 竞品品牌颜色（最多10色循环）
 const BRAND_COLOR_POOL = ['#ff6b6b', '#9b8cff', '#06d6a0', '#ff9f43', '#f98fb4', '#48dbfb', '#feca57', '#1dd1a1', '#c8d6e5', '#ffa502']
@@ -154,7 +154,9 @@ const kpiList = computed(() => {
   return [
     { label: '我的门店', value: k.markers ?? 0, color: '#40c4ff' },
     { label: '竞品门店', value: k.competitors ?? 0, color: '#ff6b6b' },
+    { label: '覆盖省份', value: k.markerProvCount ?? 0, color: '#06d6a0' },
     { label: '覆盖城市', value: k.markerCities ?? 0, color: '#06d6a0' },
+    { label: '竞品省份', value: k.compProvCount ?? 0, color: '#f98fb4' },
     { label: '竞品城市', value: k.compCities ?? 0, color: '#f98fb4' },
     { label: '购买次数', value: k.myPurchases ?? 0, color: '#40c4ff' },
     { label: '剩余次数', value: k.quotaRemaining ?? 0, color: '#ffd166' }

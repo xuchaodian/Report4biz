@@ -22,6 +22,12 @@ router.get('/summary', authenticate, async (req, res) => {
     // 异常经营状态（停业/歇业/关闭等，大屏聚合排除）
     const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']
 
+    // 城市→省份映射
+    const toProvince = (city) => {
+      const c = String(city || '').replace(/市$/, '')
+      return CITY_TO_PROVINCE[c] || c
+    }
+
     // ===== KPI 指标 =====
     // 我的门店总数（排除异常状态：闭店/停业/歇业/关闭等）
     const ABNORMAL_STATUS_SQL = `AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})`
@@ -34,12 +40,22 @@ router.get('/summary', authenticate, async (req, res) => {
     const markerCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
     // 竞品覆盖城市数
     const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE city IS NOT NULL AND city != ""').get()?.c || 0
+    // 我的门店覆盖省份数（城市→省份映射后去重）
+    const markerProvCount = new Set(
+      db.prepare(`SELECT DISTINCT city FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL}`).all(...ABNORMAL_STATUS)
+        .map(r => toProvince(r.city))
+    ).size
+    // 竞品覆盖省份数
+    const compProvCount = new Set(
+      db.prepare('SELECT DISTINCT city FROM competitors WHERE city IS NOT NULL AND city != ""').all()
+        .map(r => toProvince(r.city))
+    ).size
 
     // 我的门店类型分布（排除异常状态）
     const markerTypes = db.prepare(`SELECT store_type AS name, COUNT(*) AS value FROM markers WHERE 1=1 ${ABNORMAL_STATUS_SQL} GROUP BY store_type ORDER BY value DESC LIMIT 8`).all(...ABNORMAL_STATUS)
 
-    // 我的门店城市 TOP10（城市归一化：去掉"市"后缀，合并 上海/上海市；排除异常状态）
-    const cityRows = db.prepare(`SELECT city, COUNT(*) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} GROUP BY city`).all(...ABNORMAL_STATUS)
+    // 我的门店城市 TOP10（仅已开业门店；城市归一化：去掉"市"后缀，合并 上海/上海市；排除异常状态）
+    const cityRows = db.prepare(`SELECT city, COUNT(*) AS c FROM markers WHERE city IS NOT NULL AND city != "" AND store_type = '已开业' ${ABNORMAL_STATUS_SQL} GROUP BY city`).all(...ABNORMAL_STATUS)
     const cityAgg = {}
     cityRows.forEach(r => {
       const key = String(r.city).replace(/市$/, '')
@@ -84,10 +100,6 @@ router.get('/summary', authenticate, async (req, res) => {
     `).all()
 
     // ===== 省级聚合（按城市→省份映射汇总 + 省代表坐标） =====
-    const toProvince = (city) => {
-      const c = String(city || '').replace(/市$/, '')
-      return CITY_TO_PROVINCE[c] || c
-    }
     const aggToProvince = (rows) => {
       const provMap = {}
       rows.forEach(r => {
@@ -152,6 +164,8 @@ router.get('/summary', authenticate, async (req, res) => {
         brandStores: brandStoresCount,
         markerCities,
         compCities,
+        markerProvCount,
+        compProvCount,
         quotaRemaining: quota?.remaining_quota ?? 0,
         myPurchases: myPurchases?.c ?? 0,
         myQuotaUsed: myPurchases?.used ?? 0
