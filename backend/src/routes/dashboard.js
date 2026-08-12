@@ -35,11 +35,11 @@ router.get('/summary', authenticate, async (req, res) => {
     // 竞品覆盖城市数
     const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE city IS NOT NULL AND city != ""').get()?.c || 0
 
-    // 我的门店类型分布
-    const markerTypes = db.prepare('SELECT store_type AS name, COUNT(*) AS value FROM markers GROUP BY store_type ORDER BY value DESC LIMIT 8').all()
+    // 我的门店类型分布（排除异常状态）
+    const markerTypes = db.prepare(`SELECT store_type AS name, COUNT(*) AS value FROM markers WHERE 1=1 ${ABNORMAL_STATUS_SQL} GROUP BY store_type ORDER BY value DESC LIMIT 8`).all(...ABNORMAL_STATUS)
 
-    // 我的门店城市 TOP10（城市归一化：去掉"市"后缀，合并 上海/上海市）
-    const cityRows = db.prepare('SELECT city, COUNT(*) AS c FROM markers WHERE city IS NOT NULL AND city != "" GROUP BY city').all()
+    // 我的门店城市 TOP10（城市归一化：去掉"市"后缀，合并 上海/上海市；排除异常状态）
+    const cityRows = db.prepare(`SELECT city, COUNT(*) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} GROUP BY city`).all(...ABNORMAL_STATUS)
     const cityAgg = {}
     cityRows.forEach(r => {
       const key = String(r.city).replace(/市$/, '')
