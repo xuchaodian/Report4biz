@@ -29,20 +29,22 @@ router.get('/summary', authenticate, async (req, res) => {
     }
 
     // ===== KPI 指标 =====
-    // 我的门店总数（排除异常状态：闭店/停业/歇业/关闭等）
+    // 异常状态过滤（所有门店查询共用）
     const ABNORMAL_STATUS_SQL = `AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})`
-    const markersCount = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE 1=1 ${ABNORMAL_STATUS_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
+    // 已开门店过滤（KPI 我的门店/覆盖城市/覆盖省份 统一为「仅已开业」口径，与地图/TOP10 一致）
+    const OPEN_ONLY_SQL = `AND store_type = '已开业'`
+    const markersCount = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE 1=1 ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
     const competitorsCount = db.prepare('SELECT COUNT(*) AS c FROM competitors').get()?.c || 0
     const centersCount = db.prepare('SELECT COUNT(*) AS c FROM shopping_centers').get()?.c || 0
     const brandStoresCount = db.prepare('SELECT COUNT(*) AS c FROM brand_stores').get()?.c || 0
 
-    // 我的门店覆盖城市数（同样排除异常状态）
-    const markerCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
+    // 我的门店覆盖城市数（仅已开业）
+    const markerCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
     // 竞品覆盖城市数
     const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE city IS NOT NULL AND city != ""').get()?.c || 0
-    // 我的门店覆盖省份数（城市→省份映射后去重）
+    // 我的门店覆盖省份数（仅已开业；城市→省份映射后去重）
     const markerProvCount = new Set(
-      db.prepare(`SELECT DISTINCT city FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL}`).all(...ABNORMAL_STATUS)
+      db.prepare(`SELECT DISTINCT city FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).all(...ABNORMAL_STATUS)
         .map(r => toProvince(r.city))
     ).size
     // 竞品覆盖省份数
