@@ -236,7 +236,7 @@ const renderMap = async () => {
       }
     })
   }
-  // 加载中国省界底图（灰色，一次性）
+  // 加载中国省界底图（灰色，一次性）+ 省份名称标签
   if (!chinaLoaded) {
     try {
       const res = await fetch('/china.json')
@@ -248,7 +248,21 @@ const renderMap = async () => {
           fillColor: 'rgba(30,55,90,0.55)',
           fillOpacity: 0.6
         },
-        interactive: false
+        interactive: false,
+        // 省份名称标签（放省份中心，仅省级视图显示，切城市级时由 CSS 隐藏）
+        onEachFeature: (feature, layer) => {
+          const name = feature.properties?.name
+          const center = feature.properties?.center
+          if (name && center) {
+            const icon = L.divIcon({
+              className: 'ds-province-label',
+              html: `<div>${name}</div>`,
+              iconSize: [0, 0],
+              iconAnchor: [0, 0]
+            })
+            L.marker([center[1], center[0]], { icon, interactive: false }).addTo(chinaLayer)
+          }
+        }
       }).addTo(map)
       chinaLoaded = true
       map.setView([35, 108], 4)
@@ -256,6 +270,14 @@ const renderMap = async () => {
     } catch (e) {
       console.warn('中国底图加载失败:', e)
     }
+  }
+  // 切换聚合级别时同步显隐省份名（省级视图显示，城市级隐藏避免叠标签）
+  if (chinaLayer) {
+    chinaLayer.eachLayer(l => {
+      if (l.options?.icon?.options?.className === 'ds-province-label') {
+        l.getElement?.()?.style?.setProperty?.('display', aggLevel === 'province' ? '' : 'none')
+      }
+    })
   }
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
@@ -280,25 +302,48 @@ const renderMap = async () => {
   const sizeOf = (n) => n <= 10 ? 22 : n <= 50 ? 30 : n <= 200 ? 40 : 52
   const suffix = isProv ? '省' : '家'
 
+  // 城市名标签：Top20 限流 + 贪心碰撞检测（屏幕距离 < 30px 跳过）
+  const labeledPoints = []
+  const tryAddLabel = (c) => {
+    if (isProv) return  // 省级视图不显示城市名
+    if (!map) return
+    const pt = map.latLngToContainerPoint([c.lat, c.lng])
+    for (const prev of labeledPoints) {
+      const dx = pt.x - prev.x
+      const dy = pt.y - prev.y
+      if (dx * dx + dy * dy < 30 * 30) return  // 碰撞，跳过
+    }
+    labeledPoints.push({ x: pt.x, y: pt.y, name: c.name })
+  }
+  // 按数量降序，最多标注 Top20
+  const labelCandidates = myPoints.concat(compPoints)
+    .slice()
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 20)
+  labelCandidates.forEach(c => tryAddLabel(c))
+
+  const makeIcon = (c, size, bg) => {
+    const showName = !isProv && labeledPoints.some(l => l.name === c.name)
+    return L.divIcon({
+      className: 'ds-city-icon',
+      html: `<div style="display:flex;align-items:center;gap:0;">
+        <div style="width:${size}px;height:${size}px;line-height:${size}px;background:${bg};border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);flex-shrink:0;">${c.value}</div>
+        ${showName ? `<div style="margin-left:5px;padding:2px 7px;background:rgba(8,21,38,0.72);border:1px solid rgba(64,196,255,0.35);border-radius:4px;font-size:11px;font-weight:500;color:#cfe4ff;white-space:nowrap;line-height:1.4;">${c.name}</div>` : ''}
+      </div>`,
+      iconSize: [0, 0],
+      iconAnchor: [size / 2, size / 2]
+    })
+  }
+
   markerLayer = L.layerGroup()
   myPoints.forEach(c => {
     const size = sizeOf(c.value)
-    const icon = L.divIcon({
-      className: 'ds-city-icon',
-      html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:rgba(64,196,255,0.85);border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${c.value}</div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
-    })
+    const icon = makeIcon(c, size, 'rgba(64,196,255,0.85)')
     L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
   })
   compPoints.forEach(c => {
     const size = sizeOf(c.value)
-    const icon = L.divIcon({
-      className: 'ds-city-icon',
-      html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:rgba(255,107,107,0.8);border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${c.value}</div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
-    })
+    const icon = makeIcon(c, size, 'rgba(255,107,107,0.8)')
     L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
   })
   if (markerLayer.getLayers().length > 0) {
@@ -412,6 +457,22 @@ onBeforeUnmount(() => {
 .ds-map { width: 100%; height: 100%; min-height: 300px; background: #081526; }
 .ds-map :deep(.leaflet-container) { background: #081526; }
 .ds-map :deep(.leaflet-control-attribution) { display: none; }
+
+/* 省份名称标签 */
+.ds-province-label {
+  transform: translate(-50%, -50%);
+}
+.ds-province-label div {
+  padding: 2px 8px;
+  background: rgba(8, 21, 38, 0.6);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #a8c6ea;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .ds-map-overlay {
   position: absolute;
   top: 10px; left: 10px;
