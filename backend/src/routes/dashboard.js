@@ -19,14 +19,19 @@ router.get('/summary', authenticate, async (req, res) => {
     const db = getDb()
     const userId = req.user.id
 
+    // 异常经营状态（停业/歇业/关闭等，大屏聚合排除）
+    const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']
+
     // ===== KPI 指标 =====
-    const markersCount = db.prepare('SELECT COUNT(*) AS c FROM markers').get()?.c || 0
+    // 我的门店总数（排除异常状态：闭店/停业/歇业/关闭等）
+    const ABNORMAL_STATUS_SQL = `AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})`
+    const markersCount = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE 1=1 ${ABNORMAL_STATUS_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
     const competitorsCount = db.prepare('SELECT COUNT(*) AS c FROM competitors').get()?.c || 0
     const centersCount = db.prepare('SELECT COUNT(*) AS c FROM shopping_centers').get()?.c || 0
     const brandStoresCount = db.prepare('SELECT COUNT(*) AS c FROM brand_stores').get()?.c || 0
 
-    // 我的门店覆盖城市数
-    const markerCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != ""').get()?.c || 0
+    // 我的门店覆盖城市数（同样排除异常状态）
+    const markerCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL}`).get(...ABNORMAL_STATUS)?.c || 0
     // 竞品覆盖城市数
     const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE city IS NOT NULL AND city != ""').get()?.c || 0
 
@@ -64,8 +69,9 @@ router.get('/summary', authenticate, async (req, res) => {
       FROM markers
       WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
         AND city IS NOT NULL AND city != ''
+        AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})
       GROUP BY rtrim(city, '市') ORDER BY value DESC LIMIT 200
-    `).all()
+    `).all(...ABNORMAL_STATUS)
     const compCitiesAgg = db.prepare(`
       SELECT rtrim(city, '市') AS name,
              COUNT(*) AS value,
