@@ -106,9 +106,11 @@ const showCompLayer = ref(true)
 let clockTimer = null
 let refreshTimer = null
 let map = null
+let chinaLayer = null
 let markerLayer = null
 let heatLayer = null
 let mapFitted = false
+let chinaLoaded = false
 let charts = []
 
 // KPI 卡片（不含购物中心/品牌门店）
@@ -218,15 +220,32 @@ const renderCharts = () => {
   }
 }
 
+// 灰色中国地图 + 城市数字标签
 const renderMap = async () => {
   if (!mapRef.value) return
   if (!map) {
-    map = L.map('ds-map', { zoomControl: false, attributionControl: false }).setView([35, 108], 4)
-    // 高德瓦片（国内可访问，显示中国地图）
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
-      subdomains: [1, 2, 3, 4],
-      maxZoom: 18
-    }).addTo(map)
+    map = L.map('ds-map', { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([35, 108], 4)
+  }
+  // 加载中国省界底图（灰色，一次性）
+  if (!chinaLoaded) {
+    try {
+      const res = await fetch('/china.json')
+      const geo = await res.json()
+      chinaLayer = L.geoJSON(geo, {
+        style: {
+          color: 'rgba(140,160,190,0.9)',
+          weight: 0.8,
+          fillColor: 'rgba(30,55,90,0.55)',
+          fillOpacity: 0.6
+        },
+        interactive: false
+      }).addTo(map)
+      chinaLoaded = true
+      map.setView([35, 108], 4)
+      mapFitted = false  // 底图就绪后重新按数据fitBounds
+    } catch (e) {
+      console.warn('中国底图加载失败:', e)
+    }
   }
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
@@ -236,7 +255,7 @@ const renderMap = async () => {
   const compCities = (data.value?.points?.competitors || []).filter(c => showCompLayer.value)
 
   // 首次渲染：缩放地图到数据范围（后续刷新保持用户视野）
-  if (!mapFitted && myCities.length + compCities.length > 0) {
+  if (!mapFitted && chinaLoaded && myCities.length + compCities.length > 0) {
     const allPts = myCities.concat(compCities)
     const lats = allPts.map(p => p.lat)
     const lngs = allPts.map(p => p.lng)
@@ -246,43 +265,32 @@ const renderMap = async () => {
     } catch (_) {}
   }
 
-  // 城市聚合点：圆大小按门店数量分级（1-10/11-50/51-200/200+）
-  const sizeOf = (n) => n <= 10 ? 6 : n <= 50 ? 10 : n <= 200 ? 16 : 24
+  // 城市聚合点：数字标签（divIcon 显示数量），圆底按数量分级
+  const sizeOf = (n) => n <= 10 ? 22 : n <= 50 ? 30 : n <= 200 ? 40 : 52
 
   markerLayer = L.layerGroup()
   myCities.forEach(c => {
     const size = sizeOf(c.value)
-    L.circleMarker([c.lat, c.lng], {
-      radius: size,
-      color: '#40c4ff',
-      fillColor: '#40c4ff',
-      fillOpacity: 0.75,
-      weight: 1
-    }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top', offset: [0, -size / 2] }).addTo(markerLayer)
+    const icon = L.divIcon({
+      className: 'ds-city-icon',
+      html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:rgba(64,196,255,0.85);border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${c.value}</div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2]
+    })
+    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top' }).addTo(markerLayer)
   })
   compCities.forEach(c => {
     const size = sizeOf(c.value)
-    L.circleMarker([c.lat, c.lng], {
-      radius: size,
-      color: '#ff6b6b',
-      fillColor: '#ff6b6b',
-      fillOpacity: 0.65,
-      weight: 1
-    }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top', offset: [0, -size / 2] }).addTo(markerLayer)
+    const icon = L.divIcon({
+      className: 'ds-city-icon',
+      html: `<div style="width:${size}px;height:${size}px;line-height:${size}px;background:rgba(255,107,107,0.8);border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${c.value}</div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2]
+    })
+    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top' }).addTo(markerLayer)
   })
   if (markerLayer.getLayers().length > 0) {
     markerLayer.addTo(map)
-  }
-
-  // 热力图（叠加全部城市聚合点，按数量加权）
-  try {
-    const heat = await import('leaflet.heat')
-    const allPoints = myCities.concat(compCities).map(c => [c.lat, c.lng, Math.min(c.value / 100, 1)])
-    if (allPoints.length > 0) {
-      heatLayer = heat.default(allPoints, { radius: 30, blur: 15, maxZoom: 10, minOpacity: 0.3 }).addTo(map)
-    }
-  } catch (e) {
-    console.warn('热力图加载失败:', e)
   }
 }
 
@@ -389,8 +397,9 @@ onBeforeUnmount(() => {
 
 /* 地图 */
 .ds-map-panel { flex: 1; position: relative; padding: 0; overflow: hidden; min-height: 0; }
-.ds-map { width: 100%; height: 100%; min-height: 300px; background: #0a1a2f; }
-.ds-map :deep(.leaflet-container) { background: #0a1a2f; }
+.ds-map { width: 100%; height: 100%; min-height: 300px; background: #081526; }
+.ds-map :deep(.leaflet-container) { background: #081526; }
+.ds-map :deep(.leaflet-control-attribution) { display: none; }
 .ds-map-overlay {
   position: absolute;
   top: 10px; left: 10px;
@@ -434,6 +443,16 @@ onBeforeUnmount(() => {
 .ds-chart-panel-lg { flex: 1.5 !important; }
 .ds-chart-title { font-size: 13px; font-weight: 600; color: #b8c9e4; margin-bottom: 6px; }
 .ds-chart { flex: 1; min-height: 0; }
+
+/* 左列饼图面板：固定高度（否则 echarts 容器高度为 0 不渲染） */
+.ds-col-left .ds-chart-panel {
+  flex: 0 0 auto;
+  height: 280px;
+}
+.ds-col-left .ds-chart-panel .ds-chart {
+  height: 230px;
+  flex: none;
+}
 
 /* 跑马灯 */
 .ds-marquee {
