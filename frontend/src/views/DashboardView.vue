@@ -43,6 +43,7 @@
           </div>
           <!-- 图层开关（右上角） -->
           <div class="ds-layer-switch">
+            <div class="ds-layer-level">{{ aggLevel === 'province' ? '省级聚合 · 放大查看城市' : '城市级聚合' }}</div>
             <label class="ds-layer-item">
               <span class="ds-layer-dot" style="background:#40c4ff;"></span>
               <span>我的门店</span>
@@ -102,7 +103,7 @@ const now = ref('')
 const today = ref('')
 const updatedTime = ref('--:--:--')
 const showMyLayer = ref(true)
-const showCompLayer = ref(true)
+const showCompLayer = ref(false)  // 竞品聚合默认不显示
 let clockTimer = null
 let refreshTimer = null
 let map = null
@@ -111,6 +112,7 @@ let markerLayer = null
 let heatLayer = null
 let mapFitted = false
 let chinaLoaded = false
+let aggLevel = 'province'  // 当前聚合级别：province（缩小）/ city（放大）
 let charts = []
 
 // KPI 卡片（不含购物中心/品牌门店）
@@ -220,11 +222,19 @@ const renderCharts = () => {
   }
 }
 
-// 灰色中国地图 + 城市数字标签
+// 灰色中国地图 + 省级/城市级聚合数字标签
 const renderMap = async () => {
   if (!mapRef.value) return
   if (!map) {
     map = L.map('ds-map', { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([35, 108], 4)
+    map.on('zoomend', () => {
+      // 省级 ↔ 城市级切换：zoom < 5.5 省级，>= 5.5 城市级
+      const level = map.getZoom() < 5.5 ? 'province' : 'city'
+      if (level !== aggLevel) {
+        aggLevel = level
+        renderMap()
+      }
+    })
   }
   // 加载中国省界底图（灰色，一次性）
   if (!chinaLoaded) {
@@ -250,13 +260,14 @@ const renderMap = async () => {
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
 
-  // 城市级聚合（后端返回 [{name, value, lat, lng}]）
-  const myCities = (data.value?.points?.markers || []).filter(c => showMyLayer.value)
-  const compCities = (data.value?.points?.competitors || []).filter(c => showCompLayer.value)
+  // 按聚合级别选数据源：province 用省级聚合，city 用城市级聚合
+  const isProv = aggLevel === 'province'
+  const myPoints = (isProv ? data.value?.points?.markersProv : data.value?.points?.markers || []).filter(c => showMyLayer.value)
+  const compPoints = (isProv ? data.value?.points?.competitorsProv : data.value?.points?.competitors || []).filter(c => showCompLayer.value)
 
   // 首次渲染：缩放地图到数据范围（后续刷新保持用户视野）
-  if (!mapFitted && chinaLoaded && myCities.length + compCities.length > 0) {
-    const allPts = myCities.concat(compCities)
+  if (!mapFitted && chinaLoaded && myPoints.length + compPoints.length > 0) {
+    const allPts = myPoints.concat(compPoints)
     const lats = allPts.map(p => p.lat)
     const lngs = allPts.map(p => p.lng)
     try {
@@ -265,11 +276,12 @@ const renderMap = async () => {
     } catch (_) {}
   }
 
-  // 城市聚合点：数字标签（divIcon 显示数量），圆底按数量分级
+  // 数字标签（divIcon 显示数量），圆底按数量分级
   const sizeOf = (n) => n <= 10 ? 22 : n <= 50 ? 30 : n <= 200 ? 40 : 52
+  const suffix = isProv ? '省' : '家'
 
   markerLayer = L.layerGroup()
-  myCities.forEach(c => {
+  myPoints.forEach(c => {
     const size = sizeOf(c.value)
     const icon = L.divIcon({
       className: 'ds-city-icon',
@@ -277,9 +289,9 @@ const renderMap = async () => {
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2]
     })
-    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top' }).addTo(markerLayer)
+    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
   })
-  compCities.forEach(c => {
+  compPoints.forEach(c => {
     const size = sizeOf(c.value)
     const icon = L.divIcon({
       className: 'ds-city-icon',
@@ -287,7 +299,7 @@ const renderMap = async () => {
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2]
     })
-    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top' }).addTo(markerLayer)
+    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
   })
   if (markerLayer.getLayers().length > 0) {
     markerLayer.addTo(map)
@@ -433,6 +445,13 @@ onBeforeUnmount(() => {
   color: #b8c9e4;
   cursor: pointer;
   white-space: nowrap;
+}
+.ds-layer-level {
+  font-size: 11px;
+  color: #40c4ff;
+  border-bottom: 1px solid rgba(64, 196, 255, 0.2);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
 }
 .ds-layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .ds-layer-item :deep(.el-switch) { --el-switch-on-color: #40c4ff; }

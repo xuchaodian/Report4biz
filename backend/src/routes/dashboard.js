@@ -4,6 +4,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 
 const router = express.Router()
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -76,6 +77,28 @@ router.get('/summary', authenticate, async (req, res) => {
       GROUP BY city ORDER BY value DESC LIMIT 200
     `).all()
 
+    // ===== 省级聚合（按城市→省份映射汇总 + 省代表坐标） =====
+    const toProvince = (city) => {
+      const c = String(city || '').replace(/市$/, '')
+      return CITY_TO_PROVINCE[c] || c
+    }
+    const aggToProvince = (rows) => {
+      const provMap = {}
+      rows.forEach(r => {
+        const prov = toProvince(r.name)
+        if (!provMap[prov]) provMap[prov] = { name: prov, value: 0, latSum: 0, lngSum: 0, cnt: 0 }
+        provMap[prov].value += r.value
+        provMap[prov].latSum += r.lat * r.value
+        provMap[prov].lngSum += r.lng * r.value
+        provMap[prov].cnt += r.value
+      })
+      return Object.values(provMap)
+        .map(p => ({ name: p.name, value: p.value, lat: Math.round(p.latSum / p.cnt * 10000) / 10000, lng: Math.round(p.lngSum / p.cnt * 10000) / 10000 }))
+        .sort((a, b) => b.value - a.value)
+    }
+    const markerProvAgg = aggToProvince(markerCitiesAgg)
+    const compProvAgg = aggToProvince(compCitiesAgg)
+
     // ===== 用户购买/配额 =====
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
     const myPurchases = db.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(quota_used),0) AS used FROM purchases WHERE user_id = ? AND status = "active"').get(userId)
@@ -111,7 +134,9 @@ router.get('/summary', authenticate, async (req, res) => {
       },
       points: {
         markers: markerCitiesAgg,
-        competitors: compCitiesAgg
+        competitors: compCitiesAgg,
+        markersProv: markerProvAgg,
+        competitorsProv: compProvAgg
       },
       cityData: cityData.slice(0, 50),
       updatedAt: new Date().toISOString()
