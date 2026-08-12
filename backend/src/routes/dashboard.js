@@ -1,0 +1,90 @@
+import express from 'express'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
+import { getDb } from '../models/database.js'
+import { authenticate } from '../middleware/auth.js'
+
+const router = express.Router()
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 数据大屏聚合接口
+ * GET /api/dashboard/summary
+ * 返回大屏所需的全部 KPI 与图表数据（一次拉取）
+ */
+router.get('/summary', authenticate, async (req, res) => {
+  try {
+    const db = getDb()
+    const userId = req.user.id
+
+    // ===== KPI 指标 =====
+    const markersCount = db.prepare('SELECT COUNT(*) AS c FROM markers').get()?.c || 0
+    const competitorsCount = db.prepare('SELECT COUNT(*) AS c FROM competitors').get()?.c || 0
+    const centersCount = db.prepare('SELECT COUNT(*) AS c FROM shopping_centers').get()?.c || 0
+    const brandStoresCount = db.prepare('SELECT COUNT(*) AS c FROM brand_stores').get()?.c || 0
+
+    // 我的门店覆盖城市数
+    const markerCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM markers WHERE city IS NOT NULL AND city != ""').get()?.c || 0
+    // 竞品覆盖城市数
+    const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE city IS NOT NULL AND city != ""').get()?.c || 0
+
+    // 我的门店类型分布
+    const markerTypes = db.prepare('SELECT store_type AS name, COUNT(*) AS value FROM markers GROUP BY store_type ORDER BY value DESC LIMIT 8').all()
+
+    // 我的门店城市 TOP10
+    const markerCityTop = db.prepare('SELECT city AS name, COUNT(*) AS value FROM markers WHERE city IS NOT NULL AND city != "" GROUP BY city ORDER BY value DESC LIMIT 10').all()
+
+    // 竞品品牌 TOP10
+    const compBrandTop = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all()
+
+    // 我的门店/竞品 近30天新增（无时间字段则给最近7天趋势占位）
+    const trend = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 24 * 3600 * 1000)
+      trend.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, my: 0, comp: 0 })
+    }
+
+    // ===== 用户购买/配额 =====
+    const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
+    const myPurchases = db.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(quota_used),0) AS used FROM purchases WHERE user_id = ? AND status = "active"').get(userId)
+
+    // ===== 城市宏观数据（JSON 文件）=====
+    let cityData = []
+    try {
+      const raw = fs.readFileSync(path.join(__dirname, '../data/city_data.json'), 'utf-8')
+      const parsed = JSON.parse(raw)
+      cityData = Array.isArray(parsed) ? parsed : (parsed.cities || [])
+    } catch (e) {
+      console.warn('读取城市数据失败:', e.message)
+    }
+
+    res.json({
+      success: true,
+      kpi: {
+        markers: markersCount,
+        competitors: competitorsCount,
+        centers: centersCount,
+        brandStores: brandStoresCount,
+        markerCities,
+        compCities,
+        quotaRemaining: quota?.remaining_quota ?? 0,
+        myPurchases: myPurchases?.c ?? 0,
+        myQuotaUsed: myPurchases?.used ?? 0
+      },
+      charts: {
+        markerTypes,
+        markerCityTop,
+        compBrandTop,
+        trend
+      },
+      cityData: cityData.slice(0, 50),
+      updatedAt: new Date().toISOString()
+    })
+  } catch (e) {
+    console.error('大屏数据聚合失败:', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+export default router

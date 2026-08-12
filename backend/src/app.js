@@ -21,6 +21,7 @@ import streetviewRoutes from './routes/streetview.js'
 import districtRoutes from './routes/district.js'
 import tileProxyRoutes from './routes/tile-proxy.js'
 import resaleRoutes, { adminRouter as resaleAdminRouter } from './routes/resale.js'
+import dashboardRoutes from './routes/dashboard.js'
 import cityDataRoutes from './routes/city-data.js'
 import mallTenantsRoutes from './routes/mall-tenants.js'
 import scoringRoutes from './routes/scoring.js'
@@ -70,6 +71,7 @@ async function start() {
     // 转售 API（第三方调用联通人口数据，X-Api-Key 认证）
     app.use('/api/v1/population', resaleRoutes)
     app.use('/api/v1/resale', resaleAdminRouter)
+    app.use('/api/dashboard', dashboardRoutes)
     app.use('/api/city-data', cityDataRoutes)
     app.use('/api/mall-tenants', mallTenantsRoutes)
     app.use('/api/scoring', scoringRoutes)

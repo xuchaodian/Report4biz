@@ -40,6 +40,10 @@
           <el-icon><Key /></el-icon>
           <span>API开放</span>
         </router-link>
+        <router-link to="/dashboard" class="nav-item" :class="{ active: $route.path === '/dashboard' }">
+          <el-icon><Monitor /></el-icon>
+          <span>数据大屏</span>
+        </router-link>
       </nav>
 
       <div class="header-right">
@@ -178,7 +182,7 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, Monitor } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
