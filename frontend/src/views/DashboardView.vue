@@ -260,9 +260,9 @@ const renderMap = async () => {
         if (name && center) {
           const icon = L.divIcon({
             className: 'ds-province-label',
-            html: `<div>${name}</div>`,
-            iconSize: [0, 0],
-            iconAnchor: [0, 0]
+            html: `<div class="ds-province-label-text">${name}</div>`,
+            iconSize: [88, 24],
+            iconAnchor: [44, 12]
           })
           L.marker([center[1], center[0]], { icon, interactive: false }).addTo(provinceLabelLayer)
         }
@@ -464,9 +464,12 @@ onBeforeUnmount(() => {
 
 /* 省份名称标签 */
 .ds-province-label {
-  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.ds-province-label div {
+.ds-province-label-text {
+  display: inline-block;
   padding: 2px 8px;
   background: rgba(8, 21, 38, 0.6);
   border-radius: 4px;
@@ -475,6 +478,9 @@ onBeforeUnmount(() => {
   color: #a8c6ea;
   text-align: center;
   white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  line-height: 1.4;
   pointer-events: none;
 }
 .ds-map-overlay {
