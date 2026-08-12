@@ -44,16 +44,38 @@
           <!-- 图层开关（右上角） -->
           <div class="ds-layer-switch">
             <div class="ds-layer-level">{{ aggLevel === 'province' ? '省级聚合 · 放大查看城市' : '城市级聚合' }}</div>
-            <label class="ds-layer-item">
-              <span class="ds-layer-dot" style="background:#40c4ff;"></span>
-              <span>我的门店</span>
-              <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
-            </label>
-            <label class="ds-layer-item">
-              <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
-              <span>竞品门店</span>
-              <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
-            </label>
+            <div class="ds-layer-group">
+              <div class="ds-layer-group-head">
+                <span class="ds-layer-item" @click="showMyLayer = !showMyLayer; renderMap()" style="cursor:pointer;">
+                  <span class="ds-layer-dot" style="background:#40c4ff;"></span>
+                  <span>我的门店</span>
+                  <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
+                </span>
+              </div>
+              <div v-if="showMyLayer" class="ds-layer-subs">
+                <label v-for="t in myTypeKeys" :key="t" class="ds-layer-item ds-layer-sub">
+                  <span class="ds-layer-dot" :style="{ background: typeColors[t] }"></span>
+                  <span>{{ t }}</span>
+                  <el-switch v-model="showMyTypes[t]" size="small" @change="renderMap" />
+                </label>
+              </div>
+            </div>
+            <div class="ds-layer-group">
+              <div class="ds-layer-group-head">
+                <span class="ds-layer-item" @click="showCompLayer = !showCompLayer; renderMap()" style="cursor:pointer;">
+                  <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
+                  <span>竞品门店</span>
+                  <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
+                </span>
+              </div>
+              <div v-if="showCompLayer" class="ds-layer-subs">
+                <label v-for="b in compBrandKeys" :key="b" class="ds-layer-item ds-layer-sub">
+                  <span class="ds-layer-dot" :style="{ background: brandColors[b] }"></span>
+                  <span>{{ b }}</span>
+                  <el-switch v-model="showCompBrands[b]" size="small" @change="renderMap" />
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -84,7 +106,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import L from 'leaflet'
@@ -104,6 +126,16 @@ const today = ref('')
 const updatedTime = ref('--:--:--')
 const showMyLayer = ref(true)
 const showCompLayer = ref(false)  // 竞品聚合默认不显示
+
+// 门店类型颜色（我的门店）
+const typeColors = { '已开业': '#40c4ff', '重点候选': '#ffd166', '一般候选': '#9aa5b5' }
+const showMyTypes = reactive({ '已开业': true, '重点候选': true, '一般候选': true })
+const myTypeKeys = ['已开业', '重点候选', '一般候选']
+// 竞品品牌颜色（最多10色循环）
+const BRAND_COLOR_POOL = ['#ff6b6b', '#9b8cff', '#06d6a0', '#ff9f43', '#f98fb4', '#48dbfb', '#feca57', '#1dd1a1', '#c8d6e5', '#ffa502']
+const brandColors = {}
+const showCompBrands = reactive({})
+const compBrandKeys = ref([])
 let clockTimer = null
 let refreshTimer = null
 let map = null
@@ -146,6 +178,13 @@ const fetchData = async () => {
     const { data: res } = await axios.get('/api/dashboard/summary')
     if (res.success) {
       data.value = res
+      // 初始化竞品品牌开关（品牌名→颜色/开关状态）
+      const brands = res.points?.compBrandList || []
+      brands.forEach((b, i) => {
+        brandColors[b.name] = BRAND_COLOR_POOL[i % BRAND_COLOR_POOL.length]
+        if (!(b.name in showCompBrands)) showCompBrands[b.name] = true
+      })
+      compBrandKeys.value = brands.map(b => b.name)
       updatedTime.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
       await nextTick()
       renderCharts()
@@ -288,16 +327,28 @@ const renderMap = async () => {
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
 
-  // 按聚合级别选数据源：province 用省级聚合，city 用城市级聚合
+  // 按聚合级别选数据源：province 用省级聚合（单色），city 用城市级聚合（多色区分类型/品牌）
   const isProv = aggLevel === 'province'
   const myPoints = (isProv ? data.value?.points?.markersProv : data.value?.points?.markers || []).filter(c => showMyLayer.value)
   const compPoints = (isProv ? data.value?.points?.competitorsProv : data.value?.points?.competitors || []).filter(c => showCompLayer.value)
 
+  // 城市级多色数据：我的门店按类型、竞品按品牌（仅显示开启的子项）
+  const myTypePoints = []
+  const compBrandPoints = []
+  if (!isProv) {
+    ;(data.value?.points?.markerByType || []).forEach(c => {
+      if (showMyLayer.value && showMyTypes[c.group_key] !== false) myTypePoints.push(c)
+    })
+    ;(data.value?.points?.compByBrand || []).forEach(c => {
+      if (showCompLayer.value && showCompBrands[c.group_key] !== false) compBrandPoints.push(c)
+    })
+  }
+
   // 首次渲染：缩放地图到数据范围（后续刷新保持用户视野）
-  if (!mapFitted && chinaLoaded && myPoints.length + compPoints.length > 0) {
-    const allPts = myPoints.concat(compPoints)
-    const lats = allPts.map(p => p.lat)
-    const lngs = allPts.map(p => p.lng)
+  const fitPts = isProv ? myPoints.concat(compPoints) : myTypePoints.concat(compBrandPoints)
+  if (!mapFitted && chinaLoaded && fitPts.length > 0) {
+    const lats = fitPts.map(p => p.lat)
+    const lngs = fitPts.map(p => p.lng)
     try {
       map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { padding: [30, 30] })
       mapFitted = true
@@ -322,18 +373,18 @@ const renderMap = async () => {
     labeledPoints.push({ x: pt.x, y: pt.y, name: c.name })
   }
   // 按数量降序，最多标注 Top20
-  const labelCandidates = myPoints.concat(compPoints)
+  const labelCandidates = fitPts
     .slice()
     .sort((a, b) => b.value - a.value)
     .slice(0, 20)
   labelCandidates.forEach(c => tryAddLabel(c))
 
-  const makeIcon = (c, size, bg) => {
+  const makeIcon = (c, size, bg, borderColor) => {
     const showName = !isProv && labeledPoints.some(l => l.name === c.name)
     return L.divIcon({
       className: 'ds-city-icon',
       html: `<div style="display:flex;align-items:center;gap:0;">
-        <div style="width:${size}px;height:${size}px;line-height:${size}px;background:${bg};border:2px solid #fff;border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);flex-shrink:0;">${c.value}</div>
+        <div style="width:${size}px;height:${size}px;line-height:${size}px;background:${bg};border:2px solid ${borderColor || '#fff'};border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);flex-shrink:0;">${c.value}</div>
         ${showName ? `<div style="margin-left:5px;padding:2px 7px;background:rgba(8,21,38,0.72);border:1px solid rgba(64,196,255,0.35);border-radius:4px;font-size:11px;font-weight:500;color:#cfe4ff;white-space:nowrap;line-height:1.4;">${c.name}</div>` : ''}
       </div>`,
       iconSize: [0, 0],
@@ -342,16 +393,37 @@ const renderMap = async () => {
   }
 
   markerLayer = L.layerGroup()
-  myPoints.forEach(c => {
-    const size = sizeOf(c.value)
-    const icon = makeIcon(c, size, 'rgba(64,196,255,0.85)')
-    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
-  })
-  compPoints.forEach(c => {
-    const size = sizeOf(c.value)
-    const icon = makeIcon(c, size, 'rgba(255,107,107,0.8)')
-    L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
-  })
+  if (isProv) {
+    // 省级：单色（我的蓝/竞品红）
+    myPoints.forEach(c => {
+      const size = sizeOf(c.value)
+      const icon = makeIcon(c, size, 'rgba(64,196,255,0.85)')
+      L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
+    })
+    compPoints.forEach(c => {
+      const size = sizeOf(c.value)
+      const icon = makeIcon(c, size, 'rgba(255,107,107,0.8)')
+      L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
+    })
+  } else {
+    // 城市级：多色（我的按类型、竞品按品牌）
+    myTypePoints.forEach(c => {
+      const size = sizeOf(c.value)
+      const color = typeColors[c.group_key] || '#40c4ff'
+      const icon = makeIcon(c, size, color)
+      L.marker([c.lat, c.lng], { icon })
+        .bindTooltip(`${c.name}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
+        .addTo(markerLayer)
+    })
+    compBrandPoints.forEach(c => {
+      const size = sizeOf(c.value)
+      const color = brandColors[c.group_key] || '#ff6b6b'
+      const icon = makeIcon(c, size, color)
+      L.marker([c.lat, c.lng], { icon })
+        .bindTooltip(`${c.name}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
+        .addTo(markerLayer)
+    })
+  }
   if (markerLayer.getLayers().length > 0) {
     markerLayer.addTo(map)
   }
@@ -526,6 +598,11 @@ onBeforeUnmount(() => {
   padding-bottom: 6px;
   margin-bottom: 2px;
 }
+.ds-layer-group { margin-bottom: 6px; }
+.ds-layer-group:last-child { margin-bottom: 0; }
+.ds-layer-group-head { border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding-bottom: 4px; margin-bottom: 4px; }
+.ds-layer-subs { display: flex; flex-direction: column; gap: 5px; padding-left: 4px; }
+.ds-layer-sub { font-size: 11px; }
 .ds-layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .ds-layer-item :deep(.el-switch) { --el-switch-on-color: #40c4ff; }
 

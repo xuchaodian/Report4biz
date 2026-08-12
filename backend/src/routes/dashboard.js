@@ -105,6 +105,30 @@ router.get('/summary', authenticate, async (req, res) => {
     const markerProvAgg = aggToProvince(markerCitiesAgg)
     const compProvAgg = aggToProvince(compCitiesAgg)
 
+    // ===== 按类型/品牌拆分的城市级聚合（用于地图多色区分） =====
+    // 我的门店按 store_type 拆分（已开业/重点候选/一般候选）
+    const markerByType = db.prepare(`
+      SELECT rtrim(city, '市') AS city, store_type AS group_key, COUNT(*) AS value,
+             ROUND(AVG(latitude), 4) AS lat, ROUND(AVG(longitude), 4) AS lng
+      FROM markers
+      WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
+        AND city IS NOT NULL AND city != ''
+        AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})
+      GROUP BY rtrim(city, '市'), store_type
+    `).all(...ABNORMAL_STATUS)
+    // 竞品按品牌拆分（仅取品牌 TOP10 防止过多）
+    const compByBrand = db.prepare(`
+      SELECT rtrim(city, '市') AS city, brand AS group_key, COUNT(*) AS value,
+             ROUND(AVG(latitude), 4) AS lat, ROUND(AVG(longitude), 4) AS lng
+      FROM competitors
+      WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
+        AND city IS NOT NULL AND city != ''
+        AND brand IS NOT NULL AND brand != ''
+      GROUP BY rtrim(city, '市'), brand
+    `).all()
+    // 竞品品牌 TOP10（前端只显示主要品牌颜色）
+    const compBrandList = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all()
+
     // ===== 用户购买/配额 =====
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
     const myPurchases = db.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(quota_used),0) AS used FROM purchases WHERE user_id = ? AND status = "active"').get(userId)
@@ -142,7 +166,10 @@ router.get('/summary', authenticate, async (req, res) => {
         markers: markerCitiesAgg,
         competitors: compCitiesAgg,
         markersProv: markerProvAgg,
-        competitorsProv: compProvAgg
+        competitorsProv: compProvAgg,
+        markerByType,
+        compByBrand,
+        compBrandList
       },
       cityData: cityData.slice(0, 50),
       updatedAt: new Date().toISOString()
