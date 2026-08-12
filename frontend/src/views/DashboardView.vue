@@ -159,7 +159,7 @@ const kpiList = computed(() => {
     { label: '竞品省份', value: k.compProvCount ?? 0, color: '#ff6b6b' },
     { label: '覆盖城市', value: k.markerCities ?? 0, color: '#40c4ff' },
     { label: '竞品城市', value: k.compCities ?? 0, color: '#ff6b6b' },
-    { label: '购买次数', value: k.myPurchases ?? 0, color: '#40c4ff' },
+    { label: '购买次数', value: k.myPurchases ?? 0, color: '#ffd166' },
     { label: '剩余次数', value: k.quotaRemaining ?? 0, color: '#ffd166' }
   ]
 })
