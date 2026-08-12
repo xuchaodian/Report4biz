@@ -162,7 +162,16 @@
     </el-dialog>
 
     <!-- 月度使用统计对话框 -->
-    <el-dialog v-model="monthlyStatsDialogVisible" title="📊 月度使用统计" width="800px">
+    <el-dialog v-model="monthlyStatsDialogVisible" width="800px" class="dialog-fancy">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e6f1fb;">📊</span>
+          <div>
+            <div class="dhf-title">月度使用统计</div>
+            <div class="dhf-sub">用户月度 token 与配额使用</div>
+          </div>
+        </div>
+      </template>
       <div class="stats-filters">
         <el-date-picker
           v-model="statsMonth"

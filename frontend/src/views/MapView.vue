@@ -638,7 +638,16 @@
 
 
     <!-- 开店余地对话框 -->
-    <el-dialog v-model="potentialVisible" title="开店余地分析" width="600px" :close-on-click-modal="false" draggable @opened="loadPotentialCities">
+    <el-dialog v-model="potentialVisible" width="600px" class="dialog-fancy" :close-on-click-modal="false" draggable @opened="loadPotentialCities">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#faeeda;">🗺️</span>
+          <div>
+            <div class="dhf-title">开店余地分析</div>
+            <div class="dhf-sub">按门店 / 竞品 / 人口条件筛选区域</div>
+          </div>
+        </div>
+      </template>
       <el-form label-width="120px">
         <el-form-item label="选择城市">
           <el-select v-model="potentialCity" placeholder="请选择城市" style="width:100%" filterable>
@@ -832,7 +841,16 @@
     />
 
     <!-- 相似店对话框（从门店弹窗进入，基准门店固定） -->
-    <el-dialog v-model="storeSimilarVisible" title="相似店" width="760px" draggable :show-close="true" @close="resetStoreSimilarDialog">
+    <el-dialog v-model="storeSimilarVisible" width="760px" class="dialog-fancy" draggable :show-close="true" @close="resetStoreSimilarDialog">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#eeedfe;">🔍</span>
+          <div>
+            <div class="dhf-title">相似店</div>
+            <div class="dhf-sub">同商圈同类型的相似门店</div>
+          </div>
+        </div>
+      </template>
       <template v-if="!storeSimilarDone">
         <div style="margin-bottom: 14px; padding: 10px 14px; background: #f5f7fa; border-radius: 6px; font-size: 13px; color: #666;">
           基准门店：<b style="color: #e64545;">{{ storeSimilarBaseName }}</b>
@@ -1251,7 +1269,16 @@
       </template>    </el-dialog>
 
     <!-- 人口对比对话框 -->
-    <el-dialog v-model="populationCompareVisible" title="人口对比分析" width="900px" draggable :show-close="true">
+    <el-dialog v-model="populationCompareVisible" width="900px" class="dialog-fancy" draggable :show-close="true">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e6f1fb;">👥</span>
+          <div>
+            <div class="dhf-title">人口对比分析</div>
+            <div class="dhf-sub">多门店人口指标横向对比</div>
+          </div>
+        </div>
+      </template>
       <!-- 步骤1：选择门店和设置参数 -->
       <div v-if="compareStep === 1">
         <el-form label-width="100px" style="margin-bottom: 16px;">

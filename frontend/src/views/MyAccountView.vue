@@ -107,11 +107,19 @@
     <!-- 购买履历对话框 -->
     <el-dialog
       v-model="historyDialogVisible"
-      title="📋 购买履历"
       width="1300px"
       :close-on-click-modal="false"
-      class="history-dialog"
+      class="history-dialog dialog-fancy"
     >
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e6f1fb;">📋</span>
+          <div>
+            <div class="dhf-title">购买履历</div>
+            <div class="dhf-sub">历史查询订单与配额消耗记录</div>
+          </div>
+        </div>
+      </template>
       <!-- 筛选表单 -->
       <div class="history-filter">
         <el-input
@@ -428,11 +436,19 @@
     <!-- 微信分享预览对话框 -->
     <el-dialog
       v-model="shareDialogVisible"
-      title="💬 微信分享"
       width="420px"
       :close-on-click-modal="true"
-      class="share-dialog"
+      class="share-dialog dialog-fancy"
     >
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e1f5ee;">💬</span>
+          <div>
+            <div class="dhf-title">微信分享</div>
+            <div class="dhf-sub">生成分享卡片发送给好友</div>
+          </div>
+        </div>
+      </template>
       <div class="share-preview" v-if="shareImageData">
         <img :src="shareImageData" alt="分享图片" style="width: 100%; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
       </div>

@@ -95,7 +95,16 @@
     </el-dialog>
 
     <!-- 用量明细对话框 -->
-    <el-dialog v-model="usageDialogVisible" title="📊 用量明细" width="720px" :close-on-click-modal="false">
+    <el-dialog v-model="usageDialogVisible" width="720px" class="dialog-fancy" :close-on-click-modal="false">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e1f5ee;">📊</span>
+          <div>
+            <div class="dhf-title">用量明细</div>
+            <div class="dhf-sub">第三方 API 调用记录与扣费</div>
+          </div>
+        </div>
+      </template>
       <div style="margin-bottom:12px;font-size:13px;color:#606266;">
         客户：<b>{{ currentClient?.company_name }}</b>
       </div>
