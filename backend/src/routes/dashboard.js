@@ -55,26 +55,26 @@ router.get('/summary', authenticate, async (req, res) => {
       trend.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, my: 0, comp: 0 })
     }
 
-    // ===== 城市级聚合（我的门店/竞品，按 city 分组 + 代表坐标） =====
+    // ===== 城市级聚合（按 rtrim(city,'市') 归一化合并 南京/南京市 → 南京） =====
     const markerCitiesAgg = db.prepare(`
-      SELECT city AS name,
+      SELECT rtrim(city, '市') AS name,
              COUNT(*) AS value,
              ROUND(AVG(latitude), 4) AS lat,
              ROUND(AVG(longitude), 4) AS lng
       FROM markers
       WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
         AND city IS NOT NULL AND city != ''
-      GROUP BY city ORDER BY value DESC LIMIT 200
+      GROUP BY rtrim(city, '市') ORDER BY value DESC LIMIT 200
     `).all()
     const compCitiesAgg = db.prepare(`
-      SELECT city AS name,
+      SELECT rtrim(city, '市') AS name,
              COUNT(*) AS value,
              ROUND(AVG(latitude), 4) AS lat,
              ROUND(AVG(longitude), 4) AS lng
       FROM competitors
       WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
         AND city IS NOT NULL AND city != ''
-      GROUP BY city ORDER BY value DESC LIMIT 200
+      GROUP BY rtrim(city, '市') ORDER BY value DESC LIMIT 200
     `).all()
 
     // ===== 省级聚合（按城市→省份映射汇总 + 省代表坐标） =====
