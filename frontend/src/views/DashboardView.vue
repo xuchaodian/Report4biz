@@ -242,6 +242,8 @@ const renderMap = async () => {
     try {
       const res = await fetch('/china.json')
       const geo = await res.json()
+      // 排除香港、澳门不显示名称
+      const HIDE_NAMES = ['香港特别行政区', '澳门特别行政区']
       // 先建底图层（onEachFeature 里不能引用 chinaLayer，会因未赋值抛错导致地图消失）
       chinaLayer = L.geoJSON(geo, {
         style: {
@@ -252,20 +254,20 @@ const renderMap = async () => {
         },
         interactive: false
       }).addTo(map)
-      // 底图创建完成后，单独添加省份名称标签（独立 layerGroup，便于显隐控制）
+      // 底图创建完成后，按每个省份多边形的实际几何中心放置名称标签
       provinceLabelLayer = L.layerGroup()
-      geo.features.forEach(f => {
-        const name = f.properties?.name
-        const center = f.properties?.center
-        if (name && center) {
-          const icon = L.divIcon({
-            className: 'ds-province-label',
-            html: `<div class="ds-province-label-text">${name}</div>`,
-            iconSize: [88, 24],
-            iconAnchor: [44, 12]
-          })
-          L.marker([center[1], center[0]], { icon, interactive: false }).addTo(provinceLabelLayer)
-        }
+      chinaLayer.eachLayer(layer => {
+        const name = layer.feature?.properties?.name
+        if (!name || HIDE_NAMES.includes(name)) return
+        // 几何中心 = 实际多边形 bounds 中心（比 properties.center 更准）
+        const center = layer.getBounds().getCenter()
+        const icon = L.divIcon({
+          className: 'ds-province-label',
+          html: `<div class="ds-province-label-text">${name}</div>`,
+          iconSize: [88, 24],
+          iconAnchor: [44, 12]
+        })
+        L.marker([center.lat, center.lng], { icon, interactive: false }).addTo(provinceLabelLayer)
       })
       provinceLabelLayer.addTo(map)
       chinaLoaded = true
