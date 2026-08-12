@@ -149,15 +149,16 @@ let aggLevel = 'province'  // 当前聚合级别：province（缩小）/ city（
 let charts = []
 
 // KPI 卡片（不含购物中心/品牌门店）
+// 布局：2 列网格，左列我的门店相关，右列竞品相关，省份在城市上方
 const kpiList = computed(() => {
   const k = data.value?.kpi || {}
   return [
     { label: '我的门店', value: k.markers ?? 0, color: '#40c4ff' },
     { label: '竞品门店', value: k.competitors ?? 0, color: '#ff6b6b' },
-    { label: '覆盖省份', value: k.markerProvCount ?? 0, color: '#06d6a0' },
-    { label: '覆盖城市', value: k.markerCities ?? 0, color: '#06d6a0' },
-    { label: '竞品省份', value: k.compProvCount ?? 0, color: '#f98fb4' },
-    { label: '竞品城市', value: k.compCities ?? 0, color: '#f98fb4' },
+    { label: '覆盖省份', value: k.markerProvCount ?? 0, color: '#40c4ff' },
+    { label: '竞品省份', value: k.compProvCount ?? 0, color: '#ff6b6b' },
+    { label: '覆盖城市', value: k.markerCities ?? 0, color: '#40c4ff' },
+    { label: '竞品城市', value: k.compCities ?? 0, color: '#ff6b6b' },
     { label: '购买次数', value: k.myPurchases ?? 0, color: '#40c4ff' },
     { label: '剩余次数', value: k.quotaRemaining ?? 0, color: '#ffd166' }
   ]
@@ -329,25 +330,23 @@ const renderMap = async () => {
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
 
-  // 按聚合级别选数据源：province 用省级聚合（单色），city 用城市级聚合（多色区分类型/品牌）
+  // 按聚合级别选数据源：省级/城市级都用拆分数据（多色区分类型/品牌）
   const isProv = aggLevel === 'province'
-  const myPoints = (isProv ? data.value?.points?.markersProv : data.value?.points?.markers || []).filter(c => showMyLayer.value)
-  const compPoints = (isProv ? data.value?.points?.competitorsProv : data.value?.points?.competitors || []).filter(c => showCompLayer.value)
 
-  // 城市级多色数据：我的门店按类型、竞品按品牌（仅显示开启的子项）
+  // 多色数据：我的门店按类型、竞品按品牌（省级用 Province 拆分数据，城市级用城市拆分数据）
   const myTypePoints = []
   const compBrandPoints = []
-  if (!isProv) {
-    ;(data.value?.points?.markerByType || []).forEach(c => {
-      if (showMyLayer.value && showMyTypes[c.group_key] !== false) myTypePoints.push(c)
-    })
-    ;(data.value?.points?.compByBrand || []).forEach(c => {
-      if (showCompLayer.value && showCompBrands[c.group_key] !== false) compBrandPoints.push(c)
-    })
-  }
+  const myTypeSrc = isProv ? (data.value?.points?.markerByTypeProv || []) : (data.value?.points?.markerByType || [])
+  const compBrandSrc = isProv ? (data.value?.points?.compByBrandProv || []) : (data.value?.points?.compByBrand || [])
+  myTypeSrc.forEach(c => {
+    if (showMyLayer.value && showMyTypes[c.group_key] !== false) myTypePoints.push(c)
+  })
+  compBrandSrc.forEach(c => {
+    if (showCompLayer.value && showCompBrands[c.group_key] !== false) compBrandPoints.push(c)
+  })
 
   // 首次渲染：缩放地图到数据范围（后续刷新保持用户视野）
-  const fitPts = isProv ? myPoints.concat(compPoints) : myTypePoints.concat(compBrandPoints)
+  const fitPts = myTypePoints.concat(compBrandPoints)
   if (!mapFitted && chinaLoaded && fitPts.length > 0) {
     const lats = fitPts.map(p => p.lat)
     const lngs = fitPts.map(p => p.lng)
@@ -361,28 +360,38 @@ const renderMap = async () => {
   const sizeOf = (n) => n <= 10 ? 22 : n <= 50 ? 30 : n <= 200 ? 40 : 52
   const suffix = isProv ? '省' : '家'
 
-  // 城市名标签：Top20 限流 + 贪心碰撞检测（屏幕距离 < 30px 跳过）
+  // 名称标签：省级显示省名（无碰撞），城市级 Top20 限流 + 贪心碰撞检测
   const labeledPoints = []
-  const tryAddLabel = (c) => {
-    if (isProv) return  // 省级视图不显示城市名
-    if (!map) return
-    const pt = map.latLngToContainerPoint([c.lat, c.lng])
-    for (const prev of labeledPoints) {
-      const dx = pt.x - prev.x
-      const dy = pt.y - prev.y
-      if (dx * dx + dy * dy < 30 * 30) return  // 碰撞，跳过
+  if (!isProv) {
+    const tryAddLabel = (c) => {
+      if (!map) return
+      const pt = map.latLngToContainerPoint([c.lat, c.lng])
+      for (const prev of labeledPoints) {
+        const dx = pt.x - prev.x
+        const dy = pt.y - prev.y
+        if (dx * dx + dy * dy < 30 * 30) return  // 碰撞，跳过
+      }
+      labeledPoints.push({ x: pt.x, y: pt.y, name: c.name || c.city })
     }
-    labeledPoints.push({ x: pt.x, y: pt.y, name: c.name || c.city })
+    // 按数量降序，最多标注 Top20
+    const labelCandidates = fitPts
+      .slice()
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 20)
+    labelCandidates.forEach(c => tryAddLabel(c))
+  } else {
+    // 省级：按省份名记录标签（同一省合并显示）
+    fitPts.forEach(c => {
+      const name = c.name
+      if (!labeledPoints.some(l => l.name === name)) {
+        labeledPoints.push({ name })
+      }
+    })
   }
-  // 按数量降序，最多标注 Top20
-  const labelCandidates = fitPts
-    .slice()
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 20)
-  labelCandidates.forEach(c => tryAddLabel(c))
 
   const makeIcon = (c, size, bg, borderColor) => {
     const name = c.name || c.city
+    // 城市级显示名称标签；省级不显示（省名由省份标签提供，避免重复）
     const showName = !isProv && labeledPoints.some(l => l.name === name)
     return L.divIcon({
       className: 'ds-city-icon',
@@ -396,37 +405,23 @@ const renderMap = async () => {
   }
 
   markerLayer = L.layerGroup()
-  if (isProv) {
-    // 省级：单色（我的蓝/竞品红）
-    myPoints.forEach(c => {
-      const size = sizeOf(c.value)
-      const icon = makeIcon(c, size, 'rgba(64,196,255,0.85)')
-      L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
-    })
-    compPoints.forEach(c => {
-      const size = sizeOf(c.value)
-      const icon = makeIcon(c, size, 'rgba(255,107,107,0.8)')
-      L.marker([c.lat, c.lng], { icon }).bindTooltip(`${c.name}：${c.value} ${suffix}`, { direction: 'top' }).addTo(markerLayer)
-    })
-  } else {
-    // 城市级：多色（我的按类型、竞品按品牌）
-    myTypePoints.forEach(c => {
-      const size = sizeOf(c.value)
-      const color = typeColors[c.group_key] || '#40c4ff'
-      const icon = makeIcon(c, size, color)
-      L.marker([c.lat, c.lng], { icon })
-        .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
-        .addTo(markerLayer)
-    })
-    compBrandPoints.forEach(c => {
-      const size = sizeOf(c.value)
-      const color = brandColors[c.group_key] || '#ff6b6b'
-      const icon = makeIcon(c, size, color)
-      L.marker([c.lat, c.lng], { icon })
-        .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
-        .addTo(markerLayer)
-    })
-  }
+  // 多色渲染（省级/城市级统一：我的按类型、竞品按品牌）
+  myTypePoints.forEach(c => {
+    const size = sizeOf(c.value)
+    const color = typeColors[c.group_key] || '#40c4ff'
+    const icon = makeIcon(c, size, color)
+    L.marker([c.lat, c.lng], { icon })
+      .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} ${suffix}`, { direction: 'top' })
+      .addTo(markerLayer)
+  })
+  compBrandPoints.forEach(c => {
+    const size = sizeOf(c.value)
+    const color = brandColors[c.group_key] || '#ff6b6b'
+    const icon = makeIcon(c, size, color)
+    L.marker([c.lat, c.lng], { icon })
+      .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} ${suffix}`, { direction: 'top' })
+      .addTo(markerLayer)
+  })
   if (markerLayer.getLayers().length > 0) {
     markerLayer.addTo(map)
   }

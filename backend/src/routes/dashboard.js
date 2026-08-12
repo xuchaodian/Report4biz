@@ -151,6 +151,27 @@ router.get('/summary', authenticate, async (req, res) => {
         AND brand IS NOT NULL AND brand != ''
       GROUP BY rtrim(city, '市'), brand
     `).all()
+
+    // ===== 省级拆分聚合（按省份 + 类型/品牌分组） =====
+    const aggToProvinceGrouped = (rows) => {
+      const keyOf = (r) => r.group_key + '|' + toProvince(r.city || r.name)
+      const map = {}
+      rows.forEach(r => {
+        const k = keyOf(r)
+        if (!map[k]) {
+          map[k] = { name: toProvince(r.city || r.name), group_key: r.group_key, value: 0, latSum: 0, lngSum: 0, cnt: 0 }
+        }
+        map[k].value += r.value
+        map[k].latSum += r.lat * r.value
+        map[k].lngSum += r.lng * r.value
+        map[k].cnt += r.value
+      })
+      return Object.values(map)
+        .map(p => ({ name: p.name, group_key: p.group_key, value: p.value, lat: Math.round(p.latSum / p.cnt * 10000) / 10000, lng: Math.round(p.lngSum / p.cnt * 10000) / 10000 }))
+        .sort((a, b) => b.value - a.value)
+    }
+    const markerByTypeProv = aggToProvinceGrouped(markerByType)
+    const compByBrandProv = aggToProvinceGrouped(compByBrand)
     // 竞品品牌 TOP10（前端只显示主要品牌颜色）
     const compBrandList = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all()
 
@@ -196,6 +217,8 @@ router.get('/summary', authenticate, async (req, res) => {
         competitorsProv: compProvAgg,
         markerByType,
         compByBrand,
+        markerByTypeProv,
+        compByBrandProv,
         compBrandList
       },
       cityData: cityData.slice(0, 50),
