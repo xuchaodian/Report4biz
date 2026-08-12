@@ -114,7 +114,20 @@ router.get('/summary', authenticate, async (req, res) => {
         .map(p => ({ name: p.name, value: p.value, lat: Math.round(p.latSum / p.cnt * 10000) / 10000, lng: Math.round(p.lngSum / p.cnt * 10000) / 10000 }))
         .sort((a, b) => b.value - a.value)
     }
-    const markerProvAgg = aggToProvince(markerCitiesAgg)
+    // 省级聚合源：我的门店仅「已开业」（与城市级默认视图、城市TOP10口径一致）
+    const markerOpenCitiesAgg = db.prepare(`
+      SELECT rtrim(city, '市') AS name,
+             COUNT(*) AS value,
+             ROUND(AVG(latitude), 4) AS lat,
+             ROUND(AVG(longitude), 4) AS lng
+      FROM markers
+      WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
+        AND city IS NOT NULL AND city != ''
+        AND store_type = '已开业'
+        AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})
+      GROUP BY rtrim(city, '市') ORDER BY value DESC LIMIT 200
+    `).all(...ABNORMAL_STATUS)
+    const markerProvAgg = aggToProvince(markerOpenCitiesAgg)
     const compProvAgg = aggToProvince(compCitiesAgg)
 
     // ===== 按类型/品牌拆分的城市级聚合（用于地图多色区分） =====
