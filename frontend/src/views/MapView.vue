@@ -904,7 +904,16 @@
     </div>
 
     <!-- 周边环境打分卡弹窗 -->
-    <el-dialog v-model="envScoreDialogVisible" title="🏙️ 周边环境打分卡" width="560px" :close-on-click-modal="false" draggable>
+    <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable>
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e6f1fb;">🏙️</span>
+          <div>
+            <div class="dhf-title">周边环境打分卡</div>
+            <div class="dhf-sub">8 类商业配套 · 高德 POI 免费评估</div>
+          </div>
+        </div>
+      </template>
       <div v-if="envScoreLoading" style="text-align:center;padding:40px;color:#909399;">
         <el-icon class="is-loading"><Loading /></el-icon>
         <p style="margin-top:8px;">正在评估周边环境...</p>

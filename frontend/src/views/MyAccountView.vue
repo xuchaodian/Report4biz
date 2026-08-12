@@ -236,7 +236,16 @@
     </el-dialog>
 
     <!-- 查询结果对比对话框（多订单同图对比） -->
-    <el-dialog v-model="compareDialogVisible" title="📊 查询结果对比" width="960px" :close-on-click-modal="false" @closed="disposeCompareCharts">
+    <el-dialog v-model="compareDialogVisible" width="960px" class="dialog-fancy" :close-on-click-modal="false" @closed="disposeCompareCharts">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#e1f5ee;">📊</span>
+          <div>
+            <div class="dhf-title">查询结果对比</div>
+            <div class="dhf-sub">最多 5 笔订单同图对比 · 人口 / 客流 / 消费</div>
+          </div>
+        </div>
+      </template>
       <div v-if="compareLoading" style="text-align:center;padding:40px;color:#909399;">
         <el-icon class="is-loading"><Loading /></el-icon>
         <p style="margin-top:8px;">正在加载对比数据...</p>
@@ -277,7 +286,16 @@
     </el-dialog>
 
     <!-- 充值履历对话框（管理员分配配额历史） -->
-    <el-dialog v-model="quotaHistoryDialogVisible" title="📜 充值履历（管理员分配配额记录）" width="700px" :close-on-click-modal="false">
+    <el-dialog v-model="quotaHistoryDialogVisible" width="700px" class="dialog-fancy" :close-on-click-modal="false">
+      <template #header>
+        <div class="dialog-header-fancy">
+          <span class="dhf-icon" style="background:#faeeda;">📜</span>
+          <div>
+            <div class="dhf-title">充值履历</div>
+            <div class="dhf-sub">管理员分配 / 退款配额记录</div>
+          </div>
+        </div>
+      </template>
       <div v-if="quotaHistoryLoading" style="text-align:center;padding:30px;color:#909399;">加载中...</div>
       <template v-else>
         <el-table :data="quotaHistoryList" stripe border style="width:100%" :max-height="420">
