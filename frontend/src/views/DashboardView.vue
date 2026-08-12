@@ -19,13 +19,17 @@
     </div>
 
     <div class="ds-body">
-      <!-- 左列：KPI 指标 -->
+      <!-- 左列：KPI + 类型分布 -->
       <div class="ds-col ds-col-left">
         <div class="ds-panel ds-kpi-grid">
           <div v-for="k in kpiList" :key="k.label" class="ds-kpi">
             <div class="ds-kpi-num" :style="{ color: k.color }">{{ k.value }}</div>
             <div class="ds-kpi-label">{{ k.label }}</div>
           </div>
+        </div>
+        <div class="ds-panel ds-chart-panel">
+          <div class="ds-chart-title">门店类型分布</div>
+          <div ref="typeChartRef" class="ds-chart"></div>
         </div>
       </div>
 
@@ -37,21 +41,30 @@
             <span class="ds-map-title">全国门店分布</span>
             <span class="ds-map-sub">我的门店 {{ data?.kpi?.markers ?? 0 }} · 竞品 {{ data?.kpi?.competitors ?? 0 }}</span>
           </div>
+          <!-- 图层开关（右上角） -->
+          <div class="ds-layer-switch">
+            <label class="ds-layer-item">
+              <span class="ds-layer-dot" style="background:#40c4ff;"></span>
+              <span>我的门店</span>
+              <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
+            </label>
+            <label class="ds-layer-item">
+              <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
+              <span>竞品门店</span>
+              <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
+            </label>
+          </div>
         </div>
       </div>
 
       <!-- 右列：图表 -->
       <div class="ds-col ds-col-right">
         <div class="ds-chart-grid">
-          <div class="ds-panel">
-            <div class="ds-chart-title">门店类型分布</div>
-            <div ref="typeChartRef" class="ds-chart"></div>
-          </div>
-          <div class="ds-panel">
+          <div class="ds-panel ds-chart-panel ds-chart-panel-lg">
             <div class="ds-chart-title">门店城市 TOP10</div>
             <div ref="cityChartRef" class="ds-chart"></div>
           </div>
-          <div class="ds-panel">
+          <div class="ds-panel ds-chart-panel">
             <div class="ds-chart-title">竞品品牌 TOP10</div>
             <div ref="brandChartRef" class="ds-chart"></div>
           </div>
@@ -88,6 +101,8 @@ const brandChartRef = ref(null)
 const now = ref('')
 const today = ref('')
 const updatedTime = ref('--:--:--')
+const showMyLayer = ref(true)
+const showCompLayer = ref(true)
 let clockTimer = null
 let refreshTimer = null
 let map = null
@@ -96,24 +111,22 @@ let heatLayer = null
 let mapFitted = false
 let charts = []
 
-// KPI 卡片
+// KPI 卡片（不含购物中心/品牌门店）
 const kpiList = computed(() => {
   const k = data.value?.kpi || {}
   return [
     { label: '我的门店', value: k.markers ?? 0, color: '#40c4ff' },
     { label: '竞品门店', value: k.competitors ?? 0, color: '#ff6b6b' },
-    { label: '购物中心', value: k.centers ?? 0, color: '#ffd166' },
-    { label: '品牌门店', value: k.brandStores ?? 0, color: '#9b8cff' },
     { label: '覆盖城市', value: k.markerCities ?? 0, color: '#06d6a0' },
     { label: '竞品城市', value: k.compCities ?? 0, color: '#f98fb4' },
-    { label: '我的查询', value: k.myPurchases ?? 0, color: '#40c4ff' },
-    { label: '配额剩余', value: k.quotaRemaining ?? 0, color: '#ffd166' }
+    { label: '购买次数', value: k.myPurchases ?? 0, color: '#40c4ff' },
+    { label: '剩余次数', value: k.quotaRemaining ?? 0, color: '#ffd166' }
   ]
 })
 
 const marqueeText = computed(() => {
   const k = data.value?.kpi || {}
-  return `全国共 ${k.markers ?? 0} 家门店、${k.competitors ?? 0} 家竞品、${k.centers ?? 0} 个购物中心 · 覆盖 ${k.markerCities ?? 0} 个城市 · 累计查询 ${k.myPurchases ?? 0} 次 · 系统数据每 60 秒自动刷新`
+  return `全国共 ${k.markers ?? 0} 家门店、${k.competitors ?? 0} 家竞品 · 覆盖 ${k.markerCities ?? 0} 个城市 · 累计购买 ${k.myPurchases ?? 0} 次 · 系统数据每小时自动刷新`
 })
 
 const updateClock = () => {
@@ -163,7 +176,7 @@ const renderCharts = () => {
     charts.push(c)
   }
 
-  // 2. 门店城市 TOP10（横向柱状）
+  // 2. 门店城市 TOP10（横向柱状，完整显示 10 个城市）
   if (cityChartRef.value) {
     const c = echarts.init(cityChartRef.value)
     const cities = (data.value?.charts?.markerCityTop || []).slice().reverse()
@@ -177,7 +190,8 @@ const renderCharts = () => {
         type: 'bar',
         data: cities.map(i => i.value),
         itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#1a4f8f' }, { offset: 1, color: '#40c4ff' }]), borderRadius: [0, 4, 4, 0] },
-        barWidth: 12
+        barWidth: 14,
+        label: { show: true, position: 'right', color: '#8fa3c0', fontSize: 10 }
       }]
     })
     charts.push(c)
@@ -208,42 +222,65 @@ const renderMap = async () => {
   if (!mapRef.value) return
   if (!map) {
     map = L.map('ds-map', { zoomControl: false, attributionControl: false }).setView([35, 108], 4)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map)
+    // 高德瓦片（国内可访问，显示中国地图）
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+      subdomains: [1, 2, 3, 4],
+      maxZoom: 18
+    }).addTo(map)
   }
   if (markerLayer) { map.removeLayer(markerLayer); markerLayer = null }
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null }
 
-  const k = data.value?.kpi || {}
+  // 城市级聚合（后端返回 [{name, value, lat, lng}]）
+  const myCities = (data.value?.points?.markers || []).filter(c => showMyLayer.value)
+  const compCities = (data.value?.points?.competitors || []).filter(c => showCompLayer.value)
 
-  // 真实坐标（后端已抽样最多 500 点）
-  const myPoints = (data.value?.points?.markers || []).slice(0, 500)
-  const compPoints = (data.value?.points?.competitors || []).slice(0, 500)
-
-  // 首次渲染：有真实坐标则缩放地图到数据范围（后续刷新保持用户视野）
-  if (!mapFitted && myPoints.length + compPoints.length > 0) {
-    const allPts = myPoints.concat(compPoints)
-    const lats = allPts.map(p => p[0])
-    const lngs = allPts.map(p => p[1])
+  // 首次渲染：缩放地图到数据范围（后续刷新保持用户视野）
+  if (!mapFitted && myCities.length + compCities.length > 0) {
+    const allPts = myCities.concat(compCities)
+    const lats = allPts.map(p => p.lat)
+    const lngs = allPts.map(p => p.lng)
     try {
       map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { padding: [30, 30] })
       mapFitted = true
     } catch (_) {}
   }
 
-  markerLayer = L.layerGroup()
-  myPoints.forEach(p => {
-    L.circleMarker(p, { radius: 3, color: '#40c4ff', fillColor: '#40c4ff', fillOpacity: 0.8, weight: 0 }).addTo(markerLayer)
-  })
-  compPoints.forEach(p => {
-    L.circleMarker(p, { radius: 2.5, color: '#ff6b6b', fillColor: '#ff6b6b', fillOpacity: 0.6, weight: 0 }).addTo(markerLayer)
-  })
-  markerLayer.addTo(map)
+  // 城市聚合点：圆大小按门店数量分级（1-10/11-50/51-200/200+）
+  const sizeOf = (n) => n <= 10 ? 6 : n <= 50 ? 10 : n <= 200 ? 16 : 24
 
-  // 热力图（叠加竞品密度）
+  markerLayer = L.layerGroup()
+  myCities.forEach(c => {
+    const size = sizeOf(c.value)
+    L.circleMarker([c.lat, c.lng], {
+      radius: size,
+      color: '#40c4ff',
+      fillColor: '#40c4ff',
+      fillOpacity: 0.75,
+      weight: 1
+    }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top', offset: [0, -size / 2] }).addTo(markerLayer)
+  })
+  compCities.forEach(c => {
+    const size = sizeOf(c.value)
+    L.circleMarker([c.lat, c.lng], {
+      radius: size,
+      color: '#ff6b6b',
+      fillColor: '#ff6b6b',
+      fillOpacity: 0.65,
+      weight: 1
+    }).bindTooltip(`${c.name}：${c.value} 家`, { direction: 'top', offset: [0, -size / 2] }).addTo(markerLayer)
+  })
+  if (markerLayer.getLayers().length > 0) {
+    markerLayer.addTo(map)
+  }
+
+  // 热力图（叠加全部城市聚合点，按数量加权）
   try {
     const heat = await import('leaflet.heat')
-    const allPoints = compPoints.concat(myPoints).map(p => [p[0], p[1], 0.8])
-    heatLayer = heat.default(allPoints, { radius: 30, blur: 15, maxZoom: 10, minOpacity: 0.3 }).addTo(map)
+    const allPoints = myCities.concat(compCities).map(c => [c.lat, c.lng, Math.min(c.value / 100, 1)])
+    if (allPoints.length > 0) {
+      heatLayer = heat.default(allPoints, { radius: 30, blur: 15, maxZoom: 10, minOpacity: 0.3 }).addTo(map)
+    }
   } catch (e) {
     console.warn('热力图加载失败:', e)
   }
@@ -265,7 +302,7 @@ onMounted(async () => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   await fetchData()
-  refreshTimer = setInterval(fetchData, 60000)
+  refreshTimer = setInterval(fetchData, 3600000)  // 1 小时刷新一次
   window.addEventListener('keydown', handleKey)
 })
 
@@ -326,7 +363,7 @@ onBeforeUnmount(() => {
 }
 
 .ds-col { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-.ds-col-left { width: 220px; flex-shrink: 0; }
+.ds-col-left { width: 260px; flex-shrink: 0; }
 .ds-col-center { flex: 1; min-width: 0; }
 .ds-col-right { width: 330px; flex-shrink: 0; }
 
@@ -353,7 +390,6 @@ onBeforeUnmount(() => {
 /* 地图 */
 .ds-map-panel { flex: 1; position: relative; padding: 0; overflow: hidden; min-height: 0; }
 .ds-map { width: 100%; height: 100%; min-height: 300px; background: #0a1a2f; }
-.ds-map :deep(.leaflet-tile-pane) { filter: invert(1) hue-rotate(190deg) saturate(0.6) brightness(0.9); }
 .ds-map :deep(.leaflet-container) { background: #0a1a2f; }
 .ds-map-overlay {
   position: absolute;
@@ -367,9 +403,35 @@ onBeforeUnmount(() => {
 .ds-map-title { display: block; font-size: 14px; font-weight: 600; color: #40c4ff; }
 .ds-map-sub { display: block; font-size: 11px; color: #8fa3c0; margin-top: 2px; }
 
+/* 图层开关（右上角） */
+.ds-layer-switch {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 1000;
+  background: rgba(10, 26, 47, 0.85);
+  border: 1px solid rgba(64, 196, 255, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ds-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #b8c9e4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ds-layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.ds-layer-item :deep(.el-switch) { --el-switch-on-color: #40c4ff; }
+
 /* 图表 */
 .ds-chart-grid { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
 .ds-chart-grid .ds-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ds-chart-panel-lg { flex: 1.5 !important; }
 .ds-chart-title { font-size: 13px; font-weight: 600; color: #b8c9e4; margin-bottom: 6px; }
 .ds-chart { flex: 1; min-height: 0; }
 

@@ -54,17 +54,27 @@ router.get('/summary', authenticate, async (req, res) => {
       trend.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, my: 0, comp: 0 })
     }
 
-    // ===== 真实坐标（抽样最多 500 个，避免传输过大） =====
-    const markerPoints = db.prepare(`
-      SELECT latitude, longitude FROM markers
+    // ===== 城市级聚合（我的门店/竞品，按 city 分组 + 代表坐标） =====
+    const markerCitiesAgg = db.prepare(`
+      SELECT city AS name,
+             COUNT(*) AS value,
+             ROUND(AVG(latitude), 4) AS lat,
+             ROUND(AVG(longitude), 4) AS lng
+      FROM markers
       WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
-      ORDER BY RANDOM() LIMIT 500
-    `).all().map(r => [r.latitude, r.longitude])
-    const compPoints = db.prepare(`
-      SELECT latitude, longitude FROM competitors
+        AND city IS NOT NULL AND city != ''
+      GROUP BY city ORDER BY value DESC LIMIT 200
+    `).all()
+    const compCitiesAgg = db.prepare(`
+      SELECT city AS name,
+             COUNT(*) AS value,
+             ROUND(AVG(latitude), 4) AS lat,
+             ROUND(AVG(longitude), 4) AS lng
+      FROM competitors
       WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
-      ORDER BY RANDOM() LIMIT 500
-    `).all().map(r => [r.latitude, r.longitude])
+        AND city IS NOT NULL AND city != ''
+      GROUP BY city ORDER BY value DESC LIMIT 200
+    `).all()
 
     // ===== 用户购买/配额 =====
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
@@ -100,8 +110,8 @@ router.get('/summary', authenticate, async (req, res) => {
         trend
       },
       points: {
-        markers: markerPoints,
-        competitors: compPoints
+        markers: markerCitiesAgg,
+        competitors: compCitiesAgg
       },
       cityData: cityData.slice(0, 50),
       updatedAt: new Date().toISOString()
