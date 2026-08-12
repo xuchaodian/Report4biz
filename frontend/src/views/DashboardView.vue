@@ -46,7 +46,7 @@
             <div class="ds-layer-level">{{ aggLevel === 'province' ? '省级聚合 · 放大查看城市' : '城市级聚合' }}</div>
             <div class="ds-layer-group">
               <div class="ds-layer-group-head">
-                <span class="ds-layer-item" @click="showMyLayer = !showMyLayer; renderMap()" style="cursor:pointer;">
+                <span class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#40c4ff;"></span>
                   <span>我的门店</span>
                   <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
@@ -62,7 +62,7 @@
             </div>
             <div class="ds-layer-group">
               <div class="ds-layer-group-head">
-                <span class="ds-layer-item" @click="showCompLayer = !showCompLayer; renderMap()" style="cursor:pointer;">
+                <span class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
                   <span>竞品门店</span>
                   <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
@@ -370,7 +370,7 @@ const renderMap = async () => {
       const dy = pt.y - prev.y
       if (dx * dx + dy * dy < 30 * 30) return  // 碰撞，跳过
     }
-    labeledPoints.push({ x: pt.x, y: pt.y, name: c.name })
+    labeledPoints.push({ x: pt.x, y: pt.y, name: c.name || c.city })
   }
   // 按数量降序，最多标注 Top20
   const labelCandidates = fitPts
@@ -380,12 +380,13 @@ const renderMap = async () => {
   labelCandidates.forEach(c => tryAddLabel(c))
 
   const makeIcon = (c, size, bg, borderColor) => {
-    const showName = !isProv && labeledPoints.some(l => l.name === c.name)
+    const name = c.name || c.city
+    const showName = !isProv && labeledPoints.some(l => l.name === name)
     return L.divIcon({
       className: 'ds-city-icon',
       html: `<div style="display:flex;align-items:center;gap:0;">
         <div style="width:${size}px;height:${size}px;line-height:${size}px;background:${bg};border:2px solid ${borderColor || '#fff'};border-radius:50%;text-align:center;font-size:${size <= 30 ? 11 : 14}px;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);flex-shrink:0;">${c.value}</div>
-        ${showName ? `<div style="margin-left:5px;padding:2px 7px;background:rgba(8,21,38,0.72);border:1px solid rgba(64,196,255,0.35);border-radius:4px;font-size:11px;font-weight:500;color:#cfe4ff;white-space:nowrap;line-height:1.4;">${c.name}</div>` : ''}
+        ${showName ? `<div style="margin-left:5px;padding:2px 7px;background:rgba(8,21,38,0.72);border:1px solid rgba(64,196,255,0.35);border-radius:4px;font-size:11px;font-weight:500;color:#cfe4ff;white-space:nowrap;line-height:1.4;">${name}</div>` : ''}
       </div>`,
       iconSize: [0, 0],
       iconAnchor: [size / 2, size / 2]
@@ -412,7 +413,7 @@ const renderMap = async () => {
       const color = typeColors[c.group_key] || '#40c4ff'
       const icon = makeIcon(c, size, color)
       L.marker([c.lat, c.lng], { icon })
-        .bindTooltip(`${c.name}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
+        .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
         .addTo(markerLayer)
     })
     compBrandPoints.forEach(c => {
@@ -420,7 +421,7 @@ const renderMap = async () => {
       const color = brandColors[c.group_key] || '#ff6b6b'
       const icon = makeIcon(c, size, color)
       L.marker([c.lat, c.lng], { icon })
-        .bindTooltip(`${c.name}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
+        .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} 家`, { direction: 'top' })
         .addTo(markerLayer)
     })
   }
