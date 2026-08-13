@@ -348,6 +348,46 @@ adminRouter.post('/recharge', authenticate, async (req, res) => {
 })
 
 /**
+ * 扣减客户 Key 余额（因故减少分配，扣减次数归还配额池）
+ * POST /api/v1/resale/deduct
+ * Body: { keyId, amount }
+ */
+adminRouter.post('/deduct', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '仅管理员可操作' })
+    }
+    const { keyId, amount } = req.body
+    const amt = Math.floor(Number(amount) || 0)
+    if (!keyId) {
+      return res.status(400).json({ message: '缺少 keyId' })
+    }
+    if (amt <= 0) {
+      return res.status(400).json({ message: '扣减次数必须大于 0' })
+    }
+    const db = getDb()
+    const client = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
+    if (!client) {
+      return res.status(404).json({ message: '客户不存在' })
+    }
+    if (amt > client.balance) {
+      return res.status(400).json({ message: `扣减次数 ${amt} 超过当前余额 ${client.balance}` })
+    }
+    db.prepare(`UPDATE api_keys SET balance = balance - ? WHERE id = ?`).run(amt, keyId)
+    const updated = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
+    res.json({
+      success: true,
+      message: `已扣减 ${amt} 次，归还配额池`,
+      balance: updated.balance,
+      refunded: amt
+    })
+  } catch (e) {
+    console.error('扣减失败:', e)
+    res.status(500).json({ message: '扣减失败: ' + e.message })
+  }
+})
+
+/**
  * 删除客户 Key（物理删除 + 清理用量记录）
  * POST /api/v1/resale/delete
  * Body: { keyId }

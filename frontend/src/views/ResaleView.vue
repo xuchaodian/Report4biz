@@ -73,10 +73,11 @@
       <el-table-column label="创建时间" width="160">
         <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link size="small" @click="openRechargeDialog(row)">充值</el-button>
-          <el-button type="warning" link size="small" @click="openUsageDialog(row)">用量</el-button>
+          <el-button type="warning" link size="small" @click="openDeductDialog(row)">扣减</el-button>
+          <el-button type="info" link size="small" @click="openUsageDialog(row)">用量</el-button>
           <el-button :type="row.status === 'active' ? 'danger' : 'success'" link size="small" @click="toggleStatus(row)">
             {{ row.status === 'active' ? '停用' : '启用' }}
           </el-button>
@@ -124,6 +125,23 @@
       <template #footer>
         <el-button @click="rechargeDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="recharging" @click="handleRecharge">确认充值</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 扣减次数对话框 -->
+    <el-dialog v-model="deductDialogVisible" title="➖ 扣减次数" width="460px" :close-on-click-modal="false">
+      <div style="margin-bottom:14px;font-size:13px;color:#606266;">
+        为 <b>{{ currentClient?.company_name }}</b> 扣减（当前余额 {{ currentClient?.balance }} 次），扣减次数将归还配额池
+      </div>
+      <el-form label-width="90px">
+        <el-form-item label="扣减次数" required>
+          <el-input-number v-model="deductAmount" :min="1" :max="currentClient?.balance || 0" :step="50" style="width:200px" />
+          <span style="margin-left:8px;font-size:12px;color:#909399;">不超过当前余额</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="deductDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="deducting" @click="handleDeduct">确认扣减</el-button>
       </template>
     </el-dialog>
 
@@ -188,6 +206,9 @@ const rechargeDialogVisible = ref(false)
 const recharging = ref(false)
 const rechargeAmount = ref(100)
 const currentClient = ref(null)
+const deductDialogVisible = ref(false)
+const deducting = ref(false)
+const deductAmount = ref(50)
 
 const usageDialogVisible = ref(false)
 const usageList = ref([])
@@ -266,6 +287,46 @@ const handleRecharge = async () => {
     ElMessage.error('充值失败: ' + (e.response?.data?.message || e.message))
   } finally {
     recharging.value = false
+  }
+}
+
+const openDeductDialog = (row) => {
+  currentClient.value = row
+  deductAmount.value = Math.min(50, row.balance || 0)
+  deductDialogVisible.value = true
+}
+
+const handleDeduct = async () => {
+  if (!deductAmount.value || deductAmount.value <= 0) {
+    ElMessage.warning('请输入有效的扣减次数')
+    return
+  }
+  if (deductAmount.value > currentClient.value.balance) {
+    ElMessage.warning(`扣减次数不能超过当前余额 ${currentClient.value.balance}`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认从「${currentClient.value.company_name}」扣减 ${deductAmount.value} 次？\n扣减后次数将归还配额池。`,
+      '确认扣减',
+      { type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  deducting.value = true
+  try {
+    const { data } = await axios.post('/api/v1/resale/deduct', {
+      keyId: currentClient.value.id,
+      amount: deductAmount.value
+    })
+    ElMessage.success(data.message || '扣减成功')
+    deductDialogVisible.value = false
+    await loadKeys()
+  } catch (e) {
+    ElMessage.error('扣减失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    deducting.value = false
   }
 }
 
