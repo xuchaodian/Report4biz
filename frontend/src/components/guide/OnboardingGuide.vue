@@ -27,9 +27,11 @@
       v-model="wizardVisible"
       title="👋 欢迎使用选址赢家Online"
       width="560px"
-      :close-on-click-modal="false"
-      :show-close="false"
+      :close-on-click-modal="true"
+      :show-close="true"
+      modal-class="onboarding-wizard-modal"
       class="onboarding-wizard"
+      @close="skipWizard"
     >
       <el-steps :active="step" align-center finish-status="success" class="wizard-steps">
         <el-step title="欢迎" />

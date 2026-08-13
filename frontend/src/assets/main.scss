@@ -198,3 +198,13 @@ body {
   background: #409eff;
   color: #fff;
 }
+
+/* 首次使用向导：遮罩不拦截地图操作（地图右键等仍可触发） */
+.onboarding-wizard-modal {
+  background-color: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.onboarding-wizard-modal + .el-dialog.onboarding-wizard {
+  pointer-events: auto;
+}
