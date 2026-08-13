@@ -161,17 +161,20 @@ function generateApiKey() {
 
 // ===== 单一预算池 =====
 // 用户页分配与 API 开放页共用同一批次上游配额（admin_quota.initial_quota）
-// 池已占用 = Σ(users.quota) + Σ(api_keys.balance)，池剩余可分配 = 总配额 - 池已占用
+// 池已占用 = Σ(users.quota) + Σ(api_keys.balance，仅真实模式)，池剩余可分配 = 总配额 - 池已占用
+// 注意：测试模式（mock=1）的 key 不调上游、不消耗配额，不计入池占用
 function getPoolInfo(db) {
   const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
   const poolTotal = quotaRecord?.initial_quota || 0
   const allocatedUsers = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()?.total || 0
-  const allocatedApi = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys`).get()?.total || 0
+  const allocatedApi = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 0`).get()?.total || 0
+  const mockBalance = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 1`).get()?.total || 0
   const occupied = allocatedUsers + allocatedApi
   return {
     poolTotal,           // 上游总配额（当前批次）
     allocatedUsers,      // 用户页已分配
-    allocatedApi,        // API 开放页已分配（第三方余额合计）
+    allocatedApi,        // API 开放页已分配（真实模式余额合计）
+    mockBalance,         // 测试模式余额（不占池）
     occupied,            // 池已占用
     available: Math.max(0, poolTotal - occupied)  // 剩余可分配
   }
@@ -268,9 +271,9 @@ adminRouter.post('/keys', authenticate, async (req, res) => {
       return res.status(400).json({ message: '充值次数不能为负数' })
     }
     const db = getDb()
-    // 单一预算池校验：创建 key 的初始余额不能超过池剩余
+    // 单一预算池校验：创建 key 的初始余额不能超过池剩余（测试模式 key 不占池，跳过校验）
     const pool = getPoolInfo(db)
-    if (balance > pool.available) {
+    if (!mock && balance > pool.available) {
       return res.status(400).json({
         message: `超出总配额：剩余可分配 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 已分配 ${pool.allocatedApi}）`
       })
@@ -323,9 +326,9 @@ adminRouter.post('/recharge', authenticate, async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: '客户不存在' })
     }
-    // 单一预算池校验：充值不能超过池剩余
+    // 单一预算池校验：充值不能超过池剩余（测试模式 key 不占池，跳过校验）
     const pool = getPoolInfo(db)
-    if (amt > pool.available) {
+    if (!client.mock && amt > pool.available) {
       return res.status(400).json({
         message: `超出总配额：剩余可分配 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 已分配 ${pool.allocatedApi}）`
       })

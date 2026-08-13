@@ -25,10 +25,14 @@
         <span class="pool-value">{{ poolInfo.allocatedApi }}</span>
       </div>
       <div class="pool-item">
+        <span class="pool-label">测试模式余额</span>
+        <span class="pool-value" style="color:#909399;">{{ poolInfo.mockBalance }}</span>
+      </div>
+      <div class="pool-item">
         <span class="pool-label">剩余可分配</span>
         <span class="pool-value" :style="{ color: poolInfo.available <= 100 ? '#f56c6c' : '#67c23a', fontWeight: 600 }">{{ poolInfo.available }}</span>
       </div>
-      <span class="pool-tip">⚠️ 与用户页共用同一批次配额，超出将拒绝分配</span>
+      <span class="pool-tip">⚠️ 与用户页共用同一批次配额（测试模式不占用）</span>
     </div>
 
     <!-- 客户列表 -->

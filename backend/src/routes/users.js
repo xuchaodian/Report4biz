@@ -62,8 +62,8 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     // 剩余可分配 = 初始总配额 - 已分配（与用户实际使用无关）
     const availableQuota = Math.max(0, initialQuota - allocatedQuota)
 
-    // API 开放页已分配（第三方余额合计）——共用同一批次配额
-    const apiAllocatedResult = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys`).get()
+    // API 开放页已分配（真实模式余额合计，测试模式不占池）——共用同一批次配额
+    const apiAllocatedResult = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 0`).get()
     const apiAllocatedQuota = apiAllocatedResult?.total || 0
     // 全池剩余可分配 = 总配额 - 用户页已分配 - API 页已分配
     const poolAvailableQuota = Math.max(0, initialQuota - allocatedQuota - apiAllocatedQuota)
