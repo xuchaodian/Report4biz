@@ -9856,10 +9856,10 @@ function getHeatmapCellStyle(nums, idx) {
 }
 </style>
 
-// 地图右键菜单（fixed 相对浏览器窗口定位）
+// 地图右键菜单（fixed 相对浏览器窗口定位，z-index 最高确保不被任何 el-dialog/overlay 遮挡）
 .map-context-menu {
   position: fixed;
-  z-index: 3000;
+  z-index: 99999 !important;
   min-width: 140px;
   background: #fff;
   border: 1px solid #dcdfe6;
