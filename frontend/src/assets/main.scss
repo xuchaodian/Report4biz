@@ -205,7 +205,9 @@ body {
   pointer-events: none;
 }
 
-.onboarding-wizard-modal + .el-dialog.onboarding-wizard {
+/* 弹窗本体是遮罩的子元素（不是兄弟），用后代选择器恢复可交互
+   （pointer-events 是继承属性，遮罩 none 会传给子元素导致按钮点不动） */
+.onboarding-wizard-modal .el-dialog.onboarding-wizard {
   pointer-events: auto;
 }
 
