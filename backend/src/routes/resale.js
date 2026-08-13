@@ -178,6 +178,54 @@ const requireApiKey = (req, res, next) => {
   }
 }
 
+// ===== 测试模式（mock）模拟数据 =====
+// 当智慧足迹上游 Key 用量耗尽时，mock Key 返回模拟数据，供第三方联调链路
+function buildMockData(services, lng, lat, radius) {
+  const base = Math.floor(Math.random() * 50000) + 10000
+  const data = {}
+  const codeDesc = {
+    '1001': '人口数量及基础属性',
+    '1002': '居住人口',
+    '1003': '工作人口',
+    '1004': '到访人口',
+    '1005': '每小时段人口流量',
+    '1006': '人口属性分析',
+    '1007': '消费水平分布',
+    '1008': '年龄段分布',
+    '1009': '性别比例',
+    '1010': '收入水平分布',
+    '1011': '家庭状况分布',
+    '1012': '出行方式分布',
+    '1013': '居住地分布',
+    '1014': '工作地分布',
+    '1015': '工作日/周末对比',
+    '1016': '日均人流热度',
+    '1017': '月均人流热度',
+    '1018': '月到访频次',
+    '1019': '市外来源分布',
+    '1020': '省内来源分布',
+    '1021': '市内来源分布',
+    '1022': '停留时长分布',
+    '1023': '全量人口'
+  }
+  services.forEach((code, i) => {
+    data[code] = {
+      code,
+      name: codeDesc[code] || `指标${code}`,
+      value: Math.round(base * (1 + i * 0.13)),
+      unit: '人',
+      note: '【测试模式】模拟数据，非真实统计'
+    }
+  })
+  return {
+    mock: true,
+    center: { lng: Number(lng), lat: Number(lat) },
+    radius: Number(radius),
+    indicators: services.map(c => ({ code: c, name: codeDesc[c] || c })),
+    data
+  }
+}
+
 // ===== 管理员接口 =====
 
 // 管理员接口统一挂 /resale/* 前缀
@@ -186,14 +234,14 @@ const adminRouter = express.Router()
 /**
  * 创建转售客户并生成 API Key（需管理员登录）
  * POST /api/v1/resale/keys
- * Body: { companyName, initialBalance }
+ * Body: { companyName, initialBalance, mock }
  */
 adminRouter.post('/keys', authenticate, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ message: '仅管理员可操作' })
     }
-    const { companyName, initialBalance = 0 } = req.body
+    const { companyName, initialBalance = 0, mock = false } = req.body
     if (!companyName || !companyName.trim()) {
       return res.status(400).json({ message: '缺少公司名称' })
     }
@@ -204,9 +252,9 @@ adminRouter.post('/keys', authenticate, async (req, res) => {
     const db = getDb()
     const apiKey = generateApiKey()
     const result = db.prepare(`
-      INSERT INTO api_keys (company_name, api_key, balance)
-      VALUES (?, ?, ?)
-    `).run(companyName.trim(), apiKey, balance)
+      INSERT INTO api_keys (company_name, api_key, balance, mock)
+      VALUES (?, ?, ?, ?)
+    `).run(companyName.trim(), apiKey, balance, mock ? 1 : 0)
     res.json({
       success: true,
       key: {
@@ -214,9 +262,12 @@ adminRouter.post('/keys', authenticate, async (req, res) => {
         company_name: companyName.trim(),
         api_key: apiKey,
         balance,
-        status: 'active'
+        status: 'active',
+        mock: mock ? 1 : 0
       },
-      message: balance > 0 ? `已创建，初始 ${balance} 次` : '已创建（余额 0，需充值）'
+      message: mock
+        ? (balance > 0 ? `已创建（测试模式），初始 ${balance} 次` : '已创建（测试模式，余额 0）')
+        : (balance > 0 ? `已创建，初始 ${balance} 次` : '已创建（余额 0，需充值）')
     })
   } catch (e) {
     console.error('创建转售客户失败:', e)
@@ -410,6 +461,20 @@ router.post('/', requireApiKey, async (req, res) => {
   const area = Math.PI * radiusKm * radiusKm
   if (area < 0.3 || area > 80) {
     return res.status(400).json({ code: 400, message: `圆形面积 ${area.toFixed(2)} km² 超出允许范围（0.3~80 km²）` })
+  }
+
+  // 测试模式（mock）：不调上游、不扣次数，返回模拟数据供联调
+  if (client.mock) {
+    return res.json({
+      code: 200,
+      success: true,
+      mock: true,
+      fromCache: false,
+      data: buildMockData(services, Number(lng), Number(lat), Number(radius)),
+      balance: client.balance,
+      deducted: 0,
+      message: '测试模式：模拟数据（未调用上游，未扣次数）'
+    })
   }
 
   const db = getDb()

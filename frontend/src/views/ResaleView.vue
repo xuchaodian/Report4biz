@@ -16,7 +16,10 @@
         <template #default="{ row }">{{ row.id }}</template>
       </el-table-column>
       <el-table-column label="公司名称" min-width="160" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.company_name }}</template>
+        <template #default="{ row }">
+          {{ row.company_name }}
+          <el-tag v-if="row.mock" type="info" size="small" style="margin-left:4px;">测试</el-tag>
+        </template>
       </el-table-column>
       <el-table-column label="API Key" min-width="240">
         <template #default="{ row }">
@@ -65,6 +68,10 @@
         <el-form-item label="初始次数">
           <el-input-number v-model="createForm.initialBalance" :min="0" :step="100" style="width:200px" />
           <span style="margin-left:8px;font-size:12px;color:#909399;">可留 0，后续充值</span>
+        </el-form-item>
+        <el-form-item label="测试模式">
+          <el-switch v-model="createForm.mock" />
+          <span style="margin-left:8px;font-size:12px;color:#909399;">测试模式返回模拟数据，不调上游、不扣次数</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -148,7 +155,7 @@ const keyList = ref([])
 
 const createDialogVisible = ref(false)
 const creating = ref(false)
-const createForm = ref({ companyName: '', initialBalance: 0 })
+const createForm = ref({ companyName: '', initialBalance: 0, mock: false })
 
 const rechargeDialogVisible = ref(false)
 const recharging = ref(false)
@@ -185,7 +192,7 @@ const copyKey = async (key) => {
 }
 
 const openCreateDialog = () => {
-  createForm.value = { companyName: '', initialBalance: 0 }
+  createForm.value = { companyName: '', initialBalance: 0, mock: false }
   createDialogVisible.value = true
 }
 
