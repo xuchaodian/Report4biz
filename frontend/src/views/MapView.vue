@@ -2058,6 +2058,7 @@ const addPolygonPoint = (e) => {
 
 // 地图右键菜单状态
 const contextMenu = reactive({ visible: false, x: 0, y: 0, latlng: null })
+let onMapContextMenuRef = null  // document 捕获级右键监听引用（用于卸载时移除）
 const hideContextMenu = () => { contextMenu.visible = false }
 // 右键菜单动作分发
 const contextMenuAction = (action) => {
@@ -4143,12 +4144,17 @@ const initMap = async () => {
 
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
-  // 地图右键菜单：用原生 DOM 监听（Leaflet 的 contextmenu 事件可能被其内部机制拦截）
+  // 地图右键菜单：document 捕获阶段监听（捕获先于任何 stopPropagation 执行，
+  // 彻底规避 Leaflet 内部元素对 contextmenu 的 stopPropagation 拦截）
   const mapContainerEl = map.getContainer()
   const onMapContextMenu = (ev) => {
+    // 只响应地图区域内的右键（含地图内部 panes/marker）
+    if (!mapContainerEl.contains(ev.target) && ev.target !== mapContainerEl) return
     ev.preventDefault()
     ev.stopPropagation()
-    contextMenu.latlng = map.containerPointToLatLng([ev.offsetX, ev.offsetY])
+    // 用 clientX/Y 减去容器左上角，精确换算容器内坐标（不依赖 offsetX，避免子元素偏移误差）
+    const rect = mapContainerEl.getBoundingClientRect()
+    contextMenu.latlng = map.containerPointToLatLng([ev.clientX - rect.left, ev.clientY - rect.top])
     // 菜单 fixed 定位（相对浏览器窗口），直接用 clientX/clientY
     let x = ev.clientX
     let y = ev.clientY
@@ -4161,7 +4167,8 @@ const initMap = async () => {
     contextMenu.y = y
     contextMenu.visible = true
   }
-  mapContainerEl.addEventListener('contextmenu', onMapContextMenu)
+  document.addEventListener('contextmenu', onMapContextMenu, true)
+  onMapContextMenuRef = onMapContextMenu
   // 点击地图任意处隐藏右键菜单（用 click 而非 mousedown，避免右键自身触发）
   map.on('click', hideContextMenu)
   // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
@@ -9179,6 +9186,10 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   document.removeEventListener('keydown', handleKeyDown)
+  if (onMapContextMenuRef) {
+    document.removeEventListener('contextmenu', onMapContextMenuRef, true)
+    onMapContextMenuRef = null
+  }
 })
 
 // 暴露给window供弹窗调用
