@@ -9867,44 +9867,6 @@ function getHeatmapCellStyle(nums, idx) {
 }
 </style>
 
-// 地图右键菜单（fixed 相对浏览器窗口定位，z-index 最高确保不被任何 el-dialog/overlay 遮挡）
-.map-context-menu {
-  position: fixed;
-  z-index: 99999 !important;
-  min-width: 140px;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  padding: 4px 0;
-  user-select: none;
-}
-
-.map-context-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  font-size: 13px;
-  color: #303133;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.map-context-menu-item:hover {
-  background: #f5f7fa;
-  color: #409eff;
-}
-
-.map-context-menu-item .el-icon {
-  font-size: 15px;
-  color: #909399;
-}
-
-.map-context-menu-item:hover .el-icon {
-  color: #409eff;
-}
-
 // POI位置选择提示
 .poi-pick-location-overlay {
   position: absolute;
