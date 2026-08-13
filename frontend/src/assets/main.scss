@@ -176,7 +176,25 @@ body {
   display: none;
 }
 
+/* fancy 弹窗关闭按钮：相对 header 定位（header 需 relative），
+   否则 top:50% 会相对整个弹窗漂移到中部，导致关闭按钮找不到 */
+.el-dialog.dialog-fancy .el-dialog__header {
+  position: relative;
+  padding-right: 52px;
+}
+
 .el-dialog.dialog-fancy .el-dialog__headerbtn {
   top: 50%;
+  right: 14px;
   transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(64, 158, 255, 0.12);
+  transition: background 0.2s, color 0.2s;
+}
+
+.el-dialog.dialog-fancy .el-dialog__headerbtn:hover {
+  background: #409eff;
+  color: #fff;
 }
