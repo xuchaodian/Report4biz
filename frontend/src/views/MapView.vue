@@ -922,7 +922,7 @@
     </div>
 
     <!-- 周边环境打分卡弹窗 -->
-    <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable>
+    <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable @closed="clearEnvScoreLayer">
       <template #header>
         <div class="dialog-header-fancy">
           <span class="dhf-icon" style="background:#e6f1fb;">🏙️</span>
@@ -7918,6 +7918,16 @@ const cancelEnvScorePick = () => {
     try { map.removeLayer(envScoreLayer) } catch(e) {}
     envScoreLayer = null
   }
+}
+
+// 关闭打分卡弹窗后清理地图上的位置图标与半径圆
+const clearEnvScoreLayer = () => {
+  if (envScoreLayer) {
+    try { map.removeLayer(envScoreLayer) } catch(e) {}
+    envScoreLayer = null
+  }
+  envScoreData.value = null
+  envScorePoint.value = null
 }
 
 // 绘制地图图标 + 半径圆
