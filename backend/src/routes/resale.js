@@ -159,6 +159,24 @@ function generateApiKey() {
   return 'r4b_' + crypto.randomBytes(24).toString('hex')
 }
 
+// ===== 单一预算池 =====
+// 用户页分配与 API 开放页共用同一批次上游配额（admin_quota.initial_quota）
+// 池已占用 = Σ(users.quota) + Σ(api_keys.balance)，池剩余可分配 = 总配额 - 池已占用
+function getPoolInfo(db) {
+  const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
+  const poolTotal = quotaRecord?.initial_quota || 0
+  const allocatedUsers = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()?.total || 0
+  const allocatedApi = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys`).get()?.total || 0
+  const occupied = allocatedUsers + allocatedApi
+  return {
+    poolTotal,           // 上游总配额（当前批次）
+    allocatedUsers,      // 用户页已分配
+    allocatedApi,        // API 开放页已分配（第三方余额合计）
+    occupied,            // 池已占用
+    available: Math.max(0, poolTotal - occupied)  // 剩余可分配
+  }
+}
+
 // ===== 中间件：X-Api-Key 认证 =====
 const requireApiKey = (req, res, next) => {
   const apiKey = req.headers['x-api-key']
@@ -250,6 +268,13 @@ adminRouter.post('/keys', authenticate, async (req, res) => {
       return res.status(400).json({ message: '充值次数不能为负数' })
     }
     const db = getDb()
+    // 单一预算池校验：创建 key 的初始余额不能超过池剩余
+    const pool = getPoolInfo(db)
+    if (balance > pool.available) {
+      return res.status(400).json({
+        message: `超出总配额：剩余可分配 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 已分配 ${pool.allocatedApi}）`
+      })
+    }
     const apiKey = generateApiKey()
     const result = db.prepare(`
       INSERT INTO api_keys (company_name, api_key, balance, mock)
@@ -297,6 +322,13 @@ adminRouter.post('/recharge', authenticate, async (req, res) => {
     const client = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
     if (!client) {
       return res.status(404).json({ message: '客户不存在' })
+    }
+    // 单一预算池校验：充值不能超过池剩余
+    const pool = getPoolInfo(db)
+    if (amt > pool.available) {
+      return res.status(400).json({
+        message: `超出总配额：剩余可分配 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 已分配 ${pool.allocatedApi}）`
+      })
     }
     db.prepare(`UPDATE api_keys SET balance = balance + ? WHERE id = ?`).run(amt, keyId)
     const updated = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
@@ -382,7 +414,7 @@ adminRouter.get('/keys', authenticate, async (req, res) => {
       SELECT k.*, (SELECT COUNT(*) FROM api_usage u WHERE u.api_key_id = k.id) AS used
       FROM api_keys k ORDER BY k.created_at DESC
     `).all()
-    res.json({ keys })
+    res.json({ keys, pool: getPoolInfo(db) })
   } catch (e) {
     res.status(500).json({ message: '查询失败: ' + e.message })
   }

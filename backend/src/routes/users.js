@@ -62,13 +62,21 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     // 剩余可分配 = 初始总配额 - 已分配（与用户实际使用无关）
     const availableQuota = Math.max(0, initialQuota - allocatedQuota)
 
+    // API 开放页已分配（第三方余额合计）——共用同一批次配额
+    const apiAllocatedResult = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys`).get()
+    const apiAllocatedQuota = apiAllocatedResult?.total || 0
+    // 全池剩余可分配 = 总配额 - 用户页已分配 - API 页已分配
+    const poolAvailableQuota = Math.max(0, initialQuota - allocatedQuota - apiAllocatedQuota)
+
     res.json({ 
       users: usersWithQuota,
       quotaInfo: {
         initialQuota,     // 初始总配额（我手动输入的值）
         remainingQuota,   // 当前剩余配额（实际可查询的次数）
         allocatedQuota,   // 已分配给用户的次数
-        availableQuota    // 剩余可分配次数
+        availableQuota,   // 剩余可分配次数（仅用户页口径）
+        apiAllocatedQuota,   // API 开放页已分配（第三方余额合计）
+        poolAvailableQuota   // 全池剩余可分配（用户页+API页共用）
       }
     })
   } catch (error) {

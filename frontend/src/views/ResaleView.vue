@@ -10,6 +10,27 @@
       <el-button type="primary" @click="openCreateDialog">➕ 创建客户</el-button>
     </div>
 
+    <!-- 配额池信息（与用户页共用同一批次上游配额） -->
+    <div v-if="poolInfo" class="pool-banner">
+      <div class="pool-item">
+        <span class="pool-label">上游总配额</span>
+        <span class="pool-value">{{ poolInfo.poolTotal }}</span>
+      </div>
+      <div class="pool-item">
+        <span class="pool-label">用户页已分配</span>
+        <span class="pool-value">{{ poolInfo.allocatedUsers }}</span>
+      </div>
+      <div class="pool-item">
+        <span class="pool-label">API页已分配</span>
+        <span class="pool-value">{{ poolInfo.allocatedApi }}</span>
+      </div>
+      <div class="pool-item">
+        <span class="pool-label">剩余可分配</span>
+        <span class="pool-value" :style="{ color: poolInfo.available <= 100 ? '#f56c6c' : '#67c23a', fontWeight: 600 }">{{ poolInfo.available }}</span>
+      </div>
+      <span class="pool-tip">⚠️ 与用户页共用同一批次配额，超出将拒绝分配</span>
+    </div>
+
     <!-- 客户列表 -->
     <el-table :data="keyList" stripe border style="width:100%" v-loading="loading">
       <el-table-column label="ID" width="60" align="center">
@@ -153,6 +174,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(false)
 const keyList = ref([])
+const poolInfo = ref(null)
 
 const createDialogVisible = ref(false)
 const creating = ref(false)
@@ -176,6 +198,7 @@ const loadKeys = async () => {
   try {
     const { data } = await axios.get('/api/v1/resale/keys')
     keyList.value = data.keys || []
+    poolInfo.value = data.pool || null
   } catch (e) {
     ElMessage.error('加载客户列表失败: ' + (e.response?.data?.message || e.message))
   } finally {
@@ -297,6 +320,41 @@ onMounted(() => {
 <style scoped>
 .resale-view {
   padding: 20px;
+}
+
+.pool-banner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: linear-gradient(135deg, #f5f7fa, #eef1f6);
+  border: 1px solid #e0e6ef;
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.pool-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pool-label {
+  font-size: 11px;
+  color: #909399;
+}
+
+.pool-value {
+  font-size: 16px;
+  color: #303133;
+}
+
+.pool-tip {
+  margin-left: auto;
+  font-size: 12px;
+  color: #e6a23c;
 }
 
 .page-header {
