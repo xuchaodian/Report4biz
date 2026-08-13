@@ -6612,6 +6612,15 @@ const clearDrawings = () => {
     if (measureArea) { map.removeLayer(measureArea); measureArea = null }
     if (measureLayerGroup) { map.removeLayer(measureLayerGroup); measureLayerGroup = null }
     if (drawnItems) drawnItems.clearLayers()
+    // 清除临时圆心图钉（商圈内点位/商圈人口分布选点后未确认留下的）
+    if (tempCircleMarker) {
+      map.removeLayer(tempCircleMarker)
+      tempCircleMarker = null
+    }
+    if (tempPopulationMarker) {
+      map.removeLayer(tempPopulationMarker)
+      tempPopulationMarker = null
+    }
     // 清除分析圆形图层
     if (analysisCircleLayer) {
       map.removeLayer(analysisCircleLayer)
