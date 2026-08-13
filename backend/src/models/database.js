@@ -88,9 +88,21 @@ export async function initDatabase() {
       api_key TEXT NOT NULL UNIQUE,
       balance INTEGER DEFAULT 0,
       status TEXT DEFAULT 'active',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      mock INTEGER DEFAULT 0
     )
   `)
+
+  // 兼容迁移：老库 api_keys 缺 mock 列时补上（测试模式）
+  try {
+    const keyCols = db.exec(`PRAGMA table_info(api_keys)`)
+    const hasMock = keyCols[0]?.values?.some(v => v[1] === 'mock')
+    if (!hasMock) {
+      db.run(`ALTER TABLE api_keys ADD COLUMN mock INTEGER DEFAULT 0`)
+    }
+  } catch (e) {
+    console.warn('api_keys mock 列迁移失败:', e.message)
+  }
 
   // 转售 API 调用记录表
   db.run(`
