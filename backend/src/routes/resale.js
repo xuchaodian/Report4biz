@@ -501,7 +501,26 @@ router.post('/', requireApiKey, async (req, res) => {
 
   // 测试模式（mock）：优先返回已请求过的真实缓存数据，未命中才返回模拟数据（均不调上游、不扣次数）
   if (client.mock) {
-    const cachedData = findCache(db, cLng, cLat, r, cityMonth, services)
+    // 宽松匹配：同坐标+半径命中任意缓存记录即可（缓存数据含完整指标集，第三方无需猜指标组合）
+    let cachedData = findCache(db, cLng, cLat, r, cityMonth, services)
+    if (!cachedData) {
+      try {
+        const row = cityMonth
+          ? db.prepare(`
+              SELECT result_data FROM smartsteps_cache
+              WHERE center_lng = ? AND center_lat = ? AND radius = ? AND city_month = ?
+              ORDER BY id DESC LIMIT 1
+            `).get(cLng, cLat, r, cityMonth)
+          : db.prepare(`
+              SELECT result_data FROM smartsteps_cache
+              WHERE center_lng = ? AND center_lat = ? AND radius = ?
+              ORDER BY id DESC LIMIT 1
+            `).get(cLng, cLat, r)
+        if (row) cachedData = JSON.parse(row.result_data)
+      } catch (e) {
+        // 宽松匹配失败则继续走模拟数据
+      }
+    }
     if (cachedData) {
       return res.json({
         code: 200,
