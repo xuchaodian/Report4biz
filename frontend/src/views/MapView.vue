@@ -921,6 +921,30 @@
       </div>
     </div>
 
+    <!-- 地图右键菜单 -->
+    <div v-if="contextMenu.visible" class="map-context-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }" @click.stop>
+      <div class="map-context-menu-item" @click="contextMenuAction('clear')">
+        <el-icon><Delete /></el-icon>
+        <span>清除绘制</span>
+      </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('circle')">
+        <el-icon><Coordinate /></el-icon>
+        <span>商圈内点位</span>
+      </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('envscore')">
+        <el-icon><Star /></el-icon>
+        <span>周边商业配套</span>
+      </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('population')">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>常住人口分布</span>
+      </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('smartsteps')">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>联通人口</span>
+      </div>
+    </div>
+
     <!-- 周边环境打分卡弹窗 -->
     <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable @closed="clearEnvScoreLayer">
       <template #header>
@@ -2029,6 +2053,21 @@ const addPolygonPoint = (e) => {
     completeBtnElement.style.top = `${Math.max(80, point.y - 100)}px`
     completeBtnElement.style.left = `${Math.min(point.x - 50, window.innerWidth - 150)}px`
     completeBtnElement.style.right = 'auto'
+  }
+}
+
+// 地图右键菜单状态
+const contextMenu = reactive({ visible: false, x: 0, y: 0, latlng: null })
+const hideContextMenu = () => { contextMenu.visible = false }
+// 右键菜单动作分发
+const contextMenuAction = (action) => {
+  hideContextMenu()
+  switch (action) {
+    case 'clear': clearDrawings(); break
+    case 'circle': setTool('circle'); break
+    case 'envscore': startEnvScore(); break
+    case 'population': openPopulationDistribution(); break
+    case 'smartsteps': smartstepsVisible.value = !smartstepsVisible.value; break
   }
 }
 
@@ -4104,6 +4143,21 @@ const initMap = async () => {
 
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
+  // 地图右键菜单（阻止 Leaflet 默认右键缩放行为）
+  map.on('contextmenu', (e) => {
+    L.DomEvent.preventDefault(e.originalEvent)
+    contextMenu.latlng = e.latlng
+    const mapEl = map.getContainer()
+    const rect = mapEl.getBoundingClientRect()
+    contextMenu.x = e.containerPoint.x
+    contextMenu.y = e.containerPoint.y
+    // 边界修正：菜单宽约 140px 高约 170px
+    if (contextMenu.x + 145 > rect.width) contextMenu.x = rect.width - 150
+    if (contextMenu.y + 180 > rect.height) contextMenu.y = rect.height - 185
+    contextMenu.visible = true
+  })
+  // 点击地图任意处隐藏右键菜单
+  map.on('mousedown', hideContextMenu)
   // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
 
   // 地图加载完成后修正尺寸（解决容器隐藏后显示的定位问题）
@@ -9795,6 +9849,44 @@ function getHeatmapCellStyle(nums, idx) {
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 </style>
+
+// 地图右键菜单
+.map-context-menu {
+  position: absolute;
+  z-index: 2000;
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  user-select: none;
+}
+
+.map-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #303133;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.map-context-menu-item:hover {
+  background: #f5f7fa;
+  color: #409eff;
+}
+
+.map-context-menu-item .el-icon {
+  font-size: 15px;
+  color: #909399;
+}
+
+.map-context-menu-item:hover .el-icon {
+  color: #409eff;
+}
 
 // POI位置选择提示
 .poi-pick-location-overlay {
