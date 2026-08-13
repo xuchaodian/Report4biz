@@ -492,26 +492,39 @@ router.post('/', requireApiKey, async (req, res) => {
     return res.status(400).json({ code: 400, message: `圆形面积 ${area.toFixed(2)} km² 超出允许范围（0.3~80 km²）` })
   }
 
-  // 测试模式（mock）：不调上游、不扣次数，返回模拟数据供联调
-  if (client.mock) {
-    return res.json({
-      code: 200,
-      success: true,
-      mock: true,
-      fromCache: false,
-      data: buildMockData(services, Number(lng), Number(lat), Number(radius)),
-      balance: client.balance,
-      deducted: 0,
-      message: '测试模式：模拟数据（未调用上游，未扣次数）'
-    })
-  }
-
   const db = getDb()
   initCacheTable(db)
 
   const cLng = Number(lng)
   const cLat = Number(lat)
   const r = Number(radius)
+
+  // 测试模式（mock）：优先返回已请求过的真实缓存数据，未命中才返回模拟数据（均不调上游、不扣次数）
+  if (client.mock) {
+    const cachedData = findCache(db, cLng, cLat, r, cityMonth, services)
+    if (cachedData) {
+      return res.json({
+        code: 200,
+        success: true,
+        mock: true,
+        fromCache: true,
+        data: cachedData,
+        balance: client.balance,
+        deducted: 0,
+        message: '测试模式：返回历史缓存真实数据（未调用上游，未扣次数）'
+      })
+    }
+    return res.json({
+      code: 200,
+      success: true,
+      mock: true,
+      fromCache: false,
+      data: buildMockData(services, cLng, cLat, r),
+      balance: client.balance,
+      deducted: 0,
+      message: '测试模式：模拟数据（未命中缓存，未调用上游，未扣次数）'
+    })
+  }
 
   try {
     // 1. 查缓存
