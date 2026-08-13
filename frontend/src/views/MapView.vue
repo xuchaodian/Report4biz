@@ -4143,21 +4143,27 @@ const initMap = async () => {
 
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
-  // 地图右键菜单（阻止 Leaflet 默认右键缩放行为）
-  map.on('contextmenu', (e) => {
-    L.DomEvent.preventDefault(e.originalEvent)
-    contextMenu.latlng = e.latlng
-    const mapEl = map.getContainer()
-    const rect = mapEl.getBoundingClientRect()
-    contextMenu.x = e.containerPoint.x
-    contextMenu.y = e.containerPoint.y
+  // 地图右键菜单：用原生 DOM 监听（Leaflet 的 contextmenu 事件可能被其内部机制拦截）
+  const mapContainerEl = map.getContainer()
+  const onMapContextMenu = (ev) => {
+    ev.preventDefault()
+    ev.stopPropagation()
+    contextMenu.latlng = map.containerPointToLatLng([ev.offsetX, ev.offsetY])
+    // 菜单 fixed 定位（相对浏览器窗口），直接用 clientX/clientY
+    let x = ev.clientX
+    let y = ev.clientY
     // 边界修正：菜单宽约 140px 高约 170px
-    if (contextMenu.x + 145 > rect.width) contextMenu.x = rect.width - 150
-    if (contextMenu.y + 180 > rect.height) contextMenu.y = rect.height - 185
+    const winW = window.innerWidth
+    const winH = window.innerHeight
+    if (x + 145 > winW) x = winW - 150
+    if (y + 180 > winH) y = winH - 185
+    contextMenu.x = x
+    contextMenu.y = y
     contextMenu.visible = true
-  })
-  // 点击地图任意处隐藏右键菜单
-  map.on('mousedown', hideContextMenu)
+  }
+  mapContainerEl.addEventListener('contextmenu', onMapContextMenu)
+  // 点击地图任意处隐藏右键菜单（用 click 而非 mousedown，避免右键自身触发）
+  map.on('click', hideContextMenu)
   // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
 
   // 地图加载完成后修正尺寸（解决容器隐藏后显示的定位问题）
@@ -9850,10 +9856,10 @@ function getHeatmapCellStyle(nums, idx) {
 }
 </style>
 
-// 地图右键菜单
+// 地图右键菜单（fixed 相对浏览器窗口定位）
 .map-context-menu {
-  position: absolute;
-  z-index: 2000;
+  position: fixed;
+  z-index: 3000;
   min-width: 140px;
   background: #fff;
   border: 1px solid #dcdfe6;
