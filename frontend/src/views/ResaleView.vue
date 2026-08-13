@@ -48,13 +48,14 @@
       <el-table-column label="创建时间" width="160">
         <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link size="small" @click="openRechargeDialog(row)">充值</el-button>
           <el-button type="warning" link size="small" @click="openUsageDialog(row)">用量</el-button>
           <el-button :type="row.status === 'active' ? 'danger' : 'success'" link size="small" @click="toggleStatus(row)">
             {{ row.status === 'active' ? '停用' : '启用' }}
           </el-button>
+          <el-button type="danger" link size="small" @click="deleteKey(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -266,6 +267,25 @@ const toggleStatus = async (row) => {
     await loadKeys()
   } catch (e) {
     ElMessage.error('操作失败: ' + (e.response?.data?.message || e.message))
+  }
+}
+
+const deleteKey = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除客户「${row.company_name}」？\n删除后该 Key 立即失效，且用量记录一并清除，不可恢复！`,
+      '危险操作',
+      { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+  try {
+    const { data } = await axios.post('/api/v1/resale/delete', { keyId: row.id })
+    ElMessage.success(data.message || '删除成功')
+    await loadKeys()
+  } catch (e) {
+    ElMessage.error('删除失败: ' + (e.response?.data?.message || e.message))
   }
 }
 

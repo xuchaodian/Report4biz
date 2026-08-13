@@ -313,6 +313,35 @@ adminRouter.post('/recharge', authenticate, async (req, res) => {
 })
 
 /**
+ * 删除客户 Key（物理删除 + 清理用量记录）
+ * POST /api/v1/resale/delete
+ * Body: { keyId }
+ */
+adminRouter.post('/delete', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: '仅管理员可操作' })
+    }
+    const { keyId } = req.body
+    if (!keyId) {
+      return res.status(400).json({ message: '缺少 keyId' })
+    }
+    const db = getDb()
+    const client = db.prepare(`SELECT * FROM api_keys WHERE id = ?`).get(keyId)
+    if (!client) {
+      return res.status(404).json({ message: '客户不存在' })
+    }
+    // 删除用量记录 + Key
+    db.prepare(`DELETE FROM api_usage WHERE api_key_id = ?`).run(keyId)
+    db.prepare(`DELETE FROM api_keys WHERE id = ?`).run(keyId)
+    res.json({ success: true, message: `已删除 ${client.company_name} 及其用量记录` })
+  } catch (e) {
+    console.error('删除客户失败:', e)
+    res.status(500).json({ message: '删除失败: ' + e.message })
+  }
+})
+
+/**
  * 启停用客户 Key
  * POST /api/v1/resale/toggle-status
  * Body: { keyId }
