@@ -1266,6 +1266,7 @@
       <template #footer>
         <el-button @click="closeAnalysisDialog">关闭</el-button>
         <el-button type="primary" @click="showCircleOnMap">显示地图</el-button>
+        <el-button type="danger" plain @click="clearCircleAnalysisOnMap">清除地图显示</el-button>
       </template>    </el-dialog>
 
     <!-- 人口对比对话框 -->
@@ -3874,6 +3875,18 @@ const showCircleOnMap = () => {
   }
 
   ElMessage.success('已在地图上显示分析结果')
+}
+
+// 清除地图上的分析圆形、圆心与门店标记
+const clearCircleAnalysisOnMap = () => {
+  if (!map) return
+  if (analysisCircleLayer) {
+    try { map.removeLayer(analysisCircleLayer) } catch(e) {}
+    analysisCircleLayer = null
+  }
+  circleAnalysisVisible.value = false
+  circleDialogVisible.value = false
+  ElMessage.success('已清除地图上的分析圆形与标记')
 }
 
 // 图标样式选项
