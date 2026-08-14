@@ -107,7 +107,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import axios from 'axios'
+import api from '@/utils/api'
 import { useUserStore } from '@/stores/user'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -178,7 +178,7 @@ const updateClock = () => {
 
 const fetchData = async () => {
   try {
-    const { data: res } = await axios.get('/api/dashboard/summary')
+    const res = await api.get('/dashboard/summary')
     if (res.success) {
       data.value = res
       // 初始化竞品品牌开关（品牌名→颜色/开关状态）
