@@ -248,3 +248,10 @@ body {
 .map-context-menu-item:hover .el-icon {
   color: #409eff;
 }
+
+/* 菜单分隔线（添加门店与下方操作区分） */
+.map-context-menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: #ebeef5;
+}
