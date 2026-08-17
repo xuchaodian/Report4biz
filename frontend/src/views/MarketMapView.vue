@@ -50,7 +50,7 @@
             <template #default="{ row }">
               <div class="mm-city-cell">
                 <span class="mm-city-name">{{ row.city }}</span>
-                <span v-for="t in (row.tags || []).slice(0, 2)" :key="t" class="mm-city-tag">{{ t }}</span>
+                <span v-for="t in (row.tags || [])" :key="t" class="mm-city-tag">{{ t }}</span>
               </div>
             </template>
           </el-table-column>
@@ -337,9 +337,8 @@ onMounted(loadData)
 .mm-city-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  gap: 5px;
+  flex-wrap: wrap;
 }
 .mm-city-name {
   font-size: 13px;
