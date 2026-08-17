@@ -23,6 +23,7 @@ import tileProxyRoutes from './routes/tile-proxy.js'
 import resaleRoutes, { adminRouter as resaleAdminRouter } from './routes/resale.js'
 import dashboardRoutes from './routes/dashboard.js'
 import cityDataRoutes from './routes/city-data.js'
+import marketMapRoutes from './routes/market-map.js'
 import mallTenantsRoutes from './routes/mall-tenants.js'
 import scoringRoutes from './routes/scoring.js'
 import storeScoresRoutes from './routes/store-scores.js'
@@ -73,6 +74,7 @@ async function start() {
     app.use('/api/v1/resale', resaleAdminRouter)
     app.use('/api/dashboard', dashboardRoutes)
     app.use('/api/city-data', cityDataRoutes)
+    app.use('/api/market-map', marketMapRoutes)
     app.use('/api/mall-tenants', mallTenantsRoutes)
     app.use('/api/scoring', scoringRoutes)
     app.use('/api/store-scores', storeScoresRoutes)

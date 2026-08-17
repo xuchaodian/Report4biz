@@ -20,7 +20,7 @@
           <el-icon><DataLine /></el-icon>
           <span>竞品门店</span>
         </router-link>
-        <router-link to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }">
+        <router-link v-if="userStore.isAdmin" to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }">
           <el-icon><MapLocation /></el-icon>
           <span>品牌门店</span>
         </router-link>
@@ -32,6 +32,20 @@
           <el-icon><Document /></el-icon>
           <span>统计数据</span>
         </router-link>
+        <el-dropdown v-if="userStore.isAdmin" trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
+          <span class="nav-dropdown-trigger">
+            <el-icon><Compass /></el-icon>
+            <span>决策中心</span>
+            <el-icon class="nav-dropdown-arrow"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item :class="{ 'dd-active': $route.path === '/market-map' }" @click="$router.push('/market-map')">
+                <el-icon><LocationInformation /></el-icon>市场地图
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
           <span>用户</span>
@@ -474,6 +488,38 @@ const doExport = async (type) => {
       &.active {
         background: #ecf5ff;
         color: #409eff;
+      }
+    }
+
+    .nav-dropdown {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+
+      .nav-dropdown-trigger {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        color: #666;
+        font-size: 14px;
+        transition: all 0.3s;
+      }
+
+      &:hover .nav-dropdown-trigger {
+        background: #f5f7fa;
+        color: #409eff;
+      }
+
+      &.active .nav-dropdown-trigger {
+        background: #ecf5ff;
+        color: #409eff;
+      }
+
+      .nav-dropdown-arrow {
+        font-size: 12px;
+        margin-left: -2px;
       }
     }
   }

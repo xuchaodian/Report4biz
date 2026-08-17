@@ -74,6 +74,12 @@ const routes = [
         meta: { requiresAdmin: true }
       },
       {
+        path: 'market-map',
+        name: 'MarketMap',
+        component: () => import('@/views/MarketMapView.vue'),
+        meta: { requiresAdmin: true }
+      },
+      {
         path: 'account',
         name: 'Account',
         component: () => import('@/views/MyAccountView.vue')
