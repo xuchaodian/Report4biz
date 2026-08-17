@@ -55,6 +55,17 @@
             </template>
           </el-table-column>
           <el-table-column prop="province" label="省份" width="70" />
+          <el-table-column label="GDP(亿)" width="90" align="right" sortable prop="gdp">
+            <template #default="{ row }">{{ row.gdp ? row.gdp.toLocaleString() : '-' }}</template>
+          </el-table-column>
+          <el-table-column label="GDP增速" width="90" align="right" sortable prop="gdpGrowth">
+            <template #default="{ row }">
+              <span v-if="row.gdpGrowth !== undefined" :style="{ color: row.gdpGrowth >= 0 ? '#67c23a' : '#f56c6c' }">
+                {{ row.gdpGrowth >= 0 ? '+' : '' }}{{ row.gdpGrowth }}%
+              </span>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="population" label="人口(万)" width="80" align="right" sortable />
           <el-table-column prop="myStores" label="我的店" width="70" align="right" sortable />
           <el-table-column prop="compStores" label="竞品" width="70" align="right" sortable />
