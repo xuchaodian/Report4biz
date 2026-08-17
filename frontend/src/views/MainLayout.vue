@@ -32,7 +32,7 @@
           <el-icon><Document /></el-icon>
           <span>统计数据</span>
         </router-link>
-        <el-dropdown v-if="userStore.isAdmin" trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
+        <el-dropdown trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
           <span class="nav-dropdown-trigger">
             <el-icon><Compass /></el-icon>
             <span>决策中心</span>
