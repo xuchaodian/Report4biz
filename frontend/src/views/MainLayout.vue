@@ -495,12 +495,12 @@ const doExport = async (type) => {
         margin-left: auto;  /* 数据大屏单独靠右，作为「决策/展示」类放最右 */
       }
 
-      /* 数据大屏：暗色胶囊，契合其暗黑页面风格 */
+      /* 数据大屏：默认透明（与普通导航项一致），hover 才显示暗色胶囊 */
       &.dashboard-nav {
-        color: #9fb8d9;
-        padding: 7px 16px;  /* 8px - 1px边框，总高度与普通导航项对齐（避免突兀） */
-        border: 1px solid rgba(140, 180, 230, 0.25);
-        background: linear-gradient(160deg, #12233d 0%, #0d1c33 100%);
+        color: #666;
+        padding: 7px 16px;  /* 8px - 1px边框，总高度与普通导航项对齐 */
+        border: 1px solid transparent;
+        background: transparent;
       }
       &.dashboard-nav:hover {
         color: #d6e6ff;
