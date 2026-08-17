@@ -499,7 +499,7 @@ const doExport = async (type) => {
       &.dashboard-nav {
         color: #666;
         font-weight: 600;  /* 加粗，突出数据大屏入口 */
-        padding: 7px 16px;  /* 8px - 1px边框，总高度与普通导航项对齐 */
+        padding: 7px 12px;  /* 横向 padding 12px（比普通 16px 窄）避免 admin 视角下溢出 */
         border: 1px solid transparent;
         background: transparent;
       }
@@ -516,7 +516,7 @@ const doExport = async (type) => {
       }
       &.dashboard-nav .el-icon {
         color: #40c4ff;
-        font-size: 18px;  /* 图标放大，更显眼 */
+        font-size: 17px;  /* 图标放大(普通14px)更显眼，但 18px 会让 admin 视角溢出 */
       }
     }
 
