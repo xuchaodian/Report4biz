@@ -495,6 +495,7 @@ const doExport = async (type) => {
       display: flex;
       align-items: center;
       cursor: pointer;
+      margin-left: auto;  /* 决策中心+数据大屏整体推至右侧，与左侧数据管理菜单分组 */
 
       .nav-dropdown-trigger {
         display: flex;
