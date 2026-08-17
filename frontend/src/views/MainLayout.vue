@@ -41,7 +41,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/market-map' }" @click="$router.push('/market-map')">
-                <el-icon><LocationInformation /></el-icon>市场地图
+                <el-icon><LocationInformation /></el-icon>城市洞察
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>

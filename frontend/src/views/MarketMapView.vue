@@ -3,7 +3,7 @@
     <!-- 页头 -->
     <div class="mm-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🗺️ 市场地图</h2>
+        <h2 style="margin:0;font-size:18px;">🔍 城市洞察</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           城市市场机会评分：市场规模 × 竞争强度 × 品牌空白 × 消费潜力，找出值得进入的城市
         </p>
@@ -323,7 +323,7 @@ const loadData = async () => {
       ElMessage.error(res.message || '加载失败')
     }
   } catch (e) {
-    ElMessage.error('加载市场地图失败: ' + (e.response?.data?.message || e.message))
+    ElMessage.error('加载城市洞察失败: ' + (e.response?.data?.message || e.message))
   } finally {
     loading.value = false
   }
