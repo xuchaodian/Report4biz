@@ -204,9 +204,23 @@ const colorForScore = (score) => {
 
 const provinceScoreMap = computed(() => {
   const m = {}
-  provinces.value.forEach(p => { m[p.province] = p.opportunity })
+  provinces.value.forEach(p => {
+    const prov = p.province
+    m[prov] = p.opportunity
+    // 同时建立"去后缀"映射（兼容 china.json 的全名如"重庆市"）
+    const short = prov.replace(/(省|市|自治区|壮族自治区|回族自治区|维吾尔自治区|特别行政区|壮族|回族|维吾尔)/g, '')
+    if (!m[short] && !m['北京市'] !== prov) m[short] = p.opportunity
+  })
   return m
 })
+
+// 把 china.json 的全名（如"北京市"）映射到后端的短名（如"北京"）
+const geoProvinceAlias = {
+  '北京市': '北京', '上海市': '上海', '天津市': '天津', '重庆市': '重庆',
+  '内蒙古自治区': '内蒙古', '广西壮族自治区': '广西', '宁夏回族自治区': '宁夏',
+  '新疆维吾尔自治区': '新疆', '西藏自治区': '西藏',
+  '香港特别行政区': '香港', '澳门特别行政区': '澳门'
+}
 
 const initProvinceMap = async () => {
   if (!provinceMapEl.value) return
@@ -238,40 +252,40 @@ const initProvinceMap = async () => {
     }
   }
 
-  // 按机会分着色
+  // 按机会分着色（用 reactive ref 保证拿到最新值）
   const scoreMap = provinceScoreMap.value
   geoLayer = L.geoJSON(chinaGeoJson, {
     style: (feature) => {
       const name = feature.properties?.name || ''
-      const score = scoreMap[name]
-      const base = score ? colorForScore(score) : '#dcdfe6'
+      const alias = geoProvinceAlias[name] || name
+      const score = scoreMap[alias] !== undefined ? scoreMap[alias] : scoreMap[name]
+      const base = score !== undefined ? colorForScore(score) : '#dcdfe6'
       return {
         color: '#fff',
         weight: 1,
         fillColor: base,
-        fillOpacity: score ? 0.65 : 0.35
+        fillOpacity: score !== undefined ? 0.65 : 0.35
       }
     },
     onEachFeature: (feature, layer) => {
       const name = feature.properties?.name || ''
-      const score = scoreMap[name]
+      const alias = geoProvinceAlias[name] || name
+      const score = scoreMap[alias] !== undefined ? scoreMap[alias] : scoreMap[name]
       layer.on('click', () => {
-        // 点击省份 → 筛选城市榜 + 高亮
-        selectedProvince.value = selectedProvince.value === name ? '' : name
-        // 重置样式
+        selectedProvince.value = selectedProvince.value === alias ? '' : alias
         geoLayer.eachLayer(l => {
           const n = l.feature?.properties?.name || ''
-          const s = scoreMap[n]
+          const a = geoProvinceAlias[n] || n
+          const s = scoreMap[a] !== undefined ? scoreMap[a] : scoreMap[n]
           l.setStyle({
             color: '#fff',
             weight: 1,
-            fillColor: s ? colorForScore(s) : '#dcdfe6',
-            fillOpacity: n === selectedProvince.value ? 0.95 : (s ? 0.65 : 0.35)
+            fillColor: s !== undefined ? colorForScore(s) : '#dcdfe6',
+            fillOpacity: a === selectedProvince.value ? 0.95 : (s !== undefined ? 0.65 : 0.35)
           })
         })
       })
-      // Tooltip
-      layer.bindTooltip(`${name}${score !== undefined ? ' · 机会 ' + score + ' 分' : ''}`, {
+      layer.bindTooltip(`${alias}${score !== undefined ? ' · 机会 ' + score + ' 分' : ''}`, {
         sticky: true,
         className: 'mm-tooltip'
       })
