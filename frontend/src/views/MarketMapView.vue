@@ -46,7 +46,14 @@
         <div class="mm-panel-title">城市机会排行榜</div>
         <el-table :data="filteredCities" stripe border size="small" :max-height="640" style="width:100%" @row-click="openCityDetail" class="mm-table">
           <el-table-column type="index" label="#" width="42" align="center" />
-          <el-table-column prop="city" label="城市" min-width="70" />
+          <el-table-column label="城市" min-width="150">
+            <template #default="{ row }">
+              <div class="mm-city-cell">
+                <span class="mm-city-name">{{ row.city }}</span>
+                <span v-for="t in (row.tags || []).slice(0, 2)" :key="t" class="mm-city-tag">{{ t }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="province" label="省份" width="70" />
           <el-table-column prop="population" label="人口(万)" width="80" align="right" sortable />
           <el-table-column prop="myStores" label="我的店" width="70" align="right" sortable />
@@ -326,6 +333,30 @@ onMounted(loadData)
 
 .mm-table :deep(.el-table__row) {
   cursor: pointer;
+}
+.mm-city-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.mm-city-name {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.mm-city-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #409eff;
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 3px;
+  padding: 0 5px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 .mm-cell-score {
   display: flex;
