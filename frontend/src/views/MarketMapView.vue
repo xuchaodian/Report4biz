@@ -25,10 +25,23 @@
     </div>
 
     <div class="mm-body">
-      <!-- 左：省份机会列表 -->
+      <!-- 视图切换 -->
+      <div class="mm-view-tabs">
+        <div class="mm-tab" :class="{ active: viewMode === 'map' }" @click="switchView('map')">
+          <el-icon><MapLocation /></el-icon>省份地图
+        </div>
+        <div class="mm-tab" :class="{ active: viewMode === 'list' }" @click="switchView('list')">
+          <el-icon><Rank /></el-icon>省份榜单
+        </div>
+      </div>
+
+      <!-- 左：省份机会地图/榜单 -->
       <div class="mm-left">
         <div class="mm-panel-title">省份机会指数 <span class="mm-sub">(省内最优城市)</span></div>
-        <div class="mm-prov-list" v-loading="loading">
+        <div v-show="viewMode === 'map'" class="mm-prov-map" v-loading="loading">
+          <div id="province-map" ref="provinceMapEl" class="province-map-container"></div>
+        </div>
+        <div v-show="viewMode === 'list'" class="mm-prov-list" v-loading="loading">
           <div v-for="p in provinces" :key="p.province" class="mm-prov-item" :class="{ selected: selectedProvince === p.province }" @click="selectProvince(p.province)">
             <div class="mm-prov-rank">{{ p.rank }}</div>
             <div class="mm-prov-name">{{ p.province }}</div>
@@ -111,9 +124,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/utils/api'
 import { ElMessage } from 'element-plus'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 const loading = ref(false)
 const cities = ref([])
@@ -121,6 +136,11 @@ const provinces = ref([])
 const selectedProvince = ref('')
 const detailVisible = ref(false)
 const selectedCity = ref(null)
+const viewMode = ref('map')
+const provinceMapEl = ref(null)
+let provinceMap = null
+let geoLayer = null
+let chinaGeoJson = null
 
 const WEIGHTS = { marketSize: 0.30, competition: 0.25, brandGap: 0.25, consumption: 0.20 }
 
@@ -158,6 +178,14 @@ const filteredCities = computed(() => {
   return cities.value.filter(c => c.province === selectedProvince.value)
 })
 
+const switchView = async (mode) => {
+  viewMode.value = mode
+  if (mode === 'map') {
+    await nextTick()
+    initProvinceMap()
+  }
+}
+
 const selectProvince = (prov) => {
   selectedProvince.value = prov === selectedProvince.value ? '' : prov
 }
@@ -165,6 +193,91 @@ const selectProvince = (prov) => {
 const openCityDetail = (row) => {
   selectedCity.value = row
   detailVisible.value = true
+}
+
+// ===== 省份地图着色（高德瓦片 + 高德行政区划 GeoJSON） =====
+const colorForScore = (score) => {
+  if (score >= 75) return '#67c23a'
+  if (score >= 50) return '#e6a23c'
+  return '#f56c6c'
+}
+
+const provinceScoreMap = computed(() => {
+  const m = {}
+  provinces.value.forEach(p => { m[p.province] = p.opportunity })
+  return m
+})
+
+const initProvinceMap = async () => {
+  if (!provinceMapEl.value) return
+  if (provinceMap) { provinceMap.invalidateSize(); return }
+
+  // 高德瓦片（合规：高德官方瓦片服务，与主地图一致）
+  provinceMap = L.map('province-map', {
+    center: [35.8, 104.0],
+    zoom: 4,
+    minZoom: 3,
+    maxZoom: 7,
+    zoomControl: false,
+    attributionControl: false,
+    scrollWheelZoom: false
+  })
+  L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
+    subdomains: [1, 2, 3, 4],
+    maxZoom: 18
+  }).addTo(provinceMap)
+
+  // 加载中国省级行政区划 GeoJSON（高德数据，合规含台湾）
+  if (!chinaGeoJson) {
+    try {
+      const resp = await fetch('/china.json')
+      chinaGeoJson = await resp.json()
+    } catch (e) {
+      ElMessage.error('省份边界数据加载失败')
+      return
+    }
+  }
+
+  // 按机会分着色
+  const scoreMap = provinceScoreMap.value
+  geoLayer = L.geoJSON(chinaGeoJson, {
+    style: (feature) => {
+      const name = feature.properties?.name || ''
+      const score = scoreMap[name]
+      const base = score ? colorForScore(score) : '#dcdfe6'
+      return {
+        color: '#fff',
+        weight: 1,
+        fillColor: base,
+        fillOpacity: score ? 0.65 : 0.35
+      }
+    },
+    onEachFeature: (feature, layer) => {
+      const name = feature.properties?.name || ''
+      const score = scoreMap[name]
+      layer.on('click', () => {
+        // 点击省份 → 筛选城市榜 + 高亮
+        selectedProvince.value = selectedProvince.value === name ? '' : name
+        // 重置样式
+        geoLayer.eachLayer(l => {
+          const n = l.feature?.properties?.name || ''
+          const s = scoreMap[n]
+          l.setStyle({
+            color: '#fff',
+            weight: 1,
+            fillColor: s ? colorForScore(s) : '#dcdfe6',
+            fillOpacity: n === selectedProvince.value ? 0.95 : (s ? 0.65 : 0.35)
+          })
+        })
+      })
+      // Tooltip
+      layer.bindTooltip(`${name}${score !== undefined ? ' · 机会 ' + score + ' 分' : ''}`, {
+        sticky: true,
+        className: 'mm-tooltip'
+      })
+    }
+  }).addTo(provinceMap)
+  provinceMap.fitBounds(geoLayer.getBounds())
 }
 
 const loadData = async () => {
@@ -175,6 +288,8 @@ const loadData = async () => {
       cities.value = res.cities || []
       provinces.value = (res.provinces || []).map((p, i) => ({ ...p, rank: i + 1 }))
       if (res.weights) Object.assign(WEIGHTS, res.weights)
+      await nextTick()
+      if (viewMode.value === 'map') initProvinceMap()
     } else {
       ElMessage.error(res.message || '加载失败')
     }
@@ -186,6 +301,13 @@ const loadData = async () => {
 }
 
 onMounted(loadData)
+
+onBeforeUnmount(() => {
+  if (provinceMap) {
+    provinceMap.remove()
+    provinceMap = null
+  }
+})
 </script>
 
 <style scoped>
@@ -247,6 +369,34 @@ onMounted(loadData)
   display: flex;
   gap: 16px;
 }
+.mm-view-tabs {
+  position: absolute;
+  left: 20px;
+  margin-top: 46px;
+  display: flex;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 3px;
+  z-index: 10;
+}
+.mm-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: #606266;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mm-tab:hover { color: #409eff; }
+.mm-tab.active {
+  background: #409eff;
+  color: #fff;
+}
 .mm-left {
   width: 300px;
   flex-shrink: 0;
@@ -256,6 +406,21 @@ onMounted(loadData)
   padding: 14px;
   height: 640px;
   overflow-y: auto;
+}
+.mm-prov-map {
+  width: 100%;
+  height: 590px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.province-map-container {
+  width: 100%;
+  height: 100%;
+}
+.mm-tooltip {
+  font-size: 12px;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 .mm-right {
   flex: 1;
