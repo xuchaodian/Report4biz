@@ -277,7 +277,20 @@ const initProvinceMap = async () => {
       })
     }
   }).addTo(provinceMap)
-  provinceMap.fitBounds(geoLayer.getBounds())
+  // 强制 fit 到中国陆地范围（过滤掉海域矩形 feature）
+  const landBounds = L.latLngBounds([])
+  geoLayer.eachLayer(l => {
+    const name = l.feature?.properties?.name || ''
+    // 跳过海域矩形（无 name 的 feature）
+    if (!name) return
+    const b = l.getBounds()
+    if (b.isValid()) landBounds.extend(b)
+  })
+  if (landBounds.isValid()) {
+    provinceMap.fitBounds(landBounds, { padding: [12, 12], maxZoom: 5 })
+  } else {
+    provinceMap.setView([35.5, 105], 4)
+  }
 }
 
 const loadData = async () => {
