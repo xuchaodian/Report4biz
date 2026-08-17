@@ -54,7 +54,7 @@
           <el-icon><Key /></el-icon>
           <span>API开放</span>
         </router-link>
-        <router-link to="/dashboard" class="nav-item" :class="{ active: $route.path === '/dashboard' }">
+        <router-link to="/dashboard" class="nav-item nav-item-right" :class="{ active: $route.path === '/dashboard' }">
           <el-icon><Monitor /></el-icon>
           <span>数据大屏</span>
         </router-link>
@@ -479,6 +479,7 @@ const doExport = async (type) => {
       color: #666;
       font-size: 14px;
       transition: all 0.3s;
+      white-space: nowrap;
       
       &:hover {
         background: #f5f7fa;
@@ -489,13 +490,16 @@ const doExport = async (type) => {
         background: #ecf5ff;
         color: #409eff;
       }
+
+      &.nav-item-right {
+        margin-left: auto;  /* 数据大屏单独靠右，作为「决策/展示」类放最右 */
+      }
     }
 
     .nav-dropdown {
       display: flex;
       align-items: center;
       cursor: pointer;
-      margin-left: auto;  /* 决策中心+数据大屏整体推至右侧，与左侧数据管理菜单分组 */
 
       .nav-dropdown-trigger {
         display: flex;
