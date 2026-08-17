@@ -7,6 +7,7 @@ import { getDb } from '../models/database.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { CITY_TAGS } from '../data/city-tags.js'
 import { CITY_GEO } from '../data/city-geo.js'
+import { authenticate } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -240,7 +241,7 @@ router.get('/weights', (req, res) => {
  * 更新评分权重（仅管理员）
  * Body: { weights: { marketSize, competition, brandGap, consumption } }
  */
-router.put('/weights', (req, res) => {
+router.put('/weights', authenticate, (req, res) => {
   try {
     if (req.user?.role !== 'admin') {
       return res.status(403).json({ success: false, message: '仅管理员可调整权重' })
