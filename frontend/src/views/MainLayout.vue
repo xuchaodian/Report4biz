@@ -473,7 +473,7 @@ const doExport = async (type) => {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 16px;
+      padding: 8px 12px;  /* 原 16px，左右各缩 4px，给加粗的数据大屏留空间 */
       border-radius: 6px;
       text-decoration: none;
       color: #666;
@@ -499,7 +499,7 @@ const doExport = async (type) => {
       &.dashboard-nav {
         color: #666;
         font-weight: 600;  /* 加粗，突出数据大屏入口 */
-        padding: 7px 12px;  /* 横向 padding 12px（比普通 16px 窄）避免 admin 视角下溢出 */
+        padding: 7px 12px;  /* 横向与普通项一致(12px) */
         border: 1px solid transparent;
         background: transparent;
       }
