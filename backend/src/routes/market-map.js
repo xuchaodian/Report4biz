@@ -6,6 +6,7 @@ import { dirname } from 'path'
 import { getDb } from '../models/database.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { CITY_TAGS } from '../data/city-tags.js'
+import { CITY_GEO } from '../data/city-geo.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -153,6 +154,8 @@ router.get('/opportunity', (req, res) => {
         level: x.level,
         year: x.year,
         tags: CITY_TAGS[x.city] || [],
+        areaKm2: CITY_GEO[x.city]?.areaKm2 || null,
+        districts: CITY_GEO[x.city]?.districts ?? null,
         population: Math.round(x.population),
         gdp: Math.round(x.gdp),
         gdpGrowth: x.gdpGrowth,

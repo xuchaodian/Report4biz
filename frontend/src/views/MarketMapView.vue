@@ -55,6 +55,12 @@
             </template>
           </el-table-column>
           <el-table-column prop="province" label="省份" width="70" />
+          <el-table-column label="面积(km²)" width="90" align="right" sortable prop="areaKm2">
+            <template #default="{ row }">{{ row.areaKm2 ? row.areaKm2.toLocaleString() : '-' }}</template>
+          </el-table-column>
+          <el-table-column label="下辖区县" width="80" align="right" sortable prop="districts">
+            <template #default="{ row }">{{ row.districts !== null ? row.districts + ' 个' : '-' }}</template>
+          </el-table-column>
           <el-table-column label="GDP(亿)" width="90" align="right" sortable prop="gdp">
             <template #default="{ row }">{{ row.gdp ? row.gdp.toLocaleString() : '-' }}</template>
           </el-table-column>
@@ -113,6 +119,8 @@
         <!-- 城市基本面 -->
         <div class="mm-detail-dim-title">城市基本面</div>
         <div class="mm-facts">
+          <div class="mm-fact"><span>面积</span><b>{{ selectedCity.areaKm2 ? selectedCity.areaKm2.toLocaleString() + ' km²' : '-' }}</b></div>
+          <div class="mm-fact"><span>下辖区县</span><b>{{ selectedCity.districts !== null ? selectedCity.districts + ' 个' : '-' }}</b></div>
           <div class="mm-fact"><span>常住人口</span><b>{{ selectedCity.population.toLocaleString() }} 万</b></div>
           <div class="mm-fact"><span>GDP</span><b>{{ selectedCity.gdp.toLocaleString() }} 亿</b></div>
           <div class="mm-fact"><span>社零总额</span><b>{{ selectedCity.retail.toLocaleString() }} 亿</b></div>
