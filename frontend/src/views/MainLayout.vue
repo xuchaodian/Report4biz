@@ -55,7 +55,7 @@
           <span>API开放</span>
         </router-link>
         <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }">
-          <el-icon><Monitor /></el-icon>
+          <el-icon><DataBoard /></el-icon>
           <span>数据大屏</span>
         </router-link>
       </nav>
@@ -196,7 +196,7 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, Monitor } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
@@ -498,6 +498,7 @@ const doExport = async (type) => {
       /* 数据大屏：默认透明（与普通导航项一致），hover 才显示暗色胶囊 */
       &.dashboard-nav {
         color: #666;
+        font-weight: 600;  /* 加粗，突出数据大屏入口 */
         padding: 7px 16px;  /* 8px - 1px边框，总高度与普通导航项对齐 */
         border: 1px solid transparent;
         background: transparent;
@@ -515,6 +516,7 @@ const doExport = async (type) => {
       }
       &.dashboard-nav .el-icon {
         color: #40c4ff;
+        font-size: 18px;  /* 图标放大，更显眼 */
       }
     }
 
