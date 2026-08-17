@@ -8,12 +8,40 @@
           城市市场机会评分：市场规模 × 竞争强度 × 品牌空白 × 消费潜力，找出值得进入的城市
         </p>
       </div>
-      <div class="mm-legend">
-        <span class="mm-legend-item"><i style="background:#67c23a"></i>优先进入 ≥75</span>
-        <span class="mm-legend-item"><i style="background:#e6a23c"></i>可观察 50-74</span>
-        <span class="mm-legend-item"><i style="background:#f56c6c"></i>谨慎 &lt;50</span>
+      <div class="mm-header-right">
+        <div class="mm-legend">
+          <span class="mm-legend-item"><i style="background:#67c23a"></i>优先进入 ≥75</span>
+          <span class="mm-legend-item"><i style="background:#e6a23c"></i>可观察 50-74</span>
+          <span class="mm-legend-item"><i style="background:#f56c6c"></i>谨慎 &lt;50</span>
+        </div>
+        <el-button v-if="isAdmin" size="small" style="margin-left:14px;" @click="weightDialogVisible = true">
+          <el-icon><Setting /></el-icon>&nbsp;权重设置
+        </el-button>
       </div>
     </div>
+
+    <!-- 权重设置对话框 -->
+    <el-dialog v-model="weightDialogVisible" title="⚙️ 评分权重设置" width="480px" :close-on-click-modal="false">
+      <div style="font-size:12px;color:#909399;margin-bottom:14px;">
+        调整四个维度的相对重要性，分数实时重算。权重将归一化为总和 100%。
+      </div>
+      <div v-for="dim in weightDims" :key="dim.key" class="mm-weight-row">
+        <div class="mm-weight-head">
+          <span class="mm-weight-label">{{ dim.label }}</span>
+          <span class="mm-weight-pct">{{ Math.round(weightForm[dim.key] * 100) }}%</span>
+        </div>
+        <el-slider v-model="weightForm[dim.key]" :min="0" :max="1" :step="0.05" :show-tooltip="false" @change="onWeightChange" />
+      </div>
+      <div style="font-size:12px;color:#909399;margin-top:8px;">
+        权重总和：<b style="color:#303133;">{{ Math.round(weightTotal * 100) }}%</b>
+        <span v-if="Math.abs(weightTotal - 1) > 0.001" style="color:#e6a23c;">（将自动归一化）</span>
+      </div>
+      <template #footer>
+        <el-button @click="weightDialogVisible = false">取消</el-button>
+        <el-button @click="resetWeights">恢复默认</el-button>
+        <el-button type="primary" :loading="weightSaving" @click="saveWeights">保存并应用</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 数据概览 -->
     <div class="mm-kpi-row" v-if="summary">
@@ -137,9 +165,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/utils/api'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+const isAdmin = computed(() => userStore.isAdmin)
 
 const loading = ref(false)
 const cities = ref([])
@@ -148,7 +180,48 @@ const selectedProvince = ref('')
 const detailVisible = ref(false)
 const selectedCity = ref(null)
 
-const WEIGHTS = { marketSize: 0.30, competition: 0.25, brandGap: 0.25, consumption: 0.20 }
+const DEFAULT_WEIGHTS = { marketSize: 0.30, competition: 0.25, brandGap: 0.25, consumption: 0.20 }
+const WEIGHTS = { ...DEFAULT_WEIGHTS }
+
+// 权重设置
+const weightDialogVisible = ref(false)
+const weightSaving = ref(false)
+const weightForm = reactive({ ...DEFAULT_WEIGHTS })
+const weightDims = [
+  { key: 'marketSize', label: '市场规模（人口×社零）' },
+  { key: 'competition', label: '竞争强度（竞品密度越低越优）' },
+  { key: 'brandGap', label: '品牌空白度（本品牌渗透率低）' },
+  { key: 'consumption', label: '消费潜力（收入+支出）' }
+]
+const weightTotal = computed(() => Object.values(weightForm).reduce((a, b) => a + (Number(b) || 0), 0))
+
+const onWeightChange = () => {
+  // 拖动时无需保存，仅显示总和提示
+}
+
+const saveWeights = async () => {
+  weightSaving.value = true
+  try {
+    const res = await api.put('/market-map/weights', { weights: { ...weightForm } })
+    if (res.success) {
+      Object.assign(WEIGHTS, res.weights)
+      Object.assign(weightForm, res.weights)
+      ElMessage.success(res.message || '权重已更新，榜单已重算')
+      weightDialogVisible.value = false
+      await loadData()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存权重失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    weightSaving.value = false
+  }
+}
+
+const resetWeights = () => {
+  Object.assign(weightForm, DEFAULT_WEIGHTS)
+}
 
 const levelColor = (lvl) => {
   if (lvl === '优先进入') return '#67c23a'
@@ -200,7 +273,10 @@ const loadData = async () => {
     if (res.success) {
       cities.value = res.cities || []
       provinces.value = (res.provinces || []).map((p, i) => ({ ...p, rank: i + 1 }))
-      if (res.weights) Object.assign(WEIGHTS, res.weights)
+      if (res.weights) {
+        Object.assign(WEIGHTS, res.weights)
+        Object.assign(weightForm, res.weights)
+      }
     } else {
       ElMessage.error(res.message || '加载失败')
     }
@@ -223,6 +299,27 @@ onMounted(loadData)
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+.mm-header-right {
+  display: flex;
+  align-items: center;
+}
+.mm-weight-row {
+  margin-bottom: 6px;
+}
+.mm-weight-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #303133;
+  margin-bottom: 2px;
+}
+.mm-weight-label {
+  font-size: 13px;
+}
+.mm-weight-pct {
+  font-weight: 500;
+  color: #409eff;
 }
 .mm-legend {
   display: flex;

@@ -16,12 +16,31 @@ const router = express.Router()
 // 城市宏观数据（GDP/人口/社零等）
 const cityDataPath = path.join(__dirname, '../data/city_data.json')
 
-// 评分权重（可在前端调整后通过接口覆盖，v1 固定内置）
-const WEIGHTS = {
+// 评分权重默认值（存 market_map_config 表，可在前端调整）
+const DEFAULT_WEIGHTS = {
   marketSize: 0.30,      // 市场规模：常住人口 × 社零
   competition: 0.25,     // 竞争强度（反向）：竞品密度越低分越高
   brandGap: 0.25,        // 品牌空白度：本品牌渗透率越低分越高
   consumption: 0.20      // 消费潜力：人均可支配收入 + 人均消费支出
+}
+
+// 读取权重配置（数据库优先，无则默认；归一化保证总和为 1）
+function getWeights(db) {
+  try {
+    const row = db.prepare(`SELECT weights FROM market_map_config WHERE id = 1`).get()
+    if (row?.weights) {
+      const parsed = JSON.parse(row.weights)
+      const w = { ...DEFAULT_WEIGHTS, ...parsed }
+      const sum = Object.values(w).reduce((a, b) => a + (Number(b) || 0), 0)
+      if (sum > 0) {
+        Object.keys(w).forEach(k => { w[k] = Number(w[k]) / sum })
+      }
+      return w
+    }
+  } catch (e) {
+    console.warn('[MarketMap] 读取权重配置失败，用默认值:', e.message)
+  }
+  return { ...DEFAULT_WEIGHTS }
 }
 
 // 归一化工具：将值映射到 0-100（min-max）
@@ -56,6 +75,7 @@ function loadCityData() {
 router.get('/opportunity', (req, res) => {
   try {
     const db = getDb()
+    const WEIGHTS = getWeights(db)
     const cityData = loadCityData()
 
     // 1. 我的门店按城市计数（全部门店，用于品牌渗透/空白度）
@@ -198,6 +218,57 @@ router.get('/opportunity', (req, res) => {
     })
   } catch (e) {
     console.error('[MarketMap] 机会评分失败:', e)
+    res.status(500).json({ success: false, message: e.message })
+  }
+})
+
+/**
+ * GET /api/market-map/weights
+ * 获取当前评分权重
+ */
+router.get('/weights', (req, res) => {
+  try {
+    const db = getDb()
+    res.json({ success: true, weights: getWeights(db) })
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message })
+  }
+})
+
+/**
+ * PUT /api/market-map/weights
+ * 更新评分权重（仅管理员）
+ * Body: { weights: { marketSize, competition, brandGap, consumption } }
+ */
+router.put('/weights', (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ success: false, message: '仅管理员可调整权重' })
+    }
+    const { weights } = req.body || {}
+    if (!weights || typeof weights !== 'object') {
+      return res.status(400).json({ success: false, message: '缺少权重参数' })
+    }
+    const merged = { ...DEFAULT_WEIGHTS, ...weights }
+    // 校验每个权重为非负数字
+    for (const k of Object.keys(DEFAULT_WEIGHTS)) {
+      const v = Number(merged[k])
+      if (isNaN(v) || v < 0) {
+        return res.status(400).json({ success: false, message: `权重 ${k} 无效` })
+      }
+      merged[k] = v
+    }
+    const sum = Object.values(merged).reduce((a, b) => a + b, 0)
+    if (sum <= 0) {
+      return res.status(400).json({ success: false, message: '权重总和必须大于 0' })
+    }
+    // 归一化到总和 1
+    Object.keys(merged).forEach(k => { merged[k] = Number((merged[k] / sum).toFixed(4)) })
+
+    const db = getDb()
+    db.prepare(`UPDATE market_map_config SET weights = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`).run(JSON.stringify(merged))
+    res.json({ success: true, weights: merged, message: '权重已更新' })
+  } catch (e) {
     res.status(500).json({ success: false, message: e.message })
   }
 })

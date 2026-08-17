@@ -80,6 +80,20 @@ export async function initDatabase() {
     // 已存在，忽略
   }
 
+  // 市场地图（城市洞察）评分权重配置
+  db.run(`
+    CREATE TABLE IF NOT EXISTS market_map_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      weights TEXT DEFAULT '{"marketSize":0.30,"competition":0.25,"brandGap":0.25,"consumption":0.20}',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  try {
+    db.run(`INSERT INTO market_map_config (id) VALUES (1)`)
+  } catch (e) {
+    // 已存在，忽略
+  }
+
   // 转售 API 客户表（第三方调用联通人口数据）
   db.run(`
     CREATE TABLE IF NOT EXISTS api_keys (
