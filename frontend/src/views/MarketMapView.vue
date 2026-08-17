@@ -277,17 +277,19 @@ const initProvinceMap = async () => {
       })
     }
   }).addTo(provinceMap)
-  // 强制 fit 到中国陆地范围（过滤掉海域矩形 feature）
+  // 计算陆地边界 fit；容器 264x590 较窄，fitBounds 计算的 zoom 偏小，
+  // 所以改为：陆地边界的中点 + 手动算合适 zoom（4 适合窄容器展示中国全境）
   const landBounds = L.latLngBounds([])
   geoLayer.eachLayer(l => {
     const name = l.feature?.properties?.name || ''
-    // 跳过海域矩形（无 name 的 feature）
     if (!name) return
     const b = l.getBounds()
     if (b.isValid()) landBounds.extend(b)
   })
   if (landBounds.isValid()) {
-    provinceMap.fitBounds(landBounds, { padding: [12, 12], maxZoom: 5 })
+    const center = landBounds.getCenter()
+    // 窄列下 zoom 4 显示中国全境 + 9 段线；点击省份后再 zoom in
+    provinceMap.setView([center.lat, center.lng], 4)
   } else {
     provinceMap.setView([35.5, 105], 4)
   }
@@ -411,14 +413,14 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 .mm-left {
-  width: 300px;
+  width: 380px;
   flex-shrink: 0;
   background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 10px;
   padding: 14px;
   height: 640px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .mm-prov-map {
   width: 100%;
