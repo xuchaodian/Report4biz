@@ -243,9 +243,6 @@ router.get('/weights', (req, res) => {
  */
 router.put('/weights', authenticate, (req, res) => {
   try {
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({ success: false, message: '仅管理员可调整权重' })
-    }
     const { weights } = req.body || {}
     if (!weights || typeof weights !== 'object') {
       return res.status(400).json({ success: false, message: '缺少权重参数' })

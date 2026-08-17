@@ -14,7 +14,7 @@
           <span class="mm-legend-item"><i style="background:#e6a23c"></i>可观察 50-74</span>
           <span class="mm-legend-item"><i style="background:#f56c6c"></i>谨慎 &lt;50</span>
         </div>
-        <el-button v-if="isAdmin" size="small" style="margin-left:14px;" @click="weightDialogVisible = true">
+        <el-button size="small" style="margin-left:14px;" @click="weightDialogVisible = true">
           <el-icon><Setting /></el-icon>&nbsp;权重设置
         </el-button>
       </div>
@@ -168,10 +168,6 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import api from '@/utils/api'
 import { ElMessage } from 'element-plus'
-import { useUserStore } from '@/stores/user'
-
-const userStore = useUserStore()
-const isAdmin = computed(() => userStore.isAdmin)
 
 const loading = ref(false)
 const cities = ref([])
