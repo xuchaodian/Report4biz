@@ -158,6 +158,15 @@ const filteredCities = computed(() => {
   return cities.value.filter(c => c.province === selectedProvince.value)
 })
 
+const selectProvince = (prov) => {
+  selectedProvince.value = prov === selectedProvince.value ? '' : prov
+}
+
+const openCityDetail = (row) => {
+  selectedCity.value = row
+  detailVisible.value = true
+}
+
 const loadData = async () => {
   loading.value = true
   try {
