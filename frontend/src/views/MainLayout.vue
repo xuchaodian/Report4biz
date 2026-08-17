@@ -54,7 +54,7 @@
           <el-icon><Key /></el-icon>
           <span>API开放</span>
         </router-link>
-        <router-link to="/dashboard" class="nav-item nav-item-right" :class="{ active: $route.path === '/dashboard' }">
+        <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }">
           <el-icon><Monitor /></el-icon>
           <span>数据大屏</span>
         </router-link>
@@ -493,6 +493,27 @@ const doExport = async (type) => {
 
       &.nav-item-right {
         margin-left: auto;  /* 数据大屏单独靠右，作为「决策/展示」类放最右 */
+      }
+
+      /* 数据大屏：暗色胶囊，契合其暗黑页面风格 */
+      &.dashboard-nav {
+        color: #9fb8d9;
+        border: 1px solid rgba(140, 180, 230, 0.25);
+        background: linear-gradient(160deg, #12233d 0%, #0d1c33 100%);
+      }
+      &.dashboard-nav:hover {
+        color: #d6e6ff;
+        border-color: rgba(64, 196, 255, 0.5);
+        background: linear-gradient(160deg, #1a2f4d 0%, #12233d 100%);
+      }
+      &.dashboard-nav.active {
+        color: #ffffff;
+        border-color: #40c4ff;
+        background: linear-gradient(160deg, #1e3a5f 0%, #16304d 100%);
+        box-shadow: 0 0 10px rgba(64, 196, 255, 0.25);
+      }
+      &.dashboard-nav .el-icon {
+        color: #40c4ff;
       }
     }
 
