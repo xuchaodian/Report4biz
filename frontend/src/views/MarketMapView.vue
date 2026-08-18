@@ -74,7 +74,7 @@
         <div class="mm-panel-title">{{ $t('cityInsight.cityRank') }}</div>
         <el-table :data="filteredCities" stripe border size="small" :max-height="640" style="width:100%" @row-click="openCityDetail" class="mm-table">
           <el-table-column type="index" label="#" width="42" align="center" />
-          <el-table-column label="城市" min-width="150">
+          <el-table-column :label="$t('cityInsight.colCity')" min-width="150">
             <template #default="{ row }">
               <div class="mm-city-cell">
                 <span class="mm-city-name">{{ row.city }}</span>
