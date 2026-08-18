@@ -13,7 +13,7 @@ export default {
     cityInsight: '都市インサイト',
     users: 'ユーザー管理',
     apiOpen: 'API開放',
-    dashboard: 'データ大画面',
+    dashboard: 'ダッシュボード',
     account: 'アカウント'
   },
   // ===== ログインページ =====
@@ -97,9 +97,9 @@ export default {
     weightBrandGap: 'ブランド空白度（自社浸透率が低い）',
     weightConsumption: '消費潜在力（所得+支出）'
   },
-  // ===== データ大画面 =====
+  // ===== ダッシュボード =====
   dashboard: {
-    title: 'データ大画面',
+    title: 'ダッシュボード',
     back: '大画面を終了',
     updatedAt: '更新',
     chartTypeDist: '店舗タイプ分布',
