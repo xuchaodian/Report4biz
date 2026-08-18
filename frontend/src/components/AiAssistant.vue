@@ -6,15 +6,16 @@
     <span class="fab-label">AI</span>
   </div>
 
-  <!-- 语言切换（AI 按钮下方） -->
+  <!-- 语言切换（AI 按钮下方，圆形参照 AI 按钮） -->
   <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ai-lang">
-    <div class="ai-lang-trigger" title="语言 / 言語">
-      <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+    <div class="ai-lang-fab" :title="langTitle">
+      <span class="fab-label">{{ langShort }}</span>
     </div>
     <template #dropdown>
       <el-dropdown-menu>
         <el-dropdown-item command="zh">中文</el-dropdown-item>
         <el-dropdown-item command="ja">日本語</el-dropdown-item>
+        <el-dropdown-item command="en">English</el-dropdown-item>
       </el-dropdown-menu>
     </template>
   </el-dropdown>
@@ -104,7 +105,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
@@ -112,6 +113,17 @@ import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'
 
 const { locale } = useI18n()
+// 语言按钮缩写：中 / 日 / EN
+const langShort = computed(() => {
+  if (locale.value === 'ja') return '日'
+  if (locale.value === 'en') return 'EN'
+  return '中'
+})
+const langTitle = computed(() => {
+  if (locale.value === 'en') return 'Language'
+  if (locale.value === 'ja') return '言語'
+  return '语言'
+})
 
 const props = defineProps({
   // 当前地图上下文（门店数量统计等）
@@ -335,32 +347,35 @@ defineExpose({ addFeedback, visible })
 </script>
 
 <style scoped>
-/* 语言切换（AI 按钮下方） */
+/* 语言切换（AI 按钮下方，圆形参照 AI 按钮，蓝色系区分） */
 .ai-lang {
   position: fixed;
   top: 236px;  /* AI 按钮(180+48) 下方留 8px */
   left: 18px;
   z-index: 1199;
 }
-.ai-lang-trigger {
+.ai-lang-fab {
   width: 48px;
-  height: 30px;
-  border-radius: 15px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #dcdfe6;
-  color: #606266;
-  font-size: 12px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  color: #fff;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  transition: all 0.25s;
   user-select: none;
   &:hover {
-    color: #409eff;
-    border-color: #409eff;
-    box-shadow: 0 3px 10px rgba(64, 158, 255, 0.25);
+    transform: scale(1.08);
+    box-shadow: 0 6px 18px rgba(59, 130, 246, 0.5);
+  }
+  .fab-label {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
   }
 }
 /* 悬浮按钮 */

@@ -17,12 +17,13 @@
       <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)">
         <span class="login-lang-trigger">
           <el-icon><ChatLineRound /></el-icon>
-          <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+          <span>{{ langShort }}</span>
         </span>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="zh">中文</el-dropdown-item>
             <el-dropdown-item command="ja">日本語</el-dropdown-item>
+            <el-dropdown-item command="en">English</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -85,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { User, Lock, ChatLineRound } from '@element-plus/icons-vue'
@@ -93,6 +94,12 @@ import { ElMessage } from 'element-plus'
 import { setAppLocale } from '@/i18n'
 
 const { t, locale } = useI18n()
+// 语言按钮缩写：中 / 日 / EN
+const langShort = computed(() => {
+  if (locale.value === 'ja') return '日'
+  if (locale.value === 'en') return 'EN'
+  return '中'
+})
 // rules 里的校验消息需要响应语言
 const rules = reactive({
   username: [{ required: true, message: () => t('login.username'), trigger: 'blur' }],

@@ -1,15 +1,18 @@
 import { createI18n } from 'vue-i18n'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import ja from 'element-plus/es/locale/lang/ja'
+import en from 'element-plus/es/locale/lang/en'
 import zhMessages from './locales/zh'
 import jaMessages from './locales/ja'
+import enMessages from './locales/en'
 
 // 语言持久化（默认中文）
 const savedLang = localStorage.getItem('app_lang') || 'zh'
 
 export const SUPPORTED_LOCALES = [
-  { key: 'zh', label: '中文', ep: zhCn },
-  { key: 'ja', label: '日本語', ep: ja }
+  { key: 'zh', label: '中文', short: '中', ep: zhCn },
+  { key: 'ja', label: '日本語', short: '日', ep: ja },
+  { key: 'en', label: 'English', short: 'EN', ep: en }
 ]
 
 export const i18n = createI18n({
@@ -19,7 +22,8 @@ export const i18n = createI18n({
   fallbackLocale: 'zh',
   messages: {
     zh: zhMessages,
-    ja: jaMessages
+    ja: jaMessages,
+    en: enMessages
   }
 })
 

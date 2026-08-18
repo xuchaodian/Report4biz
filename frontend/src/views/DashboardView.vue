@@ -14,12 +14,13 @@
         <span class="ds-updated">{{ $t('dashboard.updatedAt') }} {{ updatedTime }}</span>
         <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ds-lang">
           <span class="ds-lang-trigger">
-            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+            <span>{{ langShort }}</span>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="zh">中文</el-dropdown-item>
               <el-dropdown-item command="ja">日本語</el-dropdown-item>
+              <el-dropdown-item command="en">English</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -128,6 +129,12 @@ import { setAppLocale } from '@/i18n'
 import * as echarts from 'echarts'
 
 const { t, locale } = useI18n()
+// 语言按钮缩写：中 / 日 / EN
+const langShort = computed(() => {
+  if (locale.value === 'ja') return '日'
+  if (locale.value === 'en') return 'EN'
+  return '中'
+})
 const userStore = useUserStore()
 const data = ref(null)
 const mapRef = ref(null)
