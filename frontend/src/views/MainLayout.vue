@@ -5,6 +5,19 @@
       <div class="header-left">
         <img src="@/assets/logo.png" alt="Logo" class="header-logo">
         <h1 class="logo-text">选址赢家Online</h1>
+        <!-- 语言切换（品牌名右侧） -->
+        <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="lang-switch">
+          <span class="lang-trigger">
+            <el-icon><ChatLineRound /></el-icon>
+            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="zh">中文</el-dropdown-item>
+              <el-dropdown-item command="ja">日本語</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
       
       <nav class="nav-menu">
@@ -61,19 +74,6 @@
       </nav>
 
       <div class="header-right">
-        <!-- 语言切换 -->
-        <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="lang-switch">
-          <span class="lang-trigger">
-            <el-icon><ChatLineRound /></el-icon>
-            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="zh">中文</el-dropdown-item>
-              <el-dropdown-item command="ja">日本語</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
         <el-dropdown @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
             <el-avatar :size="32" :icon="UserFilled" />
@@ -467,6 +467,26 @@ const doExport = async (type) => {
     display: flex;
     align-items: center;
 
+    .lang-switch {
+      margin-left: 10px;
+      .lang-trigger {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: #606266;
+        border: 1px solid #dcdfe6;
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+        &:hover {
+          color: #409eff;
+          border-color: #409eff;
+        }
+      }
+    }
+
     .header-logo {
       width: auto;
       height: 30px;
@@ -571,25 +591,6 @@ const doExport = async (type) => {
   }
   
   .header-right {
-    .lang-switch {
-      margin-right: 8px;
-    }
-    .lang-trigger {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 13px;
-      color: #606266;
-      border: 1px solid #dcdfe6;
-      border-radius: 6px;
-      padding: 5px 10px;
-      cursor: pointer;
-      transition: all 0.2s;
-      &:hover {
-        color: #409eff;
-        border-color: #409eff;
-      }
-    }
     .user-info {
       display: flex;
       align-items: center;
