@@ -5,19 +5,6 @@
       <div class="header-left">
         <img src="@/assets/logo.png" alt="Logo" class="header-logo">
         <h1 class="logo-text">选址赢家Online</h1>
-        <!-- 语言切换（品牌名右侧） -->
-        <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="lang-switch">
-          <span class="lang-trigger">
-            <el-icon><ChatLineRound /></el-icon>
-            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="zh">中文</el-dropdown-item>
-              <el-dropdown-item command="ja">日本語</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
       </div>
       
       <nav class="nav-menu">
@@ -209,13 +196,9 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import { setAppLocale } from '@/i18n'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, ChatLineRound } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-
-const { locale } = useI18n()
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
 import axios from 'axios'
 
@@ -466,26 +449,6 @@ const doExport = async (type) => {
     width: var(--sidebar-width);
     display: flex;
     align-items: center;
-
-    .lang-switch {
-      margin-left: 10px;
-      .lang-trigger {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 12px;
-        color: #606266;
-        border: 1px solid #dcdfe6;
-        border-radius: 6px;
-        padding: 4px 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-        &:hover {
-          color: #409eff;
-          border-color: #409eff;
-        }
-      }
-    }
 
     .header-logo {
       width: auto;

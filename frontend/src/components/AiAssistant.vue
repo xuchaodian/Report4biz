@@ -6,6 +6,19 @@
     <span class="fab-label">AI</span>
   </div>
 
+  <!-- 语言切换（AI 按钮下方） -->
+  <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ai-lang">
+    <div class="ai-lang-trigger" title="语言 / 言語">
+      <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+    </div>
+    <template #dropdown>
+      <el-dropdown-menu>
+        <el-dropdown-item command="zh">中文</el-dropdown-item>
+        <el-dropdown-item command="ja">日本語</el-dropdown-item>
+      </el-dropdown-menu>
+    </template>
+  </el-dropdown>
+
   <!-- 对话框 -->
   <transition name="ai-slide">
     <div v-if="visible" class="ai-panel">
@@ -92,9 +105,13 @@
 
 <script setup>
 import { ref, nextTick, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'
+
+const { locale } = useI18n()
 
 const props = defineProps({
   // 当前地图上下文（门店数量统计等）
@@ -318,6 +335,34 @@ defineExpose({ addFeedback, visible })
 </script>
 
 <style scoped>
+/* 语言切换（AI 按钮下方） */
+.ai-lang {
+  position: fixed;
+  top: 236px;  /* AI 按钮(180+48) 下方留 8px */
+  left: 18px;
+  z-index: 1199;
+}
+.ai-lang-trigger {
+  width: 48px;
+  height: 30px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #dcdfe6;
+  color: #606266;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s;
+  user-select: none;
+  &:hover {
+    color: #409eff;
+    border-color: #409eff;
+    box-shadow: 0 3px 10px rgba(64, 158, 255, 0.25);
+  }
+}
 /* 悬浮按钮 */
 .ai-fab {
   position: fixed;
