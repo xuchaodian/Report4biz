@@ -4,7 +4,7 @@
     <div class="ds-header">
       <div class="ds-title-left">
         <div class="ds-logo-bar"></div>
-        <h1 class="ds-title">选址赢家 Online · {{ $t('dashboard.title') }}</h1>
+        <h1 class="ds-title">{{ $t('dashboard.title') }}</h1>
       </div>
       <div class="ds-clock">
         <span class="ds-time">{{ now }}</span>
