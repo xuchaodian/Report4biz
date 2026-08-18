@@ -4,16 +4,27 @@
     <div class="ds-header">
       <div class="ds-title-left">
         <div class="ds-logo-bar"></div>
-        <h1 class="ds-title">选址赢家 Online · 数据大屏</h1>
+        <h1 class="ds-title">选址赢家 Online · {{ $t('dashboard.title') }}</h1>
       </div>
       <div class="ds-clock">
         <span class="ds-time">{{ now }}</span>
         <span class="ds-date">{{ today }}</span>
       </div>
       <div class="ds-header-right">
-        <span class="ds-updated">更新 {{ updatedTime }}</span>
+        <span class="ds-updated">{{ $t('dashboard.updatedAt') }} {{ updatedTime }}</span>
+        <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ds-lang">
+          <span class="ds-lang-trigger">
+            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="zh">中文</el-dropdown-item>
+              <el-dropdown-item command="ja">日本語</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button size="small" class="ds-exit-btn" @click="exitScreen">
-          <el-icon><Close /></el-icon>退出大屏
+          <el-icon><Close /></el-icon>{{ $t('dashboard.back') }}
         </el-button>
       </div>
     </div>
@@ -28,7 +39,7 @@
           </div>
         </div>
         <div class="ds-panel ds-chart-panel">
-          <div class="ds-chart-title">门店类型分布</div>
+          <div class="ds-chart-title">{{ $t('dashboard.chartTypeDist') }}</div>
           <div ref="typeChartRef" class="ds-chart"></div>
         </div>
       </div>
@@ -38,17 +49,17 @@
         <div class="ds-panel ds-map-panel">
           <div id="ds-map" ref="mapRef" class="ds-map"></div>
           <div class="ds-map-overlay">
-            <span class="ds-map-title">全国门店分布</span>
-            <span class="ds-map-sub">我的门店 {{ data?.kpi?.markers ?? 0 }} · 竞品 {{ data?.kpi?.competitors ?? 0 }}</span>
+            <span class="ds-map-title">{{ $t('dashboard.chartMapTitle') }}</span>
+            <span class="ds-map-sub">{{ $t('dashboard.kpiMyStores') }} {{ data?.kpi?.markers ?? 0 }} · {{ $t('dashboard.kpiCompetitors') }} {{ data?.kpi?.competitors ?? 0 }}</span>
           </div>
           <!-- 图层开关（右上角） -->
           <div class="ds-layer-switch">
-            <div class="ds-layer-level">{{ aggLevel === 'province' ? '省级聚合 · 放大查看城市' : '城市级聚合' }}</div>
+            <div class="ds-layer-level">{{ aggLevel === 'province' ? $t('dashboard.mapAggProvince') : $t('dashboard.mapAggCity') }}</div>
             <div class="ds-layer-group">
               <div class="ds-layer-group-head">
                 <span class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#40c4ff;"></span>
-                  <span>我的门店</span>
+                  <span>{{ $t('dashboard.kpiMyStores') }}</span>
                   <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
                 </span>
               </div>
@@ -64,7 +75,7 @@
               <div class="ds-layer-group-head">
                 <span class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
-                  <span>竞品门店</span>
+                  <span>{{ $t('dashboard.kpiCompetitors') }}</span>
                   <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
                 </span>
               </div>
@@ -84,11 +95,11 @@
       <div class="ds-col ds-col-right">
         <div class="ds-chart-grid">
           <div class="ds-panel ds-chart-panel ds-chart-panel-lg">
-            <div class="ds-chart-title">门店城市（已开业） TOP10</div>
+            <div class="ds-chart-title">{{ $t('dashboard.chartCityTop') }}</div>
             <div ref="cityChartRef" class="ds-chart"></div>
           </div>
           <div class="ds-panel ds-chart-panel">
-            <div class="ds-chart-title">竞品品牌 TOP10</div>
+            <div class="ds-chart-title">{{ $t('dashboard.chartBrandDist') }}</div>
             <div ref="brandChartRef" class="ds-chart"></div>
           </div>
         </div>
@@ -97,7 +108,7 @@
 
     <!-- 底部跑马灯 -->
     <div class="ds-marquee">
-      <span class="ds-marquee-label">数据简报</span>
+      <span class="ds-marquee-label">{{ $t('dashboard.marqueeLabel') }}</span>
       <div class="ds-marquee-track">
         <span class="ds-marquee-text">{{ marqueeText }}</span>
       </div>
@@ -107,13 +118,16 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import api from '@/utils/api'
 import { useUserStore } from '@/stores/user'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Close } from '@element-plus/icons-vue'
+import { setAppLocale } from '@/i18n'
 import * as echarts from 'echarts'
 
+const { t, locale } = useI18n()
 const userStore = useUserStore()
 const data = ref(null)
 const mapRef = ref(null)
@@ -153,20 +167,20 @@ let charts = []
 const kpiList = computed(() => {
   const k = data.value?.kpi || {}
   return [
-    { label: '我的门店', value: k.markers ?? 0, color: '#40c4ff' },
-    { label: '竞品门店', value: k.competitors ?? 0, color: '#ff6b6b' },
-    { label: '覆盖省份', value: k.markerProvCount ?? 0, color: '#40c4ff' },
-    { label: '竞品省份', value: k.compProvCount ?? 0, color: '#ff6b6b' },
-    { label: '覆盖城市', value: k.markerCities ?? 0, color: '#40c4ff' },
-    { label: '竞品城市', value: k.compCities ?? 0, color: '#ff6b6b' },
-    { label: '购买次数', value: k.myPurchases ?? 0, color: '#ffd166' },
-    { label: '剩余次数', value: k.quotaRemaining ?? 0, color: '#ffd166' }
+    { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiMyProvinces'), value: k.markerProvCount ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiMyCities'), value: k.markerCities ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiCompCities'), value: k.compCities ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiPurchases'), value: k.myPurchases ?? 0, color: '#ffd166' },
+    { label: t('dashboard.kpiQuota'), value: k.quotaRemaining ?? 0, color: '#ffd166' }
   ]
 })
 
 const marqueeText = computed(() => {
   const k = data.value?.kpi || {}
-  return `全国共 ${k.markers ?? 0} 家门店、${k.competitors ?? 0} 家竞品 · 覆盖 ${k.markerCities ?? 0} 个城市 · 累计购买 ${k.myPurchases ?? 0} 次 · 系统数据每小时自动刷新`
+  return t('dashboard.marquee', { markers: k.markers ?? 0, competitors: k.competitors ?? 0, cities: k.markerCities ?? 0, purchases: k.myPurchases ?? 0 })
 })
 
 const updateClock = () => {
@@ -492,6 +506,19 @@ onBeforeUnmount(() => {
 
 .ds-header-right { display: flex; align-items: center; gap: 12px; }
 .ds-updated { font-size: 12px; color: #7e8ca6; }
+.ds-lang-trigger {
+  font-size: 12px;
+  color: #9fb8d9;
+  border: 1px solid rgba(140, 180, 230, 0.3);
+  border-radius: 5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.ds-lang-trigger:hover {
+  color: #40c4ff;
+  border-color: rgba(64, 196, 255, 0.6);
+}
 .ds-exit-btn { background: rgba(64, 196, 255, 0.15); border: 1px solid rgba(64, 196, 255, 0.4); color: #40c4ff; }
 
 /* 主体 */

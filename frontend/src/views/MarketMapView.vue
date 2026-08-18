@@ -3,27 +3,27 @@
     <!-- 页头 -->
     <div class="mm-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🔍 城市洞察</h2>
+        <h2 style="margin:0;font-size:18px;">🔍 {{ $t('cityInsight.title') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
-          城市市场机会评分：市场规模 × 竞争强度 × 品牌空白 × 消费潜力，找出值得进入的城市
+          {{ $t('cityInsight.desc') }}
         </p>
       </div>
       <div class="mm-header-right">
         <div class="mm-legend">
-          <span class="mm-legend-item"><i style="background:#67c23a"></i>优先进入 ≥75</span>
-          <span class="mm-legend-item"><i style="background:#e6a23c"></i>可观察 50-74</span>
-          <span class="mm-legend-item"><i style="background:#f56c6c"></i>谨慎 &lt;50</span>
+          <span class="mm-legend-item"><i style="background:#67c23a"></i>{{ $t('cityInsight.legendPriority') }}</span>
+          <span class="mm-legend-item"><i style="background:#e6a23c"></i>{{ $t('cityInsight.legendWatch') }}</span>
+          <span class="mm-legend-item"><i style="background:#f56c6c"></i>{{ $t('cityInsight.legendCaution') }}</span>
         </div>
         <el-button size="small" style="margin-left:14px;" @click="weightDialogVisible = true">
-          <el-icon><Setting /></el-icon>&nbsp;权重设置
+          <el-icon><Setting /></el-icon>&nbsp;{{ $t('cityInsight.weightSetting') }}
         </el-button>
       </div>
     </div>
 
     <!-- 权重设置对话框 -->
-    <el-dialog v-model="weightDialogVisible" title="⚙️ 评分权重设置" width="480px" :close-on-click-modal="false">
+    <el-dialog v-model="weightDialogVisible" :title="'⚙️ ' + $t('cityInsight.weightDialogTitle')" width="480px" :close-on-click-modal="false">
       <div style="font-size:12px;color:#909399;margin-bottom:14px;">
-        调整四个维度的相对重要性，分数实时重算。权重将归一化为总和 100%。
+        {{ $t('cityInsight.weightDialogDesc') }}
       </div>
       <div v-for="dim in weightDims" :key="dim.key" class="mm-weight-row">
         <div class="mm-weight-head">
@@ -33,29 +33,29 @@
         <el-slider v-model="weightForm[dim.key]" :min="0" :max="1" :step="0.05" :show-tooltip="false" @change="onWeightChange" />
       </div>
       <div style="font-size:12px;color:#909399;margin-top:8px;">
-        权重总和：<b style="color:#303133;">{{ Math.round(weightTotal * 100) }}%</b>
-        <span v-if="Math.abs(weightTotal - 1) > 0.001" style="color:#e6a23c;">（将自动归一化）</span>
+        {{ $t('cityInsight.weightTotal') }}：<b style="color:#303133;">{{ Math.round(weightTotal * 100) }}%</b>
+        <span v-if="Math.abs(weightTotal - 1) > 0.001" style="color:#e6a23c;">{{ $t('cityInsight.willNormalize') }}</span>
       </div>
       <template #footer>
-        <el-button @click="weightDialogVisible = false">取消</el-button>
-        <el-button @click="resetWeights">恢复默认</el-button>
-        <el-button type="primary" :loading="weightSaving" @click="saveWeights">保存并应用</el-button>
+        <el-button @click="weightDialogVisible = false">{{ $t('cityInsight.cancel') }}</el-button>
+        <el-button @click="resetWeights">{{ $t('cityInsight.resetDefault') }}</el-button>
+        <el-button type="primary" :loading="weightSaving" @click="saveWeights">{{ $t('cityInsight.saveApply') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 数据概览 -->
     <div class="mm-kpi-row" v-if="summary">
-      <div class="mm-kpi"><div class="mm-kpi-num">{{ summary.totalCities }}</div><div class="mm-kpi-label">覆盖城市</div></div>
-      <div class="mm-kpi"><div class="mm-kpi-num c-green">{{ summary.priority }}</div><div class="mm-kpi-label">优先进入</div></div>
-      <div class="mm-kpi"><div class="mm-kpi-num c-amber">{{ summary.watch }}</div><div class="mm-kpi-label">可观察</div></div>
-      <div class="mm-kpi"><div class="mm-kpi-num c-red">{{ summary.caution }}</div><div class="mm-kpi-label">谨慎</div></div>
-      <div class="mm-kpi"><div class="mm-kpi-num">{{ summary.provinceCount }}</div><div class="mm-kpi-label">涉及省份</div></div>
+      <div class="mm-kpi"><div class="mm-kpi-num">{{ summary.totalCities }}</div><div class="mm-kpi-label">{{ $t('cityInsight.kpiCities') }}</div></div>
+      <div class="mm-kpi"><div class="mm-kpi-num c-green">{{ summary.priority }}</div><div class="mm-kpi-label">{{ $t('cityInsight.kpiPriority') }}</div></div>
+      <div class="mm-kpi"><div class="mm-kpi-num c-amber">{{ summary.watch }}</div><div class="mm-kpi-label">{{ $t('cityInsight.kpiWatch') }}</div></div>
+      <div class="mm-kpi"><div class="mm-kpi-num c-red">{{ summary.caution }}</div><div class="mm-kpi-label">{{ $t('cityInsight.kpiCaution') }}</div></div>
+      <div class="mm-kpi"><div class="mm-kpi-num">{{ summary.provinceCount }}</div><div class="mm-kpi-label">{{ $t('cityInsight.kpiProvinces') }}</div></div>
     </div>
 
     <div class="mm-body">
       <!-- 左：省份机会榜单 -->
       <div class="mm-left">
-        <div class="mm-panel-title">省份机会指数 <span class="mm-sub">(省内最优城市)</span></div>
+        <div class="mm-panel-title">{{ $t('cityInsight.provinceTitle') }} <span class="mm-sub">{{ $t('cityInsight.provinceSub') }}</span></div>
         <div class="mm-prov-list" v-loading="loading">
           <div v-for="p in provinces" :key="p.province" class="mm-prov-item" :class="{ selected: selectedProvince === p.province }" @click="selectProvince(p.province)">
             <div class="mm-prov-rank">{{ p.rank }}</div>
@@ -64,14 +64,14 @@
               <div class="mm-prov-fill" :style="{ width: p.opportunity + '%', background: levelColor(p.level) }"></div>
             </div>
             <div class="mm-prov-score">{{ p.opportunity }}</div>
-            <div class="mm-prov-level" :style="{ color: levelColor(p.level) }">{{ p.level }}</div>
+            <div class="mm-prov-level" :style="{ color: levelColor(p.level) }">{{ levelText(p.level) }}</div>
           </div>
         </div>
       </div>
 
       <!-- 右：城市机会 Top 榜 -->
       <div class="mm-right">
-        <div class="mm-panel-title">城市机会排行榜</div>
+        <div class="mm-panel-title">{{ $t('cityInsight.cityRank') }}</div>
         <el-table :data="filteredCities" stripe border size="small" :max-height="640" style="width:100%" @row-click="openCityDetail" class="mm-table">
           <el-table-column type="index" label="#" width="42" align="center" />
           <el-table-column label="城市" min-width="150">
@@ -82,17 +82,17 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="province" label="省份" width="70" />
-          <el-table-column label="面积(km²)" width="90" align="right" sortable prop="areaKm2">
+          <el-table-column prop="province" :label="$t('cityInsight.colProvince')" width="70" />
+          <el-table-column :label="$t('cityInsight.colArea')" width="90" align="right" sortable prop="areaKm2">
             <template #default="{ row }">{{ row.areaKm2 ? row.areaKm2.toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column label="下辖区县" width="80" align="right" sortable prop="districts">
+          <el-table-column :label="$t('cityInsight.colDistricts')" width="80" align="right" sortable prop="districts">
             <template #default="{ row }">{{ row.districts !== null ? row.districts + ' 个' : '-' }}</template>
           </el-table-column>
-          <el-table-column label="GDP(亿)" width="90" align="right" sortable prop="gdp">
+          <el-table-column :label="$t('cityInsight.colGdp')" width="90" align="right" sortable prop="gdp">
             <template #default="{ row }">{{ row.gdp ? row.gdp.toLocaleString() : '-' }}</template>
           </el-table-column>
-          <el-table-column label="GDP增速" width="90" align="right" sortable prop="gdpGrowth">
+          <el-table-column :label="$t('cityInsight.colGdpGrowth')" width="90" align="right" sortable prop="gdpGrowth">
             <template #default="{ row }">
               <span v-if="row.gdpGrowth !== undefined" :style="{ color: row.gdpGrowth >= 0 ? '#67c23a' : '#f56c6c' }">
                 {{ row.gdpGrowth >= 0 ? '+' : '' }}{{ row.gdpGrowth }}%
@@ -100,10 +100,10 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="population" label="人口(万)" width="80" align="right" sortable />
-          <el-table-column prop="myStores" label="我的店" width="70" align="right" sortable />
-          <el-table-column prop="compStores" label="竞品" width="70" align="right" sortable />
-          <el-table-column label="市场机会" width="130" align="center">
+          <el-table-column prop="population" :label="$t('cityInsight.colPopulation')" width="80" align="right" sortable />
+          <el-table-column prop="myStores" :label="$t('cityInsight.colMyStores')" width="70" align="right" sortable />
+          <el-table-column prop="compStores" :label="$t('cityInsight.colCompStores')" width="70" align="right" sortable />
+          <el-table-column :label="$t('cityInsight.colOpportunity')" width="130" align="center">
             <template #default="{ row }">
               <div class="mm-cell-score">
                 <div class="mm-cell-bar"><div class="mm-cell-fill" :style="{ width: row.opportunity + '%', background: levelColor(row.level) }"></div></div>
@@ -111,9 +111,9 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="建议" width="90" align="center">
+          <el-table-column :label="$t('cityInsight.colSuggestion')" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.level === '优先进入' ? 'success' : (row.level === '可观察' ? 'warning' : 'danger')" size="small">{{ row.level }}</el-tag>
+              <el-tag :type="row.level === '优先进入' ? 'success' : (row.level === '可观察' ? 'warning' : 'danger')" size="small">{{ levelText(row.level) }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -121,21 +121,21 @@
     </div>
 
     <!-- 城市详情抽屉 -->
-    <el-drawer v-model="detailVisible" :title="selectedCity ? selectedCity.city + ' 市场分析' : ''" size="420px">
+    <el-drawer v-model="detailVisible" :title="selectedCity ? selectedCity.city + ' · ' + $t('cityInsight.detailTitle') : ''" size="420px">
       <template v-if="selectedCity">
         <!-- 总分 -->
         <div class="mm-detail-score" :style="{ borderColor: levelColor(selectedCity.level) }">
           <div class="mm-detail-num" :style="{ color: levelColor(selectedCity.level) }">{{ selectedCity.opportunity }}</div>
-          <div class="mm-detail-level" :style="{ color: levelColor(selectedCity.level) }">{{ selectedCity.level }}</div>
-          <div class="mm-detail-tip">市场机会综合评分（0-100）</div>
+          <div class="mm-detail-level" :style="{ color: levelColor(selectedCity.level) }">{{ levelText(selectedCity.level) }}</div>
+          <div class="mm-detail-tip">{{ $t('cityInsight.detailScoreTip') }}</div>
         </div>
 
         <!-- 四维评分 -->
-        <div class="mm-detail-dim-title">评分维度明细</div>
+        <div class="mm-detail-dim-title">{{ $t('cityInsight.dimTitle') }}</div>
         <div class="mm-dim" v-for="dim in dims" :key="dim.key">
           <div class="mm-dim-head">
             <span>{{ dim.label }}</span>
-            <span class="mm-dim-weight">权重 {{ Math.round(dim.weight * 100) }}%</span>
+            <span class="mm-dim-weight">{{ $t('cityInsight.weight') }} {{ Math.round(dim.weight * 100) }}%</span>
             <span class="mm-dim-val" :style="{ color: dimScoreColor(dim.key) }">{{ selectedCity.scores[dim.key] }}</span>
           </div>
           <div class="mm-dim-bar">
@@ -145,19 +145,19 @@
         </div>
 
         <!-- 城市基本面 -->
-        <div class="mm-detail-dim-title">城市基本面</div>
+        <div class="mm-detail-dim-title">{{ $t('cityInsight.facts') }}</div>
         <div class="mm-facts">
-          <div class="mm-fact"><span>面积</span><b>{{ selectedCity.areaKm2 ? selectedCity.areaKm2.toLocaleString() + ' km²' : '-' }}</b></div>
-          <div class="mm-fact"><span>下辖区县</span><b>{{ selectedCity.districts !== null ? selectedCity.districts + ' 个' : '-' }}</b></div>
-          <div class="mm-fact"><span>常住人口</span><b>{{ selectedCity.population.toLocaleString() }} 万</b></div>
-          <div class="mm-fact"><span>GDP</span><b>{{ selectedCity.gdp.toLocaleString() }} 亿</b></div>
-          <div class="mm-fact"><span>社零总额</span><b>{{ selectedCity.retail.toLocaleString() }} 亿</b></div>
-          <div class="mm-fact"><span>人均可支配收入</span><b>{{ selectedCity.income.toLocaleString() }} 元</b></div>
-          <div class="mm-fact"><span>人均消费支出</span><b>{{ selectedCity.expense.toLocaleString() }} 元</b></div>
-          <div class="mm-fact"><span>城市等级</span><b>{{ selectedCity.level || '-' }}</b></div>
-          <div class="mm-fact"><span>我的门店</span><b>{{ selectedCity.myStores }} 家</b></div>
-          <div class="mm-fact"><span>竞品门店</span><b>{{ selectedCity.compStores }} 家</b></div>
-          <div class="mm-fact"><span>品牌门店</span><b>{{ selectedCity.brandStores }} 家</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factArea') }}</span><b>{{ selectedCity.areaKm2 ? selectedCity.areaKm2.toLocaleString() + ' km²' : '-' }}</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factDistricts') }}</span><b>{{ selectedCity.districts !== null ? selectedCity.districts + ' 个' : '-' }}</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factPopulation') }}</span><b>{{ selectedCity.population.toLocaleString() }} 万</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factGdp') }}</span><b>{{ selectedCity.gdp.toLocaleString() }} 亿</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factRetail') }}</span><b>{{ selectedCity.retail.toLocaleString() }} 亿</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factIncome') }}</span><b>{{ selectedCity.income.toLocaleString() }} 元</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factExpense') }}</span><b>{{ selectedCity.expense.toLocaleString() }} 元</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factLevel') }}</span><b>{{ selectedCity.level || '-' }}</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factMyStores') }}</span><b>{{ selectedCity.myStores }} 家</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factCompStores') }}</span><b>{{ selectedCity.compStores }} 家</b></div>
+          <div class="mm-fact"><span>{{ $t('cityInsight.factBrandStores') }}</span><b>{{ selectedCity.brandStores }} 家</b></div>
         </div>
       </template>
     </el-drawer>
@@ -166,8 +166,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import api from '@/utils/api'
 import { ElMessage } from 'element-plus'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const cities = ref([])
@@ -179,16 +182,18 @@ const selectedCity = ref(null)
 const DEFAULT_WEIGHTS = { marketSize: 0.30, competition: 0.25, brandGap: 0.25, consumption: 0.20 }
 const WEIGHTS = { ...DEFAULT_WEIGHTS }
 
+// 权重维度（label 随语言）
+const weightDims = computed(() => [
+  { key: 'marketSize', label: t('cityInsight.weightMarket') },
+  { key: 'competition', label: t('cityInsight.weightCompetition') },
+  { key: 'brandGap', label: t('cityInsight.weightBrandGap') },
+  { key: 'consumption', label: t('cityInsight.weightConsumption') }
+])
+
 // 权重设置
 const weightDialogVisible = ref(false)
 const weightSaving = ref(false)
 const weightForm = reactive({ ...DEFAULT_WEIGHTS })
-const weightDims = [
-  { key: 'marketSize', label: '市场规模（人口×社零）' },
-  { key: 'competition', label: '竞争强度（竞品密度越低越优）' },
-  { key: 'brandGap', label: '品牌空白度（本品牌渗透率低）' },
-  { key: 'consumption', label: '消费潜力（收入+支出）' }
-]
 const weightTotal = computed(() => Object.values(weightForm).reduce((a, b) => a + (Number(b) || 0), 0))
 
 const onWeightChange = () => {
@@ -202,14 +207,14 @@ const saveWeights = async () => {
     if (res.success) {
       Object.assign(WEIGHTS, res.weights)
       Object.assign(weightForm, res.weights)
-      ElMessage.success(res.message || '权重已更新，榜单已重算')
+      ElMessage.success(res.message || t('cityInsight.weightSaved'))
       weightDialogVisible.value = false
       await loadData()
     } else {
       ElMessage.error(res.message || '保存失败')
     }
   } catch (e) {
-    ElMessage.error('保存权重失败: ' + (e.response?.data?.message || e.message))
+    ElMessage.error(t('cityInsight.weightSaveFail') + ': ' + (e.response?.data?.message || e.message))
   } finally {
     weightSaving.value = false
   }
@@ -223,6 +228,13 @@ const levelColor = (lvl) => {
   if (lvl === '优先进入') return '#67c23a'
   if (lvl === '可观察') return '#e6a23c'
   return '#f56c6c'
+}
+
+// 等级显示文案（业务值保持中文，展示层按语言翻译）
+const levelText = (lvl) => {
+  if (lvl === '优先进入') return t('cityInsight.legendPriority').replace(' ≥75', '')
+  if (lvl === '可观察') return t('cityInsight.legendWatch').replace(' 50-74', '')
+  return t('cityInsight.legendCaution').replace(' <50', '')
 }
 
 const dimScoreColor = (key) => {
@@ -277,7 +289,7 @@ const loadData = async () => {
       ElMessage.error(res.message || '加载失败')
     }
   } catch (e) {
-    ElMessage.error('加载城市洞察失败: ' + (e.response?.data?.message || e.message))
+    ElMessage.error(t('cityInsight.loadFail') + ': ' + (e.response?.data?.message || e.message))
   } finally {
     loading.value = false
   }

@@ -12,11 +12,27 @@
     </div>
     <div class="bg-overlay" />
 
+    <!-- 语言切换（右上角） -->
+    <div class="login-lang">
+      <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)">
+        <span class="login-lang-trigger">
+          <el-icon><ChatLineRound /></el-icon>
+          <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+        </span>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="zh">中文</el-dropdown-item>
+            <el-dropdown-item command="ja">日本語</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
+
     <div class="login-box">
       <div class="login-header">
         <img src="@/assets/logo.png" alt="Logo" class="login-logo">
-        <h1>选址赢家Online</h1>
-        <p>智能选址分析平台</p>
+        <h1>{{ $t('login.title') }}</h1>
+        <p>{{ $t('login.subtitle') }}</p>
       </div>
       
       <el-form
@@ -29,7 +45,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="请输入用户名"
+            :placeholder="$t('login.username')"
             size="large"
             :prefix-icon="User"
           />
@@ -39,7 +55,7 @@
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="请输入密码"
+            :placeholder="$t('login.password')"
             size="large"
             :prefix-icon="Lock"
             show-password
@@ -55,14 +71,14 @@
             class="login-btn"
             @click="handleLogin"
           >
-            登 录
+            {{ $t('login.submit') }}
           </el-button>
         </el-form-item>
       </el-form>
       
       <div class="login-footer">
-        <span>还没有账号？</span>
-        <router-link to="/register">立即注册</router-link>
+        <span>{{ $t('login.noAccount') }}</span>
+        <router-link to="/register">{{ $t('login.register') }}</router-link>
       </div>
     </div>
   </div>
@@ -71,8 +87,17 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, Lock } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+import { User, Lock, ChatLineRound } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { setAppLocale } from '@/i18n'
+
+const { t, locale } = useI18n()
+// rules 里的校验消息需要响应语言
+const rules = reactive({
+  username: [{ required: true, message: () => t('login.username'), trigger: 'blur' }],
+  password: [{ required: true, message: () => t('login.password'), trigger: 'blur' }]
+})
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
@@ -83,11 +108,6 @@ const form = reactive({
   username: '',
   password: ''
 })
-
-const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
-}
 
 // 登录页背景图
 const bgImages = [
@@ -116,7 +136,7 @@ const handleLogin = async () => {
   
   const result = await userStore.login(form.username, form.password)
   if (result.success) {
-    ElMessage.success('登录成功')
+    ElMessage.success(t('login.success'))
     router.push('/')
   } else {
     ElMessage.error(result.message)
@@ -164,6 +184,29 @@ const handleLogin = async () => {
 }
 
 /* 登录框 */
+.login-lang {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 20;
+}
+.login-lang-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.login-lang-trigger:hover {
+  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.5);
+}
 .login-box {
   position: relative;
   z-index: 2;

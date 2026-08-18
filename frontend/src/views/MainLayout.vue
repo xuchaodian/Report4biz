@@ -10,32 +10,32 @@
       <nav class="nav-menu">
         <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
           <el-icon><MapLocation /></el-icon>
-          <span>地图</span>
+          <span>{{ $t('nav.map') }}</span>
         </router-link>
         <router-link to="/data" class="nav-item" :class="{ active: $route.path === '/data' }">
           <el-icon><DataAnalysis /></el-icon>
-          <span>我的门店</span>
+          <span>{{ $t('nav.myStores') }}</span>
         </router-link>
         <router-link to="/competitors" class="nav-item" :class="{ active: $route.path === '/competitors' }">
           <el-icon><DataLine /></el-icon>
-          <span>竞品门店</span>
+          <span>{{ $t('nav.competitors') }}</span>
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }">
           <el-icon><MapLocation /></el-icon>
-          <span>品牌门店</span>
+          <span>{{ $t('nav.brandStores') }}</span>
         </router-link>
         <router-link to="/shopping-centers" class="nav-item" :class="{ active: $route.path === '/shopping-centers' }">
           <el-icon><Shop /></el-icon>
-          <span>购物中心</span>
+          <span>{{ $t('nav.shoppingCenters') }}</span>
         </router-link>
         <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }">
           <el-icon><Document /></el-icon>
-          <span>统计数据</span>
+          <span>{{ $t('nav.statistics') }}</span>
         </router-link>
         <el-dropdown trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
           <span class="nav-dropdown-trigger">
             <el-icon><Compass /></el-icon>
-            <span>选址工作台</span>
+            <span>{{ $t('nav.siteWorkbench') }}</span>
             <el-icon class="nav-dropdown-arrow"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
@@ -48,19 +48,32 @@
         </el-dropdown>
         <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
           <el-icon><User /></el-icon>
-          <span>用户</span>
+          <span>{{ $t('nav.users') }}</span>
         </router-link>
         <router-link v-if="userStore.isAdmin" to="/resale" class="nav-item" :class="{ active: $route.path === '/resale' }">
           <el-icon><Key /></el-icon>
-          <span>API开放</span>
+          <span>{{ $t('nav.apiOpen') }}</span>
         </router-link>
         <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }">
           <el-icon><DataBoard /></el-icon>
-          <span>数据大屏</span>
+          <span>{{ $t('nav.dashboard') }}</span>
         </router-link>
       </nav>
 
       <div class="header-right">
+        <!-- 语言切换 -->
+        <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="lang-switch">
+          <span class="lang-trigger">
+            <el-icon><ChatLineRound /></el-icon>
+            <span>{{ locale === 'ja' ? '日本語' : '中文' }}</span>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="zh">中文</el-dropdown-item>
+              <el-dropdown-item command="ja">日本語</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-dropdown @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
             <el-avatar :size="32" :icon="UserFilled" />
@@ -196,9 +209,13 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+import { setAppLocale } from '@/i18n'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, ChatLineRound } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+
+const { locale } = useI18n()
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
 import axios from 'axios'
 
@@ -554,6 +571,25 @@ const doExport = async (type) => {
   }
   
   .header-right {
+    .lang-switch {
+      margin-right: 8px;
+    }
+    .lang-trigger {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      color: #606266;
+      border: 1px solid #dcdfe6;
+      border-radius: 6px;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      &:hover {
+        color: #409eff;
+        border-color: #409eff;
+      }
+    }
     .user-info {
       display: flex;
       align-items: center;
