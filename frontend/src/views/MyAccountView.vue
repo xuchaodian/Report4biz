@@ -982,7 +982,7 @@ const renderCompareCharts = async () => {
         itemStyle: { color: colorPalette[di] }
       })
     })
-    const chart = echarts.init(popEl)
+    const chart = echarts.init(popEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: dims.map(d => d.name) },
@@ -1015,7 +1015,7 @@ const renderCompareCharts = async () => {
         lineStyle: { width: 2 }
       })
     })
-    const chart = echarts.init(flowEl)
+    const chart = echarts.init(flowEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: orders.map(o => o.store_name), type: 'scroll' },
@@ -1044,7 +1044,7 @@ const renderCompareCharts = async () => {
       }),
       itemStyle: { color: colorPalette[li] }
     }))
-    const chart = echarts.init(consumeEl)
+    const chart = echarts.init(consumeEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: levels.map(l => l.name) },
@@ -2423,7 +2423,7 @@ const initAllCharts = () => {
       const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
       if (!option) continue
       
-      const chart = echarts.init(dom)
+      const chart = echarts.init(dom, null, { renderer: 'canvas', preserveDrawingBuffer: true })
       chart.setOption(option)
       chartInst.value[item.chartKey] = chart
     } catch (e) {
