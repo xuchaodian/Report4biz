@@ -107,7 +107,7 @@
     <!-- 购买履历对话框 -->
     <el-dialog
       v-model="historyDialogVisible"
-      width="1300px"
+      width="1360px"
       :close-on-click-modal="false"
       class="history-dialog dialog-fancy"
     >
@@ -175,43 +175,43 @@
         @selection-change="handleCompareSelectionChange"
       >
         <el-table-column type="selection" width="45" />
-        <el-table-column label="订单ID" width="170" fixed>
+        <el-table-column label="订单ID" width="130" fixed>
           <template #default="{ row }">
             <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="购买时间" width="140">
+        <el-table-column label="购买时间" width="120">
           <template #default="{ row }">
             {{ row.created_at ? formatDate(row.created_at) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="门店名称" min-width="160" show-overflow-tooltip>
+        <el-table-column label="门店名称" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span>{{ row.store_name || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="门店类型" width="90" align="center">
+        <el-table-column label="门店类型" width="80" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.store_type" size="small">{{ row.store_type }}</el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="城市" width="90">
+        <el-table-column label="城市" width="80">
           <template #default="{ row }">
             <span>{{ row.city || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="区县" width="90">
+        <el-table-column label="区县" width="80">
           <template #default="{ row }">
             <span>{{ row.district || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="半径" width="100">
+        <el-table-column label="半径" width="90">
           <template #default="{ row }">
             {{ row.radius_display || (row.radius ? row.radius + '米' : '-') }}
           </template>
         </el-table-column>
-        <el-table-column label="数据年月" width="110" align="center">
+        <el-table-column label="数据年月" width="100" align="center">
           <template #default="{ row }">
             <template v-if="row.city_month">
               <el-tooltip :content="isCityMonthExpired(row.city_month) ? '数据距今超过12个月，建议更新' : '数据年月'" placement="top">
@@ -223,17 +223,17 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="扣除次数" width="90" align="center">
+        <el-table-column label="扣除次数" width="80" align="center">
           <template #default="{ row }">
             <span class="quota-used">{{ row.quota_used ? '-' + row.quota_used : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="剩余次数" width="90" align="center">
+        <el-table-column label="剩余次数" width="80" align="center">
           <template #default="{ row }">
             <span class="quota-remaining">{{ row.remaining ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" fixed="right">
+        <el-table-column label="操作" width="75" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="viewPurchaseDetail(row)">
               查看结果
