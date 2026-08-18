@@ -35,7 +35,7 @@
         <el-dropdown trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
           <span class="nav-dropdown-trigger">
             <el-icon><Compass /></el-icon>
-            <span>决策中心</span>
+            <span>选址工作台</span>
             <el-icon class="nav-dropdown-arrow"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
