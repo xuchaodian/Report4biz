@@ -15,16 +15,53 @@
       </div>
     </div>
 
+    <!-- 门店来源 -->
+    <div class="se-source">
+      <div class="se-source-item">
+        <span class="se-source-label">评估点位</span>
+        <el-select
+          v-model="selectedStoreId"
+          placeholder="从我的门店选择（重要候选 → 一般候选 → 现有门店）"
+          filterable
+          clearable
+          style="width: 380px"
+          @change="onSelectStore"
+        >
+          <el-option-group v-for="g in storeGroups" :key="g.label" :label="g.label">
+            <el-option
+              v-for="s in g.stores"
+              :key="s.id"
+              :value="s.id"
+              :label="s.name + '（' + (s.city || '') + '）'"
+            >
+              <span>{{ s.name }}</span>
+              <span style="float:right;color:#909399;font-size:12px;">{{ s.city }} {{ s.district }}</span>
+            </el-option>
+          </el-option-group>
+        </el-select>
+        <el-button size="default" :type="storeMode === 'map' ? 'primary' : 'default'" @click="switchToMapMode">
+          <el-icon><Pointer /></el-icon>&nbsp;地图选点
+        </el-button>
+      </div>
+      <div class="se-source-item se-quota">
+        <el-tag :type="quotaAvailable > 0 ? 'success' : 'danger'" effect="light" size="large">
+          <el-icon><Odometer /></el-icon>
+          &nbsp;剩余次数：<b>{{ quotaAvailable }}</b>
+        </el-tag>
+        <span v-if="quotaAvailable < 1" class="se-quota-warn">⚠️ 余额不足，请联系管理员分配配额</span>
+      </div>
+    </div>
+
     <div class="se-body">
       <!-- 左：地图 -->
       <div class="se-map-wrap">
         <div id="se-map" ref="mapRef" class="se-map"></div>
         <div class="se-map-tip" v-if="!selectedPoint">
           <el-icon><Pointer /></el-icon>
-          <span>点击地图任意位置选择待评估点位</span>
+          <span>从上方「我的门店」选择评估点位，或点击「地图选点」在地图上选</span>
         </div>
         <div class="se-point-info" v-if="selectedPoint">
-          <span class="se-point-coord">{{ selectedPoint.lng.toFixed(6) }}, {{ selectedPoint.lat.toFixed(6) }}</span>
+          <span class="se-point-coord">{{ selectedPoint.storeName || selectedPoint.lng.toFixed(6) + ', ' + selectedPoint.lat.toFixed(6) }}</span>
           <el-button size="small" type="primary" :loading="scoring" @click="startScore" style="margin-left:8px;">
             <el-icon><MagicStick /></el-icon>&nbsp;开始评估
           </el-button>
@@ -134,7 +171,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer } from '@element-plus/icons-vue'
 
 const mapRef = ref(null)
@@ -145,6 +182,26 @@ let radiusCircle = null
 const selectedPoint = ref(null)
 const scoring = ref(false)
 const result = ref(null)
+
+// 门店来源
+const myStores = ref([])
+const selectedStoreId = ref(null)
+const storeMode = ref('store')   // 'store' = 从我的门店选点, 'map' = 地图选点
+const quotaAvailable = ref(0)
+
+// 门店分组排序：重要候选 → 一般候选 → 现有门店（已开业）
+const STORE_ORDER = { '重点候选': 2, '一般候选': 1, '已开业': 0 }
+const storeGroups = computed(() => {
+  const groups = {}
+  for (const s of myStores.value) {
+    const type = s.store_type || '未分类'
+    if (!groups[type]) groups[type] = []
+    groups[type].push(s)
+  }
+  return Object.entries(groups)
+    .sort((a, b) => (STORE_ORDER[b[0]] ?? -1) - (STORE_ORDER[a[0]] ?? -1))
+    .map(([label, stores]) => ({ label, stores }))
+})
 
 const weights = reactive({ population: 0.40, competition: 0.25, support: 0.20, transport: 0.15 })
 const radiusKm = ref(1)
@@ -180,10 +237,52 @@ const candList = ref([])
 
 onMounted(() => {
   initMap()
+  loadStores()
+  loadQuota()
 })
 onBeforeUnmount(() => {
   if (map) map.remove()
 })
+
+// 加载我的门店（按 重要候选→一般候选→现有门店 展示由 storeGroups computed 控制）
+async function loadStores() {
+  try {
+    const res = await api.get('/markers')
+    const list = res.markers || res.data || (Array.isArray(res) ? res : [])
+    myStores.value = (Array.isArray(list) ? list : []).filter(s => s.latitude && s.longitude)
+  } catch (e) {
+    console.warn('加载我的门店失败:', e.message)
+  }
+}
+
+// 加载用户剩余次数
+async function loadQuota() {
+  try {
+    const res = await api.get('/purchase/quota')
+    quotaAvailable.value = res.available ?? 0
+  } catch (e) {
+    console.warn('加载配额失败:', e.message)
+  }
+}
+
+// 从门店列表选中点位
+function onSelectStore(id) {
+  if (!id) return
+  const store = myStores.value.find(s => s.id === id)
+  if (!store) return
+  storeMode.value = 'store'
+  selectedStoreId.value = id
+  selectedPoint.value = { lng: store.longitude, lat: store.latitude, storeName: store.name, storeType: store.store_type }
+  result.value = null
+  drawPoint()
+}
+
+// 切到地图选点模式
+function switchToMapMode() {
+  storeMode.value = 'map'
+  selectedStoreId.value = null
+  ElMessage.info('请在地图上点击选择待评估点位')
+}
 
 function initMap() {
   map = L.map(mapRef.value, { center: [31.2304, 121.4737], zoom: 11, zoomControl: true })
@@ -225,7 +324,24 @@ function drawPoint() {
 watch(radiusKm, () => { if (selectedPoint.value) drawPoint() })
 
 async function startScore() {
-  if (!selectedPoint.value) { ElMessage.warning('请先在地图上选择点位'); return }
+  if (!selectedPoint.value) { ElMessage.warning('请先选择评估点位（从我的门店选择或地图选点）'); return }
+  // 配额检查
+  if (quotaAvailable.value < 1) {
+    ElMessage.warning('余额不足：剩余次数为 0，请联系管理员分配配额')
+    return
+  }
+  // 确认提示：从剩余次数扣除
+  const pointDesc = selectedPoint.value.storeName || `${selectedPoint.value.lng.toFixed(5)}, ${selectedPoint.value.lat.toFixed(5)}`
+  try {
+    await ElMessageBox.confirm(
+      `评估点位：${pointDesc}\n\n本次评估将从「剩余次数」中扣除 1 次（当前剩余 ${quotaAvailable.value} 次；同点位已查询过则缓存命中，不扣次数）。\n确定开始评估吗？`,
+      '确认评估',
+      { confirmButtonText: '确定评估', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return  // 用户取消
+  }
+
   scoring.value = true
   try {
     const res = await api.post('/scoring/score-point', {
@@ -237,7 +353,13 @@ async function startScore() {
     })
     if (res.success) {
       result.value = res
-      ElMessage.success('评估完成' + (res.quotaUsed ? `（消耗 ${res.quotaUsed} 次配额）` : '（缓存命中，未消耗配额）'))
+      // 刷新剩余次数（扣除后）
+      if (res.quotaUsed > 0) {
+        quotaAvailable.value = Math.max(0, quotaAvailable.value - res.quotaUsed)
+        ElMessage.success(`评估完成（消耗 ${res.quotaUsed} 次配额，剩余 ${quotaAvailable.value} 次）`)
+      } else {
+        ElMessage.success('评估完成（缓存命中，未消耗配额）')
+      }
     } else {
       ElMessage.error(res.message || '评估失败')
     }
@@ -262,7 +384,8 @@ async function saveCandidate() {
         scoreTransport: result.value.scoreTransport,
         populationDensity: result.value.populationDensity ?? 0,
         competitorCount: result.value.competitorCount,
-        poiCount: result.value.poiCount
+        poiCount: result.value.poiCount,
+        address: selectedPoint.value.storeName || ''
       }]
     })
     ElMessage.success(res.message || '已保存')
@@ -304,7 +427,34 @@ function flyToCandidate(row) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+}
+.se-source {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.se-source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.se-source-label {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 600;
+}
+.se-quota {
+  gap: 10px;
+}
+.se-quota-warn {
+  font-size: 12px;
+  color: #f56c6c;
 }
 .se-body {
   flex: 1;
