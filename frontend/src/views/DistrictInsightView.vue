@@ -5,7 +5,7 @@
       <div>
         <h2 style="margin:0;font-size:18px;">🏙️ {{ $t('nav.districtInsight') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
-          商圈边界 · 人口画像 · 机会评分 · 同城对比 —— 数据基准 2022-04
+          综合评分 = 人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（数据基准 2022-04）
         </p>
       </div>
       <div class="dv-header-right">
