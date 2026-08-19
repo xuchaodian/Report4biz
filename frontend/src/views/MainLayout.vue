@@ -43,6 +43,9 @@
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/market-map' }" @click="$router.push('/market-map')">
                 <el-icon><LocationInformation /></el-icon>{{ $t('nav.cityInsight') }}
               </el-dropdown-item>
+              <el-dropdown-item :class="{ 'dd-active': $route.path === '/district-insight' }" @click="$router.push('/district-insight')">
+                <el-icon><Shop /></el-icon>{{ $t('nav.districtInsight') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

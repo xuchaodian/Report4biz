@@ -11,6 +11,7 @@ export default {
     statistics: '統計データ',
     siteWorkbench: '立地ワークベンチ',
     cityInsight: '都市インサイト',
+    districtInsight: '商圏インサイト',
     users: 'ユーザー管理',
     apiOpen: 'API開放',
     dashboard: 'ダッシュボード',

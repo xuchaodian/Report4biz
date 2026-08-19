@@ -11,6 +11,7 @@ export default {
     statistics: '统计数据',
     siteWorkbench: '选址工作台',
     cityInsight: '城市洞察',
+    districtInsight: '商圈洞察',
     users: '用户',
     apiOpen: 'API开放',
     dashboard: '数据大屏',

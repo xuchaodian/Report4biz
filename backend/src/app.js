@@ -26,6 +26,7 @@ import cityDataRoutes from './routes/city-data.js'
 import marketMapRoutes from './routes/market-map.js'
 import mallTenantsRoutes from './routes/mall-tenants.js'
 import scoringRoutes from './routes/scoring.js'
+import districtsRoutes from './routes/districts.js'
 import storeScoresRoutes from './routes/store-scores.js'
 import templateRoutes from './routes/template.js'
 
@@ -77,6 +78,7 @@ async function start() {
     app.use('/api/market-map', marketMapRoutes)
     app.use('/api/mall-tenants', mallTenantsRoutes)
     app.use('/api/scoring', scoringRoutes)
+    app.use('/api/districts', districtsRoutes)
     app.use('/api/store-scores', storeScoresRoutes)
     app.use('/api/template', templateRoutes)
 
