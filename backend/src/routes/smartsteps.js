@@ -19,7 +19,7 @@ const tokenCache = new NodeCache({ stdTTL: 600, checkperiod: 120 })
 /**
  * 初始化缓存表
  */
-function initCacheTable(db) {
+export function initCacheTable(db) {
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS smartsteps_cache (
@@ -44,7 +44,7 @@ function initCacheTable(db) {
 /**
  * 查找缓存数据
  */
-function findCache(db, centerLng, centerLat, radius, cityMonth, services) {
+export function findCache(db, centerLng, centerLat, radius, cityMonth, services) {
   try {
     // 将坐标精度调整为5位小数（约1米精度），避免浮点误差导致缓存不命中
     const precision = 100000
@@ -73,7 +73,7 @@ function findCache(db, centerLng, centerLat, radius, cityMonth, services) {
 /**
  * 保存数据到缓存
  */
-function saveToCache(db, centerLng, centerLat, radius, cityMonth, services, resultData) {
+export function saveToCache(db, centerLng, centerLat, radius, cityMonth, services, resultData) {
   try {
     // 将坐标精度调整为5位小数
     const precision = 100000
@@ -96,7 +96,7 @@ function saveToCache(db, centerLng, centerLat, radius, cityMonth, services, resu
 /**
  * 获取授权Token
  */
-async function getAuthorization() {
+export async function getAuthorization() {
   // 先检查缓存
   const cachedToken = tokenCache.get('smartsteps_token')
   if (cachedToken) {
@@ -190,7 +190,7 @@ function transformLng(x, y) {
  * @param {number} lat - 纬度
  * @param {number} radius - 半径（米）
  */
-function buildCircleWkt(lng, lat, radius) {
+export function buildCircleWkt(lng, lat, radius) {
   // 转换为WGS84
   const wgs = gcj02ToWgs84(lng, lat)
   // 智慧足迹使用 point(经度 纬度) 格式（空格分隔）
@@ -202,7 +202,7 @@ function buildCircleWkt(lng, lat, radius) {
  * @param {any} data - API返回的数据
  * @returns {boolean} - true表示全为0/空，需要返还配额
  */
-function checkIfDataIsEmpty(data) {
+export function checkIfDataIsEmpty(data) {
   // 空数据情况
   if (data === null || data === undefined) return true
   if (data.error) return false  // 有错误信息不算空数据

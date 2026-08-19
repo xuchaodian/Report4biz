@@ -1,4 +1,5 @@
 import { getDb } from '../models/database.js'
+import { findCache, saveToCache, getAuthorization, buildCircleWkt, checkIfDataIsEmpty, initCacheTable } from '../routes/smartsteps.js'
 
 // === 评分引擎配置 ===
 const DEFAULT_WEIGHTS = {
@@ -6,6 +7,83 @@ const DEFAULT_WEIGHTS = {
   competition: 0.25,
   support: 0.20,
   transport: 0.15
+}
+
+// 智慧足迹上游配置（与 smartsteps.js 保持一致）
+const SMARTSTEPS_BASE_URL = 'https://jm-odp.smartsteps.com/febs'
+
+// 计算最新可用数据年月（当前月-1，与前端一致）
+function getLatestCityMonth() {
+  const now = new Date()
+  let month = now.getMonth() // 0-11
+  let year = now.getFullYear()
+  month -= 1
+  if (month < 0) { month += 12; year -= 1 }
+  return `${year}${String(month + 1).padStart(2, '0')}`
+}
+
+/**
+ * 通过联通智慧足迹（1001 人口服务）获取点位人口规模
+ * 优先命中缓存（免费），未命中才调上游并扣 1 次配额
+ * @returns {{ totalPopulation: number, fromCache: boolean, quotaUsed: number } | null} 失败返回 null
+ */
+async function queryPointPopulation(db, lng, lat, radiusM) {
+  const services = ['1001']
+  const cityMonth = getLatestCityMonth()
+  const servicesStr = '1001'
+
+  try {
+    initCacheTable(db)
+    // 1. 先查缓存（同坐标+半径+月份+1001）
+    const cached = findCache(db, lng, lat, radiusM, cityMonth, services)
+    if (cached && cached['1001']) {
+      const total = Number(cached['1001'].pall_sum) || 0
+      return { totalPopulation: total, fromCache: true, quotaUsed: 0 }
+    }
+
+    // 2. 检查配额
+    const quotaRecord = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
+    const available = quotaRecord?.remaining_quota || 0
+    if (available < 1) {
+      console.warn('[Scoring] 人口评分跳过：运营商配额不足')
+      return null
+    }
+
+    // 3. 调上游 1001
+    const token = await getAuthorization()
+    const wkt = buildCircleWkt(lng, lat, radiusM)
+    const response = await fetch(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'authorization': token },
+      body: JSON.stringify({ codes: '1001', cityMonth, radius: radiusM, polygons: wkt })
+    })
+    if (!response.ok) {
+      console.warn('[Scoring] 人口上游调用失败:', response.status)
+      return null
+    }
+    const apiResponse = await response.json()
+    if (apiResponse.code !== 200 || !apiResponse.data) {
+      console.warn('[Scoring] 人口上游返回异常:', apiResponse.code)
+      return null
+    }
+    const result = apiResponse.data
+
+    // 4. 空数据不扣配额
+    if (checkIfDataIsEmpty(result)) {
+      console.warn('[Scoring] 人口上游返回空数据，不扣配额')
+      return null
+    }
+
+    // 5. 扣配额 + 缓存
+    db.prepare('UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1').run()
+    saveToCache(db, lng, lat, radiusM, cityMonth, services, result)
+
+    const total = Number(result['1001']?.pall_sum) || 0
+    return { totalPopulation: total, fromCache: false, quotaUsed: 1 }
+  } catch (e) {
+    console.warn('[Scoring] 人口查询异常:', e.message)
+    return null
+  }
 }
 
 /**
@@ -65,10 +143,14 @@ export async function scoreBatch(grids, config) {
     transport: config.weight_transport
   }
 
+  // 配额保护：批量评分最多 20 个点位（每点最多耗 1 次配额，缓存命中免费）
+  const MAX_GRIDS = 20
+  const targetGrids = grids.slice(0, MAX_GRIDS)
+
   // 分批处理，避免一次请求太多
-  const batchSize = 20
-  for (let i = 0; i < grids.length; i += batchSize) {
-    const batch = grids.slice(i, i + batchSize)
+  const batchSize = 5
+  for (let i = 0; i < targetGrids.length; i += batchSize) {
+    const batch = targetGrids.slice(i, i + batchSize)
     const promises = batch.map(g =>
       scoreLocation({
         lng: g.lng, lat: g.lat,
@@ -91,27 +173,24 @@ export async function scoreBatch(grids, config) {
 
 async function calcPopulationScore(db, lng, lat, radiusM, city) {
   try {
-    // 从shapefiles中获取人口数据（复用现有数据）
-    const rows = db.prepare(`
-      SELECT SUM(CAST(properties AS REAL)) as total FROM shapefiles
-      WHERE category = 'population' AND city = ?
-    `).get(city)
+    // 联通智慧足迹 1001 人口服务（点位级精确数据，缓存命中免费）
+    const pop = await queryPointPopulation(db, lng, lat, radiusM)
+    if (!pop || !pop.totalPopulation) {
+      // 查询失败/配额不足/空数据 → 返回默认中等分
+      return 60
+    }
 
-    // 如果没有人口数据，返回默认中等分
-    if (!rows || !rows.total) return 60
-
-    // 简易分档：通过shapefile的网格数量和总人口估算
-    const gridCount = (db.prepare(`
-      SELECT COUNT(*) as cnt FROM shapefiles WHERE category = 'population' AND city = ?
-    `).get(city))?.cnt || 1
-
-    const avgDensity = rows.total / gridCount
-    // 基准密度参考值可调，这里按经验值
-    if (avgDensity > 5000) return 90
-    if (avgDensity > 3000) return 75
-    if (avgDensity > 1500) return 60
-    if (avgDensity > 500) return 40
-    return 20
+    const total = pop.totalPopulation
+    // 分档：按半径内总人口规模（pall_sum）相对评估
+    // 1km 半径参考值：>8万 极旺 / 5-8万 旺 / 3-5万 中上 / 1.5-3万 中 / <1.5万 弱
+    // 半径越大阈值按面积比例放大
+    const areaScale = (radiusM / 1000) ** 2  // 相对 1km 半径的面积倍数
+    if (total > 80000 * areaScale) return 95
+    if (total > 50000 * areaScale) return 85
+    if (total > 30000 * areaScale) return 72
+    if (total > 15000 * areaScale) return 55
+    if (total > 7000 * areaScale) return 40
+    return 25
   } catch (e) {
     console.warn('[Scoring] 人口评分失败:', e.message)
     return 50

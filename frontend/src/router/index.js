@@ -79,6 +79,11 @@ const routes = [
         component: () => import('@/views/MarketMapView.vue')
       },
       {
+        path: 'site-evaluation',
+        name: 'SiteEvaluation',
+        component: () => import('@/views/SiteEvaluationView.vue')
+      },
+      {
         path: 'account',
         name: 'Account',
         component: () => import('@/views/MyAccountView.vue')
