@@ -185,7 +185,8 @@ function initMap() {
   L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}', {
     subdomains: [1, 2, 3, 4],
     maxZoom: 18,
-    attribution: '&copy; 高德地图'
+    attribution: '&copy; 高德地图',
+    className: 'gaode-gray-tiles'
   }).addTo(map)
 }
 
@@ -368,6 +369,11 @@ function openCompare() {
 .dv-map {
   width: 100%;
   height: 100%;
+}
+:deep(.gaode-gray-tiles) {
+  img {
+    filter: grayscale(100%) brightness(1.05);
+  }
 }
 .dv-detail {
   position: absolute;
