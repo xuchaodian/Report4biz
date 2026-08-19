@@ -90,27 +90,42 @@
       <el-table :data="compareList" size="small" border stripe>
         <el-table-column prop="name" label="商圈" width="130" fixed />
         <el-table-column label="综合评分" width="90" align="center">
-          <template #default="{ row }"><b :style="{ color: scoreColor(row.score) }">{{ row.score }}</b></template>
+          <template #default="{ row }">
+            <b :class="{ 'dv-best': isBest(row, 'score') }" :style="{ color: scoreColor(row.score) }">{{ row.score }}</b>
+          </template>
         </el-table-column>
         <el-table-column label="人口规模" width="100" align="right">
-          <template #default="{ row }">{{ formatNum(row.population + row.work) }}</template>
+          <template #default="{ row }">
+            <span :class="{ 'dv-best': isBest(row, 'popTotal') }">{{ formatNum(row.population + row.work) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="居住" width="90" align="right">
-          <template #default="{ row }">{{ formatNum(row.population) }}</template>
+          <template #default="{ row }">
+            <span :class="{ 'dv-best': isBest(row, 'population') }">{{ formatNum(row.population) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="工作" width="90" align="right">
-          <template #default="{ row }">{{ formatNum(row.work) }}</template>
+          <template #default="{ row }">
+            <span :class="{ 'dv-best': isBest(row, 'work') }">{{ formatNum(row.work) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="到访人次" width="100" align="right">
-          <template #default="{ row }">{{ formatNum(row.visit) }}</template>
+          <template #default="{ row }">
+            <span :class="{ 'dv-best': isBest(row, 'visit') }">{{ formatNum(row.visit) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="竞品数" width="80" align="center">
-          <template #default="{ row }">{{ row.competitorCount }}</template>
+          <template #default="{ row }">
+            <span :class="{ 'dv-best': isLowest(row, 'competitorCount') }">{{ row.competitorCount }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="数据" width="80" align="center">
           <template #default><el-tag size="small" type="warning">2022-04</el-tag></template>
         </el-table-column>
       </el-table>
+      <p style="font-size:12px;color:#909399;margin:8px 0 0;">
+        <span class="dv-best" style="padding:1px 6px;border-radius:4px;">绿色高亮</span> = 该列最优值（评分/人口/居住/工作/到访取最高，竞品数取最低）
+      </p>
     </el-dialog>
   </div>
 </template>
@@ -166,6 +181,28 @@ function scoreTagType(s) {
 function formatNum(n) {
   if (n == null) return '-'
   return Number(n).toLocaleString()
+}
+
+// 对比表格：该列数值最高（竞品外的指标）
+function isBest(row, field) {
+  if (compareList.value.length < 2) return false
+  let max = -Infinity
+  for (const c of compareList.value) {
+    const v = field === 'popTotal' ? (c.population + c.work) : (c[field] ?? 0)
+    if (v > max) max = v
+  }
+  const rv = field === 'popTotal' ? (row.population + row.work) : (row[field] ?? 0)
+  return rv === max && max > -Infinity
+}
+// 竞品数：数值最低最优
+function isLowest(row, field) {
+  if (compareList.value.length < 2) return false
+  let min = Infinity
+  for (const c of compareList.value) {
+    const v = c[field] ?? Infinity
+    if (v < min) min = v
+  }
+  return (row[field] ?? Infinity) === min && min < Infinity
 }
 
 onMounted(async () => {
@@ -425,4 +462,12 @@ function openCompare() {
 }
 .dv-fact span { display: block; font-size: 11px; color: #909399; }
 .dv-fact b { font-size: 13px; color: #303133; }
+:deep(.dv-best) {
+  background: #e1f5ee !important;
+  color: #0f6e56 !important;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 5px;
+  display: inline-block;
+}
 </style>
