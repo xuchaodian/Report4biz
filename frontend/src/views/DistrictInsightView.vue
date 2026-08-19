@@ -81,6 +81,9 @@
             <div class="dv-fact"><span>到访人次</span><b>{{ formatNum(selectedDistrict.visit) }}</b></div>
             <div class="dv-fact"><span>竞品门店</span><b>{{ selectedDistrict.competitorCount }} 家</b></div>
           </div>
+          <el-button type="primary" plain style="width:100%;margin-top:10px;" :loading="refreshing" @click="refreshDistrict">
+            <el-icon><Refresh /></el-icon>&nbsp;刷新最新数据{{ selectedDistrict.dataMonth !== '202204' ? `（${selectedDistrict.dataMonth}）` : '' }}
+          </el-button>
         </div>
       </div>
     </div>
@@ -135,11 +138,14 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 
 const mapRef = ref(null)
 let map = null
 let districtLayer = null
+
+const refreshing = ref(false)
 
 const cities = ref([])
 const selectedCity = ref('')
@@ -310,6 +316,44 @@ function toggleSelectAll(val) {
 function openCompare() {
   if (compareList.value.length < 2) { ElMessage.warning('请至少选择 2 个商圈'); return }
   compareVisible.value = true
+}
+
+// 刷新商圈最新联通数据
+async function refreshDistrict() {
+  const d = selectedDistrict.value
+  if (!d) return
+  try {
+    await ElMessageBox.confirm(
+      `商圈：${d.name}（${d.city}）\n\n将从「剩余次数」中扣除 1 次，数据更新为最新月份（同商圈同月已查过则缓存命中，不扣次数）。\n确定刷新吗？`,
+      '刷新最新数据',
+      { confirmButtonText: '确定刷新', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return  // 用户取消
+  }
+  refreshing.value = true
+  try {
+    const res = await api.post('/districts/refresh', { city: d.city, name: d.name })
+    if (res.success) {
+      // 更新详情卡数据
+      d.dataMonth = res.dataMonth
+      if (res.totalPopulation > 0) {
+        d.population = Math.round(res.totalPopulation / 2)  // 居住+工作 各半近似（无细分字段）
+        d.work = Math.round(res.totalPopulation / 2)
+      }
+      const msg = res.fromCache
+        ? '缓存命中，未消耗次数（数据已是最新月份）'
+        : `刷新成功（消耗 ${res.quotaUsed} 次，剩余 ${res.remainingQuota} 次）`
+      ElMessage.success(msg)
+    } else {
+      ElMessage.error(res.message || '刷新失败')
+    }
+  } catch (e) {
+    const msg = e.response?.data?.message || e.message
+    ElMessage.error('刷新失败：' + msg)
+  } finally {
+    refreshing.value = false
+  }
 }
 </script>
 

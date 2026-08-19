@@ -1,11 +1,254 @@
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { getAuthorization } from './smartsteps.js'
+import crypto from 'crypto'
 
 const router = express.Router()
 
 // 内存缓存：shapefileId -> { geojson, ts }
 const geojsonCache = new Map()
+
+// 智慧足迹上游配置
+const SMARTSTEPS_BASE_URL = 'https://jm-odp.smartsteps.com/febs'
+
+// 联通查询要求：0.3 ~ 80 km²
+const MIN_AREA_KM2 = 0.3
+const MAX_AREA_KM2 = 80
+
+// 初始化商圈联通缓存表
+function initDistrictCacheTable(db) {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS district_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        city TEXT NOT NULL,
+        name TEXT NOT NULL,
+        polygon_key TEXT NOT NULL,
+        city_month TEXT,
+        result_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(polygon_key, city_month)
+      )
+    `)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_dc_lookup ON district_cache(city, name, city_month)`)
+  } catch (err) {
+    console.error('[Districts] 初始化缓存表失败:', err)
+  }
+}
+
+// GCJ-02 → WGS-84（与 smartsteps/resale 一致）
+function transformLat(x, y) {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+  ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0
+  ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0
+  return ret
+}
+function transformLng(x, y) {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+  ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0
+  ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
+  return ret
+}
+function gcj02ToWgs84(lng, lat) {
+  const a = 6378245.0, ee = 0.00669342162296594323
+  let dLat = transformLat(lat - 35.0, lng - 105.0)
+  let dLng = transformLng(lat - 35.0, lng - 105.0)
+  const radLat = lat / 180.0 * Math.PI
+  let magic = Math.sin(radLat)
+  magic = 1 - ee * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI)
+  dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI)
+  return { lng: lng - dLng, lat: lat - dLat }
+}
+
+// 球面面积（km²）
+function ringAreaKm2(ring) {
+  if (!ring || ring.length < 3) return 0
+  const R = 6371000.0
+  let area = 0
+  const n = ring.length
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const lon1 = ring[i][0] * Math.PI / 180, lat1 = ring[i][1] * Math.PI / 180
+    const lon2 = ring[j][0] * Math.PI / 180, lat2 = ring[j][1] * Math.PI / 180
+    area += (lon2 - lon1) * (2 + Math.sin(lat1) + Math.sin(lat2))
+  }
+  return Math.abs(area * R * R / 2) / 1e6
+}
+
+// 多边形质心（经纬度加权平均，商圈尺度足够）
+function ringCentroid(ring) {
+  let sx = 0, sy = 0
+  for (const p of ring) { sx += p[0]; sy += p[1] }
+  return [sx / ring.length, sy / ring.length]
+}
+
+/**
+ * 外扩逻辑：面积 < 0.3 km² 的商圈，以质心为缩放中心等比放大到 0.3 km²
+ * 保证请求联通 polygon 时满足面积下限要求
+ */
+function expandToMinArea(geometry, minKm2 = MIN_AREA_KM2) {
+  if (!geometry) return geometry
+  if (geometry.type === 'Polygon') {
+    const outer = geometry.coordinates[0]
+    const area = ringAreaKm2(outer)
+    if (area >= minKm2) return geometry
+    const [cx, cy] = ringCentroid(outer)
+    const factor = Math.sqrt(minKm2 / (area || minKm2))
+    const expanded = outer.map(p => [cx + (p[0] - cx) * factor, cy + (p[1] - cy) * factor])
+    return { type: 'Polygon', coordinates: [expanded, ...geometry.coordinates.slice(1)] }
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      type: 'MultiPolygon',
+      coordinates: geometry.coordinates.map(poly => {
+        const outer = poly[0]
+        const area = ringAreaKm2(outer)
+        if (area >= minKm2) return poly
+        const [cx, cy] = ringCentroid(outer)
+        const factor = Math.sqrt(minKm2 / (area || minKm2))
+        return [[outer.map(p => [cx + (p[0] - cx) * factor, cy + (p[1] - cy) * factor]), ...poly.slice(1)]]
+      })
+    }
+  }
+  return geometry
+}
+
+/**
+ * geometry（GCJ-02）→ WKT MULTIPOLYGON（WGS-84，联通要求）
+ */
+function buildPolygonWkt(geometry) {
+  const polys = geometry.type === 'Polygon'
+    ? [geometry.coordinates]
+    : (geometry.type === 'MultiPolygon' ? geometry.coordinates : null)
+  if (!polys) return null
+  const wgsPolys = polys.map(poly => {
+    const rings = poly.map(ring => {
+      return ring.map(p => {
+        const w = gcj02ToWgs84(p[0], p[1])
+        return `${w.lng} ${w.lat}`
+      }).join(',')
+    })
+    return `(${rings.map(r => `(${r})`).join(',')})`
+  })
+  return `MULTIPOLYGON (${wgsPolys.join(',')})`
+}
+
+/**
+ * 调联通 getData（polygon 模式，1001 人口服务）
+ */
+async function queryUnicomPolygon(wkt, cityMonth) {
+  const token = await getAuthorization()
+  const response = await fetch(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'authorization': token },
+    body: JSON.stringify({ codes: '1001', cityMonth, polygons: wkt, radius: 0 })
+  })
+  if (!response.ok) {
+    throw new Error(`联通API调用失败: ${response.status}`)
+  }
+  const api = await response.json()
+  if (api.code !== 200 || !api.data) {
+    const detail = api.message || api.info || '未知错误'
+    // 极目点不足等上游业务错误：透传可读信息
+    throw new Error(`联通返回错误: ${detail}`)
+  }
+  return api.data
+}
+
+// 计算最新数据月份（当前月-1）
+function getLatestCityMonth() {
+  const now = new Date()
+  let month = now.getMonth()
+  let year = now.getFullYear()
+  month -= 1
+  if (month < 0) { month += 12; year -= 1 }
+  return `${year}${String(month + 1).padStart(2, '0')}`
+}
+
+// 1001 返回中提取总人口（pall_sum）
+function extractPopulation(data) {
+  try {
+    const d = data && data['1001']
+    return d ? (Number(d.pall_sum) || 0) : 0
+  } catch (e) { return 0 }
+}
+
+/**
+ * 刷新单个商圈的最新联通数据（含外扩逻辑 + 缓存 + 配额）
+ * POST /api/districts/refresh  { city, name }
+ */
+router.post('/refresh', authenticate, async (req, res) => {
+  try {
+    const { city, name } = req.body
+    if (!city || !name) return res.status(400).json({ message: '缺少 city 或 name' })
+    const db = getDb()
+    initDistrictCacheTable(db)
+
+    // 找商圈
+    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${city}%`)
+    let feature = null
+    for (const f of files) {
+      const geojson = getGeojson(f.id)
+      if (!geojson || !geojson.features) continue
+      feature = geojson.features.find(ft => (ft.properties || {})['名称'] === name)
+      if (feature) break
+    }
+    if (!feature) return res.status(404).json({ message: '商圈不存在' })
+
+    // 外扩（面积 < 0.3 km² → 放大）
+    const expanded = expandToMinArea(feature.geometry)
+    // 转 WKT（WGS-84）
+    const wkt = buildPolygonWkt(expanded)
+    if (!wkt) return res.status(500).json({ message: '边界格式不支持' })
+
+    // 缓存 key
+    const cityMonth = getLatestCityMonth()
+    const polygonKey = crypto.createHash('md5').update(wkt).digest('hex')
+
+    // 1. 查缓存（同 WKT + 月份命中 → 免费）
+    const cached = db.prepare(`SELECT result_data FROM district_cache WHERE polygon_key = ? AND city_month = ?`).get(polygonKey, cityMonth)
+    if (cached) {
+      return res.json({ success: true, fromCache: true, quotaUsed: 0, dataMonth: cityMonth, totalPopulation: extractPopulation(JSON.parse(cached.result_data)) })
+    }
+
+    // 2. 配额检查（admin_quota，每商圈 1 点）
+    const quota = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
+    const available = quota?.remaining_quota || 0
+    if (available < 1) {
+      return res.status(400).json({ success: false, message: '极目点不足，请联系管理员充值' })
+    }
+
+    // 3. 调联通（polygon 直查）
+    let result
+    try {
+      result = await queryUnicomPolygon(wkt, cityMonth)
+    } catch (e) {
+      return res.status(502).json({ success: false, message: e.message })
+    }
+
+    // 4. 扣配额 + 缓存
+    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+    db.prepare(`INSERT OR REPLACE INTO district_cache (city, name, polygon_key, city_month, result_data) VALUES (?, ?, ?, ?, ?)`)
+      .run(city, name, polygonKey, cityMonth, JSON.stringify(result))
+
+    res.json({
+      success: true,
+      fromCache: false,
+      quotaUsed: 1,
+      remainingQuota: available - 1,
+      dataMonth: cityMonth,
+      totalPopulation: extractPopulation(result)
+    })
+  } catch (e) {
+    console.error('[Districts] 刷新商圈失败:', e)
+    res.status(500).json({ message: '刷新失败: ' + e.message })
+  }
+})
 
 // 城市分级（与前端 MapView/ShapefileView 保持一致）
 const CITY_TIERS = {
