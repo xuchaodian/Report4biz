@@ -78,11 +78,12 @@ const routes = [
         name: 'MarketMap',
         component: () => import('@/views/MarketMapView.vue')
       },
-      {
-        path: 'site-evaluation',
-        name: 'SiteEvaluation',
-        component: () => import('@/views/SiteEvaluationView.vue')
-      },
+      // 选址评估（v1.11.x 曾上线，因与现有功能重叠已隐藏，代码保留可随时恢复）
+      // {
+      //   path: 'site-evaluation',
+      //   name: 'SiteEvaluation',
+      //   component: () => import('@/views/SiteEvaluationView.vue')
+      // },
       {
         path: 'account',
         name: 'Account',
