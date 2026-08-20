@@ -59,7 +59,7 @@
           <div id="ds-map" ref="mapRef" class="ds-map"></div>
           <div class="ds-map-overlay">
             <span class="ds-map-title">{{ $t('dashboard.chartMapTitle') }}</span>
-            <span class="ds-map-sub">{{ $t('dashboard.kpiMyStores') }} {{ data?.kpi?.markers ?? 0 }} · {{ $t('dashboard.kpiCompetitors') }} {{ data?.kpi?.competitors ?? 0 }}</span>
+            <span class="ds-map-sub">{{ $t('dashboard.kpiOperating') }} {{ data?.kpi?.markers ?? 0 }} · {{ $t('dashboard.kpiCompetitors') }} {{ data?.kpi?.competitors ?? 0 }}</span>
           </div>
           <!-- 图层开关（右上角） -->
           <div class="ds-layer-switch">
@@ -188,7 +188,7 @@ const kpiList = computed(() => {
   const k = data.value?.kpi || {}
   const h = data.value?.health || {}
   return [
-    { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiOperating'), value: k.markers ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },

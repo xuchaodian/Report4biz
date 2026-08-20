@@ -107,7 +107,7 @@ export default {
     chartMapTitle: 'National Store Distribution',
     mapAggProvince: 'Province view \u00b7 zoom for cities',
     mapAggCity: 'City view',
-    chartCityTop: 'Store Cities (Open) TOP10',
+    chartCityTop: 'Store Cities (Operating) TOP10',
     chartBrandDist: 'Competitor Brands TOP10',
     marqueeLabel: 'Data Brief',
     kpiMyStores: 'My Stores',

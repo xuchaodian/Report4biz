@@ -107,7 +107,7 @@ export default {
     chartMapTitle: '全国店舗分布',
     mapAggProvince: '省レベル集計 · 拡大で都市表示',
     mapAggCity: '都市レベル集計',
-    chartCityTop: '店舗都市（開業済） TOP10',
+    chartCityTop: '店舗都市（営業中） TOP10',
     chartBrandDist: '競合ブランド TOP10',
     marqueeLabel: 'データ速報',
     kpiMyStores: '自社店舗',

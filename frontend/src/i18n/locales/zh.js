@@ -107,7 +107,7 @@ export default {
     chartMapTitle: '全国门店分布',
     mapAggProvince: '省级聚合 · 放大查看城市',
     mapAggCity: '城市级聚合',
-    chartCityTop: '门店城市（已开业） TOP10',
+    chartCityTop: '门店城市（在营） TOP10',
     chartBrandDist: '竞品品牌 TOP10',
     marqueeLabel: '数据简报',
     kpiMyStores: '我的门店',
