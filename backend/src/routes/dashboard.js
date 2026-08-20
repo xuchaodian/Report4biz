@@ -181,16 +181,17 @@ router.get('/summary', authenticate, async (req, res) => {
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
     const myPurchases = db.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(quota_used),0) AS used FROM purchases WHERE user_id = ? AND status = "active"').get(userId)
 
-    // ===== 门店健康度（在营 / 闭店 / 闭店率） =====
-    const HEALTHY_STATUS = ['既存店', '正常', '既存新店', '新店', '营业中', '在营', '已开业']
-    const CLOSED_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '结业']
+    // ===== 门店健康度（在营 / 闭店 / 闭店率）=====
+    // 口径与地图/TOP10 统一：store_type='已开业'，在营=状态非异常，闭店=闭店/停业/歇业等
+    const ABNORMAL_STATUS_HEALTH = ['闭店', '停业', '歇业', '关闭', '停业整顿', '结业', '未知', '待开业', '筹备中']
     const healthRow = db.prepare(`
       SELECT
-        SUM(CASE WHEN store_status IN (${HEALTHY_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
-        SUM(CASE WHEN store_status IN (${CLOSED_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed,
+        SUM(CASE WHEN store_status NOT IN (${ABNORMAL_STATUS_HEALTH.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
+        SUM(CASE WHEN store_status IN (${ABNORMAL_STATUS_HEALTH.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed,
         COUNT(*) AS total
       FROM markers
-    `).get(...HEALTHY_STATUS, ...CLOSED_STATUS)
+      WHERE store_type = '已开业'
+    `).get(...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH)
     const operating = healthRow?.operating || 0
     const closed = healthRow?.closed || 0
     const health = {
@@ -199,15 +200,15 @@ router.get('/summary', authenticate, async (req, res) => {
       other: Math.max(0, (healthRow?.total || 0) - operating - closed),
       closedRate: (operating + closed) > 0 ? Math.round(closed / (operating + closed) * 1000) / 10 : 0
     }
-    // 按城市闭店率 TOP10（门店量 ≥3 且闭店 >0，避免样本噪音）
+    // 按城市闭店率 TOP10（已开业口径；门店量 ≥3 且闭店 >0，避免样本噪音）
     const cityHealth = db.prepare(`
       SELECT rtrim(city, '市') AS city,
-        SUM(CASE WHEN store_status IN (${HEALTHY_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
-        SUM(CASE WHEN store_status IN (${CLOSED_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed
+        SUM(CASE WHEN store_status NOT IN (${ABNORMAL_STATUS_HEALTH.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
+        SUM(CASE WHEN store_status IN (${ABNORMAL_STATUS_HEALTH.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed
       FROM markers
-      WHERE city IS NOT NULL AND city != ''
+      WHERE city IS NOT NULL AND city != '' AND store_type = '已开业'
       GROUP BY rtrim(city, '市')
-    `).all(...HEALTHY_STATUS, ...CLOSED_STATUS)
+    `).all(...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH)
       .map(r => ({ city: r.city, operating: r.operating || 0, closed: r.closed || 0, rate: ((r.operating || 0) + (r.closed || 0)) >= 3 ? Math.round((r.closed || 0) / ((r.operating || 0) + (r.closed || 0)) * 1000) / 10 : 0 }))
       .filter(r => r.closed > 0)
       .sort((a, b) => b.rate - a.rate)
