@@ -5,6 +5,9 @@
       <div class="ds-title-left">
         <div class="ds-logo-bar"></div>
         <h1 class="ds-title">{{ $t('dashboard.title') }}</h1>
+        <span v-if="compare" class="ds-compare-tag" :class="compare.change >= 0 ? 'up' : 'down'">
+          {{ $t('dashboard.compareTitle') }}：{{ compare.change >= 0 ? '↑' : '↓' }}{{ Math.abs(compare.change) }}%
+        </span>
       </div>
       <div class="ds-clock">
         <span class="ds-time">{{ now }}</span>
@@ -47,15 +50,6 @@
         <div class="ds-panel ds-chart-panel">
           <div class="ds-chart-title">{{ $t('dashboard.chartTypeDist') }}</div>
           <div ref="typeChartRef" class="ds-chart"></div>
-        </div>
-        <div class="ds-panel ds-chart-panel">
-          <div class="ds-chart-title">
-            {{ $t('dashboard.healthTitle') }}
-            <span v-if="compare" class="ds-compare-tag" :class="compare.change >= 0 ? 'up' : 'down'">
-              {{ $t('dashboard.compareTitle') }}：{{ compare.change >= 0 ? '↑' : '↓' }}{{ Math.abs(compare.change) }}%
-            </span>
-          </div>
-          <div ref="healthChartRef" class="ds-chart"></div>
         </div>
       </div>
 
@@ -159,7 +153,6 @@ const mapRef = ref(null)
 const typeChartRef = ref(null)
 const cityChartRef = ref(null)
 const brandChartRef = ref(null)
-const healthChartRef = ref(null)
 const trendChartRef = ref(null)
 
 const now = ref('')
@@ -197,8 +190,7 @@ const kpiList = computed(() => {
   return [
     { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
-    { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#ff6b6b' },
-    { label: t('dashboard.kpiClosedRate'), value: (h.closedRate ?? 0) + '%', color: '#ffd166' },
+    { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiMyProvinces'), value: k.markerProvCount ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiMyCities'), value: k.markerCities ?? 0, color: '#40c4ff' },
@@ -311,39 +303,7 @@ const renderCharts = () => {
     charts.push(c)
   }
 
-  // 4. 门店健康度（环形图：在营 / 闭店 / 其他）
-  if (healthChartRef.value) {
-    const c = echarts.init(healthChartRef.value)
-    const h = data.value?.health || {}
-    const op = h.operating ?? 0, cl = h.closed ?? 0, ot = h.other ?? 0
-    const rate = h.closedRate ?? 0
-    c.setOption({
-      backgroundColor: 'transparent',
-      tooltip: { trigger: 'item' },
-      legend: { textStyle: { color: '#a8b4c8' }, bottom: 0, itemWidth: 10, itemHeight: 10 },
-      series: [{
-        type: 'pie',
-        radius: ['45%', '70%'],
-        center: ['50%', '42%'],
-        itemStyle: { borderRadius: 4, borderColor: '#0a1a2f', borderWidth: 2 },
-        label: { color: '#c6d4ea', fontSize: 11 },
-        data: [
-          { value: op, name: t('dashboard.operating'), itemStyle: { color: '#2ed573' } },
-          { value: cl, name: t('dashboard.closed'), itemStyle: { color: '#ff6b6b' } },
-          { value: ot, name: t('dashboard.other'), itemStyle: { color: '#5a6b85' } }
-        ]
-      }],
-      graphic: [{
-        type: 'text',
-        left: 'center',
-        top: '38%',
-        style: { text: `在营率 ${Math.round((op + cl) > 0 ? op / (op + cl) * 1000 : 0) / 10}%`, fill: '#2ed573', fontSize: 16, fontWeight: 'bold', textAlign: 'center' }
-      }]
-    })
-    charts.push(c)
-  }
-
-  // 5. 近 12 个月门店数据趋势（柱状）
+  // 4. 近 12 个月门店数据趋势（柱状）
   if (trendChartRef.value) {
     const c = echarts.init(trendChartRef.value)
     const trend = data.value?.compare?.storeTrend || []
