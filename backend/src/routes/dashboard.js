@@ -194,7 +194,7 @@ router.get('/summary', authenticate, async (req, res) => {
         COUNT(*) AS total
       FROM markers
       WHERE (user_id = ? OR ? = 1) AND store_type = '已开业'
-    `).get(userId, isAdmin, ...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH)
+    `).get(...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH, userId, isAdmin)
     const operating = healthRow?.operating || 0
     const closed = healthRow?.closed || 0
     const health = {
@@ -211,7 +211,7 @@ router.get('/summary', authenticate, async (req, res) => {
       FROM markers
       WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != '' AND store_type = '已开业'
       GROUP BY rtrim(city, '市')
-    `).all(userId, isAdmin, ...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH)
+    `).all(...ABNORMAL_STATUS_HEALTH, ...ABNORMAL_STATUS_HEALTH, userId, isAdmin)
       .map(r => ({ city: r.city, operating: r.operating || 0, closed: r.closed || 0, rate: ((r.operating || 0) + (r.closed || 0)) >= 3 ? Math.round((r.closed || 0) / ((r.operating || 0) + (r.closed || 0)) * 1000) / 10 : 0 }))
       .filter(r => r.closed > 0)
       .sort((a, b) => b.rate - a.rate)
