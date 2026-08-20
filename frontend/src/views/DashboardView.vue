@@ -197,7 +197,6 @@ const kpiList = computed(() => {
   return [
     { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
-    { label: t('dashboard.kpiOperating'), value: h.operating ?? 0, color: '#2ed573' },
     { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiClosedRate'), value: (h.closedRate ?? 0) + '%', color: '#ffd166' },
     { label: t('dashboard.kpiMyProvinces'), value: k.markerProvCount ?? 0, color: '#40c4ff' },
