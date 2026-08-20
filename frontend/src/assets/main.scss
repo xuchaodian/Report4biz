@@ -284,9 +284,17 @@ body {
 }
 .radar-drilldown .radar-chart-box {
   flex: 1;
+  height: 320px;
   background: #f7f9fc;
   border-radius: 10px;
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.radar-drilldown .radar-chart-box > div:not(.radar-chart-title) {
+  flex: 1;
+  min-height: 0;
 }
 .radar-drilldown .radar-chart-title {
   font-size: 13px;

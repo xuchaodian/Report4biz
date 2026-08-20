@@ -1806,7 +1806,13 @@ function openCompetitionRadar(lat, lng, radiusM, store) {
     mostDenseDir
   }
   competitionRadarVisible.value = true
-  renderRadarCharts()
+  // el-dialog 默认懒挂载，body 在 visible=true 后才渲染，echarts init 时容器尺寸为 0
+  // 必须 nextTick 等容器完成布局，再渲染 + resize 自适应真实尺寸
+  nextTick(() => {
+    renderRadarCharts()
+    radarChart && radarChart.resize()
+    directionChart && directionChart.resize()
+  })
 }
 
 // 渲染竞品雷达图（品牌雷达 + 8方向玫瑰）
