@@ -262,6 +262,40 @@
       </template>
     </el-dialog>
 
+    <!-- 竞品雷达下钻（周边竞争强度增强）：点击竞争强度圆圈弹出 -->
+    <el-dialog v-model="competitionRadarVisible" title="📡 竞品雷达" width="720px" :close-on-click-modal="false" @closed="disposeRadarCharts">
+      <template #default>
+        <div v-if="competitionRadarData" class="radar-drilldown">
+          <div class="radar-head">
+            <div>
+              <b style="font-size:15px;">{{ competitionRadarData.name }}</b>
+              <el-tag size="small" style="margin-left:8px;">{{ competitionRadarData.type || '门店' }}</el-tag>
+            </div>
+            <div class="radar-head-meta">
+              <span>半径 <b>{{ competitionRadarData.radiusKm }}km</b></span>
+              <span>圈内竞品 <b :style="{ color: '#f56c6c' }">{{ competitionRadarData.total }}</b> 家</span>
+              <span>品牌 <b>{{ competitionRadarData.brandCount }}</b> 个</span>
+              <span>平均距离 <b>{{ competitionRadarData.avgDist }}m</b></span>
+              <span>最密集方向 <b>{{ competitionRadarData.mostDenseDir }}</b></span>
+              <span class="radar-threat" :style="{ background: competitionRadarData.threatColor }">
+                威胁等级：{{ competitionRadarData.threatLevel }}
+              </span>
+            </div>
+          </div>
+          <div class="radar-charts">
+            <div class="radar-chart-box">
+              <div class="radar-chart-title">品牌构成（雷达图）</div>
+              <div ref="radarChartRef" style="width:100%;height:300px;"></div>
+            </div>
+            <div class="radar-chart-box">
+              <div class="radar-chart-title">8 方向分布（最密红色）</div>
+              <div ref="directionChartRef" style="width:100%;height:300px;"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 门店商圈图例（可拖拽面板，内联样式绕过 scoped CSS） -->
     <div v-if="storeCircleLegendVisible && storeCircleLegendItems.length > 0"
       :style="{
@@ -1702,6 +1736,127 @@ const competitionStoreResults = ref([])    // [{ lat, lng, city, filterKey, name
 const expandedLegendCategory = ref(null)   // 当前展开的图例分类 key
 const toggleLegendCategory = (key) => {
   expandedLegendCategory.value = expandedLegendCategory.value === key ? null : key
+}
+
+// ===== 周边竞争强度增强：竞品雷达下钻 =====
+const competitionRadarVisible = ref(false)
+const competitionRadarData = ref(null)
+const radarChartRef = ref(null)
+const directionChartRef = ref(null)
+let radarChart = null
+let directionChart = null
+
+const DIRECTION_NAMES = ['北', '东北', '东', '东南', '南', '西南', '西', '西北']
+
+// 点击竞争强度圆圈 → 计算该店半径内的竞品雷达数据（品牌构成/8方向/威胁评级）
+function openCompetitionRadar(lat, lng, radiusM, store) {
+  let allComps = []
+  if (competitorStore.competitors) {
+    allComps = competitorStore.competitors
+    if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
+      allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
+    }
+    // 按选择的竞争品牌过滤（与竞争强度画圈口径一致）
+    if (competitionBrands.value.length > 0) {
+      allComps = allComps.filter(c => competitionBrands.value.includes(c.brand))
+    }
+  }
+  const compPoints = allComps.filter(s => s.latitude && s.longitude)
+
+  const brands = {}
+  const dirs = [0, 0, 0, 0, 0, 0, 0, 0]
+  let total = 0
+  let distSum = 0
+  for (const p of compPoints) {
+    const d = calculateDistance(lat, lng, p.latitude, p.longitude)
+    if (d > 0 && d <= radiusM) {
+      total++
+      const brand = p.brand || '未知品牌'
+      brands[brand] = (brands[brand] || 0) + 1
+      // 方位角：0°=正北，顺时针
+      const dLat = p.latitude - lat
+      const dLng = (p.longitude - lng) * Math.cos(lat * Math.PI / 180)
+      let angle = Math.atan2(dLng, dLat) * 180 / Math.PI
+      if (angle < 0) angle += 360
+      dirs[Math.round(angle / 45) % 8]++
+      distSum += d
+    }
+  }
+  const brandCount = Object.keys(brands).length
+  const avgDist = total > 0 ? Math.round(distSum / total) : 0
+
+  // 威胁评级：数量 × 品牌数 × 距离加权
+  let threatLevel = '低'
+  let threatColor = '#67c23a'
+  if (total >= 8 || (brandCount >= 3 && total >= 5)) { threatLevel = '高'; threatColor = '#f56c6c' }
+  else if (total >= 3 || (brandCount >= 2 && total >= 2)) { threatLevel = '中'; threatColor = '#e6a23c' }
+
+  const brandData = Object.entries(brands).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10)
+  const mostDenseDir = total > 0 ? DIRECTION_NAMES[dirs.indexOf(Math.max(...dirs))] : '-'
+
+  competitionRadarData.value = {
+    name: store.name || '未知门店',
+    type: store._type || '',
+    lat, lng,
+    radiusKm: (radiusM / 1000).toFixed(1),
+    brands: brandData,
+    directions: dirs,
+    total, brandCount, avgDist,
+    threatLevel, threatColor,
+    mostDenseDir
+  }
+  competitionRadarVisible.value = true
+  renderRadarCharts()
+}
+
+// 渲染竞品雷达图（品牌雷达 + 8方向玫瑰）
+function renderRadarCharts() {
+  const data = competitionRadarData.value
+  if (!data) return
+  if (radarChartRef.value) {
+    if (radarChart) radarChart.dispose()
+    radarChart = echarts.init(radarChartRef.value)
+    const brands = data.brands.length > 0 ? data.brands : [{ name: '无竞品', value: 0 }]
+    const maxV = Math.max(...brands.map(b => b.value), 1)
+    radarChart.setOption({
+      backgroundColor: 'transparent',
+      tooltip: {},
+      radar: {
+        indicator: brands.map(b => ({ name: b.name, max: maxV })),
+        radius: '62%',
+        splitArea: { areaStyle: { color: ['rgba(64,158,255,0.03)', 'rgba(64,158,255,0.08)'] } },
+        axisName: { color: '#606266', fontSize: 11 }
+      },
+      series: [{
+        type: 'radar',
+        data: [{ value: brands.map(b => b.value), name: '竞品数量', areaStyle: { color: 'rgba(64,158,255,0.35)' }, lineStyle: { color: '#409eff', width: 2 } }]
+      }]
+    })
+  }
+  if (directionChartRef.value) {
+    if (directionChart) directionChart.dispose()
+    directionChart = echarts.init(directionChartRef.value)
+    const maxDir = Math.max(...data.directions, 1)
+    directionChart.setOption({
+      backgroundColor: 'transparent',
+      tooltip: {},
+      angleAxis: { type: 'value', min: 0, max: maxDir, show: false },
+      radiusAxis: { type: 'category', data: DIRECTION_NAMES, axisLabel: { color: '#606266', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+      polar: { radius: '68%' },
+      series: [{
+        type: 'bar',
+        data: data.directions.map((v, i) => ({ value: v, itemStyle: { color: v === Math.max(...data.directions) && v > 0 ? '#f56c6c' : '#409eff' } })),
+        coordinateSystem: 'polar',
+        barWidth: 16
+      }]
+    })
+  }
+}
+// ===== 周边竞争强度增强 END =====
+// 竞品雷达弹窗关闭时销毁图表
+function disposeRadarCharts() {
+  if (radarChart) { radarChart.dispose(); radarChart = null }
+  if (directionChart) { directionChart.dispose(); directionChart = null }
 }
 // 复制相互蚕食（重叠度）分类下的门店列表
 const copyOverlapStores = async (item) => {
@@ -6314,6 +6469,7 @@ const applyStoreCircles = () => {
         weight: 2
       })
       circle.bindTooltip(`[${store._type}] ${store.name || '未知'} - ${label}`, { sticky: true })
+      circle.on('click', () => openCompetitionRadar(store.latitude, store.longitude, radiusM, store))
       storeCircleLayer.addLayer(circle)
     })
     competitionCityStats.value = stats
