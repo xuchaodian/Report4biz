@@ -71,6 +71,8 @@ router.get('/summary', authenticate, async (req, res) => {
 
     // 竞品品牌 TOP10
     const compBrandTop = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all(userId, isAdmin)
+    // 竞品品牌数量（DISTINCT brand 计数，KPI）
+    const compBrandCount = db.prepare('SELECT COUNT(DISTINCT brand) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != ""').get(userId, isAdmin)?.c || 0
 
     // 我的门店/竞品 近30天新增（无时间字段则给最近7天趋势占位）
     const trend = []
@@ -258,6 +260,7 @@ router.get('/summary', authenticate, async (req, res) => {
       kpi: {
         markers: markersCount,
         competitors: competitorsCount,
+        compBrandCount,
         centers: centersCount,
         brandStores: brandStoresCount,
         markerCities,

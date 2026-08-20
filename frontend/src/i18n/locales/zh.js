@@ -119,6 +119,7 @@ export default {
     kpiPurchases: '购买次数',
     kpiQuota: '剩余次数',
     kpiOperating: '在营门店',
+    kpiCompBrands: '竞品数量',
     kpiClosed: '闭店门店',
     kpiClosedRate: '闭店率',
     healthTitle: '门店健康度',

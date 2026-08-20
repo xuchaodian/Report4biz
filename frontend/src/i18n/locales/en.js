@@ -119,6 +119,7 @@ export default {
     kpiPurchases: 'Purchases',
     kpiQuota: 'Quota Left',
     kpiOperating: 'Operating',
+    kpiCompBrands: 'Comp. Brands',
     kpiClosed: 'Closed',
     kpiClosedRate: 'Closure rate',
     healthTitle: 'Store Health',

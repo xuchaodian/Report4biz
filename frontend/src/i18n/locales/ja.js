@@ -119,6 +119,7 @@ export default {
     kpiPurchases: '購入回数',
     kpiQuota: '残り回数',
     kpiOperating: '営業中店舗',
+    kpiCompBrands: '競品ブランド数',
     kpiClosed: '閉店店舗',
     kpiClosedRate: '閉店率',
     healthTitle: '店舗ヘルス',
