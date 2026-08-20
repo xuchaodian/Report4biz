@@ -111,10 +111,6 @@
             <div class="ds-chart-title">{{ $t('dashboard.chartBrandDist') }}</div>
             <div ref="brandChartRef" class="ds-chart"></div>
           </div>
-          <div class="ds-panel ds-chart-panel">
-            <div class="ds-chart-title">{{ $t('dashboard.trendTitle') }}</div>
-            <div ref="trendChartRef" class="ds-chart"></div>
-          </div>
         </div>
       </div>
     </div>
@@ -153,7 +149,6 @@ const mapRef = ref(null)
 const typeChartRef = ref(null)
 const cityChartRef = ref(null)
 const brandChartRef = ref(null)
-const trendChartRef = ref(null)
 
 const now = ref('')
 const today = ref('')
@@ -298,26 +293,6 @@ const renderCharts = () => {
         data: brands.map(i => i.value),
         itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#7a2d63' }, { offset: 1, color: '#ff6b6b' }]), borderRadius: [0, 4, 4, 0] },
         barWidth: 12
-      }]
-    })
-    charts.push(c)
-  }
-
-  // 4. 近 12 个月门店数据趋势（柱状）
-  if (trendChartRef.value) {
-    const c = echarts.init(trendChartRef.value)
-    const trend = data.value?.compare?.storeTrend || []
-    c.setOption({
-      backgroundColor: 'transparent',
-      grid: { left: 10, right: 15, top: 15, bottom: 10, containLabel: true },
-      tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: trend.map(i => i.month.slice(2)), axisLabel: { color: '#7e8ca6', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } } },
-      yAxis: { type: 'value', axisLabel: { color: '#7e8ca6' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
-      series: [{
-        type: 'bar',
-        data: trend.map(i => i.count),
-        itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#40c4ff' }, { offset: 1, color: '#185fa5' }]), borderRadius: [3, 3, 0, 0] },
-        barWidth: '55%'
       }]
     })
     charts.push(c)
