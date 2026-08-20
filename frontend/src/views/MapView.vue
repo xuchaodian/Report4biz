@@ -1818,18 +1818,23 @@ function renderRadarCharts() {
     radarChart = echarts.init(radarChartRef.value)
     const brands = data.brands.length > 0 ? data.brands : [{ name: '无竞品', value: 0 }]
     const maxV = Math.max(...brands.map(b => b.value), 1)
+    // 品牌名截断（>2 字符取前 2 字，避免雷达图轴标签重叠/裁切）
+    const shortName = (s) => String(s || '').replace(/品牌$/, '').slice(0, 2) || '?'
     radarChart.setOption({
       backgroundColor: 'transparent',
-      tooltip: {},
+      tooltip: { trigger: 'item' },
       radar: {
-        indicator: brands.map(b => ({ name: b.name, max: maxV })),
-        radius: '62%',
+        indicator: brands.map(b => ({ name: `${shortName(b.name)} ${b.value}`, max: maxV })),
+        radius: '65%',
+        center: ['50%', '52%'],
         splitArea: { areaStyle: { color: ['rgba(64,158,255,0.03)', 'rgba(64,158,255,0.08)'] } },
-        axisName: { color: '#606266', fontSize: 11 }
+        axisName: { color: '#303133', fontSize: 11, lineHeight: 14 }
       },
       series: [{
         type: 'radar',
-        data: [{ value: brands.map(b => b.value), name: '竞品数量', areaStyle: { color: 'rgba(64,158,255,0.35)' }, lineStyle: { color: '#409eff', width: 2 } }]
+        symbol: 'circle',
+        symbolSize: 5,
+        data: [{ value: brands.map(b => b.value), name: '竞品数量', areaStyle: { color: 'rgba(64,158,255,0.35)' }, lineStyle: { color: '#409eff', width: 2 }, itemStyle: { color: '#409eff' } }]
       }]
     })
   }
@@ -1837,17 +1842,29 @@ function renderRadarCharts() {
     if (directionChart) directionChart.dispose()
     directionChart = echarts.init(directionChartRef.value)
     const maxDir = Math.max(...data.directions, 1)
+    // 8 方向玫瑰图：angleAxis=类目(8 方向围成圆) / radiusAxis=数值轴(数量)
+    // 数据按"8 方向"顺序保证顺时针排列（北→东北→东→...）
+    const seriesData = data.directions.map((v, i) => ({ value: v, name: DIRECTION_NAMES[i] }))
+    const maxV = Math.max(...data.directions, 1)
     directionChart.setOption({
       backgroundColor: 'transparent',
-      tooltip: {},
-      angleAxis: { type: 'value', min: 0, max: maxDir, show: false },
-      radiusAxis: { type: 'category', data: DIRECTION_NAMES, axisLabel: { color: '#606266', fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
-      polar: { radius: '68%' },
+      tooltip: { trigger: 'item', formatter: '{b}: {c} 家' },
+      angleAxis: {
+        type: 'category',
+        data: DIRECTION_NAMES,
+        startAngle: 90,  // 0°=北（顶部）
+        axisLabel: { color: '#606266', fontSize: 11 },
+        axisLine: { show: false },
+        axisTick: { show: false }
+      },
+      radiusAxis: { type: 'value', max: maxV, axisLabel: { color: '#909399', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } } },
+      polar: { radius: '60%' },
       series: [{
         type: 'bar',
-        data: data.directions.map((v, i) => ({ value: v, itemStyle: { color: v === Math.max(...data.directions) && v > 0 ? '#f56c6c' : '#409eff' } })),
+        data: seriesData,
         coordinateSystem: 'polar',
-        barWidth: 16
+        barWidth: 18,
+        itemStyle: { color: (params) => params.value > 0 && params.value === maxV ? '#f56c6c' : '#409eff' }
       }]
     })
   }
