@@ -187,10 +187,10 @@ const kpiList = computed(() => {
     { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompBrands'), value: k.compBrandCount ?? 0, color: '#ff6b6b' },
-    { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiMyProvinces'), value: k.markerProvCount ?? 0, color: '#40c4ff' },
-    { label: t('dashboard.kpiCompCities'), value: k.compCities ?? 0, color: '#ff6b6b' },
-    { label: t('dashboard.kpiMyCities'), value: k.markerCities ?? 0, color: '#40c4ff' }
+    { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiMyCities'), value: k.markerCities ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiCompCities'), value: k.compCities ?? 0, color: '#ff6b6b' }
   ]
 })
 
