@@ -181,6 +181,66 @@ router.get('/summary', authenticate, async (req, res) => {
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
     const myPurchases = db.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(quota_used),0) AS used FROM purchases WHERE user_id = ? AND status = "active"').get(userId)
 
+    // ===== 门店健康度（在营 / 闭店 / 闭店率） =====
+    const HEALTHY_STATUS = ['既存店', '正常', '既存新店', '新店', '营业中', '在营', '已开业']
+    const CLOSED_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '结业']
+    const healthRow = db.prepare(`
+      SELECT
+        SUM(CASE WHEN store_status IN (${HEALTHY_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
+        SUM(CASE WHEN store_status IN (${CLOSED_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed,
+        COUNT(*) AS total
+      FROM markers
+    `).get(...HEALTHY_STATUS, ...CLOSED_STATUS)
+    const operating = healthRow?.operating || 0
+    const closed = healthRow?.closed || 0
+    const health = {
+      operating,
+      closed,
+      other: Math.max(0, (healthRow?.total || 0) - operating - closed),
+      closedRate: (operating + closed) > 0 ? Math.round(closed / (operating + closed) * 1000) / 10 : 0
+    }
+    // 按城市闭店率 TOP10（门店量 ≥3 且闭店 >0，避免样本噪音）
+    const cityHealth = db.prepare(`
+      SELECT rtrim(city, '市') AS city,
+        SUM(CASE WHEN store_status IN (${HEALTHY_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS operating,
+        SUM(CASE WHEN store_status IN (${CLOSED_STATUS.map(() => '?').join(',')}) THEN 1 ELSE 0 END) AS closed
+      FROM markers
+      WHERE city IS NOT NULL AND city != ''
+      GROUP BY rtrim(city, '市')
+    `).all(...HEALTHY_STATUS, ...CLOSED_STATUS)
+      .map(r => ({ city: r.city, operating: r.operating || 0, closed: r.closed || 0, rate: ((r.operating || 0) + (r.closed || 0)) >= 3 ? Math.round((r.closed || 0) / ((r.operating || 0) + (r.closed || 0)) * 1000) / 10 : 0 }))
+      .filter(r => r.closed > 0)
+      .sort((a, b) => b.rate - a.rate)
+      .slice(0, 10)
+
+    // ===== 对比期环比（上月 vs 上上月，按 created_at 录入门店；避免本月未结束误导） =====
+    const _now = new Date()
+    const _ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const lastMonth = _ym(new Date(_now.getFullYear(), _now.getMonth() - 1, 1))   // 上月（完整月）
+    const prevMonth = _ym(new Date(_now.getFullYear(), _now.getMonth() - 2, 1))   // 上上月（完整月）
+    const newLastMonth = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE substr(created_at, 1, 7) = ?`).get(lastMonth)?.c || 0
+    const newPrevMonth = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE substr(created_at, 1, 7) = ?`).get(prevMonth)?.c || 0
+    // 近 12 个月门店数据趋势（created_at 口径，格式统一且覆盖全）
+    const months = []
+    for (let i = 11; i >= 0; i--) {
+      months.push(_ym(new Date(_now.getFullYear(), _now.getMonth() - i, 1)))
+    }
+    const trendRows = db.prepare(`
+      SELECT substr(created_at, 1, 7) AS m, COUNT(*) AS c FROM markers
+      WHERE substr(created_at, 1, 7) >= ?
+      GROUP BY substr(created_at, 1, 7)
+    `).all(months[0])
+    const trendMap = Object.fromEntries(trendRows.map(r => [r.m, r.c]))
+    const storeTrend = months.map(m => ({ month: m, count: trendMap[m] || 0 }))
+    const compare = {
+      lastMonth,
+      prevMonth,
+      newLastMonth,
+      newPrevMonth,
+      change: newPrevMonth > 0 ? Math.round((newLastMonth - newPrevMonth) / newPrevMonth * 1000) / 10 : (newLastMonth > 0 ? 100 : 0),
+      storeTrend
+    }
+
     // ===== 城市宏观数据（JSON 文件）=====
     let cityData = []
     try {
@@ -212,6 +272,9 @@ router.get('/summary', authenticate, async (req, res) => {
         compBrandTop,
         trend
       },
+      health,
+      cityHealth,
+      compare,
       points: {
         markers: markerCitiesAgg,
         competitors: compCitiesAgg,

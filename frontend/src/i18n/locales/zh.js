@@ -118,6 +118,16 @@ export default {
     kpiCompCities: '竞品城市',
     kpiPurchases: '购买次数',
     kpiQuota: '剩余次数',
+    kpiOperating: '在营门店',
+    kpiClosed: '闭店门店',
+    kpiClosedRate: '闭店率',
+    healthTitle: '门店健康度',
+    compareTitle: '环比（上月 vs 上上月）',
+    trendTitle: '近 12 个月门店数据趋势',
+    compareUnit: '家',
+    operating: '在营',
+    closed: '闭店',
+    other: '其他',
     marquee: '全国共 {markers} 家门店、{competitors} 家竞品 · 覆盖 {cities} 个城市 · 累计购买 {purchases} 次 · 系统数据每小时自动刷新'
   },
   // ===== 通用 =====

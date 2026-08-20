@@ -118,6 +118,16 @@ export default {
     kpiCompCities: '競合都市',
     kpiPurchases: '購入回数',
     kpiQuota: '残り回数',
+    kpiOperating: '営業中店舗',
+    kpiClosed: '閉店店舗',
+    kpiClosedRate: '閉店率',
+    healthTitle: '店舗ヘルス',
+    compareTitle: '前月比（先月 vs 先々月）',
+    trendTitle: '直近12ヶ月の店舗データ推移',
+    compareUnit: '店',
+    operating: '営業中',
+    closed: '閉店',
+    other: 'その他',
     marquee: '全国合計 {markers} 店舗・{competitors} 競合 · 対象 {cities} 都市 · 累計購入 {purchases} 回 · データは毎時自動更新'
   },
   // ===== 共通 =====

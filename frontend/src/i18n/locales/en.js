@@ -118,6 +118,16 @@ export default {
     kpiCompCities: 'Competitor Cities',
     kpiPurchases: 'Purchases',
     kpiQuota: 'Quota Left',
+    kpiOperating: 'Operating',
+    kpiClosed: 'Closed',
+    kpiClosedRate: 'Closure rate',
+    healthTitle: 'Store Health',
+    compareTitle: 'MoM (last vs prev month)',
+    trendTitle: '12-month store trend',
+    compareUnit: '',
+    operating: 'Operating',
+    closed: 'Closed',
+    other: 'Other',
     marquee: '{markers} stores, {competitors} competitors across {cities} cities \u00b7 {purchases} purchases \u00b7 auto-refresh hourly'
   },
   // ===== Common =====

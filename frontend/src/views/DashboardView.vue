@@ -35,13 +35,27 @@
       <div class="ds-col ds-col-left">
         <div class="ds-panel ds-kpi-grid">
           <div v-for="k in kpiList" :key="k.label" class="ds-kpi">
-            <div class="ds-kpi-num" :style="{ color: k.color }">{{ k.value }}</div>
+            <div class="ds-kpi-num" :style="{ color: k.color }">
+              {{ k.value }}
+              <span v-if="k.change !== undefined" class="ds-kpi-change" :class="k.change >= 0 ? 'up' : 'down'">
+                {{ k.change >= 0 ? '↑' : '↓' }}{{ Math.abs(k.change) }}%
+              </span>
+            </div>
             <div class="ds-kpi-label">{{ k.label }}</div>
           </div>
         </div>
         <div class="ds-panel ds-chart-panel">
           <div class="ds-chart-title">{{ $t('dashboard.chartTypeDist') }}</div>
           <div ref="typeChartRef" class="ds-chart"></div>
+        </div>
+        <div class="ds-panel ds-chart-panel">
+          <div class="ds-chart-title">
+            {{ $t('dashboard.healthTitle') }}
+            <span v-if="compare" class="ds-compare-tag" :class="compare.change >= 0 ? 'up' : 'down'">
+              {{ $t('dashboard.compareTitle') }}：{{ compare.change >= 0 ? '↑' : '↓' }}{{ Math.abs(compare.change) }}%
+            </span>
+          </div>
+          <div ref="healthChartRef" class="ds-chart"></div>
         </div>
       </div>
 
@@ -103,6 +117,10 @@
             <div class="ds-chart-title">{{ $t('dashboard.chartBrandDist') }}</div>
             <div ref="brandChartRef" class="ds-chart"></div>
           </div>
+          <div class="ds-panel ds-chart-panel">
+            <div class="ds-chart-title">{{ $t('dashboard.trendTitle') }}</div>
+            <div ref="trendChartRef" class="ds-chart"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -141,6 +159,8 @@ const mapRef = ref(null)
 const typeChartRef = ref(null)
 const cityChartRef = ref(null)
 const brandChartRef = ref(null)
+const healthChartRef = ref(null)
+const trendChartRef = ref(null)
 
 const now = ref('')
 const today = ref('')
@@ -173,9 +193,14 @@ let charts = []
 // 布局：2 列网格，左列我的门店相关，右列竞品相关，省份在城市上方
 const kpiList = computed(() => {
   const k = data.value?.kpi || {}
+  const h = data.value?.health || {}
+  const cp = data.value?.compare || {}
   return [
-    { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff' },
+    { label: t('dashboard.kpiMyStores'), value: k.markers ?? 0, color: '#40c4ff', change: cp.change },
     { label: t('dashboard.kpiCompetitors'), value: k.competitors ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiOperating'), value: h.operating ?? 0, color: '#2ed573' },
+    { label: t('dashboard.kpiClosed'), value: h.closed ?? 0, color: '#ff6b6b' },
+    { label: t('dashboard.kpiClosedRate'), value: (h.closedRate ?? 0) + '%', color: '#ffd166' },
     { label: t('dashboard.kpiMyProvinces'), value: k.markerProvCount ?? 0, color: '#40c4ff' },
     { label: t('dashboard.kpiCompProvinces'), value: k.compProvCount ?? 0, color: '#ff6b6b' },
     { label: t('dashboard.kpiMyCities'), value: k.markerCities ?? 0, color: '#40c4ff' },
@@ -183,6 +208,11 @@ const kpiList = computed(() => {
     { label: t('dashboard.kpiPurchases'), value: k.myPurchases ?? 0, color: '#ffd166' },
     { label: t('dashboard.kpiQuota'), value: k.quotaRemaining ?? 0, color: '#ffd166' }
   ]
+})
+
+const compare = computed(() => {
+  const cp = data.value?.compare || {}
+  return cp.lastMonth ? cp : null
 })
 
 const marqueeText = computed(() => {
@@ -280,6 +310,58 @@ const renderCharts = () => {
         data: brands.map(i => i.value),
         itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#7a2d63' }, { offset: 1, color: '#ff6b6b' }]), borderRadius: [0, 4, 4, 0] },
         barWidth: 12
+      }]
+    })
+    charts.push(c)
+  }
+
+  // 4. 门店健康度（环形图：在营 / 闭店 / 其他）
+  if (healthChartRef.value) {
+    const c = echarts.init(healthChartRef.value)
+    const h = data.value?.health || {}
+    const op = h.operating ?? 0, cl = h.closed ?? 0, ot = h.other ?? 0
+    const rate = h.closedRate ?? 0
+    c.setOption({
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'item' },
+      legend: { textStyle: { color: '#a8b4c8' }, bottom: 0, itemWidth: 10, itemHeight: 10 },
+      series: [{
+        type: 'pie',
+        radius: ['45%', '70%'],
+        center: ['50%', '42%'],
+        itemStyle: { borderRadius: 4, borderColor: '#0a1a2f', borderWidth: 2 },
+        label: { color: '#c6d4ea', fontSize: 11 },
+        data: [
+          { value: op, name: t('dashboard.operating'), itemStyle: { color: '#2ed573' } },
+          { value: cl, name: t('dashboard.closed'), itemStyle: { color: '#ff6b6b' } },
+          { value: ot, name: t('dashboard.other'), itemStyle: { color: '#5a6b85' } }
+        ]
+      }],
+      graphic: [{
+        type: 'text',
+        left: 'center',
+        top: '38%',
+        style: { text: `在营率 ${Math.round((op + cl) > 0 ? op / (op + cl) * 1000 : 0) / 10}%`, fill: '#2ed573', fontSize: 16, fontWeight: 'bold', textAlign: 'center' }
+      }]
+    })
+    charts.push(c)
+  }
+
+  // 5. 近 12 个月门店数据趋势（柱状）
+  if (trendChartRef.value) {
+    const c = echarts.init(trendChartRef.value)
+    const trend = data.value?.compare?.storeTrend || []
+    c.setOption({
+      backgroundColor: 'transparent',
+      grid: { left: 10, right: 15, top: 15, bottom: 10, containLabel: true },
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', data: trend.map(i => i.month.slice(2)), axisLabel: { color: '#7e8ca6', fontSize: 10 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } } },
+      yAxis: { type: 'value', axisLabel: { color: '#7e8ca6' }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } } },
+      series: [{
+        type: 'bar',
+        data: trend.map(i => i.count),
+        itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#40c4ff' }, { offset: 1, color: '#185fa5' }]), borderRadius: [3, 3, 0, 0] },
+        barWidth: '55%'
       }]
     })
     charts.push(c)
@@ -561,6 +643,12 @@ onBeforeUnmount(() => {
 }
 .ds-kpi-num { font-size: 26px; font-weight: 700; font-family: 'Courier New', monospace; }
 .ds-kpi-label { font-size: 12px; color: #8fa3c0; margin-top: 4px; }
+.ds-kpi-change { font-size: 12px; font-weight: 600; margin-left: 4px; }
+.ds-kpi-change.up { color: #2ed573; }
+.ds-kpi-change.down { color: #ff6b6b; }
+.ds-compare-tag { font-size: 11px; font-weight: 500; margin-left: 8px; padding: 1px 8px; border-radius: 10px; }
+.ds-compare-tag.up { color: #2ed573; background: rgba(46, 213, 115, 0.12); }
+.ds-compare-tag.down { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }
 
 /* 地图 */
 .ds-map-panel { flex: 1; position: relative; padding: 0; overflow: hidden; min-height: 0; }
