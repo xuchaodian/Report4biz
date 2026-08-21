@@ -298,29 +298,27 @@ function renderDistricts() {
 
 function selectDistrict(d) {
   selectedDistrict.value = d
+  // 同步 XHR 获取商圈内购物中心（语句序列，不会被 terser 编译成 IIFE pattern 而丢失执行）
+  try {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', '/api/districts/detail?city=' + encodeURIComponent(d.city) + '&name=' + encodeURIComponent(d.name), false)
+    xhr.setRequestHeader('Authorization', 'Bearer ' + (sessionStorage.getItem('token') || ''))
+    xhr.send()
+    if (xhr.status === 200) {
+      const res = JSON.parse(xhr.responseText)
+      if (res.district) {
+        d.shoppingCenters = res.district.shoppingCenters || []
+        d.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
+      }
+    }
+  } catch (e) {
+    // 静默：购物中心加载失败不影响详情卡主体
+  }
+  // 地图定位
   if (map) {
     const pts = [firstCoord(d.geometry)]
     if (pts[0]) map.fitBounds(L.latLngBounds([pts[0][1], pts[0][0]]), { padding: [40, 40], maxZoom: 14 })
   }
-  // 异步获取商圈内购物中心（普通函数 + fetch().then() 链，避免 async/await 被 esbuild 编译为 IIFE pattern）
-  loadShoppingCenters(d)
-}
-
-// 注意：不能用 async function（esbuild 会把 fire-and-forget async 调用编译成 !async function(){}()，
-// 生产构建下该 IIFE 不执行）。改用普通函数 + fetch().then() 链。
-function loadShoppingCenters(d) {
-  const token = sessionStorage.getItem('token')
-  fetch('/api/districts/detail?city=' + encodeURIComponent(d.city) + '&name=' + encodeURIComponent(d.name), {
-    headers: { Authorization: 'Bearer ' + token }
-  })
-    .then(r => r.json())
-    .then(res => {
-      if (res.district && selectedDistrict.value?.name === d.name) {
-        selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
-        selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
-      }
-    })
-    .catch(() => {})
 }
 
 function isCompared(name) {
