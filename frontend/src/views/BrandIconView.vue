@@ -13,6 +13,24 @@
       <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标（32×32px）。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。</span>
     </div>
 
+    <!-- 地图图标大小 -->
+    <div class="icon-size-box">
+      <div class="icon-size-label">
+        <el-icon><Aim /></el-icon>
+        <span>地图图标大小</span>
+        <el-tag size="small" type="warning">{{ iconSize }}px</el-tag>
+      </div>
+      <el-slider
+        v-model="iconSize"
+        :min="20"
+        :max="48"
+        :step="2"
+        show-stops
+        style="flex:1;"
+      />
+      <span class="icon-size-tip">调整后刷新地图生效（拖动地图时松手会锁定，不误触图标）</span>
+    </div>
+
     <!-- 品牌列表 -->
     <div class="brand-list">
       <div
@@ -83,9 +101,9 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Delete, InfoFilled } from '@element-plus/icons-vue'
+import { Upload, Delete, InfoFilled, Aim } from '@element-plus/icons-vue'
 import { useBrandIconStore } from '@/stores/brandIcon'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -93,6 +111,12 @@ import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
+
+// 地图图标大小（全局，localStorage 持久化，默认 32px）
+const iconSize = ref(Number(localStorage.getItem('mapIconSize')) || 32)
+watch(iconSize, (v) => {
+  localStorage.setItem('mapIconSize', String(v))
+})
 const brandIconStore = useBrandIconStore()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
@@ -234,8 +258,7 @@ onMounted(async () => {
   margin-bottom: 15px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 8px;  font-size: 13px;
   color: #409eff;
 
   .el-icon {
@@ -336,4 +359,52 @@ onMounted(async () => {
   gap: 8px;
   margin-left: auto;
 }
+
+.icon-size-box {
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 6px;
+  padding: 12px 15px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.icon-size-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
+}
+.icon-size-tip {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+}
 </style>
+
+.icon-size-box {
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 6px;
+  padding: 12px 15px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.icon-size-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
+}
+.icon-size-tip {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+}

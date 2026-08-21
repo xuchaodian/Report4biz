@@ -157,19 +157,26 @@ export function createOldIcon(color = 'default', icon = '📍') {
   })
 }
 
-// 创建品牌图片图标 (32×32px)
+// 创建品牌图片图标（默认 32×32px，可在「设置图标」页调节全局大小）
 // gray: 闭店时变灰
 // borderColor: 门店类型边框颜色（如 '重点候选' 用土橙色边框区分）
-export function createBrandImageIcon(url, gray = false, borderColor = null) {
+export function createBrandImageIcon(url, gray = false, borderColor = null, size = null) {
+  if (!size) {
+    // 全局图标大小（localStorage: mapIconSize，默认 32）
+    const saved = Number(localStorage.getItem('mapIconSize'))
+    size = saved >= 20 && saved <= 48 ? saved : 32
+  }
+  const pad = borderColor ? 4 : 0
+  const total = size + pad * 2
   const filterStyle = gray ? 'filter:grayscale(100%);opacity:0.55;' : ''
   const borderStyle = borderColor ? `border:3px solid ${borderColor};` : ''
   const imgStyle = `border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.35);${borderStyle}${filterStyle}`
   return L.divIcon({
     className: 'custom-brand-marker',
-    html: `<img src="${url}" width="32" height="32" style="${imgStyle}" />`,
-    iconSize: borderColor ? [38, 38] : [32, 32],
-    iconAnchor: borderColor ? [19, 19] : [16, 16],
-    popupAnchor: [0, -16]
+    html: `<img src="${url}" width="${size}" height="${size}" style="${imgStyle}" />`,
+    iconSize: [total, total],
+    iconAnchor: [total / 2, total / 2],
+    popupAnchor: [0, -total / 2]
   })
 }
 

@@ -2190,6 +2190,24 @@ const initMap = async () => {
     currentCoords.value = e.latlng
   })
 
+  // ===== 拖动地图时锁定图标事件 =====
+  // 拖动地图（dragstart/dragend）后 300ms 内拦截地图容器内的 click，
+  // 避免拖动松手时鼠标恰好停在 marker 上而误触发弹窗/事件
+  let mapDragEndAt = 0
+  map.on('dragstart', () => { mapDragEndAt = Date.now() })
+  map.on('dragend', () => { mapDragEndAt = Date.now() })
+  const mapContainerEl = map.getContainer()
+  mapContainerEl.addEventListener('click', (e) => {
+    if (Date.now() - mapDragEndAt < 300) {
+      e.stopPropagation()
+      e.preventDefault()
+    }
+  }, true)
+  // 清理时移除（防止内存泄漏）
+  window.__mapDragClickGuardCleanup = () => {
+    if (mapContainerEl) mapContainerEl.removeEventListener('click', null, true)
+  }
+
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
   // 双击通过两次click间隔自己判断（Leaflet的dblclick事件不可靠）
