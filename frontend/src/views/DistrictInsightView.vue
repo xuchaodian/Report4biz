@@ -297,14 +297,25 @@ function renderDistricts() {
 }
 
 function selectDistrict(d) {
-  console.log('[商圈] selectDistrict 被调用:', d?.name, d?.city)
   selectedDistrict.value = d
   if (map) {
     const pts = [firstCoord(d.geometry)]
     if (pts[0]) map.fitBounds(L.latLngBounds([pts[0][1], pts[0][0]]), { padding: [40, 40], maxZoom: 14 })
   }
-  // 异步获取商圈内购物中心（detail 接口 polygon 包含判定）
+  // 异步获取商圈内购物中心
   loadShoppingCenters(d)
+}
+
+async function loadShoppingCenters(d) {
+  try {
+    const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
+    if (res.district && selectedDistrict.value?.name === d.name) {
+      selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
+      selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
+    }
+  } catch (e) {
+    // 静默失败
+  }
 }
 
 async function loadShoppingCenters(d) {
