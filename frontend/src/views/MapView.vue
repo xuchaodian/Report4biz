@@ -2248,12 +2248,26 @@ const addPolygonPoint = (e) => {
 const contextMenu = reactive({ visible: false, x: 0, y: 0, latlng: null })
 let onMapContextMenuRef = null  // document 捕获级右键监听引用（用于卸载时移除）
 const hideContextMenu = () => { contextMenu.visible = false }
-// 🔒 地图锁定：开启后拖动地图不触发图标移动（右键菜单开关，localStorage 持久化）
+// 🔒 地图锁定：开启后拖动地图时即使碰到图标也无视（图标不可拖动，地图正常拖动）
 const mapLocked = ref(localStorage.getItem('mapLocked') === '1')
+// 切换所有 marker 的可拖动状态（锁定 → 全部 disable，拖动地图碰到图标也无视）
+const applyMapLockToMarkers = () => {
+  const layers = [businessLayer, competitorLayer, brandStoreLayer, shoppingCenterLayer, allStoreClusterGroup]
+  layers.forEach(layer => {
+    if (!layer || typeof layer.eachLayer !== 'function') return
+    layer.eachLayer((m) => {
+      if (m && m.dragging) {
+        if (mapLocked.value) m.dragging.disable()
+        else m.dragging.enable()
+      }
+    })
+  })
+}
 const toggleMapLock = () => {
   mapLocked.value = !mapLocked.value
   localStorage.setItem('mapLocked', mapLocked.value ? '1' : '0')
-  ElMessage.success(mapLocked.value ? '🔒 地图已锁定：拖动地图不会误触图标移动' : '🔓 地图已解锁：图标可正常拖动')
+  applyMapLockToMarkers()
+  ElMessage.success(mapLocked.value ? '🔒 地图已锁定：拖动地图碰到图标也无视，可正常拖动地图' : '🔓 地图已解锁：图标可正常拖动')
 }
 // 右键菜单动作分发
 const contextMenuAction = (action) => {
@@ -4616,7 +4630,7 @@ const loadMarkers = async (skipFetch = false) => {
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,
-      draggable: true
+      draggable: !mapLocked.value
     })
 
     marker.bindPopup(getStorePopupHtml(markerData))
@@ -4825,7 +4839,7 @@ const reloadBusinessLayer = () => {
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type), null, markerData.brand)
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
-    const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
+    const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: !mapLocked.value })
     marker.bindPopup(getStorePopupHtml(markerData))
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
@@ -4953,7 +4967,7 @@ const loadCompetitors = async (skipFetch = false) => {
 
     const marker = L.marker([comp.latitude, comp.longitude], {
       icon,
-      draggable: true
+      draggable: !mapLocked.value
     })
 
     marker.bindPopup(`
@@ -5050,7 +5064,7 @@ const reloadCompetitorLayer = () => {
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl, false, null, null, comp.brand)
       : createSvgIcon(brandColor, 'dot', 1.2)
-    const marker = L.marker([comp.latitude, comp.longitude], { icon, draggable: true })
+    const marker = L.marker([comp.latitude, comp.longitude], { icon, draggable: !mapLocked.value })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${brandColor};">🏪 ${comp.brand || ''} ${comp.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${brandColor};">竞品</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(comp.city || '') + (comp.district || '') + (comp.address || '-')}</p></div>`)
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
@@ -5189,7 +5203,7 @@ const loadBrandStores = async (skipFetch = false) => {
       ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand)
       : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
 
-    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: !mapLocked.value })
 
     marker.bindPopup(`
       <div style="min-width: 200px; font-size: 13px;">
@@ -5269,7 +5283,7 @@ const reloadBrandStoreLayer = () => {
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand)
       : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
-    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: !mapLocked.value })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#409eff'};">🏪 ${store.brand || ''} ${store.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${store.icon_color || '#409eff'};">品牌门店</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p></div>`)
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {
@@ -5387,7 +5401,7 @@ const loadShoppingCenters = async (skipFetch = false) => {
       </div>
     `
 
-    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: !mapLocked.value })
     marker.bindPopup(popupContent)
 
     // 拖拽开始 - 阻止地图拖动
@@ -5454,7 +5468,7 @@ const reloadShoppingCenterLayer = () => {
 
   dataToShow.forEach(store => {
     const icon = createSvgIcon(store.icon_color || '#e6a23c', 'pin', 1.0)
-    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
+    const marker = L.marker([store.latitude, store.longitude], { icon, draggable: !mapLocked.value })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#e6a23c'};">🏬 ${store.name}</h4><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>${store.stars ? `<p style="margin:4px 0;"><strong>星级:</strong> ⭐ ${store.stars}</p>` : ''}${store.comments ? `<p style="margin:4px 0;"><strong>评论数:</strong> ${store.comments.toLocaleString()}</p>` : ''}</div>`)
     marker.on('mousedown', (e) => { L.DomEvent.stopPropagation(e) })
     marker.on('dragend', async (e) => {
