@@ -471,7 +471,7 @@ router.get('/detail', authenticate, (req, res) => {
         const compCount = countCompetitorsInDistrict(feature.geometry)
         const scores = computeScore(props, compCount)
         // 商圈内购物中心（polygon 包含判定，取前 10）
-        const centers = db.prepare(`SELECT name, city, district, address, latitude, longitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0`).all()
+        const centers = db.prepare(`SELECT name, city, district, address, latitude, longitude, stars, comments FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0`).all()
         const inDistrict = []
         for (const c of centers) {
           if (pointInFeature([c.longitude, c.latitude], feature.geometry)) {

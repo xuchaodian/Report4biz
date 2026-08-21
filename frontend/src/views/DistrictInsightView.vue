@@ -87,7 +87,7 @@
               <el-tag v-if="selectedDistrict.shoppingCenterCount !== undefined" size="small" type="success" effect="light">{{ selectedDistrict.shoppingCenterCount }} 家</el-tag>
             </div>
             <div v-if="selectedDistrict.shoppingCenters && selectedDistrict.shoppingCenters.length > 0" class="dv-centers-list">
-              <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag" @click="showShoppingCenter(c)">📌 {{ c.name }}</el-tag>
+              <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag" @click="showShoppingCenter(c)">📌 {{ c.name }}<span v-if="c.stars > 0" class="dv-center-stars">⭐ {{ c.stars }}</span></el-tag>
             </div>
             <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:#909399;">该商圈边界内暂无购物中心</div>
           </div>
@@ -583,6 +583,14 @@ async function refreshDistrict() {
   background: #409eff !important;
   border-color: #409eff !important;
   color: #fff !important;
+}
+.dv-center-stars {
+  color: #e6a23c;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.dv-center-tag:hover .dv-center-stars {
+  color: #ffd666;
 }
 :deep(.dv-best) {
   background: #e1f5ee !important;
