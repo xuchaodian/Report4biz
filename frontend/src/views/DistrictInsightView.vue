@@ -309,12 +309,12 @@ function selectDistrict(d) {
 async function loadShoppingCenters(d) {
   try {
     const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
-    if (res.district && selectedDistrict.value?.name === d.name) {
-      selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
-      selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
+    if (res.district) {
+      // 直接赋值（不依赖名字匹配，名字总是等于 d.name 因为是同一个对象）
+      selectedDistrict.value = { ...selectedDistrict.value, shoppingCenters: res.district.shoppingCenters || [], shoppingCenterCount: res.district.shoppingCenterCount ?? 0 }
     }
   } catch (e) {
-    // 静默失败：购物中心区显示默认（不影响详情卡主体）
+    console.error('[商圈购物中心] 加载失败:', e)
   }
 }
 
