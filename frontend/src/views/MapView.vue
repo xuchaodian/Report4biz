@@ -42,6 +42,7 @@
       v-model:show-competitor="showCompetitorLayer"
       v-model:show-brand="showBrandStoreLayer"
       v-model:show-center="showShoppingCenterLayer"
+      v-model:store-status-filter="myStoreStatusFilter"
       :active-tool="activeTool"
       :store-search-visible="storeSearchVisible"
       :district-visible="districtVisible"
@@ -1966,6 +1967,12 @@ const restoreOverlapThresholds = () => {
 }
 
 const showBusinessLayer = ref(true)
+// 我的门店状态筛选（all/open/closed，localStorage 持久化）
+const myStoreStatusFilter = ref(localStorage.getItem('myStoreStatusFilter') || 'all')
+watch(myStoreStatusFilter, () => {
+  localStorage.setItem('myStoreStatusFilter', myStoreStatusFilter.value)
+  loadMarkers()
+})
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
 const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
@@ -4610,9 +4617,18 @@ const loadMarkers = async (skipFetch = false) => {
 
   // 根据 visibleIds 过滤可见数据
   const visibleIds = markerStore.visibleIds
-  const dataToShow = (visibleIds === null || visibleIds === undefined)
+  let dataToShow = (visibleIds === null || visibleIds === undefined)
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
+
+  // 门店状态筛选（在营/停业）：在营 = 非闭店类状态
+  if (myStoreStatusFilter.value !== 'all') {
+    const wantClosed = myStoreStatusFilter.value === 'closed'
+    dataToShow = dataToShow.filter(m => {
+      const closed = isStoreClosed(m.store_status)
+      return wantClosed ? closed : !closed
+    })
+  }
 
   // 创建点位图层
   businessLayer = L.layerGroup()

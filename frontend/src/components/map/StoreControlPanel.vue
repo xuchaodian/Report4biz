@@ -11,6 +11,19 @@
           <span class="toggle-label">我的门店</span>
           <el-switch :model-value="showBusiness" @update:model-value="$emit('update:show-business', $event)" />
         </div>
+        <div v-show="showBusiness" class="toggle-row toggle-sub-row">
+          <span class="toggle-label-sub">门店状态</span>
+          <el-select
+            :model-value="storeStatusFilter"
+            size="small"
+            style="width: 108px;"
+            @update:model-value="$emit('update:store-status-filter', $event)"
+          >
+            <el-option label="全部" value="all" />
+            <el-option label="在营" value="open" />
+            <el-option label="停业" value="closed" />
+          </el-select>
+        </div>
         <div class="toggle-row">
           <span class="toggle-label">竞品门店</span>
           <el-switch :model-value="showCompetitor" @update:model-value="$emit('update:show-competitor', $event)" />
@@ -93,6 +106,7 @@ defineProps({
   showCompetitor: Boolean,
   showBrand: Boolean,
   showCenter: Boolean,
+  storeStatusFilter: { type: String, default: 'all' },
   activeTool: { type: String, default: '' },
   storeSearchVisible: Boolean,
   districtVisible: Boolean,
@@ -109,6 +123,7 @@ defineEmits([
   'update:show-competitor',
   'update:show-brand',
   'update:show-center',
+  'update:store-status-filter',
   'set-tool',
   'toggle-store-search',
   'toggle-district',
@@ -178,6 +193,15 @@ defineEmits([
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+.toggle-row.toggle-sub-row {
+  padding-left: 14px;
+  margin-top: 4px;
+}
+.toggle-label-sub {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
 }
 
 .toggle-label {
