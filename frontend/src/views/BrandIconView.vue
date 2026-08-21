@@ -10,7 +10,7 @@
     <!-- 说明 -->
     <div class="tip-box">
       <el-icon><InfoFilled /></el-icon>
-      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标（32×32px）。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。</span>
+      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。可在下方调节全局或单个品牌的地图图标大小。</span>
     </div>
 
     <!-- 地图图标大小 -->
@@ -67,6 +67,16 @@
         </div>
 
         <div class="brand-actions">
+          <!-- 单品牌图标大小 -->
+          <el-select
+            v-model="iconSizeMap[brand]"
+            size="small"
+            style="width: 100px;"
+            :placeholder="'跟随全局 ' + (globalIconSize || 32) + 'px'"
+          >
+            <el-option label="跟随全局" :value="0" />
+            <el-option v-for="s in sizeOptions" :key="s" :label="s + 'px'" :value="s" />
+          </el-select>
           <!-- 上传/更换图标（只能操作自己门店和竞品门店的品牌） -->
           <el-upload
             ref="uploadRefs"
@@ -101,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Delete, InfoFilled, Aim } from '@element-plus/icons-vue'
 import { useBrandIconStore } from '@/stores/brandIcon'
@@ -117,6 +127,23 @@ const iconSize = ref(Number(localStorage.getItem('mapIconSize')) || 32)
 watch(iconSize, (v) => {
   localStorage.setItem('mapIconSize', String(v))
 })
+const globalIconSize = computed(() => iconSize.value)
+// 可选的图标大小档位
+const sizeOptions = [20, 24, 28, 32, 36, 40, 44, 48]
+// 单品牌图标大小映射（0 = 跟随全局；localStorage: mapIconSize_<brand> 持久化）
+const iconSizeMap = reactive({})
+const ensureIconSizeMap = (brands) => {
+  brands.forEach(b => {
+    if (iconSizeMap[b] === undefined) {
+      iconSizeMap[b] = Number(localStorage.getItem('mapIconSize_' + b)) || 0
+    }
+  })
+}
+watch(iconSizeMap, (v) => {
+  Object.keys(v).forEach(b => {
+    if (v[b] && v[b] > 0) localStorage.setItem('mapIconSize_' + b, String(v[b]))
+  })
+}, { deep: true })
 const brandIconStore = useBrandIconStore()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
@@ -220,6 +247,8 @@ onMounted(async () => {
     competitorStore.fetchCompetitors(),
     brandStoreStore.fetchBrandStores()
   ])
+  // 初始化单品牌图标大小映射
+  ensureIconSizeMap(allBrands.value)
 })
 </script>
 

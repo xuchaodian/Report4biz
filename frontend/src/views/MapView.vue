@@ -982,6 +982,11 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>联通人口</span>
       </div>
+      <div class="map-context-menu-divider"></div>
+      <div class="map-context-menu-item" @click="contextMenuAction('lockmap')">
+        <el-icon><Lock v-if="!mapLocked" /><Unlock v-else /></el-icon>
+        <span>{{ mapLocked ? '🔓 解锁地图（图标可移动）' : '🔒 锁定地图（拖动不误触图标）' }}</span>
+      </div>
     </div>
 
     <!-- 周边环境打分卡弹窗 -->
@@ -1544,7 +1549,7 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading, MapLocation
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading, MapLocation, Lock, Unlock
 } from '@element-plus/icons-vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -2243,6 +2248,13 @@ const addPolygonPoint = (e) => {
 const contextMenu = reactive({ visible: false, x: 0, y: 0, latlng: null })
 let onMapContextMenuRef = null  // document 捕获级右键监听引用（用于卸载时移除）
 const hideContextMenu = () => { contextMenu.visible = false }
+// 🔒 地图锁定：开启后拖动地图不触发图标移动（右键菜单开关，localStorage 持久化）
+const mapLocked = ref(localStorage.getItem('mapLocked') === '1')
+const toggleMapLock = () => {
+  mapLocked.value = !mapLocked.value
+  localStorage.setItem('mapLocked', mapLocked.value ? '1' : '0')
+  ElMessage.success(mapLocked.value ? '🔒 地图已锁定：拖动地图不会误触图标移动' : '🔓 地图已解锁：图标可正常拖动')
+}
 // 右键菜单动作分发
 const contextMenuAction = (action) => {
   hideContextMenu()
@@ -2253,6 +2265,7 @@ const contextMenuAction = (action) => {
     case 'envscore': startEnvScore(); break
     case 'population': openPopulationDistribution(); break
     case 'smartsteps': smartstepsVisible.value = !smartstepsVisible.value; break
+    case 'lockmap': toggleMapLock(); break
   }
 }
 
@@ -4046,7 +4059,7 @@ const showCircleOnMap = () => {
       // 优先使用品牌图标，否则使用当前图标样式
       const brandIconUrl = brandIconMap.value[store.brand]
       const icon = brandIconUrl 
-        ? createBrandImageIcon(brandIconUrl) 
+        ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand) 
         : createCustomIcon(getStatusColor(store.store_type), currentMarkerStyle.value)
       const marker = L.marker([store.latitude, store.longitude], { icon })
       marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
@@ -4077,7 +4090,7 @@ const showCircleOnMap = () => {
     const brandColor = getCompBrandColor(store.brand)
     // 优先使用品牌图标，否则使用颜色圆点图标
     const brandIconUrl = brandIconMap.value[store.brand]
-    const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(brandColor, 'dot', 1.2)
+    const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand) : createSvgIcon(brandColor, 'dot', 1.2)
     const marker = L.marker([store.latitude, store.longitude], { icon })
     marker.bindPopup(`<b>${store.name}</b><br>品牌: ${store.brand || '-'}<br>距圆心: ${store.distance < 1000 ? `${store.distance.toFixed(0)}米` : `${(store.distance / 1000).toFixed(2)}公里`}`)
     analysisCircleLayer.addLayer(marker)
@@ -4598,7 +4611,7 @@ const loadMarkers = async (skipFetch = false) => {
     const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type))
+      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type), null, markerData.brand)
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
@@ -4619,6 +4632,13 @@ const loadMarkers = async (skipFetch = false) => {
 
     // 拖拽结束更新坐标
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([markerData.latitude, markerData.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       // 检查位置是否真的变化了（阈值约11米）
       const threshold = 0.0001
@@ -4697,7 +4717,7 @@ const buildAllStoreCluster = () => {
       if (m.latitude && m.longitude) {
         const isClosed = isStoreClosed(m.store_status)
         const brandIconUrl = brandIconMap.value[m.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(m.store_type)) : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(m.store_type), 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(m.store_type), null, m.brand) : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(m.store_type), 'dot', 1.2)
         const marker = L.marker([m.latitude, m.longitude], { icon })
         marker.bindPopup(`
           <div style="min-width: 200px; font-size: 13px;">
@@ -4732,7 +4752,7 @@ const buildAllStoreCluster = () => {
     data.forEach(c => {
       if (c.latitude && c.longitude) {
         const brandIconUrl = brandIconMap.value[c.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(getBrandColor(c.brand), 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, false, null, null, c.brand) : createSvgIcon(getBrandColor(c.brand), 'dot', 1.2)
         const marker = L.marker([c.latitude, c.longitude], { icon })
         marker.bindPopup(`<div style="color:${getBrandColor(c.brand)}"><b>竞品</b><br/>${c.brand || ''} ${c.name}<br/>${(c.city || '') + (c.district || '') + (c.address || '-')}</div>`)
         allStoreClusterGroup.addLayer(marker)
@@ -4753,7 +4773,7 @@ const buildAllStoreCluster = () => {
       if (s.latitude && s.longitude) {
         const brandColor = s.icon_color || '#888888'
         const brandIconUrl = brandIconMap.value[s.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl) : createSvgIcon(brandColor, 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand) : createSvgIcon(brandColor, 'dot', 1.2)
         const marker = L.marker([s.latitude, s.longitude], { icon })
         marker.bindPopup(`<div style="color:${brandColor}"><b>品牌门店</b><br/>${s.brand || ''} ${s.name}<br/>${(s.city || '') + (s.district || '') + (s.address || '-')}</div>`)
         allStoreClusterGroup.addLayer(marker)
@@ -4803,7 +4823,7 @@ const reloadBusinessLayer = () => {
     const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type))
+      ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type), null, markerData.brand)
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
     const marker = L.marker([markerData.latitude, markerData.longitude], { icon, draggable: true })
     marker.bindPopup(getStorePopupHtml(markerData))
@@ -4812,6 +4832,13 @@ const reloadBusinessLayer = () => {
       L.DomEvent.stopPropagation(e)
     })
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([markerData.latitude, markerData.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - markerData.latitude) > threshold
@@ -4921,7 +4948,7 @@ const loadCompetitors = async (skipFetch = false) => {
     const brandColor = getBrandColor(comp.brand)
     const brandIconUrl = brandIconMap.value[comp.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
+      ? createBrandImageIcon(brandIconUrl, false, null, null, comp.brand)
       : createSvgIcon(brandColor, 'dot', 1.2)
 
     const marker = L.marker([comp.latitude, comp.longitude], {
@@ -4947,6 +4974,13 @@ const loadCompetitors = async (skipFetch = false) => {
 
     // 拖拽结束更新坐标
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([comp.latitude, comp.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - comp.latitude) > threshold
@@ -5014,7 +5048,7 @@ const reloadCompetitorLayer = () => {
     const brandColor = getBrandColor(comp.brand)
     const brandIconUrl = brandIconMap.value[comp.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
+      ? createBrandImageIcon(brandIconUrl, false, null, null, comp.brand)
       : createSvgIcon(brandColor, 'dot', 1.2)
     const marker = L.marker([comp.latitude, comp.longitude], { icon, draggable: true })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${brandColor};">🏪 ${comp.brand || ''} ${comp.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${brandColor};">竞品</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(comp.city || '') + (comp.district || '') + (comp.address || '-')}</p></div>`)
@@ -5023,6 +5057,13 @@ const reloadCompetitorLayer = () => {
       L.DomEvent.stopPropagation(e)
     })
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([comp.latitude, comp.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - comp.latitude) > threshold
@@ -5145,7 +5186,7 @@ const loadBrandStores = async (skipFetch = false) => {
   dataToShow.forEach(store => {
     const brandIconUrl = brandIconMap.value[store.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
+      ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand)
       : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
 
     const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
@@ -5167,6 +5208,13 @@ const loadBrandStores = async (skipFetch = false) => {
     })
 
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([store.latitude, store.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
@@ -5219,7 +5267,7 @@ const reloadBrandStoreLayer = () => {
   dataToShow.forEach(store => {
     const brandIconUrl = brandIconMap.value[store.brand]
     const icon = brandIconUrl
-      ? createBrandImageIcon(brandIconUrl)
+      ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand)
       : createSvgIcon(store.icon_color || '#409eff', 'diamond', 1)
     const marker = L.marker([store.latitude, store.longitude], { icon, draggable: true })
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#409eff'};">🏪 ${store.brand || ''} ${store.name}</h4><p style="margin:4px 0;"><strong>类型:</strong> <span style="color:${store.icon_color || '#409eff'};">品牌门店</span></p><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p></div>`)
@@ -5228,6 +5276,13 @@ const reloadBrandStoreLayer = () => {
       L.DomEvent.stopPropagation(e)
     })
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([store.latitude, store.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
@@ -5341,6 +5396,13 @@ const loadShoppingCenters = async (skipFetch = false) => {
     })
 
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([store.latitude, store.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - store.latitude) > threshold
@@ -5396,6 +5458,13 @@ const reloadShoppingCenterLayer = () => {
     marker.bindPopup(`<div style="min-width:200px;font-size:13px;"><h4 style="margin:0 0 8px 0;color:${store.icon_color || '#e6a23c'};">🏬 ${store.name}</h4><p style="margin:4px 0;"><strong>地址:</strong> ${(store.city || '') + (store.district || '') + (store.address || '-')}</p>${store.stars ? `<p style="margin:4px 0;"><strong>星级:</strong> ⭐ ${store.stars}</p>` : ''}${store.comments ? `<p style="margin:4px 0;"><strong>评论数:</strong> ${store.comments.toLocaleString()}</p>` : ''}</div>`)
     marker.on('mousedown', (e) => { L.DomEvent.stopPropagation(e) })
     marker.on('dragend', async (e) => {
+      
+            // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
+            if (mapLocked.value) {
+              e.target.setLatLng([store.latitude, store.longitude])
+              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              return
+            }
       const latlng = e.target.getLatLng()
       const threshold = 0.0001
       const latChanged = Math.abs(latlng.lat - store.latitude) > threshold

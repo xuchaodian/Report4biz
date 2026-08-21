@@ -157,14 +157,22 @@ export function createOldIcon(color = 'default', icon = '📍') {
   })
 }
 
-// 创建品牌图片图标（默认 32×32px，可在「设置图标」页调节全局大小）
+// 创建品牌图片图标（默认 32×32px，可在「设置图标」页调节全局/单品牌大小）
 // gray: 闭店时变灰
 // borderColor: 门店类型边框颜色（如 '重点候选' 用土橙色边框区分）
-export function createBrandImageIcon(url, gray = false, borderColor = null, size = null) {
+// size: 手动指定大小（可选）
+// brand: 品牌名（可选）——优先读取该品牌独立大小 localStorage: mapIconSize_<brand>，其次全局 mapIconSize
+export function createBrandImageIcon(url, gray = false, borderColor = null, size = null, brand = null) {
   if (!size) {
-    // 全局图标大小（localStorage: mapIconSize，默认 32）
-    const saved = Number(localStorage.getItem('mapIconSize'))
-    size = saved >= 20 && saved <= 48 ? saved : 32
+    // 单品牌独立大小（localStorage: mapIconSize_<brand>）
+    let brandSize = brand ? Number(localStorage.getItem('mapIconSize_' + brand)) : NaN
+    if (brandSize >= 20 && brandSize <= 48) {
+      size = brandSize
+    } else {
+      // 全局大小（localStorage: mapIconSize，默认 32）
+      const saved = Number(localStorage.getItem('mapIconSize'))
+      size = saved >= 20 && saved <= 48 ? saved : 32
+    }
   }
   const pad = borderColor ? 4 : 0
   const total = size + pad * 2
