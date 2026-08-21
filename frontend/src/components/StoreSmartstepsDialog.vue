@@ -209,6 +209,9 @@
       <div class="dialog-header-flex">
         <span>📊 查询结果详情 - {{ currentDetail?.store_name || storeInfo?.name || '' }}</span>
         <div class="dialog-header-actions">
+          <el-button type="success" size="small" class="btn-ai-advice" :loading="aiAdviceLoading" @click="handleAiAdvice">
+            🤖 AI 选址建议
+          </el-button>
           <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight">
             {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
           </el-button>
@@ -226,6 +229,15 @@
         <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
         <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+      </div>
+      <!-- AI 选址建议 -->
+      <div v-if="aiAdvice" class="ai-advice-section">
+        <h4>🤖 AI 选址建议</h4>
+        <div class="ai-advice-meta" v-if="aiAdviceBrand">
+          <el-tag size="small" type="success">{{ aiAdviceBrand }}</el-tag>
+          <el-tag v-if="aiAdviceCategory" size="small" type="warning">{{ aiAdviceCategory }}</el-tag>
+        </div>
+        <div class="ai-advice-content">{{ aiAdvice }}</div>
       </div>
       <!-- 数据洞察 -->
       <div v-if="insights.length > 0" class="insight-section">
@@ -321,6 +333,176 @@ const resultData = ref(null)
 // 数据洞察
 const insights = ref([])
 const insightLoading = ref(false)
+
+// AI 选址建议（品牌 → 业态映射 + 调用豆包）
+const aiAdvice = ref('')
+const aiAdviceLoading = ref(false)
+const aiAdviceBrand = ref('')
+const aiAdviceCategory = ref('')
+// 常见餐饮/零售品牌 → 业态映射（不在表内则 AI 自行判断）
+const BRAND_CATEGORY_MAP = {
+  '食其家': '日式牛肉盖饭快餐',
+  '吉野家': '日式快餐（牛肉饭/丼饭）',
+  '松屋': '日式快餐（牛肉饭）',
+  '老乡鸡': '中式快餐（以鸡肉为主的炖菜快餐）',
+  '大米先生': '中式快餐（现炒小碗菜）',
+  '米村拌饭': '韩式拌饭快餐',
+  '西塔老太太': '韩式烤肉（正餐）',
+  '谷田稻香': '中式快餐（瓦锅饭）',
+  '杨国福': '麻辣烫快餐',
+  '张亮麻辣烫': '麻辣烫快餐',
+  '海底捞': '火锅正餐',
+  '呷哺呷哺': '小火锅快餐',
+  '肯德基': '西式快餐（炸鸡汉堡）',
+  '麦当劳': '西式快餐（汉堡）',
+  '汉堡王': '西式快餐（汉堡）',
+  '必胜客': '西式休闲餐饮（披萨）',
+  '瑞幸咖啡': '咖啡饮品（快取式）',
+  '星巴克': '咖啡饮品（第三空间）',
+  '蜜雪冰城': '平价茶饮',
+  '喜茶': '新式茶饮',
+  '奈雪的茶': '新式茶饮',
+  '茶百道': '新式茶饮',
+  '沪上阿姨': '新式茶饮',
+  '书亦烧仙草': '新式茶饮',
+  '霸王茶姬': '新中式茶饮',
+  '古茗': '新式茶饮',
+  '屈臣氏': '个人护理零售',
+  '名创优品': '生活百货零售',
+  '优衣库': '快时尚服饰零售',
+  '7-11': '便利店',
+  '罗森': '便利店',
+  '全家': '便利店',
+  '永辉超市': '生鲜超市',
+  '盒马鲜生': '生鲜超市（新零售）'
+}
+// 提取品牌名（门店名去掉括号后缀，如"食其家(上海XX店)" → "食其家"）
+function extractBrand(storeName) {
+  if (!storeName) return ''
+  let name = String(storeName)
+  // 去掉括号及后缀
+  name = name.replace(/[（(].*?[）)]/g, '').replace(/[-—–]\d+号?店$/, '').replace(/店$/, '')
+  // 先精确匹配映射表（最长优先）
+  const keys = Object.keys(BRAND_CATEGORY_MAP).sort((a, b) => b.length - a.length)
+  const hit = keys.find(k => name.includes(k) || storeName.includes(k))
+  if (hit) return hit
+  return name.trim()
+}
+// 提炼联通数据摘要（供 AI 分析，避免传原始 JSON 浪费 token）
+function buildDataSummary(data) {
+  const lines = []
+  try {
+    // 1001 人口结构
+    if (data['1001'] && typeof data['1001'] === 'object') {
+      const p0 = findFieldValue(data['1001'], /^P0_SUM\d*$/i)
+      const p1 = findFieldValue(data['1001'], /^P1_SUM\d*$/i)
+      const p2 = findFieldValue(data['1001'], /^P2_SUM\d*$/i)
+      const p3 = findFieldValue(data['1001'], /^P3_SUM\d*$/i)
+      const total = p0 + p1 + p2 + p3
+      if (total > 0) {
+        lines.push(`人口总数 ${total}，居住占比 ${Math.round(p1 / total * 100)}%，工作占比 ${Math.round(p2 / total * 100)}%，到访占比 ${Math.round(p3 / total * 100)}%`)
+        const male0 = findFieldValue(data['1001'], /^MALE0_SUM\d*$/i)
+        const female0 = findFieldValue(data['1001'], /^FEMALE0_SUM\d*$/i)
+        if (male0 > 0 && female0 > 0) lines.push(`性别比 男:女 = ${Math.round(male0 / female0 * 100)}:100`)
+      }
+    }
+    // 1005 客流时段
+    if (data['1005'] && Array.isArray(data['1005']) && data['1005'].length > 0) {
+      const weekdays = data['1005'].filter(d => d.day_type === 0)
+      const weekends = data['1005'].filter(d => d.day_type === 1)
+      if (weekdays.length > 0) {
+        const peak = weekdays.reduce((max, d) => (d.hour_visit || 0) > (max.hour_visit || 0) ? d : max, weekdays[0])
+        lines.push(`工作日客流高峰 ${peak.hour_period} 点`)
+      }
+      if (weekends.length > 0) {
+        const peak = weekends.reduce((max, d) => (d.hour_visit || 0) > (max.hour_visit || 0) ? d : max, weekends[0])
+        lines.push(`周末客流高峰 ${peak.hour_period} 点`)
+      }
+    }
+    // 1010 教育水平
+    if (data['1010'] && Array.isArray(data['1010']) && data['1010'].length > 0) {
+      const visit = data['1010'].find(d => String(d.popu_type) === '0')
+      if (visit) {
+        const college = (visit.p2 || 0) + (visit.p3 || 0) + (visit.p4 || 0)
+        const total = (visit.p0 || 0) + (visit.p1 || 0) + college
+        if (total > 0) lines.push(`本科及以上学历占比 ${Math.round(college / total * 100)}%`)
+      }
+    }
+    // 1009 消费水平
+    if (data['1009'] && Array.isArray(data['1009']) && data['1009'].length > 0) {
+      const spend = data['1009'].filter(d => String(d.popu_type) === '0')
+      const high = spend.filter(d => Number(d.level) >= 6)
+      const totalVal = spend.reduce((s, d) => s + (Number(d.pop_value) || 0), 0)
+      const highVal = high.reduce((s, d) => s + (Number(d.pop_value) || 0), 0)
+      if (totalVal > 0) lines.push(`高消费人群（指数6-8）占比 ${Math.round(highVal / totalVal * 100)}%`)
+    }
+    // 1011 行业分布
+    if (data['1011'] && Array.isArray(data['1011']) && data['1011'].length > 0) {
+      const visit = data['1011'].find(d => String(d.popu_type) === '0')
+      if (visit) {
+        const labels = ['金融', '医疗', '公务员', '白领职员', '工人服务', '教师', '农民', '网约车', '外卖员', '快递员']
+        const keys = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10']
+        let maxV = 0, maxI = -1
+        keys.forEach((k, i) => { const v = Number(visit[k]) || 0; if (v > maxV) { maxV = v; maxI = i } })
+        if (maxI >= 0) lines.push(`到访人群行业占比最高：${labels[maxI]}`)
+      }
+    }
+    // 1006 停留时长
+    if (data['1006'] && Array.isArray(data['1006']) && data['1006'].length > 0) {
+      let long = 0, t = 0
+      data['1006'].forEach(d => {
+        t += (d.stay1 || 0) + (d.stay2 || 0) + (d.stay3 || 0) + (d.stay4 || 0) + (d.stay5 || 0)
+        long += (d.stay4 || 0) + (d.stay5 || 0)
+      })
+      if (t > 0) lines.push(`长时间停留（2小时+）占比 ${Math.round(long / t * 100)}%`)
+    }
+  } catch (e) { /* 提炼失败忽略 */ }
+  return lines.length > 0 ? lines.join('；') : ''
+}
+// 处理 AI 选址建议
+const handleAiAdvice = async () => {
+  if (!resultData.value) {
+    ElMessage.info('暂无数据可供分析')
+    return
+  }
+  if (aiAdviceLoading.value) return
+  aiAdviceLoading.value = true
+  aiAdvice.value = ''
+  try {
+    let data = resultData.value
+    if (typeof data === 'string') { try { data = JSON.parse(data) } catch (e) { data = null } }
+    if (data && data.apiResult) data = data.apiResult
+    if (!data || typeof data !== 'object') {
+      ElMessage.warning('暂无足够数据进行分析')
+      return
+    }
+    // 品牌与业态
+    const storeName = props.store?.name || currentDetail.value?.store_name || ''
+    const brand = extractBrand(storeName)
+    const category = BRAND_CATEGORY_MAP[brand] || ''
+    aiAdviceBrand.value = brand
+    aiAdviceCategory.value = category || '业态未映射（AI 自行判断）'
+    // 数据摘要
+    const summary = buildDataSummary(data)
+    const radiusText = currentDetail.value?.radii?.length ? currentDetail.value.radii.join('米, ') + '米' : props.store?.radius || ''
+    const city = currentDetail.value?.city || props.store?.city || ''
+    // 调用后端 AI
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const res = await fetch('/api/ai/site-advice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary })
+    })
+    const j = await res.json()
+    if (!res.ok) throw new Error(j.message || 'AI 服务不可用')
+    aiAdvice.value = j.reply || '（AI 未返回内容）'
+  } catch (e) {
+    console.error('AI 选址建议失败:', e)
+    ElMessage.error('AI 选址建议失败：' + (e.message || '请稍后重试'))
+  } finally {
+    aiAdviceLoading.value = false
+  }
+}
 
 // 计算属性
 const canQuery = computed(() => {
@@ -2514,6 +2696,35 @@ watch(() => props.store, (newStore) => {
   background: #f9f8ff;
   border: 1px solid #e8e0f0;
   border-radius: 8px;
+}
+
+/* AI 选址建议区 */
+.ai-advice-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: linear-gradient(135deg, #f0f9eb 0%, #fdf6ec 100%);
+  border: 1px solid #e1f3d8;
+  border-radius: 8px;
+}
+.ai-advice-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #333;
+}
+.ai-advice-meta {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ai-advice-content {
+  font-size: 13px;
+  line-height: 1.8;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  padding: 10px;
 }
 
 .insight-section h4 {

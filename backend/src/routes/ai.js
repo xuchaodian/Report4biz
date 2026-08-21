@@ -465,4 +465,86 @@ async function executeCalculatePotential(args) {
   }
 }
 
+
+// ===== 品牌选址建议（数据洞察 → AI）=====
+// 读取门店品牌 + 业态映射 + 联通智慧足迹数据摘要，调用豆包给出是否符合品牌定位的选址建议
+router.post('/site-advice', authenticate, async (req, res) => {
+  try {
+    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '' } = req.body || {}
+    const userId = req.user.id
+
+    // 检查AI使用权限
+    const access = checkAIAccess(userId)
+    if (!access.allowed) {
+      return res.status(403).json({ message: access.message })
+    }
+    if (!brand && !storeName) {
+      return res.status(400).json({ message: '缺少门店/品牌信息' })
+    }
+
+    const systemPrompt = `你是专业的连锁品牌选址顾问（GeoManager 商业智能系统）。用户会提供品牌名、所属业态、查询区域和联通智慧足迹人口大数据摘要（基于高德/联通数据服务：1001 人口结构、1005 客流时段、1009 消费水平、1010 教育水平、1011 行业分布、1013 消费能力、1015 资产水平）。
+
+你的任务：判断该区域是否适合该品牌开设门店，并给出专业选址建议。
+
+## 输出要求（Markdown 格式，简洁专业）
+1. **选址结论**：开头第一行直接给出「✅ 适合选址」或「⚠️ 谨慎选址」或「❌ 不建议选址」，并说明理由
+2. **客群匹配度**：区域主要人群（居住/工作/到访比例、消费力、行业）与该品牌目标客群是否匹配
+3. **业态契合点**：区域特征（如高密度居住区/商务区/商圈）与该业态（如快餐/正餐/零售）的契合度
+4. **风险提示**：不匹配的风险点（如有）
+5. **运营建议**：若开业，建议的时段推广、定价、选址位置偏好（如近地铁/写字楼/社区）
+
+注意：严格基于提供的数据摘要分析，不要编造数据；如果数据不足，明确说明哪些维度缺失。回复控制在 500 字以内，用中文。`
+
+    const userContent = [
+      `【门店】${storeName || '-'}`,
+      `【品牌】${brand || '未知'}`,
+      `【业态】${category || '未知（请根据品牌自行判断）'}`,
+      `【查询城市】${city || '-'}`,
+      `【查询半径】${radius || '-'}`,
+      '',
+      '【联通智慧足迹数据摘要】',
+      dataSummary || '暂无数据',
+      '',
+      '请基于以上信息，给出该区域是否符合该品牌定位的选址建议。'
+    ].join('\n')
+
+    const response = await fetch(`${ARK_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ARK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent }
+        ],
+        temperature: 0.5,
+        max_tokens: 1200
+      })
+    })
+
+    if (!response.ok) {
+      const err = await response.text()
+      console.error('豆包 site-advice 错误:', err)
+      return res.status(500).json({ message: 'AI 服务暂时不可用', detail: err })
+    }
+
+    const result = await response.json()
+    const reply = result.choices?.[0]?.message?.content || ''
+
+    // 记录token消耗
+    if (result.usage) {
+      const totalTokens = (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0)
+      recordTokenUsage(userId, totalTokens)
+    }
+
+    res.json({ success: true, reply })
+  } catch (e) {
+    console.error('[site-advice] 失败:', e.message)
+    res.status(500).json({ message: '服务器错误', detail: e.message })
+  }
+})
+
 export default router
