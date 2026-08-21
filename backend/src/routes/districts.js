@@ -190,7 +190,7 @@ router.post('/refresh', authenticate, async (req, res) => {
     initDistrictCacheTable(db)
 
     // 找商圈
-    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${city}%`)
+    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     let feature = null
     for (const f of files) {
       const geojson = getGeojson(f.id)
@@ -406,7 +406,7 @@ router.get('/', authenticate, (req, res) => {
     const { city } = req.query
     if (!city) return res.status(400).json({ message: '缺少城市参数' })
     const db = getDb()
-    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${city}%`)
+    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     if (files.length === 0) return res.json({ districts: [] })
 
     const districts = []
@@ -458,7 +458,7 @@ router.get('/detail', authenticate, (req, res) => {
     const { city, name } = req.query
     if (!city || !name) return res.status(400).json({ message: '缺少参数' })
     const db = getDb()
-    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${city}%`)
+    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     for (const f of files) {
       const geojson = getGeojson(f.id)
       if (!geojson || !geojson.features) continue
