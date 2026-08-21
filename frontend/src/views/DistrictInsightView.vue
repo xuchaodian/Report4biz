@@ -302,34 +302,25 @@ function selectDistrict(d) {
     const pts = [firstCoord(d.geometry)]
     if (pts[0]) map.fitBounds(L.latLngBounds([pts[0][1], pts[0][0]]), { padding: [40, 40], maxZoom: 14 })
   }
-  // 异步获取商圈内购物中心
+  // 异步获取商圈内购物中心（普通函数 + fetch().then() 链，避免 async/await 被 esbuild 编译为 IIFE pattern）
   loadShoppingCenters(d)
 }
 
-async function loadShoppingCenters(d) {
-  try {
-    const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
-    if (res.district && selectedDistrict.value?.name === d.name) {
-      selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
-      selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
-    }
-  } catch (e) {
-    // 静默失败
-  }
-}
-
-async function loadShoppingCenters(d) {
-  console.log('[商圈] loadShoppingCenters 开始:', d?.name, d?.city)
-  try {
-    const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
-    console.log('[商圈] loadShoppingCenters res:', res?.district?.shoppingCenterCount)
-    if (res.district) {
-      // 直接赋值（不依赖名字匹配，名字总是等于 d.name 因为是同一个对象）
-      selectedDistrict.value = { ...selectedDistrict.value, shoppingCenters: res.district.shoppingCenters || [], shoppingCenterCount: res.district.shoppingCenterCount ?? 0 }
-    }
-  } catch (e) {
-    console.error('[商圈购物中心] 加载失败:', e)
-  }
+// 注意：不能用 async function（esbuild 会把 fire-and-forget async 调用编译成 !async function(){}()，
+// 生产构建下该 IIFE 不执行）。改用普通函数 + fetch().then() 链。
+function loadShoppingCenters(d) {
+  const token = sessionStorage.getItem('token')
+  fetch('/api/districts/detail?city=' + encodeURIComponent(d.city) + '&name=' + encodeURIComponent(d.name), {
+    headers: { Authorization: 'Bearer ' + token }
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.district && selectedDistrict.value?.name === d.name) {
+        selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
+        selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
+      }
+    })
+    .catch(() => {})
 }
 
 function isCompared(name) {
