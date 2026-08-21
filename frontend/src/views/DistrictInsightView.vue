@@ -297,6 +297,7 @@ function renderDistricts() {
 }
 
 function selectDistrict(d) {
+  console.log('[商圈] selectDistrict 被调用:', d?.name, d?.city)
   selectedDistrict.value = d
   if (map) {
     const pts = [firstCoord(d.geometry)]
@@ -307,8 +308,10 @@ function selectDistrict(d) {
 }
 
 async function loadShoppingCenters(d) {
+  console.log('[商圈] loadShoppingCenters 开始:', d?.name, d?.city)
   try {
     const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
+    console.log('[商圈] loadShoppingCenters res:', res?.district?.shoppingCenterCount)
     if (res.district) {
       // 直接赋值（不依赖名字匹配，名字总是等于 d.name 因为是同一个对象）
       selectedDistrict.value = { ...selectedDistrict.value, shoppingCenters: res.district.shoppingCenters || [], shoppingCenterCount: res.district.shoppingCenterCount ?? 0 }
