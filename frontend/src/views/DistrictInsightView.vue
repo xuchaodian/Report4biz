@@ -337,10 +337,14 @@ function showShoppingCenter(c) {
     map.removeLayer(shoppingCenterMarker)
     shoppingCenterMarker = null
   }
-  shoppingCenterMarker = L.marker([c.latitude, c.longitude], { title: c.name })
-    .addTo(map)
-    .bindPopup(`<b>📌 ${c.name}</b>${c.address ? '<br>' + c.address : ''}`, { autoPan: true })
-    .openPopup()
+  // 自定义红色图钉（纯 SVG，不依赖 leaflet 默认图钉图片资源）
+  const pinHtml = '<div class="sc-pin"><svg viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" fill="#f56c6c" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg></div>'
+  const pinIcon = L.divIcon({ className: 'sc-pin-wrap', html: pinHtml, iconSize: [28, 36], iconAnchor: [14, 36], popupAnchor: [0, -32] })
+  const m = L.marker([c.latitude, c.longitude], { icon: pinIcon, title: c.name })
+  m.addTo(map)
+  m.bindPopup('<b>📌 ' + c.name + '</b>' + (c.address ? '<br>' + c.address : ''), { autoPan: true })
+  m.openPopup()
+  shoppingCenterMarker = m
   map.flyTo([c.latitude, c.longitude], 15, { duration: 0.8 })
 }
 

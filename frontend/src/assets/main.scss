@@ -305,3 +305,21 @@ body {
 @media (max-width: 768px) {
   .radar-drilldown .radar-charts { flex-direction: column; }
 }
+
+/* ===== 购物中心定位图钉（自定义红色 pin）===== */
+.sc-pin-wrap {
+  background: transparent !important;
+  border: none !important;
+}
+.sc-pin {
+  width: 28px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+  cursor: pointer;
+}
+.sc-pin svg {
+  display: block;
+}
