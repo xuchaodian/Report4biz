@@ -105,6 +105,14 @@
           <span class="toggle-label">我的门店</span>
           <el-switch v-model="showBusinessLayer" />
         </div>
+        <div v-show="showBusinessLayer" class="toggle-row toggle-sub-row">
+          <span class="toggle-label-sub">门店状态</span>
+          <el-select v-model="myStoreStatusFilter" size="small" style="width: 108px;" @change="onMyStoreStatusFilterChange">
+            <el-option label="全部" value="all" />
+            <el-option label="在营" value="open" />
+            <el-option label="停业" value="closed" />
+          </el-select>
+        </div>
         <div class="toggle-row">
           <span class="toggle-label">竞品门店</span>
           <el-switch v-model="showCompetitorLayer" />
@@ -819,7 +827,7 @@ import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
 import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor,
-  calculateDistance, formatDistance, calculateArea, formatArea
+  calculateDistance, formatDistance, calculateArea, formatArea, isStoreClosed
 } from '@/utils/map'
 import axios from 'axios'
 import * as echarts from 'echarts'
@@ -889,6 +897,12 @@ const showHeatmap = ref(false)
 const showCluster = ref(false)
 
 const showBusinessLayer = ref(true)
+// 我的门店状态筛选（all/open/closed，localStorage 持久化）
+const myStoreStatusFilter = ref(localStorage.getItem('myStoreStatusFilter') || 'all')
+const onMyStoreStatusFilterChange = () => {
+  localStorage.setItem('myStoreStatusFilter', myStoreStatusFilter.value)
+  loadMarkers()
+}
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
 const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
@@ -2363,9 +2377,18 @@ const loadMarkers = async () => {
 
   // 根据 visibleIds 过滤可见数据
   const visibleIds = markerStore.visibleIds
-  const dataToShow = (visibleIds === null || visibleIds === undefined)
+  let dataToShow = (visibleIds === null || visibleIds === undefined)
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
+
+  // 门店状态筛选（在营/停业）：在营 = 非闭店类状态
+  if (myStoreStatusFilter.value !== 'all') {
+    const wantClosed = myStoreStatusFilter.value === 'closed'
+    dataToShow = dataToShow.filter(m => {
+      const closed = isStoreClosed(m.store_status)
+      return wantClosed ? closed : !closed
+    })
+  }
 
   // 创建点位图层
   businessLayer = L.layerGroup()
@@ -6256,6 +6279,16 @@ onUnmounted(() => {
     .toggle-label {
       font-size: 12px;
       color: #606266;
+    }
+    // 子行（我的门店状态筛选）：缩进显示
+    &.toggle-sub-row {
+      padding-left: 14px;
+      margin-top: 4px;
+      .toggle-label-sub {
+        font-size: 12px;
+        color: #909399;
+        white-space: nowrap;
+      }
     }
 
     .el-switch {
