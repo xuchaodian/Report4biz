@@ -87,7 +87,7 @@
               <el-tag v-if="selectedDistrict.shoppingCenterCount !== undefined" size="small" type="success" effect="light">{{ selectedDistrict.shoppingCenterCount }} 家</el-tag>
             </div>
             <div v-if="selectedDistrict.shoppingCenters && selectedDistrict.shoppingCenters.length > 0" class="dv-centers-list">
-              <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag">{{ c.name }}</el-tag>
+              <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag" @click="showShoppingCenter(c)">📌 {{ c.name }}</el-tag>
             </div>
             <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:#909399;">该商圈边界内暂无购物中心</div>
           </div>
@@ -324,6 +324,26 @@ function selectDistrict(d) {
 function isCompared(name) {
   return compareList.value.some(c => c.name === name)
 }
+
+// 点击购物中心 tag → 地图跳转 + 图钉定位
+let shoppingCenterMarker = null
+function showShoppingCenter(c) {
+  if (!map || !c?.latitude || !c?.longitude) {
+    ElMessage.info('该购物中心暂无坐标，无法定位')
+    return
+  }
+  // 移除旧图钉
+  if (shoppingCenterMarker) {
+    map.removeLayer(shoppingCenterMarker)
+    shoppingCenterMarker = null
+  }
+  shoppingCenterMarker = L.marker([c.latitude, c.longitude], { title: c.name })
+    .addTo(map)
+    .bindPopup(`<b>📌 ${c.name}</b>${c.address ? '<br>' + c.address : ''}`, { autoPan: true })
+    .openPopup()
+  map.flyTo([c.latitude, c.longitude], 15, { duration: 0.8 })
+}
+
 function toggleCompare(d, checked) {
   if (checked) {
     if (compareList.value.length >= 5) { ElMessage.warning('最多对比 5 个商圈'); return }
@@ -552,6 +572,13 @@ async function refreshDistrict() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.dv-center-tag:hover {
+  background: #409eff !important;
+  border-color: #409eff !important;
+  color: #fff !important;
 }
 :deep(.dv-best) {
   background: #e1f5ee !important;
