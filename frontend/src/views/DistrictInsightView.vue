@@ -81,6 +81,16 @@
             <div class="dv-fact"><span>到访人次</span><b>{{ formatNum(selectedDistrict.visit) }}</b></div>
             <div class="dv-fact"><span>竞品门店</span><b>{{ selectedDistrict.competitorCount }} 家</b></div>
           </div>
+          <div class="dv-centers">
+            <div class="dv-centers-head">
+              <span>商圈内购物中心</span>
+              <el-tag v-if="selectedDistrict.shoppingCenterCount !== undefined" size="small" type="success" effect="light">{{ selectedDistrict.shoppingCenterCount }} 家</el-tag>
+            </div>
+            <div v-if="selectedDistrict.shoppingCenters && selectedDistrict.shoppingCenters.length > 0" class="dv-centers-list">
+              <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag">{{ c.name }}</el-tag>
+            </div>
+            <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:#909399;">该商圈边界内暂无购物中心</div>
+          </div>
           <el-button type="primary" plain style="width:100%;margin-top:10px;" :loading="refreshing" @click="refreshDistrict">
             <el-icon><Refresh /></el-icon>&nbsp;刷新最新数据{{ selectedDistrict.dataMonth !== '202204' ? `（${selectedDistrict.dataMonth}）` : '' }}
           </el-button>
@@ -214,12 +224,7 @@ function isLowest(row, field) {
 onMounted(async () => {
   initMap()
   await loadCities()
-  // 默认选中第一个一线城市
-  const first = cities.value.find(c => c.tier === '一线城市') || cities.value[0]
-  if (first) {
-    selectedCity.value = first.name
-    await loadDistricts(first.name)
-  }
+  // 不默认选中城市，由用户从下拉选择
 })
 onBeforeUnmount(() => { if (map) map.remove() })
 
@@ -296,6 +301,20 @@ function selectDistrict(d) {
   if (map) {
     const pts = [firstCoord(d.geometry)]
     if (pts[0]) map.fitBounds(L.latLngBounds([pts[0][1], pts[0][0]]), { padding: [40, 40], maxZoom: 14 })
+  }
+  // 异步获取商圈内购物中心（detail 接口 polygon 包含判定）
+  loadShoppingCenters(d)
+}
+
+async function loadShoppingCenters(d) {
+  try {
+    const res = await api.get('/districts/detail', { params: { city: d.city, name: d.name } })
+    if (res.district && selectedDistrict.value?.name === d.name) {
+      selectedDistrict.value.shoppingCenters = res.district.shoppingCenters || []
+      selectedDistrict.value.shoppingCenterCount = res.district.shoppingCenterCount ?? 0
+    }
+  } catch (e) {
+    // 静默失败：购物中心区显示默认（不影响详情卡主体）
   }
 }
 
@@ -506,6 +525,31 @@ async function refreshDistrict() {
 }
 .dv-fact span { display: block; font-size: 11px; color: #909399; }
 .dv-fact b { font-size: 13px; color: #303133; }
+.dv-centers {
+  margin-top: 10px;
+  border-top: 1px solid #f0f2f5;
+  padding-top: 8px;
+}
+.dv-centers-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #606266;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.dv-centers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dv-center-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 :deep(.dv-best) {
   background: #e1f5ee !important;
   color: #0f6e56 !important;
