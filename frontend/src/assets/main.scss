@@ -323,3 +323,8 @@ body {
 .sc-pin svg {
   display: block;
 }
+
+/* ===== 统计面板置顶（人口分布分析等地图面板，避免被门店图标遮挡）===== */
+.draggable-panel {
+  z-index: 9999 !important;
+}

@@ -3705,6 +3705,8 @@ const analyzePopulationDistribution = async () => {
     panelMarker.on('dragend', (e) => {
       console.log('面板拖动到:', e.target.getLatLng())
     })
+    // 面板置顶：提高 zIndexOffset，避免门店图标多时遮挡面板
+    panelMarker.setZIndexOffset(10000)
     populationLayerGroup.addLayer(panelMarker)
     currentStatsPanelMarker = panelMarker
 
