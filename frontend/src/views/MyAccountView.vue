@@ -3,7 +3,6 @@
     <el-card class="account-card">
       <template #header>
         <div class="card-header">
-          <span>我的账户</span>
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
             👑 VIP 用户 · 有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span>
             <span v-if="vipExpired">（已过期）</span>

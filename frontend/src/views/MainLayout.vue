@@ -566,6 +566,10 @@ const doExport = async (type) => {
       padding: 4px 8px;
       border-radius: 4px;
       
+      .el-avatar {
+        background: transparent;  /* 头像背景透明（logo 图时无灰色底） */
+      }
+      
       &:hover {
         background: #f5f7fa;
       }
