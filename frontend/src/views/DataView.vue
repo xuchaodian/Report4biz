@@ -61,25 +61,25 @@
         </template>
       </el-input>
 
-      <el-select v-model="filterStoreType" placeholder="按门店类型" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterStoreType" placeholder="按门店类型" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option label="已开业" value="已开业" />
         <el-option label="重点候选" value="重点候选" />
         <el-option label="一般候选" value="一般候选" />
       </el-select>
 
-      <el-select v-model="filterCity" placeholder="按城市" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterCity" placeholder="按城市" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="city in cityList" :key="city" :label="city" :value="city" />
       </el-select>
 
-      <el-select v-model="filterDistrict" placeholder="按区县" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterDistrict" placeholder="按区县" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterStoreCategory" placeholder="按门店区分" style="width: 130px" clearable @change="handleSearch">
+      <el-select v-model="filterStoreCategory" placeholder="按门店区分" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
-      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 130px" clearable @change="handleSearch">
+      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
@@ -87,7 +87,7 @@
         <el-option v-for="s in storeStatusList" :key="s" :label="s" :value="s" />
       </el-select>
 
-      <el-select v-model="filterMallType" placeholder="按商场类型" style="width: 130px" clearable @change="handleSearch">
+      <el-select v-model="filterMallType" placeholder="按商场类型" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="m in mallTypeList" :key="m" :label="m" :value="m" />
       </el-select>
 
@@ -678,13 +678,13 @@ const storePurchaseCount = ref({})
 // 筛选和分页 - 使用 store 中的筛选条件（持久化）
 // 使用 ref 包装 store 中的 filters，确保响应式
 const searchKeyword = ref('')
-const filterStoreType = ref('')
-const filterCity = ref('')
-const filterDistrict = ref('')
-const filterStoreCategory = ref('')
-const filterBrand = ref('')
+const filterStoreType = ref([])
+const filterCity = ref([])
+const filterDistrict = ref([])
+const filterStoreCategory = ref([])
+const filterBrand = ref([])
 const filterStoreStatus = ref([])
-const filterMallType = ref('')
+const filterMallType = ref([])
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -709,13 +709,13 @@ const restoreFiltersFromLS = () => {
   try {
     const f = JSON.parse(saved)
     searchKeyword.value = f.searchKeyword || ''
-    filterStoreType.value = f.filterStoreType || ''
-    filterCity.value = f.filterCity || ''
-    filterDistrict.value = f.filterDistrict || ''
-    filterStoreCategory.value = f.filterStoreCategory || ''
-    filterBrand.value = f.filterBrand || ''
+    filterStoreType.value = f.filterStoreType || []
+    filterCity.value = f.filterCity || []
+    filterDistrict.value = f.filterDistrict || []
+    filterStoreCategory.value = f.filterStoreCategory || []
+    filterBrand.value = f.filterBrand || []
     filterStoreStatus.value = Array.isArray(f.filterStoreStatus) ? f.filterStoreStatus : (f.filterStoreStatus ? [f.filterStoreStatus] : [])
-    filterMallType.value = f.filterMallType || ''
+    filterMallType.value = f.filterMallType || []
     currentPage.value = f.currentPage || 1
     return true
   } catch { return false }
@@ -867,13 +867,13 @@ const filteredMarkers = computed(() => {
       marker.name.toLowerCase().includes(searchKeyword.value.toLowerCase()) ||
       (marker.address && marker.address.toLowerCase().includes(searchKeyword.value.toLowerCase())) ||
       (marker.store_code && marker.store_code.toLowerCase().includes(searchKeyword.value.toLowerCase()))
-    const matchType = !filterStoreType.value || marker.store_type === filterStoreType.value
-    const matchCity = !filterCity.value || marker.city === filterCity.value
-    const matchDistrict = !filterDistrict.value || marker.district === filterDistrict.value
-    const matchCategory = !filterStoreCategory.value || marker.store_category === filterStoreCategory.value
-    const matchBrand = !filterBrand.value || marker.brand === filterBrand.value
+    const matchType = !filterStoreType.value.length || filterStoreType.value.includes(marker.store_type)
+    const matchCity = !filterCity.value.length || filterCity.value.includes(marker.city)
+    const matchDistrict = !filterDistrict.value.length || filterDistrict.value.includes(marker.district)
+    const matchCategory = !filterStoreCategory.value.length || filterStoreCategory.value.includes(marker.store_category)
+    const matchBrand = !filterBrand.value.length || filterBrand.value.includes(marker.brand)
     const matchStoreStatus = !filterStoreStatus.value.length || filterStoreStatus.value.includes(marker.store_status)
-    const matchMallType = !filterMallType.value || marker.mall_type === filterMallType.value
+    const matchMallType = !filterMallType.value.length || filterMallType.value.includes(marker.mall_type)
     return matchKeyword && matchType && matchCity && matchDistrict && matchCategory && matchBrand && matchStoreStatus && matchMallType
   })
 })
