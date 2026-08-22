@@ -6954,7 +6954,8 @@ const onStoreCircleLegendClose = () => {
 // 清除绘制
 const clearDrawings = () => {
   if (!map) {
-    console.log('[clearDrawings] 地图未初始化')    return
+    console.log('[clearDrawings] 地图未初始化')
+    return
   }
   if (activeTool.value === 'measure') stopMeasure()
   if (activeTool.value === 'area') stopAreaMeasure()
