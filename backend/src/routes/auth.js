@@ -89,6 +89,7 @@ router.post('/login', (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        vip_until: user.vip_until || null,
         company: user.company,
         quota: user.quota
       }
@@ -111,7 +112,7 @@ router.get('/me', (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET)
 
     const db = getDb()
-    const user = db.prepare('SELECT id, username, email, role, company, logo, quota, created_at FROM users WHERE id = ?').get(decoded.id)
+    const user = db.prepare('SELECT id, username, email, role, vip_until, company, logo, quota, created_at FROM users WHERE id = ?').get(decoded.id)
 
     if (!user) {
       return res.status(404).json({ message: '用户不存在' })

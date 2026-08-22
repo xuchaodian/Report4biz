@@ -11,7 +11,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const db = getDb()
     const { company } = req.query
     
-    let sql = `SELECT id, username, email, role, company, quota, created_at FROM users`
+    let sql = `SELECT id, username, email, role, vip_until, company, quota, created_at FROM users`
     const params = []
     
     if (company) {
@@ -242,7 +242,7 @@ router.put('/me', authenticate, (req, res) => {
 // 更新用户
 router.put('/:id', authenticate, requireAdmin, (req, res) => {
   try {
-    const { email, password, role, company, quota } = req.body
+    const { email, password, role, vip_until, company, quota } = req.body
     const userId = req.params.id
 
     const db = getDb()
@@ -304,6 +304,12 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     if (company !== undefined) {
       updates.push('company = ?')
       params.push(company)
+    }
+
+    // VIP 到期时间（YYYY-MM-DD，空串/undefined 视为清除 VIP 到期）
+    if (vip_until !== undefined) {
+      updates.push('vip_until = ?')
+      params.push(vip_until || null)
     }
 
     if (quota !== undefined) {

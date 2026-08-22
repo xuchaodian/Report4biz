@@ -37,6 +37,7 @@ export async function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'user',
+      vip_until TEXT,
       company TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -45,6 +46,13 @@ export async function initDatabase() {
   // 为已有数据库添加 company 字段（如果不存在）
   try {
     db.run(`ALTER TABLE users ADD COLUMN company TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
+  // 为已有数据库添加 vip_until 字段（如果不存在）——VIP 到期时间（YYYY-MM-DD）
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN vip_until TEXT`)
   } catch (e) {
     // 字段已存在，忽略
   }

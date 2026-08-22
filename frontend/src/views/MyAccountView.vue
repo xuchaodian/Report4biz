@@ -4,6 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>我的账户</span>
+          <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired }">👑 VIP 用户 · 有效期至 {{ vipExpireYear }} 年{{ vipExpired ? '（已过期）' : '' }}</span>
         </div>
       </template>
 
@@ -489,6 +490,15 @@ const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
+
+// ===== VIP 身份标识 =====
+const isVip = computed(() => userStore.user?.role === 'vip')
+const vipExpireYear = computed(() => (userStore.user?.vip_until ? String(userStore.user.vip_until).slice(0, 4) : ''))
+const vipExpired = computed(() => {
+  const u = userStore.user?.vip_until
+  if (!u) return true
+  return new Date(String(u) + 'T23:59:59') < new Date()
+})
 const quotaLoading = ref(false)
 
 // 购买履历相关
@@ -3674,6 +3684,25 @@ const handleExportExcel = async () => {
   .card-header {
     font-size: 18px;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .vip-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b8860b;
+    background: linear-gradient(135deg, #fff7e6, #ffe7ba);
+    border: 1px solid #f5d78e;
+    border-radius: 20px;
+    padding: 3px 12px;
+    white-space: nowrap;
+  }
+  .vip-badge.vip-expired {
+    color: #f56c6c;
+    background: #fef0f0;
+    border-color: #fbc4c4;
   }
 }
 

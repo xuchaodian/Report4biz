@@ -65,8 +65,8 @@
         <el-table-column prop="company" label="公司" min-width="150" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : 'success'">
-              {{ row.role === 'admin' ? '管理员' : '普通用户' }}
+            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? 'warning' : 'success'">
+              {{ row.role === 'admin' ? '管理员' : row.role === 'vip' ? 'VIP用户' : '普通用户' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -128,8 +128,18 @@
         <el-form-item label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
             <el-option label="普通用户" value="user" />
+            <el-option label="VIP用户" value="vip" />
             <el-option label="管理员" value="admin" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.role === 'vip'" label="VIP到期">
+          <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+            <el-select v-model="form.vipYear" placeholder="选择到期年份" style="flex: 1;">
+              <el-option v-for="y in vipYearOptions" :key="y" :label="y + ' 年'" :value="y" />
+            </el-select>
+            <el-button size="small" @click="clearVipUntil">清除VIP</el-button>
+          </div>
+          <div class="quota-tip" style="color: #e6a23c;">👑 VIP 到期时间按年计（默认到期当年 12 月 31 日）</div>
         </el-form-item>
         <el-form-item v-if="isEdit" label="剩余次数">
           <el-input-number v-model="form.remaining" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
@@ -283,8 +293,19 @@ const form = reactive({
   role: 'user',
   quota: 0,
   usedQuota: 0,
-  remaining: 0
+  remaining: 0,
+  vipYear: null
 })
+
+// VIP 到期年份选项（当前年 ~ 未来10年）
+const vipYearOptions = computed(() => {
+  const cur = new Date().getFullYear()
+  return Array.from({ length: 11 }, (_, i) => cur + i)
+})
+const clearVipUntil = () => {
+  form.vipYear = null
+  ElMessage.info('VIP 到期时间已清除（保存后生效）')
+}
 
 const rules = {
   username: [
@@ -433,7 +454,8 @@ const handleEdit = (row) => {
     role: row.role,
     quota: row.quota || 0,
     usedQuota: row.usedQuota || 0,
-    remaining: editRemaining
+    remaining: editRemaining,
+    vipYear: row.vip_until ? Number(String(row.vip_until).slice(0, 4)) : null
   })
   originalRemaining.value = editRemaining
   dialogVisible.value = true
@@ -467,6 +489,8 @@ const handleSave = async () => {
       // 将输入"剩余次数"作为配额总数提交（usedQuota已在purchases表中独立记录，不重复计算）
       const totalQuota = (form.remaining || 0)
       const updateData = { email: form.email, role: form.role, company: form.company, quota: totalQuota }
+      // VIP 到期时间：按年计（默认到期当年 12-31）；角色非 VIP 或未选年份 → 清除
+      updateData.vip_until = form.role === 'vip' && form.vipYear ? `${form.vipYear}-12-31` : ''
       if (form.password) {
         updateData.password = form.password
       }
