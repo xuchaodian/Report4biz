@@ -5960,7 +5960,8 @@ const finishMeasure = () => {
           <span onclick="window.clearMeasureResult()" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
         </div>`,
         iconSize: null,
-        iconAnchor: [-8, -4]
+        // 总计标签显示在终点右上方，避免与终点右下角的"段距离/累计"节点标签重叠
+        iconAnchor: [16, -32]
       }),
       interactive: true
     }).addTo(measureLayerGroup)
