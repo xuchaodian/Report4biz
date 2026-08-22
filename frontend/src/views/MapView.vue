@@ -5955,13 +5955,14 @@ const finishMeasure = () => {
     L.marker(last, {
       icon: L.divIcon({
         className: '',
-        html: `<div style="background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);display:inline-block;">
+        html: `<div style="display:flex;align-items:center;gap:6px;background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">
           总计: ${formatDistance(totalDist)}
+          <span onclick="window.clearMeasureResult()" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
         </div>`,
         iconSize: null,
         iconAnchor: [-8, -4]
       }),
-      interactive: false
+      interactive: true
     }).addTo(measureLayerGroup)
   }
 
@@ -6953,8 +6954,7 @@ const onStoreCircleLegendClose = () => {
 // 清除绘制
 const clearDrawings = () => {
   if (!map) {
-    console.log('[clearDrawings] 地图未初始化')
-    return
+    console.log('[clearDrawings] 地图未初始化')    return
   }
   if (activeTool.value === 'measure') stopMeasure()
   if (activeTool.value === 'area') stopAreaMeasure()
@@ -9484,6 +9484,12 @@ window.__poiSearchDebug = { startCircleSearch, startPolygonSearch, poiSearchExpa
 const _poiFunctions = { startCircleSearch, startPolygonSearch }
 
 onMounted(() => {
+  // 测量结果标签上的 ❌：一键清除距离线段与测量结果
+  window.clearMeasureResult = () => {
+    clearDrawings()
+    measurementResult.value = ''
+    activeTool.value = ''
+  }
   window.editMarkerExternal = editMarker
   window.deleteMarkerExternal = deleteMarker
   window.openStorePopulationDistribution = openStorePopulationDistribution
