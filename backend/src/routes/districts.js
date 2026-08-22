@@ -327,6 +327,20 @@ function countCompetitorsInDistrict(geometry) {
   return count
 }
 
+
+// 计算商圈内我的门店数量（自家门店相互蚕食：竞争强度计分时加权）
+function countMyStoresInDistrict(geometry) {
+  const db = getDb()
+  const stores = db.prepare(`SELECT longitude, latitude FROM markers`).all()
+  let count = 0
+  for (const s of stores) {
+    if (s.longitude && s.latitude && pointInFeature([s.longitude, s.latitude], geometry)) {
+      count++
+    }
+  }
+  return count
+}
+
 // 收入分层加权（用于消费能力分：富人/富裕/中产/小康/中等收入/低收入）
 function incomeScore(props) {
   const weights = [
@@ -354,8 +368,10 @@ function populationScore(props) {
   return 22
 }
 
-// 竞品强度分（商圈内竞品越少越高）
-function competitionScore(count) {
+// 竞争强度分（竞品 + 我的门店，越少越高）
+// 我的门店（自家蚕食）权重 ×2：自家门店相互蚕食比竞品更应避免
+function competitionScore(compCount, myStoreCount = 0) {
+  const count = (compCount || 0) + (myStoreCount || 0) * 2
   if (count <= 3) return 90
   if (count <= 8) return 75
   if (count <= 15) return 55
@@ -364,9 +380,9 @@ function competitionScore(count) {
 }
 
 // 商圈综合评分：人口 40% + 消费 25% + 竞品 25% + 到访活跃 10%
-function computeScore(props, compCount) {
+function computeScore(props, compCount, myStoreCount = 0) {
   const p = populationScore(props)
-  const c = competitionScore(compCount)
+  const c = competitionScore(compCount, myStoreCount)
   const i = incomeScore(props)
   const visit = Number(props['到访人次']) || 0
   const v = visit > 3000000 ? 95 : visit > 1500000 ? 80 : visit > 500000 ? 60 : visit > 100000 ? 40 : 20
@@ -417,9 +433,11 @@ router.get('/', authenticate, (req, res) => {
         const props = feature.properties || {}
         const name = props['名称'] || props['name'] || '未命名商圈'
         const compCount = countCompetitorsInDistrict(feature.geometry)
-        const scores = computeScore(props, compCount)
+        const myStoreCount = countMyStoresInDistrict(feature.geometry)
+        const scores = computeScore(props, compCount, myStoreCount)
         districts.push({
           name,
+          myStoreCount,
           city: props['城市'] || city,
           province: props['省份'] || '',
           district: props['区县'] || '',
@@ -469,7 +487,8 @@ router.get('/detail', authenticate, (req, res) => {
       if (feature) {
         const props = feature.properties || {}
         const compCount = countCompetitorsInDistrict(feature.geometry)
-        const scores = computeScore(props, compCount)
+        const myStoreCount = countMyStoresInDistrict(feature.geometry)
+        const scores = computeScore(props, compCount, myStoreCount)
         // 商圈内购物中心（polygon 包含判定，取前 10）
         const centers = db.prepare(`SELECT name, city, district, address, latitude, longitude, stars, comments FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0`).all()
         const inDistrict = []
@@ -490,6 +509,7 @@ router.get('/detail', authenticate, (req, res) => {
             visit: Number(props['到访人次']) || 0,
             income: props,
             competitorCount: compCount,
+            myStoreCount,
             shoppingCenters: inDistrict.slice(0, 10),
             shoppingCenterCount: inDistrict.length,
             dataMonth: '202204',

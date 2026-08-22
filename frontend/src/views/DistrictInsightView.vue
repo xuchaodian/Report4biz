@@ -80,6 +80,7 @@
             <div class="dv-fact"><span>工作人口</span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
             <div class="dv-fact"><span>到访人次</span><b>{{ formatNum(selectedDistrict.visit) }}</b></div>
             <div class="dv-fact"><span>竞品门店</span><b>{{ selectedDistrict.competitorCount }} 家</b></div>
+            <div class="dv-fact" :class="{ 'dv-fact-warn': selectedDistrict.myStoreCount > 0 }"><span>我的门店</span><b>{{ selectedDistrict.myStoreCount || 0 }} 家</b></div>
           </div>
           <div class="dv-centers">
             <div class="dv-centers-head">
@@ -573,6 +574,9 @@ async function refreshDistrict() {
 }
 .dv-fact span { display: block; font-size: 11px; color: #909399; }
 .dv-fact b { font-size: 13px; color: #303133; }
+/* 我的门店 >0：蚕食风险警示色 */
+.dv-fact-warn { background: #fef0f0; }
+.dv-fact-warn b { color: #f56c6c; }
 .dv-centers {
   margin-top: 10px;
   border-top: 1px solid #f0f2f5;
