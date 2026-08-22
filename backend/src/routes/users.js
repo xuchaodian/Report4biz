@@ -306,10 +306,15 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(company)
     }
 
-    // VIP 到期时间（YYYY-MM-DD，空串/undefined 视为清除 VIP 到期）
-    if (vip_until !== undefined) {
+    // VIP 到期：设为 VIP → 自保存日起算自动续期 1 年；未改为普通用户则每次保存自动延续 1 年；改为非 VIP → 清除
+    const finalRole = role !== undefined ? role : existingUser.role
+    if (finalRole === 'vip') {
+      const vipUntil = new Date(Date.now() + 365 * 24 * 3600 * 1000)
       updates.push('vip_until = ?')
-      params.push(vip_until || null)
+      params.push(vipUntil.toISOString().slice(0, 10))
+    } else if (role !== undefined && finalRole !== 'vip') {
+      updates.push('vip_until = ?')
+      params.push(null)
     }
 
     if (quota !== undefined) {

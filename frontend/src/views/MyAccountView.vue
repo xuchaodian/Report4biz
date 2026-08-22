@@ -4,7 +4,11 @@
       <template #header>
         <div class="card-header">
           <span>我的账户</span>
-          <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired }">👑 VIP 用户 · 有效期至 {{ vipExpireYear }} 年{{ vipExpired ? '（已过期）' : '' }}</span>
+          <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
+            👑 VIP 用户 · 有效期至 {{ vipExpireYear }} 年
+            <span v-if="vipExpired">（已过期）</span>
+            <span v-else-if="vipExpiring">（即将到期，剩 {{ vipDaysLeft }} 天）</span>
+          </span>
         </div>
       </template>
 
@@ -499,6 +503,13 @@ const vipExpired = computed(() => {
   if (!u) return true
   return new Date(String(u) + 'T23:59:59') < new Date()
 })
+// 是否 30 天内到期（提醒）
+const vipDaysLeft = computed(() => {
+  const u = userStore.user?.vip_until
+  if (!u) return 0
+  return Math.ceil((new Date(String(u) + 'T23:59:59') - new Date()) / 86400000)
+})
+const vipExpiring = computed(() => !vipExpired.value && vipDaysLeft.value >= 0 && vipDaysLeft.value <= 30)
 const quotaLoading = ref(false)
 
 // 购买履历相关
@@ -3703,6 +3714,11 @@ const handleExportExcel = async () => {
     color: #f56c6c;
     background: #fef0f0;
     border-color: #fbc4c4;
+  }
+  .vip-badge.vip-expiring {
+    color: #e6a23c;
+    background: #fdf6ec;
+    border-color: #f5dab1;
   }
 }
 

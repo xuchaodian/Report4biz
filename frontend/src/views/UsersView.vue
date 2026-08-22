@@ -80,9 +80,17 @@
             <el-tag type="info">{{ row.remainingQuota ?? 0 }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="注册时间" width="160">
+        <el-table-column prop="created_at" label="注册时间" width="110">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="vip_until" label="VIP到期日" width="110" align="center">
+          <template #default="{ row }">
+            <span v-if="row.role === 'vip' && row.vip_until" :class="{ 'vip-expiring': isVipExpiring(row), 'vip-expired': isVipExpired(row) }">
+              {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '👑 ' }}{{ formatDate(row.vip_until) }}
+            </span>
+            <span v-else style="color: #c0c4cc;">—</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
@@ -133,13 +141,10 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.role === 'vip'" label="VIP到期">
-          <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
-            <el-select v-model="form.vipYear" placeholder="选择到期年份" style="flex: 1;">
-              <el-option v-for="y in vipYearOptions" :key="y" :label="y + ' 年'" :value="y" />
-            </el-select>
-            <el-button size="small" @click="clearVipUntil">清除VIP</el-button>
+          <div style="width: 100%;">
+            <div class="quota-tip" style="color: #e6a23c;">👑 自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）</div>
+            <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期日：{{ form.vipUntilText }}</div>
           </div>
-          <div class="quota-tip" style="color: #e6a23c;">👑 VIP 到期时间按年计（默认到期当年 12 月 31 日）</div>
         </el-form-item>
         <el-form-item v-if="isEdit" label="剩余次数">
           <el-input-number v-model="form.remaining" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
@@ -294,18 +299,9 @@ const form = reactive({
   quota: 0,
   usedQuota: 0,
   remaining: 0,
-  vipYear: null
+  vipUntilText: null
 })
 
-// VIP 到期年份选项（当前年 ~ 未来10年）
-const vipYearOptions = computed(() => {
-  const cur = new Date().getFullYear()
-  return Array.from({ length: 11 }, (_, i) => cur + i)
-})
-const clearVipUntil = () => {
-  form.vipYear = null
-  ElMessage.info('VIP 到期时间已清除（保存后生效）')
-}
 
 const rules = {
   username: [
@@ -383,7 +379,24 @@ const fetchMonthlyStats = async () => {
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN')
+  if (isNaN(date.getTime())) return String(dateStr).slice(0, 10)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// VIP 是否即将到期（30 天内）
+const isVipExpiring = (row) => {
+  if (row.role !== 'vip' || !row.vip_until) return false
+  const until = new Date(String(row.vip_until) + 'T23:59:59')
+  const now = new Date()
+  const days = Math.ceil((until - now) / 86400000)
+  return days >= 0 && days <= 30
+}
+const isVipExpired = (row) => {
+  if (row.role !== 'vip' || !row.vip_until) return false
+  return new Date(String(row.vip_until) + 'T23:59:59') < new Date()
 }
 
 const fetchUsers = async () => {
@@ -455,7 +468,7 @@ const handleEdit = (row) => {
     quota: row.quota || 0,
     usedQuota: row.usedQuota || 0,
     remaining: editRemaining,
-    vipYear: row.vip_until ? Number(String(row.vip_until).slice(0, 4)) : null
+    vipUntilText: row.vip_until ? formatDate(row.vip_until) : null
   })
   originalRemaining.value = editRemaining
   dialogVisible.value = true
@@ -489,8 +502,7 @@ const handleSave = async () => {
       // 将输入"剩余次数"作为配额总数提交（usedQuota已在purchases表中独立记录，不重复计算）
       const totalQuota = (form.remaining || 0)
       const updateData = { email: form.email, role: form.role, company: form.company, quota: totalQuota }
-      // VIP 到期时间：按年计（默认到期当年 12-31）；角色非 VIP 或未选年份 → 清除
-      updateData.vip_until = form.role === 'vip' && form.vipYear ? `${form.vipYear}-12-31` : ''
+      // VIP 到期时间由后端自动计算（设为 VIP → 自保存日起续期 1 年；改为非 VIP → 清除）
       if (form.password) {
         updateData.password = form.password
       }
@@ -694,4 +706,8 @@ onMounted(() => {
   margin-top: 4px;
   line-height: 1.4;
 }
+
+/* VIP 到期提醒：30 天内橙色，已过期红色 */
+.vip-expiring { color: #e6a23c; font-weight: 600; }
+.vip-expired { color: #f56c6c; font-weight: 600; }
 </style>
