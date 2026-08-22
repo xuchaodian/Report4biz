@@ -60,12 +60,16 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="username" label="用户名" min-width="120" />
+        <el-table-column prop="username" label="用户名" min-width="120">
+          <template #default="{ row }">
+            <span v-if="row.role === 'vip'">👑 </span>{{ row.username }}
+          </template>
+        </el-table-column>
         <el-table-column prop="email" label="邮箱" min-width="180" />
         <el-table-column prop="company" label="公司" min-width="150" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? 'warning' : 'success'">
+            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' }">
               {{ row.role === 'admin' ? '管理员' : row.role === 'vip' ? 'VIP用户' : '普通用户' }}
             </el-tag>
           </template>
@@ -88,7 +92,7 @@
         <el-table-column prop="vip_until" label="VIP到期日" width="110" align="center">
           <template #default="{ row }">
             <span v-if="row.role === 'vip' && row.vip_until" :class="{ 'vip-expiring': isVipExpiring(row), 'vip-expired': isVipExpired(row) }">
-              {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '👑 ' }}{{ formatDate(row.vip_until) }}
+              {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '' }}{{ formatDate(row.vip_until) }}
             </span>
             <span v-else style="color: #c0c4cc;">—</span>
           </template>
@@ -710,4 +714,11 @@ onMounted(() => {
 /* VIP 到期提醒：30 天内橙色，已过期红色 */
 .vip-expiring { color: #e6a23c; font-weight: 600; }
 .vip-expired { color: #f56c6c; font-weight: 600; }
+
+/* VIP 角色：紫色 */
+.vip-role-tag {
+  background: #f3e8ff;
+  border-color: #d8b4fe;
+  color: #7c3aed;
+}
 </style>

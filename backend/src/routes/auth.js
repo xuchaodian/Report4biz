@@ -91,6 +91,7 @@ router.post('/login', (req, res) => {
         role: user.role,
         vip_until: user.vip_until || null,
         company: user.company,
+        logo: user.logo || null,
         quota: user.quota
       }
     })

@@ -66,7 +66,8 @@
       <div class="header-right">
         <el-dropdown @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
-            <el-avatar :size="32" :icon="UserFilled" />
+            <el-avatar v-if="userStore.user?.logo" :size="32" :src="userStore.user.logo" />
+            <el-avatar v-else :size="32" :icon="UserFilled" />
             <span class="username">{{ userStore.username }}</span>
             <el-icon class="arrow"><ArrowDown /></el-icon>
           </span>

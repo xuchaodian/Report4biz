@@ -5,9 +5,8 @@
         <div class="card-header">
           <span>我的账户</span>
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
-            👑 VIP 用户 · 有效期至 {{ vipExpireYear }} 年
+            👑 VIP 用户 · 有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span>
             <span v-if="vipExpired">（已过期）</span>
-            <span v-else-if="vipExpiring">（即将到期，剩 {{ vipDaysLeft }} 天）</span>
           </span>
         </div>
       </template>
@@ -27,7 +26,7 @@
           <el-input v-model="form.company" placeholder="请输入公司名称" />
         </el-form-item>
 
-        <el-form-item label="报告Logo">
+        <el-form-item label="公司Logo">
           <div style="display: flex; align-items: center; gap: 12px;">
             <div v-if="form.logoPreview" style="width: 56px; height: 56px; border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #fff; flex-shrink: 0;">
               <img :src="form.logoPreview" style="max-width: 100%; max-height: 100%; object-fit: contain;" alt="Logo预览" />
@@ -497,7 +496,16 @@ const loading = ref(false)
 
 // ===== VIP 身份标识 =====
 const isVip = computed(() => userStore.user?.role === 'vip')
-const vipExpireYear = computed(() => (userStore.user?.vip_until ? String(userStore.user.vip_until).slice(0, 4) : ''))
+const vipUntilText = computed(() => {
+  const u = userStore.user?.vip_until
+  if (!u) return ''
+  const d = new Date(String(u))
+  if (isNaN(d.getTime())) return String(u).slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+})
 const vipExpired = computed(() => {
   const u = userStore.user?.vip_until
   if (!u) return true
