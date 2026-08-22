@@ -962,6 +962,10 @@
         <el-icon><Location /></el-icon>
         <span>添加门店</span>
       </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('locate')">
+        <el-icon><Search /></el-icon>
+        <span>定位门店</span>
+      </div>
       <div class="map-context-menu-divider"></div>
       <div class="map-context-menu-item" @click="contextMenuAction('clear')">
         <el-icon><Delete /></el-icon>
@@ -2281,6 +2285,7 @@ const contextMenuAction = (action) => {
   hideContextMenu()
   switch (action) {
     case 'addstore': setTool('marker'); break  // 与门店工具面板「添加门店」一致：进入选点模式
+    case 'locate': storeSearchVisible.value = !storeSearchVisible.value; break  // 与门店工具面板「定位门店」一致：切换定位门店搜索面板
     case 'clear': clearDrawings(); break
     case 'circle': setTool('circle'); break
     case 'envscore': startEnvScore(); break
