@@ -154,6 +154,7 @@ import { Refresh } from '@element-plus/icons-vue'
 const mapRef = ref(null)
 let map = null
 let districtLayer = null
+let districtLayerMap = {}  // 商圈名 → 边界图层（用于点击时加粗高亮 + fitBounds 整个范围）
 
 const refreshing = ref(false)
 
@@ -285,14 +286,35 @@ function renderDistricts() {
   if (!map) return
   if (districtLayer) map.removeLayer(districtLayer)
   districtLayer = L.layerGroup().addTo(map)
+  districtLayerMap = {}
   for (const d of districts.value) {
     const color = scoreColor(d.score)
     const layer = L.geoJSON(d.geometry, {
       style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 }
     })
+    layer._districtScore = d.score
     layer.on('click', () => selectDistrict(d))
     layer.bindTooltip(`${d.name} · ${d.score}分`, { sticky: true })
     layer.addTo(districtLayer)
+    districtLayerMap[d.name] = layer
+  }
+}
+
+// 重置所有商圈边界样式为默认
+function resetDistrictStyles() {
+  Object.values(districtLayerMap).forEach(layer => {
+    const color = scoreColor(layer._districtScore)
+    layer.setStyle({ color, weight: 1.5, fillColor: color, fillOpacity: 0.18 })
+  })
+}
+
+// 选中商圈：边界加粗高亮 + 地图跳转到整个范围
+function highlightDistrict(layer) {
+  layer.setStyle({ color: '#409eff', weight: 4, fillColor: '#409eff', fillOpacity: 0.28 })
+  layer.bringToFront()
+  if (map) {
+    const bounds = layer.getBounds()
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 })
   }
 }
 
@@ -314,11 +336,10 @@ function selectDistrict(d) {
   } catch (e) {
     // 静默：购物中心加载失败不影响详情卡主体
   }
-  // 地图定位
-  if (map) {
-    const pts = [firstCoord(d.geometry)]
-    if (pts[0]) map.fitBounds(L.latLngBounds([pts[0][1], pts[0][0]]), { padding: [40, 40], maxZoom: 14 })
-  }
+  // 地图定位：选中商圈边界加粗高亮 + 跳转到整个范围界
+  resetDistrictStyles()
+  const selLayer = districtLayerMap[d.name]
+  if (selLayer) highlightDistrict(selLayer)
 }
 
 function isCompared(name) {
