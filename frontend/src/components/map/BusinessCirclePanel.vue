@@ -25,23 +25,22 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>联通人口</span>
       </div>
-      <div class="business-circle-btn" :class="{ active: potentialVisible }" @click="$emit('toggle-potential')">
+      <div class="business-circle-btn" :class="{ active: potentialVisible }" @click="handlePotentialClick">
         <el-icon><DataAnalysis /></el-icon>
         <span>开店余地</span>
+        <span v-if="!isVipUser" class="vip-only-tag">🔒VIP</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
-  expanded: Boolean,
-  activeTool: { type: String, default: '' },
-  potentialVisible: Boolean,
-  envScoreActive: Boolean
-})
+import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
 
-defineEmits([
+const userStore = useUserStore()
+const emit = defineEmits([
   'update:expanded',
   'set-tool',
   'env-score',
@@ -50,6 +49,22 @@ defineEmits([
   'toggle-smartsteps',
   'toggle-potential'
 ])
+// VIP 门禁：开店余地仅 VIP 用户可用（管理员视为 VIP）
+const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
+const handlePotentialClick = () => {
+  if (!isVipUser.value) {
+    ElMessage.warning('🔒 开店余地为 VIP 用户专属功能，请联系管理员开通 VIP')
+    return
+  }
+  emit('toggle-potential')
+}
+
+defineProps({
+  expanded: Boolean,
+  activeTool: { type: String, default: '' },
+  potentialVisible: Boolean,
+  envScoreActive: Boolean
+})
 </script>
 
 <style scoped>
@@ -127,5 +142,17 @@ defineEmits([
   background: #fff4e6;
   border-color: #ff8800;
   color: #ff8800;
+}
+
+/* VIP 专属角标 */
+.vip-only-tag {
+  font-size: 9px;
+  color: #fff;
+  background: #7c3aed;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  white-space: nowrap;
+  line-height: 14px;
 }
 </style>

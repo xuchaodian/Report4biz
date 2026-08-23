@@ -76,9 +76,10 @@
         </el-tooltip>
         <!-- 网点优化 -->
         <el-tooltip content="对可见门店统一生成半径圆" placement="left">
-          <div class="store-tools-item" :class="{ active: showStoreCircles }" @click="$emit('toggle-store-circles')">
+          <div class="store-tools-item" :class="{ active: showStoreCircles }" @click="handleStoreCirclesClick">
             <el-icon><Aim /></el-icon>
             <span>网点优化</span>
+            <span v-if="!isVipUser" class="vip-only-tag">🔒VIP</span>
           </div>
         </el-tooltip>
         <!-- 热力图 -->
@@ -99,6 +100,37 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+// VIP 门禁：网点优化仅 VIP 用户可用（管理员视为 VIP）
+const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
+const handleStoreCirclesClick = () => {
+  if (!isVipUser.value) {
+    ElMessage.warning('🔒 网点优化为 VIP 用户专属功能，请联系管理员开通 VIP')
+    return
+  }
+  emit('toggle-store-circles')
+}
+const emit = defineEmits([
+  'update:toggle-expanded',
+  'update:tools-expanded',
+  'update:show-business',
+  'update:show-competitor',
+  'update:show-brand',
+  'update:show-center',
+  'update:store-status-filter',
+  'set-tool',
+  'toggle-store-search',
+  'toggle-district',
+  'toggle-commerce',
+  'toggle-store-circles',
+  'toggle-heatmap',
+  'toggle-cluster'
+])
+
 defineProps({
   toggleExpanded: Boolean,
   toolsExpanded: Boolean,
@@ -115,23 +147,6 @@ defineProps({
   showHeatmap: Boolean,
   showCluster: Boolean
 })
-
-defineEmits([
-  'update:toggle-expanded',
-  'update:tools-expanded',
-  'update:show-business',
-  'update:show-competitor',
-  'update:show-brand',
-  'update:show-center',
-  'update:store-status-filter',
-  'set-tool',
-  'toggle-store-search',
-  'toggle-district',
-  'toggle-commerce',
-  'toggle-store-circles',
-  'toggle-heatmap',
-  'toggle-cluster'
-])
 </script>
 
 <style scoped>
@@ -284,5 +299,17 @@ defineEmits([
   background: #ecf5ff;
   color: #409eff;
   font-weight: 600;
+}
+
+/* VIP 专属角标 */
+.vip-only-tag {
+  font-size: 9px;
+  color: #fff;
+  background: #7c3aed;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  white-space: nowrap;
+  line-height: 14px;
 }
 </style>
