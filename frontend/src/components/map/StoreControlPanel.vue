@@ -22,6 +22,7 @@
             <el-option label="全部" value="all" />
             <el-option label="在营" value="open" />
             <el-option label="候选" value="candidate" />
+            <el-option label="在营+候选" value="open_candidate" />
             <el-option label="停业" value="closed" />
           </el-select>
         </div>
