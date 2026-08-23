@@ -4628,12 +4628,14 @@ const loadMarkers = async (skipFetch = false) => {
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
 
-  // 门店状态筛选（在营/停业）：在营 = 非闭店类状态
+  // 门店状态筛选（在营/停业）：在营 = 已开业且非闭店（排除候选门店：重点候选/一般候选）
   if (myStoreStatusFilter.value !== 'all') {
     const wantClosed = myStoreStatusFilter.value === 'closed'
     dataToShow = dataToShow.filter(m => {
       const closed = isStoreClosed(m.store_status)
-      return wantClosed ? closed : !closed
+      if (wantClosed) return closed
+      // 在营：已开业状态 + 非候选门店
+      return !closed && m.store_type !== '重点候选' && m.store_type !== '一般候选'
     })
   }
 
