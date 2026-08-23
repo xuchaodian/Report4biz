@@ -10,14 +10,14 @@
     <!-- 说明 -->
     <div class="tip-box">
       <el-icon><InfoFilled /></el-icon>
-      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。可在下方调节全局或单个品牌的地图图标大小。</span>
+      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。可在下方调节您自己的默认图标大小或单个品牌的大小（所有设置仅对您当前账号生效，不影响其他用户）。</span>
     </div>
 
     <!-- 地图图标大小 -->
     <div class="icon-size-box">
       <div class="icon-size-label">
         <el-icon><Aim /></el-icon>
-        <span>地图图标大小</span>
+        <span>我的默认图标大小</span>
         <el-tag size="small" type="warning">{{ iconSize }}px</el-tag>
       </div>
       <el-slider
@@ -72,9 +72,9 @@
             v-model="iconSizeMap[brand]"
             size="small"
             style="width: 100px;"
-            :placeholder="'跟随全局 ' + (globalIconSize || 32) + 'px'"
+            :placeholder="'使用我的默认 ' + (globalIconSize || 32) + 'px'"
           >
-            <el-option label="跟随全局" :value="0" />
+            <el-option label="使用我的默认" :value="0" />
             <el-option v-for="s in sizeOptions" :key="s" :label="s + 'px'" :value="s" />
           </el-select>
           <!-- 上传/更换图标（只能操作自己门店和竞品门店的品牌） -->
@@ -121,27 +121,31 @@ import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
+// 图标大小按用户隔离（key 带 userId，各账号设置互不影响）
+const iconUid = () => localStorage.getItem('userId') || 'guest'
+const iconSizeKey = () => `mapIconSize_${iconUid()}`
+const brandIconSizeKey = (brand) => `mapIconSize_${brand}_${iconUid()}`
 
-// 地图图标大小（全局，localStorage 持久化，默认 32px）
-const iconSize = ref(Number(localStorage.getItem('mapIconSize')) || 32)
+// 地图图标大小（我的默认大小，按账号隔离，localStorage 持久化，默认 32px）
+const iconSize = ref(Number(localStorage.getItem(iconSizeKey())) || 32)
 watch(iconSize, (v) => {
-  localStorage.setItem('mapIconSize', String(v))
+  localStorage.setItem(iconSizeKey(), String(v))
 })
 const globalIconSize = computed(() => iconSize.value)
 // 可选的图标大小档位
 const sizeOptions = [20, 24, 28, 32, 36, 40, 44, 48]
-// 单品牌图标大小映射（0 = 跟随全局；localStorage: mapIconSize_<brand> 持久化）
+// 单品牌图标大小映射（0 = 跟随我的默认大小；localStorage: mapIconSize_<brand>_<uid> 持久化）
 const iconSizeMap = reactive({})
 const ensureIconSizeMap = (brands) => {
   brands.forEach(b => {
     if (iconSizeMap[b] === undefined) {
-      iconSizeMap[b] = Number(localStorage.getItem('mapIconSize_' + b)) || 0
+      iconSizeMap[b] = Number(localStorage.getItem(brandIconSizeKey(b))) || 0
     }
   })
 }
 watch(iconSizeMap, (v) => {
   Object.keys(v).forEach(b => {
-    if (v[b] && v[b] > 0) localStorage.setItem('mapIconSize_' + b, String(v[b]))
+    if (v[b] && v[b] > 0) localStorage.setItem(brandIconSizeKey(b), String(v[b]))
   })
 }, { deep: true })
 const brandIconStore = useBrandIconStore()

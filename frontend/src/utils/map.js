@@ -164,13 +164,15 @@ export function createOldIcon(color = 'default', icon = '📍') {
 // brand: 品牌名（可选）——优先读取该品牌独立大小 localStorage: mapIconSize_<brand>，其次全局 mapIconSize
 export function createBrandImageIcon(url, gray = false, borderColor = null, size = null, brand = null) {
   if (!size) {
-    // 单品牌独立大小（localStorage: mapIconSize_<brand>）
-    let brandSize = brand ? Number(localStorage.getItem('mapIconSize_' + brand)) : NaN
+    // 图标大小按用户隔离（key 带 userId，各账号设置互不影响）
+    const uid = localStorage.getItem('userId') || 'guest'
+    // 单品牌独立大小（localStorage: mapIconSize_<brand>_<uid>）
+    let brandSize = brand ? Number(localStorage.getItem(`mapIconSize_${brand}_${uid}`)) : NaN
     if (brandSize >= 20 && brandSize <= 48) {
       size = brandSize
     } else {
-      // 全局大小（localStorage: mapIconSize，默认 32）
-      const saved = Number(localStorage.getItem('mapIconSize'))
+      // 用户默认大小（localStorage: mapIconSize_<uid>，默认 32）
+      const saved = Number(localStorage.getItem(`mapIconSize_${uid}`))
       size = saved >= 20 && saved <= 48 ? saved : 32
     }
   }
