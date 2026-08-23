@@ -306,13 +306,17 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(company)
     }
 
-    // VIP 到期：设为 VIP → 自保存日起算自动续期 1 年；未改为普通用户则每次保存自动延续 1 年；改为非 VIP → 清除
+    // VIP 到期：设为 VIP → 自保存日起算自动续期 1 年；设为 VIP 试用 → 自保存日起算 30 天；未改为其他角色则每次保存自动延续；改为其他角色 → 清除
     const finalRole = role !== undefined ? role : existingUser.role
     if (finalRole === 'vip') {
       const vipUntil = new Date(Date.now() + 365 * 24 * 3600 * 1000)
       updates.push('vip_until = ?')
       params.push(vipUntil.toISOString().slice(0, 10))
-    } else if (role !== undefined && finalRole !== 'vip') {
+    } else if (finalRole === 'trial') {
+      const vipUntil = new Date(Date.now() + 30 * 24 * 3600 * 1000)
+      updates.push('vip_until = ?')
+      params.push(vipUntil.toISOString().slice(0, 10))
+    } else if (role !== undefined && finalRole !== 'vip' && finalRole !== 'trial') {
       updates.push('vip_until = ?')
       params.push(null)
     }

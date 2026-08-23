@@ -11,7 +11,7 @@ import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
 import shoppingCenterRoutes from './routes/shopping-centers.js'
-import { initDatabase } from './models/database.js'
+import { initDatabase, getDb } from './models/database.js'
 import geocodeRoutes from './routes/geocode.js'
 import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
@@ -108,6 +108,21 @@ async function start() {
 ╚════════════════════════════════════════════╝
       `)
     })
+
+    // ===== VIP 试用到期自动降级（每 6 小时检查一次）=====
+    // 角色为 trial 且 vip_until 已过 → 自动切换为普通用户（role=user, vip_until 清空）
+    setInterval(() => {
+      try {
+        const db = getDb()
+        const today = new Date().toISOString().slice(0, 10)
+        const r = db.prepare(`UPDATE users SET role = 'user', vip_until = NULL WHERE role = 'trial' AND vip_until IS NOT NULL AND vip_until < ?`).run(today)
+        if (r.changes > 0) {
+          console.log(`[TrialExpire] ${r.changes} 个 VIP 试用已到期，自动降级为普通用户`)
+        }
+      } catch (e) {
+        console.error('[TrialExpire] 检查失败:', e.message)
+      }
+    }, 6 * 3600 * 1000)
   } catch (error) {
     console.error('启动服务器失败:', error)
     process.exit(1)

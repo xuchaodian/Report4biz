@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
-            👑 VIP 用户 · 有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span>
+            <template v-if="isTrial">🎁 VIP 试用</template><template v-else>👑 VIP 用户</template> · 有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span>
             <span v-if="vipExpired">（已过期）</span>
           </span>
         </div>
@@ -503,9 +503,10 @@ const formRef = ref(null)
 const loading = ref(false)
 
 // ===== VIP 身份标识 =====
-const isVip = computed(() => userStore.user?.role === 'vip')
+const isVip = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial')
+const isTrial = computed(() => userStore.user?.role === 'trial')
 // 是否 VIP（管理员视为 VIP，用于 AI 选址建议门禁按钮显示）
-const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
+const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial' || userStore.user?.role === 'admin')
 const vipUntilText = computed(() => {
   const u = userStore.user?.vip_until
   if (!u) return ''

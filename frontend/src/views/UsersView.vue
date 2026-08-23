@@ -69,8 +69,8 @@
         <el-table-column prop="company" label="公司" min-width="150" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' }">
-              {{ row.role === 'admin' ? '管理员' : row.role === 'vip' ? 'VIP用户' : '普通用户' }}
+            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : row.role === 'trial' ? 'primary' : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' }">
+              {{ row.role === 'admin' ? '管理员' : row.role === 'vip' ? 'VIP用户' : row.role === 'trial' ? 'VIP试用' : '普通用户' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -140,13 +140,14 @@
         <el-form-item label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
             <el-option label="普通用户" value="user" />
+            <el-option label="VIP试用" value="trial" />
             <el-option label="VIP用户" value="vip" />
             <el-option label="管理员" value="admin" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.role === 'vip'" label="VIP到期">
+        <el-form-item v-if="form.role === 'vip' || form.role === 'trial'" label="VIP到期">
           <div style="width: 100%;">
-            <div class="quota-tip" style="color: #e6a23c;">👑 自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）</div>
+            <div class="quota-tip" style="color: #e6a23c;">{{ form.role === 'trial' ? '🎁 VIP 试用自保存之日起 30 天，到期后自动恢复为普通用户' : '👑 自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）' }}</div>
             <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期日：{{ form.vipUntilText }}</div>
           </div>
         </el-form-item>
@@ -390,16 +391,16 @@ const formatDate = (dateStr) => {
   return `${y}-${m}-${d}`
 }
 
-// VIP 是否即将到期（30 天内）
+// VIP 是否即将到期（30 天内；含 VIP 试用）
 const isVipExpiring = (row) => {
-  if (row.role !== 'vip' || !row.vip_until) return false
+  if ((row.role !== 'vip' && row.role !== 'trial') || !row.vip_until) return false
   const until = new Date(String(row.vip_until) + 'T23:59:59')
   const now = new Date()
   const days = Math.ceil((until - now) / 86400000)
   return days >= 0 && days <= 30
 }
 const isVipExpired = (row) => {
-  if (row.role !== 'vip' || !row.vip_until) return false
+  if ((row.role !== 'vip' && row.role !== 'trial') || !row.vip_until) return false
   return new Date(String(row.vip_until) + 'T23:59:59') < new Date()
 }
 
