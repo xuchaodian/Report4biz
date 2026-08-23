@@ -210,7 +210,7 @@
         <span>📊 查询结果详情 - {{ currentDetail?.store_name || storeInfo?.name || '' }}</span>
         <div class="dialog-header-actions">
           <el-button type="success" size="small" class="btn-ai-advice" :loading="aiAdviceLoading" @click="handleAiAdvice">
-            🤖 AI 选址建议
+            {{ isVipUser ? '🤖 AI 选址建议' : '🔒 AI 选址建议（VIP）' }}
           </el-button>
           <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight">
             {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
@@ -263,7 +263,12 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
+import { useUserStore } from '@/stores/user'
 import axios from 'axios'
+
+const userStore = useUserStore()
+// VIP 用户（管理员视为 VIP）
+const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
 
 const props = defineProps({
   visible: Boolean,
@@ -461,6 +466,12 @@ function buildDataSummary(data) {
 }
 // 处理 AI 选址建议
 const handleAiAdvice = async () => {
+  // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
+  const isVip = userStore.user?.role === 'vip' || userStore.user?.role === 'admin'
+  if (!isVip) {
+    ElMessage.warning('🤖 AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
+    return
+  }
   if (!resultData.value) {
     ElMessage.info('暂无数据可供分析')
     return

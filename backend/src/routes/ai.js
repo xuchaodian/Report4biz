@@ -478,6 +478,13 @@ router.post('/site-advice', authenticate, async (req, res) => {
     if (!access.allowed) {
       return res.status(403).json({ message: access.message })
     }
+    // VIP 门禁：AI 选址建议仅 VIP 用户可用（查 DB 最新角色 + 到期校验，管理员视为 VIP）
+    const vipUser = getDb().prepare('SELECT role, vip_until FROM users WHERE id = ?').get(userId)
+    const isVip = vipUser && (vipUser.role === 'vip' || vipUser.role === 'admin') &&
+      (!vipUser.vip_until || new Date(String(vipUser.vip_until) + 'T23:59:59') >= new Date())
+    if (!isVip) {
+      return res.status(403).json({ message: '🤖 AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP' })
+    }
     if (!brand && !storeName) {
       return res.status(400).json({ message: '缺少门店/品牌信息' })
     }
