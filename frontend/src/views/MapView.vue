@@ -4628,14 +4628,17 @@ const loadMarkers = async (skipFetch = false) => {
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
 
-  // 门店状态筛选（在营/停业）：在营 = 已开业且非闭店（排除候选门店：重点候选/一般候选）
+  // 门店状态筛选（在营/候选/停业）：在营 = 已开业且非闭店；候选 = 重点候选/一般候选
   if (myStoreStatusFilter.value !== 'all') {
     const wantClosed = myStoreStatusFilter.value === 'closed'
+    const wantCandidate = myStoreStatusFilter.value === 'candidate'
     dataToShow = dataToShow.filter(m => {
       const closed = isStoreClosed(m.store_status)
+      const isCandidate = m.store_type === '重点候选' || m.store_type === '一般候选'
       if (wantClosed) return closed
+      if (wantCandidate) return !closed && isCandidate
       // 在营：已开业状态 + 非候选门店
-      return !closed && m.store_type !== '重点候选' && m.store_type !== '一般候选'
+      return !closed && !isCandidate
     })
   }
 
@@ -4648,10 +4651,13 @@ const loadMarkers = async (skipFetch = false) => {
     console.log('创建标记:', markerData.name, '坐标:', markerData.latitude, markerData.longitude)
     // 闭店门店图标变灰色
     const isClosed = isStoreClosed(markerData.store_status)
+    // 候选门店（重点候选/一般候选）半透明虚线显示，便于与已开业区分
+    const isCandidate = markerData.store_type === '重点候选' || markerData.store_type === '一般候选'
     const brandIconUrl = brandIconMap.value[markerData.brand]
     const icon = brandIconUrl
       ? createBrandImageIcon(brandIconUrl, isClosed, getStoreTypeBorderColor(markerData.store_type), null, markerData.brand)
       : createSvgIcon(isClosed ? '#909399' : getStoreTypeColor(markerData.store_type), currentMarkerStyle.value)
+    icon.options.className = 'custom-svg-marker' + (isCandidate && !isClosed ? ' candidate-marker' : '')
 
     const marker = L.marker([markerData.latitude, markerData.longitude], {
       icon,

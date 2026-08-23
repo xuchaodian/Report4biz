@@ -328,3 +328,11 @@ body {
 .draggable-panel {
   z-index: 9999 !important;
 }
+
+/* ===== 候选门店图标（半透明虚线，区分已开业）===== */
+.candidate-marker {
+  opacity: 0.6;
+}
+.candidate-marker img {
+  border-style: dashed !important;
+}
