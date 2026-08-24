@@ -4628,20 +4628,9 @@ const loadMarkers = async (skipFetch = false) => {
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
 
-  // 门店状态筛选（在营/候选/在营+候选/停业）：在营 = 已开业且非闭店；候选 = 重点候选/一般候选；在营+候选 = 所有非闭店
+  // 门店状态筛选（在营/候选/在营+候选/停业）——统一走 filterStoreByStatus（与网点优化一致）
   if (myStoreStatusFilter.value !== 'all') {
-    const wantClosed = myStoreStatusFilter.value === 'closed'
-    const wantCandidate = myStoreStatusFilter.value === 'candidate'
-    const wantOpenCandidate = myStoreStatusFilter.value === 'open_candidate'
-    dataToShow = dataToShow.filter(m => {
-      const closed = isStoreClosed(m.store_status)
-      const isCandidate = m.store_type === '重点候选' || m.store_type === '一般候选'
-      if (wantClosed) return closed
-      if (wantCandidate) return !closed && isCandidate
-      if (wantOpenCandidate) return !closed
-      // 在营：已开业状态 + 非候选门店
-      return !closed && !isCandidate
-    })
+    dataToShow = dataToShow.filter(filterStoreByStatus)
   }
 
   // 创建点位图层
@@ -6348,6 +6337,18 @@ const selectStoreCircleMode = (mode) => {
   storeCircleDialogVisible.value = true
 }
 
+// 门店状态筛选（与地图渲染/网点优化统一口径）：在营=已开业非候选；候选=重点候选/一般候选；在营+候选=非闭店；停业=闭店类
+const filterStoreByStatus = (m) => {
+  const f = myStoreStatusFilter.value
+  if (f === 'all') return true
+  const closed = isStoreClosed(m.store_status)
+  const isCandidate = m.store_type === '重点候选' || m.store_type === '一般候选'
+  if (f === 'closed') return closed
+  if (f === 'candidate') return !closed && isCandidate
+  if (f === 'open_candidate') return !closed
+  return !closed && !isCandidate // 在营
+}
+
 // 应用门店商圈（生成圆形）
 const applyStoreCircles = () => {
   storeCircleDialogVisible.value = false
@@ -6358,12 +6359,13 @@ const applyStoreCircles = () => {
   }
   let allStores = []
 
-  // 1. 我的门店（开关开启且可见）
+  // 1. 我的门店（开关开启且可见 + 门店状态筛选：与地图显示一致，停业/未显示门店不参与计算）
   if (showBusinessLayer.value && markerStore.markers) {
     let ms = markerStore.markers
     if (markerStore.visibleIds !== null && markerStore.visibleIds !== undefined) {
       ms = ms.filter(m => markerStore.visibleIds.includes(m.id))
     }
+    ms = ms.filter(filterStoreByStatus)
     ms.forEach(m => {
       if (m.latitude && m.longitude) {
         allStores.push({ latitude: m.latitude, longitude: m.longitude, name: m.name, _type: '我的门店', city: m.city || '' })
