@@ -2,6 +2,7 @@ import express from 'express'
 import { authenticate } from '../middleware/auth.js'
 import { getDb } from '../models/database.js'
 import { tools, serverSideTools } from '../ai/tools.js'
+import { aroundSearch } from '../utils/amapPoi.js'
 
 const router = express.Router()
 
@@ -468,9 +469,60 @@ async function executeCalculatePotential(args) {
 
 // ===== 品牌选址建议（数据洞察 → AI）=====
 // 读取门店品牌 + 业态映射 + 联通智慧足迹数据摘要，调用豆包给出是否符合品牌定位的选址建议
+// 周边环境要素：半径内竞品/购物中心/我的门店（DB 距离计算）+ 地铁站（高德周边搜索）
+async function buildSurroundingContext(lat, lng, radiusMeters) {
+  if (!lat || !lng || !radiusMeters) return ''
+  const R = 6371000
+  const dist = (la, lo) => {
+    const dLat = (la - lat) * Math.PI / 180
+    const dLng = (lo - lng) * Math.PI / 180
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(la * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+    return 2 * R * Math.asin(Math.sqrt(a))
+  }
+  const lines = []
+  try {
+    const db = getDb()
+    // 竞品数量 + 品牌分布
+    const comps = db.prepare('SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
+    const inComp = comps.filter(c => dist(c.latitude, c.longitude) <= radiusMeters)
+    if (inComp.length > 0) {
+      const byBrand = {}
+      inComp.forEach(c => { byBrand[c.brand] = (byBrand[c.brand] || 0) + 1 })
+      const top = Object.entries(byBrand).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([b, n]) => `${b}${n}家`).join('、')
+      lines.push(`竞品门店 ${inComp.length} 家（${top}）`)
+    } else {
+      lines.push('竞品门店 0 家（区域内暂无竞品）')
+    }
+    // 购物中心
+    const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
+    const inCenter = centers.filter(c => dist(c.latitude, c.longitude) <= radiusMeters)
+    lines.push(`购物中心 ${inCenter.length} 家`)
+    // 我的门店（自家蚕食风险）
+    const myStores = db.prepare('SELECT longitude, latitude FROM markers WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
+    const inMy = myStores.filter(s => dist(s.latitude, s.longitude) <= radiusMeters)
+    lines.push(`我的门店 ${inMy.length} 家${inMy.length > 0 ? '（注意自家门店相互蚕食风险）' : ''}`)
+  } catch (e) {
+    console.error('[site-advice] DB 周边要素失败:', e.message)
+  }
+  // 地铁站（高德周边搜索）
+  try {
+    const amap = await aroundSearch(lng, lat, Math.max(radiusMeters, 1000), '地铁站')
+    const pois = (amap && amap.pois) || []
+    if (pois.length > 0) {
+      const near = pois.slice(0, 3).map(p => `${p.name}约${Math.round(p.distance || 0)}米`).join('、')
+      lines.push(`最近地铁站：${near}`)
+    } else {
+      lines.push('最近地铁站：周边暂无（交通便利性一般）')
+    }
+  } catch (e) {
+    console.error('[site-advice] 地铁站查询失败:', e.message)
+  }
+  return lines.join('；')
+}
+
 router.post('/site-advice', authenticate, async (req, res) => {
   try {
-    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '' } = req.body || {}
+    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null } = req.body || {}
     const userId = req.user.id
 
     // 检查AI使用权限
@@ -489,16 +541,27 @@ router.post('/site-advice', authenticate, async (req, res) => {
       return res.status(400).json({ message: '缺少门店/品牌信息' })
     }
 
+    // 周边环境要素：竞品/购物中心/我的门店（DB）+ 地铁站（高德周边搜索）
+    let surroundings = ''
+    try {
+      surroundings = await buildSurroundingContext(lat, lng, radiusMeters)
+    } catch (e) {
+      console.error('[site-advice] 周边要素获取失败:', e.message)
+    }
+
     const systemPrompt = `你是专业的连锁品牌选址顾问（GeoManager 商业智能系统）。用户会提供品牌名、所属业态、查询区域和联通智慧足迹人口大数据摘要（基于高德/联通数据服务：1001 人口结构、1005 客流时段、1009 消费水平、1010 教育水平、1011 行业分布、1013 消费能力、1015 资产水平）。
 
 你的任务：判断该区域是否适合该品牌开设门店，并给出专业选址建议。
 
+用户还会提供「周边环境要素」（半径内竞品数量及品牌分布、购物中心、我的门店、最近地铁站），需结合人口画像与周边竞争/配套/交通综合判断。
+
 ## 输出要求（Markdown 格式，简洁专业）
-1. **选址结论**：开头第一行直接给出「✅ 适合选址」或「⚠️ 谨慎选址」或「❌ 不建议选址」，并说明理由
+1. **选址结论**：开头第一行直接给出「✅ 适合选址」或「⚠️ 谨慎选址」或「❌ 不建议选址」，并说明理由（结合竞争格局与交通配套）
 2. **客群匹配度**：区域主要人群（居住/工作/到访比例、消费力、行业）与该品牌目标客群是否匹配
 3. **业态契合点**：区域特征（如高密度居住区/商务区/商圈）与该业态（如快餐/正餐/零售）的契合度
-4. **风险提示**：不匹配的风险点（如有）
-5. **运营建议**：若开业，建议的时段推广、定价、选址位置偏好（如近地铁/写字楼/社区）
+4. **竞争与配套**：基于周边环境要素分析竞争压力（竞品数量/品牌、自家门店蚕食）与配套成熟度（购物中心、地铁可达性）
+5. **风险提示**：不匹配的风险点（如有）
+6. **运营建议**：若开业，建议的时段推广、定价、选址位置偏好（如近地铁/写字楼/社区）
 
 注意：严格基于提供的数据摘要分析，不要编造数据；如果数据不足，明确说明哪些维度缺失。回复控制在 500 字以内，用中文。`
 
@@ -512,7 +575,9 @@ router.post('/site-advice', authenticate, async (req, res) => {
       '【联通智慧足迹数据摘要】',
       dataSummary || '暂无数据',
       '',
-      '请基于以上信息，给出该区域是否符合该品牌定位的选址建议。'
+      surroundings ? `【周边环境要素】${surroundings}` : '',
+      '',
+      '请基于以上信息（含周边环境要素），给出该区域是否符合该品牌定位的选址建议。'
     ].join('\n')
 
     const response = await fetch(`${ARK_BASE_URL}/chat/completions`, {

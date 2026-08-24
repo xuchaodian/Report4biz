@@ -497,12 +497,17 @@ const handleAiAdvice = async () => {
     const summary = buildDataSummary(data)
     const radiusText = currentDetail.value?.radii?.length ? currentDetail.value.radii.join('米, ') + '米' : props.store?.radius || ''
     const city = currentDetail.value?.city || props.store?.city || ''
+    // 周边环境要素：查询中心坐标 + 半径（供后端统计竞品/购物中心/我的门店/地铁站）
+    const centerLat = currentDetail.value?.center_lat ?? props.store?.latitude
+    const centerLng = currentDetail.value?.center_lng ?? props.store?.longitude
+    const radii = currentDetail.value?.radii || []
+    const firstRadius = radii.length ? Number(radii[0]) || 1000 : 1000
     // 调用后端 AI
     const token = localStorage.getItem('token') || sessionStorage.getItem('token')
     const res = await fetch('/api/ai/site-advice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary })
+      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius })
     })
     const j = await res.json()
     if (!res.ok) throw new Error(j.message || 'AI 服务不可用')
