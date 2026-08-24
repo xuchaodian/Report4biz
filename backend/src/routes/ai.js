@@ -470,8 +470,12 @@ async function executeCalculatePotential(args) {
 // ===== 品牌选址建议（数据洞察 → AI）=====
 // 读取门店品牌 + 业态映射 + 联通智慧足迹数据摘要，调用豆包给出是否符合品牌定位的选址建议
 // 周边环境要素：半径内竞品/购物中心/我的门店（DB 距离计算）+ 地铁站（高德周边搜索）
-async function buildSurroundingContext(lat, lng, radiusMeters) {
-  if (!lat || !lng || !radiusMeters) return ''
+async function buildSurroundingContext(lat, lng, radii) {
+  // 归一化半径数组：数字、去重、升序；无则默认 1000 米
+  let rs = Array.isArray(radii) ? radii.map(Number).filter(n => n > 0) : []
+  rs = [...new Set(rs)].sort((a, b) => a - b)
+  if (rs.length === 0) rs = [1000]
+  if (!lat || !lng) return ''
   const R = 6371000
   const dist = (la, lo) => {
     const dLat = (la - lat) * Math.PI / 180
@@ -479,34 +483,41 @@ async function buildSurroundingContext(lat, lng, radiusMeters) {
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(la * Math.PI / 180) * Math.sin(dLng / 2) ** 2
     return 2 * R * Math.asin(Math.sqrt(a))
   }
+  const fmtR = (m) => (m >= 1000 ? (m / 1000).toFixed(m % 1000 === 0 ? 0 : 1) + 'km' : m + '米')
   const lines = []
   try {
     const db = getDb()
-    // 竞品数量 + 品牌分布
     const comps = db.prepare('SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
-    const inComp = comps.filter(c => dist(c.latitude, c.longitude) <= radiusMeters)
-    if (inComp.length > 0) {
-      const byBrand = {}
-      inComp.forEach(c => { byBrand[c.brand] = (byBrand[c.brand] || 0) + 1 })
-      const top = Object.entries(byBrand).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([b, n]) => `${b}${n}家`).join('、')
-      lines.push(`竞品门店 ${inComp.length} 家（${top}）`)
-    } else {
-      lines.push('竞品门店 0 家（区域内暂无竞品）')
-    }
-    // 购物中心
     const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
-    const inCenter = centers.filter(c => dist(c.latitude, c.longitude) <= radiusMeters)
-    lines.push(`购物中心 ${inCenter.length} 家`)
-    // 我的门店（自家蚕食风险）
     const myStores = db.prepare('SELECT longitude, latitude FROM markers WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
-    const inMy = myStores.filter(s => dist(s.latitude, s.longitude) <= radiusMeters)
-    lines.push(`我的门店 ${inMy.length} 家${inMy.length > 0 ? '（注意自家门店相互蚕食风险）' : ''}`)
+    // 逐半径统计：竞品/购物中心/我的门店
+    const compCounts = [], centerCounts = [], myCounts = []
+    for (const r of rs) {
+      compCounts.push(comps.filter(c => dist(c.latitude, c.longitude) <= r).length)
+      centerCounts.push(centers.filter(c => dist(c.latitude, c.longitude) <= r).length)
+      myCounts.push(myStores.filter(s => dist(s.latitude, s.longitude) <= r).length)
+    }
+    const series = (arr) => arr.map((n, i) => `${fmtR(rs[i])}内${n}家`).join('、')
+    // 竞品：逐半径 + 最大半径品牌分布
+    const maxR = rs[rs.length - 1]
+    const inCompMax = comps.filter(c => dist(c.latitude, c.longitude) <= maxR)
+    if (inCompMax.length > 0) {
+      const byBrand = {}
+      inCompMax.forEach(c => { byBrand[c.brand] = (byBrand[c.brand] || 0) + 1 })
+      const top = Object.entries(byBrand).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([b, n]) => `${b}${n}家`).join('、')
+      lines.push(`竞品门店 ${series(compCounts)}（品牌分布：${top}）`)
+    } else {
+      lines.push(`竞品门店 ${series(compCounts)}（区域内暂无竞品）`)
+    }
+    lines.push(`购物中心 ${series(centerCounts)}`)
+    const myTotal = myCounts[myCounts.length - 1]
+    lines.push(`我的门店 ${series(myCounts)}${myTotal > 0 ? '（注意自家门店相互蚕食风险）' : ''}`)
   } catch (e) {
     console.error('[site-advice] DB 周边要素失败:', e.message)
   }
-  // 地铁站（高德周边搜索）
+  // 地铁站（高德周边搜索，半径至少 1000 米）
   try {
-    const amap = await aroundSearch(lng, lat, Math.max(radiusMeters, 1000), '地铁站')
+    const amap = await aroundSearch(lng, lat, Math.max(rs[0], 1000), '地铁站')
     const pois = (amap && amap.pois) || []
     if (pois.length > 0) {
       const near = pois.slice(0, 3).map(p => `${p.name}约${Math.round(p.distance || 0)}米`).join('、')
@@ -517,12 +528,33 @@ async function buildSurroundingContext(lat, lng, radiusMeters) {
   } catch (e) {
     console.error('[site-advice] 地铁站查询失败:', e.message)
   }
+  // 著名品牌（高德周边检索：肯德基/麦当劳/星巴克，半径至少 1000 米）
+  // 注意：高德 QPS 限制（CUQPS_HAS_EXCEEDED_THE_LIMIT）——串行调用 + 300ms 间隔 + 单品牌独立降级
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+  const brands = ['肯德基', '麦当劳', '星巴克']
+  const parts = []
+  for (const b of brands) {
+    try {
+      const amap = await aroundSearch(lng, lat, Math.max(rs[0], 1000), b)
+      if (amap && amap.count > 0) {
+        const minDist = amap.pois.length ? Math.min(...amap.pois.map(p => p.distance || Infinity)) : null
+        parts.push(`${b}${amap.count}家${minDist ? `（最近约${Math.round(minDist)}米）` : ''}`)
+      } else {
+        parts.push(`${b}0家`)
+      }
+    } catch (e) {
+      console.error(`[site-advice] 著名品牌 ${b} 查询失败:`, e.message)
+      parts.push(`${b}查询失败`)
+    }
+    await sleep(300)
+  }
+  lines.push(`著名品牌：${parts.join('、')}`)
   return lines.join('；')
 }
 
 router.post('/site-advice', authenticate, async (req, res) => {
   try {
-    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null } = req.body || {}
+    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null, radii = null } = req.body || {}
     const userId = req.user.id
 
     // 检查AI使用权限
@@ -544,7 +576,8 @@ router.post('/site-advice', authenticate, async (req, res) => {
     // 周边环境要素：竞品/购物中心/我的门店（DB）+ 地铁站（高德周边搜索）
     let surroundings = ''
     try {
-      surroundings = await buildSurroundingContext(lat, lng, radiusMeters)
+      surroundings = await buildSurroundingContext(lat, lng, radii || (radiusMeters ? [radiusMeters] : null))
+      console.log('[site-advice] surroundings:', surroundings)
     } catch (e) {
       console.error('[site-advice] 周边要素获取失败:', e.message)
     }

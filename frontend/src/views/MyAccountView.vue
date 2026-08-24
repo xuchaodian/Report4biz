@@ -3367,7 +3367,7 @@ const handleAiAdvice = async () => {
     const res = await fetch('/api/ai/site-advice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius })
+      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius, radii })
     })
     const j = await res.json()
     if (!res.ok) throw new Error(j.message || 'AI 服务不可用')
