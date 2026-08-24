@@ -502,16 +502,48 @@ const handleAiAdvice = async () => {
     const centerLng = currentDetail.value?.center_lng ?? props.store?.longitude
     const radii = currentDetail.value?.radii || []
     const firstRadius = radii.length ? Number(radii[0]) || 1000 : 1000
-    // 调用后端 AI
+    // 调用后端 AI（流式：点击后立即显示"思考中"，随后循序渐进式逐字显示）
+    aiAdvice.value = '🧠 AI 正在思考中，请稍候…'
     const token = localStorage.getItem('token') || sessionStorage.getItem('token')
     const res = await fetch('/api/ai/site-advice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius, radii })
+      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius, radii, stream: true })
     })
-    const j = await res.json()
-    if (!res.ok) throw new Error(j.message || 'AI 服务不可用')
-    aiAdvice.value = j.reply || '（AI 未返回内容）'
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      throw new Error(j.message || 'AI 服务不可用')
+    }
+    if (!res.body) {
+      const j = await res.json().catch(() => ({}))
+      aiAdvice.value = j.reply || '（AI 未返回内容）'
+    } else {
+      // SSE 流式解析：逐块 append（打字机效果）
+      aiAdvice.value = ''
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let i
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim()
+          buf = buf.slice(i + 1)
+          if (line.startsWith('data:')) {
+            const payload = line.slice(5).trim()
+            if (payload === '[DONE]') continue
+            try {
+              const chunk = JSON.parse(payload)
+              const delta = chunk.choices?.[0]?.delta?.content
+              if (delta) aiAdvice.value += delta
+            } catch (e) { /* 忽略解析失败 */ }
+          }
+        }
+      }
+      if (!aiAdvice.value) aiAdvice.value = '（AI 未返回内容）'
+    }
   } catch (e) {
     console.error('AI 选址建议失败:', e)
     ElMessage.error('AI 选址建议失败：' + (e.message || '请稍后重试'))

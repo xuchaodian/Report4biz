@@ -554,7 +554,7 @@ async function buildSurroundingContext(lat, lng, radii) {
 
 router.post('/site-advice', authenticate, async (req, res) => {
   try {
-    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null, radii = null } = req.body || {}
+    const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null, radii = null, stream = false } = req.body || {}
     const userId = req.user.id
 
     // 检查AI使用权限
@@ -626,7 +626,10 @@ router.post('/site-advice', authenticate, async (req, res) => {
           { role: 'user', content: userContent }
         ],
         temperature: 0.5,
-        max_tokens: 1200
+        max_tokens: 1200,
+        stream: !!stream,
+        // 流式模式下让最后一块携带 usage（用于 token 用量统计）
+        stream_options: stream ? { include_usage: true } : undefined
       })
     })
 
@@ -634,6 +637,44 @@ router.post('/site-advice', authenticate, async (req, res) => {
       const err = await response.text()
       console.error('豆包 site-advice 错误:', err)
       return res.status(500).json({ message: 'AI 服务暂时不可用', detail: err })
+    }
+
+    // ===== 流式模式：SSE 透传（循序渐进式显示） =====
+    if (stream && response.body) {
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buf = ''
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          res.write(value)
+          // 顺带解析 usage（流式最后一块带 usage）记录 token 消耗
+          buf += decoder.decode(value, { stream: true })
+          let i
+          while ((i = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, i).trim()
+            buf = buf.slice(i + 1)
+            if (line.startsWith('data:') && !line.includes('[DONE]')) {
+              try {
+                const chunk = JSON.parse(line.slice(5).trim())
+                if (chunk.usage) {
+                  recordTokenUsage(userId, (chunk.usage.prompt_tokens || 0) + (chunk.usage.completion_tokens || 0))
+                }
+              } catch (e) { /* 忽略解析失败 */ }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[site-advice] 流式转发失败:', e.message)
+      } finally {
+        res.end()
+      }
+      return
     }
 
     const result = await response.json()
