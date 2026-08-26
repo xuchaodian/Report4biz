@@ -123,10 +123,10 @@
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="数据年月" width="110" align="center">
+        <el-table-column label="联通人口" width="110" align="center">
           <template #default="{ row }">
             <template v-if="getStoreLatestMonth(row.name)">
-              <el-tooltip :content="isStoreMonthExpired(row.name) ? '数据距今超过12个月，建议更新' : '最近一次购买的数据年月'" placement="top">
+              <el-tooltip :content="isStoreMonthExpired(row.name) ? '数据距今超过12个月，建议更新' : '最近一次购买联通人口的数据年月'" placement="top">
                 <span :style="isStoreMonthExpired(row.name) ? { color: '#f56c6c', fontWeight: 'bold', cursor: 'pointer' } : { color: '#67c23a', cursor: 'pointer' }">
                   <span v-if="isStoreMonthExpired(row.name)" style="margin-right: 2px;">⏰</span>{{ getStoreLatestMonth(row.name) }}
                 </span>
@@ -147,15 +147,6 @@
         </el-table-column>
         <el-table-column prop="store_area" label="面积" width="80" align="right">
           <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : '-' }}</template>
-        </el-table-column>
-        <el-table-column label="本年销售(万)" width="110" align="right">
-          <template #default="{ row }">
-            <template v-if="getSaleYearTotal(row.id)">
-              <span style="color:#409eff;font-weight:500;">{{ getSaleYearTotal(row.id) }}</span>
-              <span style="color:#c0c4cc;font-size:11px;margin-left:2px;">万</span>
-            </template>
-            <span v-else style="color:#c0c4cc;">-</span>
-          </template>
         </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
