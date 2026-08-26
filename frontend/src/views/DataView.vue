@@ -41,6 +41,9 @@
         >
           <el-icon><DataAnalysis /></el-icon>批量购买({{ selectedRows.length }})
         </el-button>
+        <el-button type="success" plain @click="selectedRows.length > 0 ? openSaleDialog(selectedRows) : openSaleDialogForAll()" title="有勾选时录入勾选门店，否则录入当前筛选结果">
+          <el-icon><Money /></el-icon>📊 销售录入{{ selectedRows.length > 0 ? '(' + selectedRows.length + ')' : '' }}
+        </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
         </el-button>
@@ -157,8 +160,11 @@
         <el-table-column prop="store_category" label="门店区分" width="100" align="center">
           <template #default="{ row }">{{ row.store_category || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
+            <el-button type="success" link @click="openSaleDialog([row])" title="录月度销售">
+              <el-icon><Money /></el-icon>
+            </el-button>
             <el-button type="primary" link @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
             </el-button>
@@ -1105,6 +1111,20 @@ const openSaleDialog = (stores) => {
     customerCount: null
   }))
   saleDialogVisible.value = true
+}
+// 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
+const openSaleDialogForAll = () => {
+  if (!filteredMarkers.value || filteredMarkers.value.length === 0) {
+    ElMessage.warning('当前没有可录入的门店')
+    return
+  }
+  if (filteredMarkers.value.length > 100) {
+    ElMessageBox.confirm(`当前筛选 ${filteredMarkers.value.length} 家门店，建议先在筛选栏缩小范围或勾选部分门店。仍要全部录入吗？`, '提示', { type: 'warning' })
+      .then(() => openSaleDialog(filteredMarkers.value))
+      .catch(() => {})
+    return
+  }
+  openSaleDialog(filteredMarkers.value)
 }
 const submitSales = async () => {
   const items = saleRows.value.map(r => ({
