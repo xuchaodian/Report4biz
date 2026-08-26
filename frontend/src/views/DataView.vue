@@ -644,6 +644,42 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="saleDialogVisible" title="📊 门店月度销售录入" width="680px" :close-on-click-modal="false">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span style="font-size:13px;color:#555;">年份</span>
+        <el-select v-model="saleYear" style="width:110px">
+          <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
+        </el-select>
+        <span style="font-size:13px;color:#555;">月份</span>
+        <el-select v-model="saleMonth" style="width:110px">
+          <el-option v-for="m in 12" :key="m" :label="m + ' 月'" :value="m" />
+        </el-select>
+        <span style="font-size:12px;color:#909399;">同店同月重复保存将覆盖原数据</span>
+      </div>
+      <el-table :data="saleRows" max-height="360" size="small">
+        <el-table-column prop="name" label="门店" width="200" show-overflow-tooltip />
+        <el-table-column label="销售额(元)" width="170">
+          <template #default="{ row }">
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:140px" placeholder="必填" />
+          </template>
+        </el-table-column>
+        <el-table-column label="面积(㎡)" width="130">
+          <template #default="{ row }">
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:100px" placeholder="自动带出" />
+          </template>
+        </el-table-column>
+        <el-table-column label="客流(人次)" width="130">
+          <template #default="{ row }">
+            <el-input-number v-model="row.customerCount" :min="0" :controls="false" style="width:100px" placeholder="选填" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="saleDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saleSubmitting" @click="submitSales">保存 {{ saleRows.length }} 条</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 批量购买对话框 -->
     <BatchSmartstepsDialog
       :visible="showBatchSmartstepsDialog"
@@ -1045,6 +1081,55 @@ const handleViewPurchase = (row) => {
 // 表格选择变化
 const handleSelectionChange = (selection) => {
   selectedRows.value = selection
+}
+
+// ===== 门店月度销售录入 =====
+const saleDialogVisible = ref(false)
+const saleSubmitting = ref(false)
+const saleRows = ref([])
+const saleYear = ref(new Date().getFullYear())
+const saleMonth = ref(new Date().getMonth() + 1)
+const saleYearOptions = (() => {
+  const cur = new Date().getFullYear()
+  return [cur - 2, cur - 1, cur, cur + 1]
+})()
+const openSaleDialog = (stores) => {
+  if (!stores || stores.length === 0) return
+  saleYear.value = new Date().getFullYear()
+  saleMonth.value = new Date().getMonth() + 1
+  saleRows.value = stores.map(s => ({
+    id: s.id,
+    name: s.name || s.store_name || '',
+    salesAmount: null,
+    storeArea: s.store_area || s.area || null,
+    customerCount: null
+  }))
+  saleDialogVisible.value = true
+}
+const submitSales = async () => {
+  const items = saleRows.value.map(r => ({
+    storeId: r.id, year: saleYear.value, month: saleMonth.value,
+    salesAmount: r.salesAmount, storeArea: r.storeArea, customerCount: r.customerCount
+  }))
+  if (items.some(it => !it.salesAmount || it.salesAmount <= 0)) {
+    ElMessage.warning('请填写所有门店的销售额（> 0）')
+    return
+  }
+  saleSubmitting.value = true
+  try {
+    const res = await axios.post('/api/store-sales', { items })
+    if (res.data && res.data.success) {
+      ElMessage.success(`已保存 ${res.data.ok} 条销售记录`)
+      saleDialogVisible.value = false
+      if (saleRows.value.length > 0) tableRef.value?.clearSelection()
+    } else {
+      ElMessage.error(res.data?.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败：' + (e.response?.data?.message || e.message))
+  } finally {
+    saleSubmitting.value = false
+  }
 }
 
 // 批量删除

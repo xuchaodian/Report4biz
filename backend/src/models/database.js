@@ -522,6 +522,25 @@ export async function initDatabase() {
 
   // 创建 AI 用量记录表
   try {
+    // 门店月度销售（销售预测数据地基，按用户隔离，同店同月幂等覆盖）
+    db.run(`CREATE TABLE IF NOT EXISTS store_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      store_id INTEGER NOT NULL,
+      store_name TEXT,
+      brand TEXT,
+      city TEXT,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      sales_amount REAL NOT NULL DEFAULT 0,
+      store_area REAL,
+      customer_count INTEGER,
+      remark TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, store_id, year, month)
+    )`)
+
     db.run(`CREATE TABLE IF NOT EXISTS ai_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,

@@ -2998,6 +2998,7 @@ function getStorePopupHtml(markerData) {
       ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
       ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
       ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
+      <div id="store-sales-${markerData.id}" style="margin: 8px 0 2px; padding: 6px 8px; background: #f5f7fa; border-radius: 6px; font-size: 12px; color: #909399;">销售数据加载中…</div>
       <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
         <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
         <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
@@ -3009,6 +3010,42 @@ function getStorePopupHtml(markerData) {
       </div>
       </div>
     </div>`
+}
+
+// 为门店 popup 异步加载月度销售数据（本年累计 + 近12月迷你条形 + 坪效）
+async function loadStoreSalesIntoPopup(storeId) {
+  try {
+    const res = await axios.get(`/api/store-sales/stores/${storeId}/history?months=12`)
+    const d = res.data
+    const el = document.getElementById(`store-sales-${storeId}`)
+    if (!el) return
+    if (!d || !d.success) { el.innerHTML = '📊 销售数据加载失败'; return }
+    const has = (d.series || []).filter(s => s.salesAmount != null)
+    if (has.length === 0) {
+      el.innerHTML = '📊 暂无月度销售记录'
+      return
+    }
+    const max = Math.max(...has.map(s => s.salesAmount), 1)
+    let html = `<div style="font-weight:500;color:#333;">📊 本年累计 ¥${(d.yearTotal / 10000).toFixed(1)}万</div>`
+    html += `<div style="display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px;">`
+    d.series.forEach(s => {
+      const filled = s.salesAmount != null
+      const h = filled ? Math.max(5, Math.round(s.salesAmount / max * 30)) : 2
+      const tip = `${s.year}-${String(s.month).padStart(2, '0')}：${filled ? '¥' + Number(s.salesAmount).toLocaleString() : '无'}`
+      html += `<div title="${tip}" style="width:14px;height:${h}px;background:${filled ? '#409eff' : '#e3e6ea'};border-radius:2px;flex-shrink:0;"></div>`
+    })
+    html += `</div>`
+    // 坪效（最近一个有面积且有销售额的月份）
+    const lastWithArea = [...has].reverse().find(s => s.storeArea)
+    if (lastWithArea) {
+      const eff = lastWithArea.salesAmount / lastWithArea.storeArea
+      html += `<div style="margin-top:5px;color:#666;">坪效（${lastWithArea.year}-${String(lastWithArea.month).padStart(2, '0')}）：¥${eff.toFixed(0)}/㎡</div>`
+    }
+    el.innerHTML = html
+  } catch (e) {
+    const el = document.getElementById(`store-sales-${storeId}`)
+    if (el) el.innerHTML = '📊 暂无月度销售记录'
+  }
 }
 
 // 为门店标记添加购买履历检查
@@ -4659,6 +4696,9 @@ const loadMarkers = async (skipFetch = false) => {
 
     // popup打开时检查是否有购买履历并更新显示
     addStorePopupHistoryCheck(marker, markerData.name)
+
+    // popup打开时加载月度销售数据（本年累计 + 近12月趋势 + 坪效）
+    marker.on('popupopen', () => { loadStoreSalesIntoPopup(markerData.id) })
 
     // 拖拽开始 - 阻止地图拖动
     marker.on('mousedown', (e) => {

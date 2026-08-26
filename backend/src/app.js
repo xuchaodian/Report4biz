@@ -24,6 +24,7 @@ import resaleRoutes, { adminRouter as resaleAdminRouter } from './routes/resale.
 import dashboardRoutes from './routes/dashboard.js'
 import cityDataRoutes from './routes/city-data.js'
 import marketMapRoutes from './routes/market-map.js'
+import storeSalesRoutes from './routes/store-sales.js'
 import mallTenantsRoutes from './routes/mall-tenants.js'
 import scoringRoutes from './routes/scoring.js'
 import districtsRoutes from './routes/districts.js'
@@ -76,6 +77,7 @@ async function start() {
     app.use('/api/dashboard', dashboardRoutes)
     app.use('/api/city-data', cityDataRoutes)
     app.use('/api/market-map', marketMapRoutes)
+    app.use('/api/store-sales', storeSalesRoutes)
     app.use('/api/mall-tenants', mallTenantsRoutes)
     app.use('/api/scoring', scoringRoutes)
     app.use('/api/districts', districtsRoutes)
