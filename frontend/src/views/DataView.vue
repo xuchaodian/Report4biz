@@ -1176,7 +1176,9 @@ const submitSales = async () => {
     const res = await axios.post('/api/store-sales', { items })
     if (res.data && res.data.success) {
       ElMessage.success(`已保存 ${res.data.ok} 条销售记录`)
-      saleDialogVisible.value = false
+      // 刷新汇总数据后保持弹窗打开并回显（三年小字与输入框即时更新）
+      await loadAllSales()
+      openSaleDialog(saleRows.value)
       if (saleRows.value.length > 0) tableRef.value?.clearSelection()
     } else {
       ElMessage.error(res.data?.message || '保存失败')
