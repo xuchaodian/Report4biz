@@ -653,7 +653,7 @@
     <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="820px" :close-on-click-modal="false">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
-        <el-select v-model="saleYear" style="width:110px">
+        <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
           <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
         </el-select>
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
@@ -669,9 +669,9 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="年销售额(元)" width="230">
+        <el-table-column label="年销售(万元)" width="230">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="必填" />
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="万元" />
           </template>
         </el-table-column>
         <el-table-column label="面积(㎡)" width="180">
@@ -1107,7 +1107,7 @@ const openSaleDialog = (stores) => {
     return {
       id: s.id,
       name: s.name || s.store_name || '',
-      salesAmount: exist ? exist.sales_amount : null,
+      salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
       storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
       customerCount: null
     }
@@ -1149,6 +1149,18 @@ const getSaleYearAmount = (storeId, year) => {
 }
 
 // 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
+// 切换年份：按新年份回显（有记录显示，无则清空）
+const onSaleYearChange = () => {
+  saleRows.value = saleRows.value.map(r => {
+    const rec = saleSummaryByStore[r.id]
+    const exist = rec ? (rec.annual[saleYear.value] || null) : null
+    return {
+      ...r,
+      salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
+      storeArea: exist ? (exist.store_area || r.storeArea || null) : r.storeArea
+    }
+  })
+}
 const openSaleDialogForAll = () => {
   if (!filteredMarkers.value || filteredMarkers.value.length === 0) {
     ElMessage.warning('当前没有可录入的门店')
@@ -1165,7 +1177,7 @@ const openSaleDialogForAll = () => {
 const submitSales = async () => {
   const items = saleRows.value.map(r => ({
     storeId: r.id, year: saleYear.value, month: 0,
-    salesAmount: r.salesAmount, storeArea: r.storeArea
+    salesAmount: r.salesAmount * 10000, storeArea: r.storeArea  // 万元 → 元 存储
   }))
   if (items.some(it => !it.salesAmount || it.salesAmount <= 0)) {
     ElMessage.warning('请填写所有门店的销售额（> 0）')
