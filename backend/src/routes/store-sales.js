@@ -64,8 +64,9 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
     if (!annualRec) {
       rows.forEach(r => { if (r.year === curYear && r.month > 0) yearTotal += r.sales_amount })
     }
-    // 最新年度记录（跨年展示用）
-    const latestAnnual = rows.filter(r => r.month === 0).sort((a, b) => b.year - a.year)[0] || null
+    // 年度记录（跨年展示用）：最近完整年份优先（当年-1，当年未结束不算完整），无则取最新
+    const annuals = rows.filter(r => r.month === 0).sort((a, b) => b.year - a.year)
+    const latestAnnual = annuals.find(a => a.year === curYear - 1) || annuals[0] || null
     const monthKey = (y, m) => y * 12 + m
     const nowKey = curYear * 12 + (now.getMonth() + 1)
     const series = []

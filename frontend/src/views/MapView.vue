@@ -3025,11 +3025,7 @@ async function loadStoreSalesIntoPopup(storeId) {
     if (has.length === 0) {
       if (d.annual && d.annual.salesAmount) {
         const a = d.annual
-        let html = `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ¥${(a.salesAmount / 10000).toFixed(1)}万</div>`
-        if (a.storeArea) {
-          html += `<div style="margin-top:5px;color:#666;">坪效：¥${(a.salesAmount / a.storeArea).toFixed(0)}/㎡/年</div>`
-        }
-        el.innerHTML = html
+        el.innerHTML = `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ¥${(a.salesAmount / 10000).toFixed(1)}万</div>`
       } else {
         el.innerHTML = '📊 暂无销售记录'
       }
@@ -3045,12 +3041,6 @@ async function loadStoreSalesIntoPopup(storeId) {
       html += `<div title="${tip}" style="width:14px;height:${h}px;background:${filled ? '#409eff' : '#e3e6ea'};border-radius:2px;flex-shrink:0;"></div>`
     })
     html += `</div>`
-    // 坪效（最近一个有面积且有销售额的月份）
-    const lastWithArea = [...has].reverse().find(s => s.storeArea)
-    if (lastWithArea) {
-      const eff = lastWithArea.salesAmount / lastWithArea.storeArea
-      html += `<div style="margin-top:5px;color:#666;">坪效（${lastWithArea.year}-${String(lastWithArea.month).padStart(2, '0')}）：¥${eff.toFixed(0)}/㎡</div>`
-    }
     el.innerHTML = html
   } catch (e) {
     const el = document.getElementById(`store-sales-${storeId}`)
