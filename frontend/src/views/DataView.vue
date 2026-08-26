@@ -148,6 +148,15 @@
         <el-table-column prop="store_area" label="面积" width="80" align="right">
           <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : '-' }}</template>
         </el-table-column>
+        <el-table-column label="本年销售(万)" width="110" align="right">
+          <template #default="{ row }">
+            <template v-if="getSaleYearTotal(row.id)">
+              <span style="color:#409eff;font-weight:500;">{{ getSaleYearTotal(row.id) }}</span>
+              <span style="color:#c0c4cc;font-size:11px;margin-left:2px;">万</span>
+            </template>
+            <span v-else style="color:#c0c4cc;">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
         </el-table-column>
@@ -1103,15 +1112,42 @@ const openSaleDialog = (stores) => {
   if (!stores || stores.length === 0) return
   saleYear.value = new Date().getFullYear()
   saleMonth.value = new Date().getMonth() + 1
-  saleRows.value = stores.map(s => ({
-    id: s.id,
-    name: s.name || s.store_name || '',
-    salesAmount: null,
-    storeArea: s.store_area || s.area || null,
-    customerCount: null
-  }))
+  saleRows.value = stores.map(s => {
+    const key = `${saleYear.value}-${String(saleMonth.value).padStart(2, '0')}`
+    const exist = saleSummaryByStore[s.id]?.months?.[key]
+    return {
+      id: s.id,
+      name: s.name || s.store_name || '',
+      salesAmount: exist ? exist.sales_amount : null,
+      storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
+      customerCount: exist ? exist.customer_count : null
+    }
+  })
   saleDialogVisible.value = true
 }
+// ===== 销售记录展示 =====
+const allSales = ref([])
+const saleSummaryByStore = {}
+const loadAllSales = async () => {
+  try {
+    const res = await axios.get('/api/store-sales')
+    allSales.value = res.data?.sales || []
+    // 按门店汇总：本年累计 + 每月明细（供列表展示与弹窗回显）
+    const curYear = new Date().getFullYear()
+    allSales.value.forEach(s => {
+      if (!saleSummaryByStore[s.store_id]) saleSummaryByStore[s.store_id] = { yearTotal: 0, months: {} }
+      const rec = saleSummaryByStore[s.store_id]
+      if (s.year === curYear) rec.yearTotal += (s.sales_amount || 0)
+      rec.months[`${s.year}-${String(s.month).padStart(2, '0')}`] = s
+    })
+  } catch (e) { console.error('销售记录加载失败:', e) }
+}
+const getSaleYearTotal = (storeId) => {
+  const rec = saleSummaryByStore[storeId]
+  if (!rec || rec.yearTotal <= 0) return null
+  return (rec.yearTotal / 10000).toFixed(1)
+}
+
 // 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
 const openSaleDialogForAll = () => {
   if (!filteredMarkers.value || filteredMarkers.value.length === 0) {
@@ -1477,6 +1513,7 @@ watch(geocodeDialogVisible, (val) => {
 
 onMounted(async () => {
   console.log('🏪 DataView 已加载！', new Date().toISOString())
+  loadAllSales()
   await markerStore.fetchMarkers()
   console.log('✅ 门店列表加载完成，准备获取购买次数', markerStore.markers.length, '条')
   // 恢复筛选条件：优先 localStorage（跨登录会话），否则从 store 恢复
