@@ -148,15 +148,6 @@
         <el-table-column prop="store_area" label="面积" width="80" align="right">
           <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : '-' }}</template>
         </el-table-column>
-        <el-table-column v-for="y in saleYearOptions" :key="y" :label="y + ' 销售(万)'" width="100" align="right">
-          <template #default="{ row }">
-            <template v-if="getSaleYearAmount(row.id, y)">
-              <span style="color:#409eff;font-weight:500;">{{ getSaleYearAmount(row.id, y) }}</span>
-              <span style="color:#c0c4cc;font-size:11px;margin-left:2px;">万</span>
-            </template>
-            <span v-else style="color:#c0c4cc;">-</span>
-          </template>
-        </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
         </el-table-column>
@@ -659,7 +650,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="640px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="820px" :close-on-click-modal="false">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px">
@@ -668,7 +659,7 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column label="门店" width="300">
+        <el-table-column label="门店" width="340">
           <template #default="{ row }">
             <div>{{ row.name }}</div>
             <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
@@ -678,14 +669,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="年销售额(元)" width="190">
+        <el-table-column label="年销售额(元)" width="230">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:160px" placeholder="必填" />
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="必填" />
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="150">
+        <el-table-column label="面积(㎡)" width="180">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:120px" placeholder="自动带出" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:150px" placeholder="自动带出" />
           </template>
         </el-table-column>
       </el-table>
