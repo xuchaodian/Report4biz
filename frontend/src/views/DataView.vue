@@ -127,8 +127,8 @@
           <template #default="{ row }">
             <template v-if="getStoreLatestMonth(row.name)">
               <el-tooltip :content="isStoreMonthExpired(row.name) ? '数据距今超过12个月，建议更新' : '最近一次购买联通人口的数据年月'" placement="top">
-                <span :style="isStoreMonthExpired(row.name) ? { color: '#f56c6c', fontWeight: 'bold', cursor: 'pointer' } : { color: '#67c23a', cursor: 'pointer' }">
-                  <span v-if="isStoreMonthExpired(row.name)" style="margin-right: 2px;">⏰</span>{{ getStoreLatestMonth(row.name) }}
+                <span :style="isStoreMonthExpired(row.name) ? { cursor: 'pointer' } : { cursor: 'pointer' }">
+                  <span v-if="isStoreMonthExpired(row.name)" style="margin-right: 2px; color: #f56c6c;">⏰</span>{{ getStoreLatestMonth(row.name) }}
                 </span>
               </el-tooltip>
             </template>
@@ -147,6 +147,15 @@
         </el-table-column>
         <el-table-column prop="store_area" label="面积" width="80" align="right">
           <template #default="{ row }">{{ row.store_area ? row.store_area + '㎡' : '-' }}</template>
+        </el-table-column>
+        <el-table-column v-for="y in saleYearOptions" :key="y" :label="y + ' 销售(万)'" width="100" align="right">
+          <template #default="{ row }">
+            <template v-if="getSaleYearAmount(row.id, y)">
+              <span style="color:#409eff;font-weight:500;">{{ getSaleYearAmount(row.id, y) }}</span>
+              <span style="color:#c0c4cc;font-size:11px;margin-left:2px;">万</span>
+            </template>
+            <span v-else style="color:#c0c4cc;">-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="seats" label="座位" width="70" align="right">
           <template #default="{ row }">{{ row.seats || '-' }}</template>
@@ -650,33 +659,24 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" title="📊 门店月度销售录入" width="680px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="640px" :close-on-click-modal="false">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px">
           <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
         </el-select>
-        <span style="font-size:13px;color:#555;">月份</span>
-        <el-select v-model="saleMonth" style="width:110px">
-          <el-option v-for="m in 12" :key="m" :label="m + ' 月'" :value="m" />
-        </el-select>
-        <span style="font-size:12px;color:#909399;">同店同月重复保存将覆盖原数据</span>
+        <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column prop="name" label="门店" width="200" show-overflow-tooltip />
-        <el-table-column label="销售额(元)" width="170">
+        <el-table-column prop="name" label="门店" width="220" show-overflow-tooltip />
+        <el-table-column label="年销售额(元)" width="190">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:140px" placeholder="必填" />
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:160px" placeholder="必填" />
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="130">
+        <el-table-column label="面积(㎡)" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:100px" placeholder="自动带出" />
-          </template>
-        </el-table-column>
-        <el-table-column label="客流(人次)" width="130">
-          <template #default="{ row }">
-            <el-input-number v-model="row.customerCount" :min="0" :controls="false" style="width:100px" placeholder="选填" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:120px" placeholder="自动带出" />
           </template>
         </el-table-column>
       </el-table>
@@ -1094,24 +1094,23 @@ const saleDialogVisible = ref(false)
 const saleSubmitting = ref(false)
 const saleRows = ref([])
 const saleYear = ref(new Date().getFullYear())
-const saleMonth = ref(new Date().getMonth() + 1)
 const saleYearOptions = (() => {
   const cur = new Date().getFullYear()
-  return [cur - 2, cur - 1, cur, cur + 1]
+  return [cur - 2, cur - 1, cur]
 })()
 const openSaleDialog = (stores) => {
   if (!stores || stores.length === 0) return
   saleYear.value = new Date().getFullYear()
   saleMonth.value = new Date().getMonth() + 1
   saleRows.value = stores.map(s => {
-    const key = `${saleYear.value}-${String(saleMonth.value).padStart(2, '0')}`
-    const exist = saleSummaryByStore[s.id]?.months?.[key]
+    const rec = saleSummaryByStore[s.id]
+    const exist = rec ? (rec.annual[saleYear.value] || null) : null
     return {
       id: s.id,
       name: s.name || s.store_name || '',
       salesAmount: exist ? exist.sales_amount : null,
       storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
-      customerCount: exist ? exist.customer_count : null
+      customerCount: null
     }
   })
   saleDialogVisible.value = true
@@ -1123,20 +1122,31 @@ const loadAllSales = async () => {
   try {
     const res = await axios.get('/api/store-sales')
     allSales.value = res.data?.sales || []
-    // 按门店汇总：本年累计 + 每月明细（供列表展示与弹窗回显）
+    // 按门店汇总：年度记录（month=0 优先）按年存，月度记录按 key 存（供列表展示与弹窗回显）
     const curYear = new Date().getFullYear()
     allSales.value.forEach(s => {
-      if (!saleSummaryByStore[s.store_id]) saleSummaryByStore[s.store_id] = { yearTotal: 0, months: {} }
+      if (!saleSummaryByStore[s.store_id]) saleSummaryByStore[s.store_id] = { yearTotal: 0, months: {}, annual: {} }
       const rec = saleSummaryByStore[s.store_id]
-      if (s.year === curYear) rec.yearTotal += (s.sales_amount || 0)
-      rec.months[`${s.year}-${String(s.month).padStart(2, '0')}`] = s
+      if (s.month === 0) {
+        rec.annual[s.year] = s  // 年度记录
+        if (s.year === curYear) rec.yearTotal = s.sales_amount || 0
+      } else {
+        if (s.year === curYear) rec.yearTotal += (s.sales_amount || 0)
+        rec.months[`${s.year}-${String(s.month).padStart(2, '0')}`] = s
+      }
     })
   } catch (e) { console.error('销售记录加载失败:', e) }
 }
-const getSaleYearTotal = (storeId) => {
+// 某店某年销售额（万元，1 位小数；年度记录优先，无则月度汇总）
+const getSaleYearAmount = (storeId, year) => {
   const rec = saleSummaryByStore[storeId]
-  if (!rec || rec.yearTotal <= 0) return null
-  return (rec.yearTotal / 10000).toFixed(1)
+  if (!rec) return null
+  if (rec.annual[year]) return (rec.annual[year].sales_amount / 10000).toFixed(1)
+  const sum = Object.keys(rec.months)
+    .filter(k => k.startsWith(year + '-'))
+    .reduce((acc, k) => acc + (rec.months[k].sales_amount || 0), 0)
+  if (sum <= 0) return null
+  return (sum / 10000).toFixed(1)
 }
 
 // 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
@@ -1155,8 +1165,8 @@ const openSaleDialogForAll = () => {
 }
 const submitSales = async () => {
   const items = saleRows.value.map(r => ({
-    storeId: r.id, year: saleYear.value, month: saleMonth.value,
-    salesAmount: r.salesAmount, storeArea: r.storeArea, customerCount: r.customerCount
+    storeId: r.id, year: saleYear.value, month: 0,
+    salesAmount: r.salesAmount, storeArea: r.storeArea
   }))
   if (items.some(it => !it.salesAmount || it.salesAmount <= 0)) {
     ElMessage.warning('请填写所有门店的销售额（> 0）')

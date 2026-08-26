@@ -58,8 +58,14 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
     // 汇总本年累计 + 近 N 月序列
     const now = new Date()
     const curYear = now.getFullYear()
-    let yearTotal = 0
-    rows.forEach(r => { if (r.year === curYear) yearTotal += r.sales_amount })
+    // 年度记录（month=0）优先：存在年度记录则直接用，否则汇总月度
+    const annualRec = rows.find(r => r.year === curYear && r.month === 0)
+    let yearTotal = annualRec ? annualRec.sales_amount : 0
+    if (!annualRec) {
+      rows.forEach(r => { if (r.year === curYear && r.month > 0) yearTotal += r.sales_amount })
+    }
+    // 最新年度记录（跨年展示用）
+    const latestAnnual = rows.filter(r => r.month === 0).sort((a, b) => b.year - a.year)[0] || null
     const monthKey = (y, m) => y * 12 + m
     const nowKey = curYear * 12 + (now.getMonth() + 1)
     const series = []
@@ -69,7 +75,10 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
       const hit = rows.find(r => r.year === y && r.month === m)
       series.push({ year: y, month: m, salesAmount: hit ? hit.sales_amount : null, storeArea: hit ? hit.store_area : null })
     }
-    res.json({ success: true, storeId, yearTotal, curYear, series })
+    res.json({
+      success: true, storeId, yearTotal, curYear, series,
+      annual: latestAnnual ? { year: latestAnnual.year, salesAmount: latestAnnual.sales_amount, storeArea: latestAnnual.store_area } : null
+    })
   } catch (e) {
     console.error('[store-sales] 历史失败:', e.message)
     res.status(500).json({ message: '获取销售历史失败' })
@@ -99,9 +108,10 @@ router.post('/', authenticate, (req, res) => {
     for (const it of items) {
       const storeId = Number(it.storeId)
       const year = Number(it.year)
-      const month = Number(it.month)
+      // month=0 表示年度汇总记录（按年录入）；1-12 为月度
+      const month = it.month === undefined || it.month === null || it.month === '' ? 0 : Number(it.month)
       const amount = Number(it.salesAmount)
-      if (!storeId || !year || !month || isNaN(amount)) {
+      if (!storeId || !year || isNaN(month) || month < 0 || month > 12 || isNaN(amount)) {
         results.push({ storeId, ok: false, reason: '参数不完整或格式错误' })
         continue
       }

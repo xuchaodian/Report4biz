@@ -3021,8 +3021,18 @@ async function loadStoreSalesIntoPopup(storeId) {
     if (!el) return
     if (!d || !d.success) { el.innerHTML = '📊 销售数据加载失败'; return }
     const has = (d.series || []).filter(s => s.salesAmount != null)
+    // 仅有年度记录（month=0 按年录入）：直接显示年度销售额
     if (has.length === 0) {
-      el.innerHTML = '📊 暂无月度销售记录'
+      if (d.annual && d.annual.salesAmount) {
+        const a = d.annual
+        let html = `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ¥${(a.salesAmount / 10000).toFixed(1)}万</div>`
+        if (a.storeArea) {
+          html += `<div style="margin-top:5px;color:#666;">坪效：¥${(a.salesAmount / a.storeArea).toFixed(0)}/㎡/年</div>`
+        }
+        el.innerHTML = html
+      } else {
+        el.innerHTML = '📊 暂无销售记录'
+      }
       return
     }
     const max = Math.max(...has.map(s => s.salesAmount), 1)
