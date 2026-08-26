@@ -668,7 +668,16 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column prop="name" label="门店" width="220" show-overflow-tooltip />
+        <el-table-column label="门店" width="300">
+          <template #default="{ row }">
+            <div>{{ row.name }}</div>
+            <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
+              <template v-for="(y, i) in saleYearOptions" :key="y">
+                <span :style="getSaleYearAmount(row.id, y) ? 'color:#409eff;' : ''">{{ y }}: {{ getSaleYearAmount(row.id, y) ? getSaleYearAmount(row.id, y) + '万' : '-' }}</span><template v-if="i < saleYearOptions.length - 1"><span style="margin:0 5px;">·</span></template>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="年销售额(元)" width="190">
           <template #default="{ row }">
             <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:160px" placeholder="必填" />
@@ -1101,7 +1110,6 @@ const saleYearOptions = (() => {
 const openSaleDialog = (stores) => {
   if (!stores || stores.length === 0) return
   saleYear.value = new Date().getFullYear()
-  saleMonth.value = new Date().getMonth() + 1
   saleRows.value = stores.map(s => {
     const rec = saleSummaryByStore[s.id]
     const exist = rec ? (rec.annual[saleYear.value] || null) : null
