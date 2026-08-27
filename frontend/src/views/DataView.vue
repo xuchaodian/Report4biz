@@ -650,7 +650,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="900px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="1000px" :close-on-click-modal="false">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
@@ -659,7 +659,7 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column label="门店" width="340">
+        <el-table-column label="门店" width="360">
           <template #default="{ row }">
             <div>{{ row.name }}</div>
             <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
@@ -669,19 +669,19 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="年销售(万元)" width="230">
+        <el-table-column label="年销售(万元)" width="250">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="万元" />
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:220px" placeholder="万元" />
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="160">
+        <el-table-column label="面积(㎡)" width="165">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:130px" placeholder="自动带出" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:135px" placeholder="自动带出" />
           </template>
         </el-table-column>
-        <el-table-column label="外卖占比(%)" width="150">
+        <el-table-column label="外卖占比(%)" width="170">
           <template #default="{ row }">
-            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:120px" placeholder="选填" />
+            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:140px" placeholder="选填" />
           </template>
         </el-table-column>
       </el-table>
