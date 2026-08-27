@@ -659,7 +659,7 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column label="门店" width="360">
+        <el-table-column label="门店" width="340">
           <template #default="{ row }">
             <div>{{ row.name }}</div>
             <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
@@ -669,19 +669,19 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="年销售(万元)" width="250">
+        <el-table-column label="年销售(万元)" width="230">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:220px" placeholder="万元" />
+            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="万元" />
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="165">
+        <el-table-column label="面积(㎡)" width="160">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:135px" placeholder="自动带出" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:130px" placeholder="自动带出" />
           </template>
         </el-table-column>
-        <el-table-column label="外卖占比(%)" width="170">
+        <el-table-column label="外卖占比(%)" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:140px" placeholder="选填" />
+            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:120px" placeholder="选填" />
           </template>
         </el-table-column>
       </el-table>
