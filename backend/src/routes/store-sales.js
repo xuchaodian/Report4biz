@@ -1,8 +1,12 @@
 import express from 'express'
+import multer from 'multer'
+import fs from 'fs'
+import * as XLSX from 'xlsx'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
+const upload = multer({ dest: 'uploads/' })
 
 // 门店月度销售：按用户隔离；admin 可通过 ?all=1 查看全部
 // 唯一键 (user_id, store_id, year, month) → 同店同月重复提交 = 幂等覆盖
@@ -165,6 +169,107 @@ router.delete('/:id', authenticate, (req, res) => {
   } catch (e) {
     console.error('[store-sales] 删除失败:', e.message)
     res.status(500).json({ message: '删除失败' })
+  }
+})
+
+// 下载 Excel 导入模板（含示例行）
+router.get('/template', authenticate, (req, res) => {
+  try {
+    const data = [
+      ['门店编号', '门店名称', '年份', '年销售额(万元)', '面积(㎡)', '外卖占比(%)', '备注'],
+      ['2508', '周浦新田360广场店', 2026, 600, 120, 40, '示例行（导入前请删除）']
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(data)
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 20 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '销售录入')
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', 'attachment; filename="sales-import-template.xlsx"')
+    res.send(buf)
+  } catch (e) {
+    console.error('[store-sales] 模板生成失败:', e.message)
+    res.status(500).json({ message: '模板生成失败' })
+  }
+})
+
+// Excel 批量导入（门店编号优先匹配，名称兜底；按当前用户过滤）
+router.post('/import', authenticate, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ message: '请上传 Excel 文件' })
+  const userId = req.user.id
+  const isAdmin = req.user.role === 'admin'
+  try {
+    const db = getDb()
+    const wb = XLSX.read(fs.readFileSync(req.file.path), { type: 'buffer' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+    if (rows.length === 0) return res.status(400).json({ message: 'Excel 无有效数据行' })
+
+    // 当前用户的门店索引（admin 看全部）
+    const stores = db.prepare(
+      isAdmin
+        ? 'SELECT id, store_code, name, brand, city, store_area FROM markers'
+        : 'SELECT id, store_code, name, brand, city, store_area FROM markers WHERE user_id = ?'
+    ).all(...(isAdmin ? [] : [userId]))
+
+    const upsert = db.prepare(`INSERT INTO store_sales
+      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, remark)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+      ON CONFLICT(user_id, store_id, year, month) DO UPDATE SET
+        sales_amount = excluded.sales_amount,
+        store_area = excluded.store_area,
+        delivery_ratio = excluded.delivery_ratio,
+        remark = excluded.remark,
+        updated_at = CURRENT_TIMESTAMP`)
+
+    const findStore = (code, name) => {
+      const codeHits = code ? stores.filter(s => s.store_code === code) : []
+      if (codeHits.length === 1) return { store: codeHits[0] }
+      if (codeHits.length > 1) return { err: '门店编号重复，请用门店名称' }
+      const nameHits = name ? stores.filter(s => s.name === name) : []
+      if (nameHits.length === 1) return { store: nameHits[0] }
+      if (nameHits.length > 1) return { err: '门店名称重复，请补充编号' }
+      return { err: `未找到门店（编号：${code || '空'}，名称：${name || '空'}）` }
+    }
+
+    const results = []
+    let okCount = 0
+    rows.forEach((r, idx) => {
+      const rowNo = idx + 2
+      const code = String(r['门店编号'] || '').trim()
+      const name = String(r['门店名称'] || '').trim()
+      const year = Number(r['年份'])
+      const amountW = Number(r['年销售额(万元)'])
+      const areaRaw = String(r['面积(㎡)'] || '').trim()
+      const drRaw = String(r['外卖占比(%)'] || '').trim()
+      const remark = String(r['备注'] || '').trim() || null
+
+      if (!code && !name) { results.push({ row: rowNo, reason: '门店编号与名称均为空' }); return }
+      const matched = findStore(code, name)
+      if (matched.err) { results.push({ row: rowNo, reason: matched.err }); return }
+      if (!year || year < 2000 || year > 2100) { results.push({ row: rowNo, reason: `年份无效：${r['年份']}` }); return }
+      if (isNaN(amountW) || amountW <= 0) { results.push({ row: rowNo, reason: `年销售额无效（需>0）：${r['年销售额(万元)']}` }); return }
+      let dr = null
+      if (drRaw !== '') {
+        dr = Number(drRaw)
+        if (isNaN(dr) || dr < 0 || dr > 100) { results.push({ row: rowNo, reason: `外卖占比无效（0-100）：${drRaw}` }); return }
+        dr = Math.round(dr)
+      }
+      const area = areaRaw !== '' ? Number(areaRaw) : (matched.store.store_area || null)
+      upsert.run(userId, matched.store.id, matched.store.name || '', matched.store.brand || '', matched.store.city || '',
+        year, Math.round(amountW * 10000), isNaN(area) ? null : area, dr, remark)
+      okCount++
+      results.push({ row: rowNo, ok: true })
+    })
+
+    try { fs.unlinkSync(req.file.path) } catch (e) {}
+    const fails = results.filter(r => !r.ok)
+    db.saveNow && db.saveNow()
+    res.json({ success: true, ok: okCount, total: rows.length, results: fails })
+  } catch (e) {
+    console.error('[store-sales] 导入失败:', e.message)
+    try { fs.unlinkSync(req.file.path) } catch (e2) {}
+    res.status(500).json({ message: '导入失败：' + e.message })
   }
 })
 

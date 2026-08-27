@@ -658,6 +658,12 @@
         </el-select>
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+        <el-button size="small" @click="downloadSaleTemplate">📥 下载模板</el-button>
+        <el-button size="small" type="primary" plain :loading="saleImporting" @click="saleFileInput?.click()">📤 上传 Excel</el-button>
+        <input ref="saleFileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleSaleImport" />
+        <span style="font-size:12px;color:#909399;">按「门店编号」匹配（编号优先，名称兜底）</span>
+      </div>
       <el-table :data="saleRows" max-height="360" size="small">
         <el-table-column label="门店" width="340">
           <template #default="{ row }">
@@ -1163,6 +1169,52 @@ const getSaleYearAmount = (storeId, year) => {
 }
 
 // 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
+// ===== Excel 批量导入 =====
+const saleFileInput = ref(null)
+const saleImporting = ref(false)
+const downloadSaleTemplate = async () => {
+  try {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const res = await fetch('/api/store-sales/template', { headers: { Authorization: 'Bearer ' + token } })
+    if (!res.ok) { ElMessage.error('模板下载失败'); return }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sales-import-template.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) { ElMessage.error('模板下载失败') }
+}
+const handleSaleImport = async (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  saleImporting.value = true
+  const fd = new FormData()
+  fd.append('file', file)
+  try {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const res = await axios.post('/api/store-sales/import', fd, { headers: { 'Content-Type': 'multipart/form-data', Authorization: 'Bearer ' + token } })
+    const d = res.data
+    if (d && d.success) {
+      await loadAllSales()
+      if (d.results && d.results.length > 0) {
+        const detail = d.results.map(r => `第${r.row}行：${r.reason}`).join('<br/>')
+        ElMessageBox.alert(`成功 ${d.ok}/${d.total} 条，失败 ${d.results.length} 条：<br/><br/>${detail}`, '导入报告', { dangerouslyUseHTMLString: true })
+      } else {
+        ElMessage.success(`导入成功 ${d.ok}/${d.total} 条`)
+      }
+    } else {
+      ElMessage.error(d?.message || '导入失败')
+    }
+  } catch (err) {
+    ElMessage.error('导入失败：' + (err.response?.data?.message || err.message))
+  } finally {
+    saleImporting.value = false
+    if (saleFileInput.value) saleFileInput.value.value = ''
+  }
+}
+
 // 切换年份：按新年份回显（有记录显示，无则清空）
 const onSaleYearChange = () => {
   saleRows.value = saleRows.value.map(r => {
