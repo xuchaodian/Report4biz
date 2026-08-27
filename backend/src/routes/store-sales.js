@@ -52,7 +52,7 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
       return res.status(403).json({ message: '无权查看该门店' })
     }
     const rows = db.prepare(
-      `SELECT year, month, sales_amount, store_area, customer_count
+      `SELECT year, month, sales_amount, store_area, delivery_ratio, customer_count
        FROM store_sales WHERE store_id = ? ORDER BY year, month`
     ).all(storeId)
     // 汇总本年累计 + 近 N 月序列
@@ -78,7 +78,7 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
     }
     res.json({
       success: true, storeId, yearTotal, curYear, series,
-      annual: latestAnnual ? { year: latestAnnual.year, salesAmount: latestAnnual.sales_amount, storeArea: latestAnnual.store_area } : null
+      annual: latestAnnual ? { year: latestAnnual.year, salesAmount: latestAnnual.sales_amount, storeArea: latestAnnual.store_area, deliveryRatio: latestAnnual.delivery_ratio } : null
     })
   } catch (e) {
     console.error('[store-sales] 历史失败:', e.message)
@@ -95,11 +95,12 @@ router.post('/', authenticate, (req, res) => {
     if (items.length === 0) return res.status(400).json({ message: '没有要保存的数据' })
 
     const upsert = db.prepare(`INSERT INTO store_sales
-      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, customer_count, remark)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, customer_count, remark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, store_id, year, month) DO UPDATE SET
         sales_amount = excluded.sales_amount,
         store_area = excluded.store_area,
+        delivery_ratio = excluded.delivery_ratio,
         customer_count = excluded.customer_count,
         remark = excluded.remark,
         updated_at = CURRENT_TIMESTAMP`)
@@ -126,12 +127,14 @@ router.post('/', authenticate, (req, res) => {
         results.push({ storeId, ok: false, reason: '无权操作该门店' })
         continue
       }
+      const dr = it.deliveryRatio !== undefined && it.deliveryRatio !== null && it.deliveryRatio !== '' ? Number(it.deliveryRatio) : null
       upsert.run(
         req.user.id, storeId,
         store.name || '', store.brand || '', store.city || '',
         year, month,
         amount,
         it.storeArea !== undefined && it.storeArea !== null && it.storeArea !== '' ? Number(it.storeArea) : (store.store_area || null),
+        (dr !== null && dr >= 0 && dr <= 100) ? Math.round(dr) : null,
         it.customerCount !== undefined && it.customerCount !== null && it.customerCount !== '' ? Number(it.customerCount) : null,
         it.remark || null
       )

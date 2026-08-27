@@ -650,7 +650,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="820px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="900px" :close-on-click-modal="false">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
@@ -674,9 +674,14 @@
             <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="万元" />
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="180">
+        <el-table-column label="面积(㎡)" width="160">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:150px" placeholder="自动带出" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:130px" placeholder="自动带出" />
+          </template>
+        </el-table-column>
+        <el-table-column label="外卖占比(%)" width="150">
+          <template #default="{ row }">
+            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:120px" placeholder="选填" />
           </template>
         </el-table-column>
       </el-table>
@@ -1107,14 +1112,23 @@ const openSaleDialog = (stores) => {
     return {
       id: s.id,
       name: s.name || s.store_name || '',
+      brand: s.brand || '',
       salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
       storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
+      deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[s.brand] ?? null) : (DELIVERY_RATIO_MAP[s.brand] ?? null),
       customerCount: null
     }
   })
   saleDialogVisible.value = true
 }
 // ===== 销售记录展示 =====
+// 品牌 → 默认外卖占比（业态经验值，录入时预填；未映射留空由用户填）
+const DELIVERY_RATIO_MAP = {
+  '霸王茶姬': 65, '茶百道': 65, '蜜雪冰城': 70, '瑞幸咖啡': 60, '库迪咖啡': 60,
+  '肯德基': 45, '麦当劳': 45, '华莱士': 55, '正新鸡排': 70,
+  '食其家': 40, '吉野家': 40, '老乡鸡': 35, '大米先生': 45, '米村拌饭': 35, '谷田稻香': 45, '杨国福': 50, '张亮麻辣烫': 50,
+  '西塔老太太': 15, '海底捞': 15, '呷哺呷哺': 20, '外婆家': 10, '绿茶餐厅': 10
+}
 const allSales = ref([])
 const saleSummaryByStore = {}
 const loadAllSales = async () => {
@@ -1157,7 +1171,8 @@ const onSaleYearChange = () => {
     return {
       ...r,
       salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
-      storeArea: exist ? (exist.store_area || r.storeArea || null) : r.storeArea
+      storeArea: exist ? (exist.store_area || r.storeArea || null) : r.storeArea,
+      deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[r.brand] ?? null) : (DELIVERY_RATIO_MAP[r.brand] ?? null)
     }
   })
 }
@@ -1177,7 +1192,7 @@ const openSaleDialogForAll = () => {
 const submitSales = async () => {
   const items = saleRows.value.map(r => ({
     storeId: r.id, year: saleYear.value, month: 0,
-    salesAmount: r.salesAmount * 10000, storeArea: r.storeArea  // 万元 → 元 存储
+    salesAmount: r.salesAmount * 10000, storeArea: r.storeArea, deliveryRatio: r.deliveryRatio  // 万元 → 元 存储
   }))
   if (items.some(it => !it.salesAmount || it.salesAmount <= 0)) {
     ElMessage.warning('请填写所有门店的销售额（> 0）')

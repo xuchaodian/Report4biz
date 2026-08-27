@@ -50,6 +50,13 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 为已有数据库添加 delivery_ratio 字段（如果不存在）——门店外卖占比（0-100，NULL=未填，销售预测坪效修正用）
+  try {
+    db.run(`ALTER TABLE store_sales ADD COLUMN delivery_ratio INTEGER`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 为已有数据库添加 vip_until 字段（如果不存在）——VIP 到期时间（YYYY-MM-DD）
   try {
     db.run(`ALTER TABLE users ADD COLUMN vip_until TEXT`)
@@ -534,6 +541,7 @@ export async function initDatabase() {
       month INTEGER NOT NULL,
       sales_amount REAL NOT NULL DEFAULT 0,
       store_area REAL,
+      delivery_ratio INTEGER,
       customer_count INTEGER,
       remark TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
