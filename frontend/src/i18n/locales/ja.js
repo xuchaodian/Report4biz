@@ -12,6 +12,7 @@ export default {
     siteWorkbench: '立地ワークベンチ',
     cityInsight: '都市インサイト',
     districtInsight: '商圏インサイト',
+    salesForecast: '売上予測',
     users: 'ユーザー管理',
     apiOpen: 'API開放',
     dashboard: 'ダッシュボード',

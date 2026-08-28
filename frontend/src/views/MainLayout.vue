@@ -46,6 +46,9 @@
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/district-insight' }" @click="$router.push('/district-insight')">
                 <el-icon><Shop /></el-icon>{{ $t('nav.districtInsight') }}
               </el-dropdown-item>
+              <el-dropdown-item :class="{ 'dd-active': $route.path === '/sales-forecast' }" @click="$router.push('/sales-forecast')">
+                <el-icon><TrendCharts /></el-icon>{{ $t('nav.salesForecast') }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -200,7 +203,7 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, TrendCharts } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'

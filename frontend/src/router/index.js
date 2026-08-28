@@ -90,6 +90,11 @@ const routes = [
       //   component: () => import('@/views/SiteEvaluationView.vue')
       // },
       {
+        path: 'sales-forecast',
+        name: 'SalesForecast',
+        component: () => import('@/views/SalesForecastView.vue')
+      },
+      {
         path: 'account',
         name: 'Account',
         component: () => import('@/views/MyAccountView.vue')

@@ -12,6 +12,7 @@ export default {
     siteWorkbench: 'Site Workbench',
     cityInsight: 'City Insight',
     districtInsight: 'District Insight',
+    salesForecast: 'Sales Forecast',
     users: 'Users',
     apiOpen: 'API Access',
     dashboard: 'Dashboard',

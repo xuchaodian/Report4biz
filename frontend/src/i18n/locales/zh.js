@@ -12,6 +12,7 @@ export default {
     siteWorkbench: '选址工作台',
     cityInsight: '城市洞察',
     districtInsight: '商圈洞察',
+    salesForecast: '销售预测',
     users: '用户',
     apiOpen: 'API开放',
     dashboard: '数据大屏',
