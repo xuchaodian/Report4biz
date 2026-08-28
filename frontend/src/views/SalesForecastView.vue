@@ -16,8 +16,8 @@
         <el-select v-model="filterCity" placeholder="按城市" style="width: 150px" clearable>
           <el-option v-for="c in cityList" :key="c" :label="c" :value="c" />
         </el-select>
-        <el-select v-model="filterBought" placeholder="是否有商圈画像" style="width: 160px" clearable>
-          <el-option label="📊 有商圈画像" value="1" />
+        <el-select v-model="filterBought" placeholder="已购联通人口" style="width: 160px" clearable>
+          <el-option label="已购联通人口" value="1" />
           <el-option label="未购买" value="0" />
         </el-select>
         <span class="fc-tip">{{ filteredCandidates.length }} 个候选门店（重点候选/一般候选）</span>
@@ -28,7 +28,7 @@
         <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.name }}
-            <el-tag v-if="row.hasProfile" size="small" type="success" style="margin-left: 6px;">📊 有画像</el-tag>
+            <el-tag v-if="row.hasProfile && row.radii.length" size="small" type="success" style="margin-left: 6px;">已购联通人口（{{ row.radii.map(r => r + 'm').join('、') }}）</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="city" label="城市" width="90" />

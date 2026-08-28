@@ -207,11 +207,20 @@ router.get('/candidates', authenticate, (req, res) => {
       isAdmin ? `SELECT * FROM markers` : `SELECT * FROM markers WHERE user_id = ?`
     ).all(...(isAdmin ? [] : [req.user.id]))
     const cands = ms.filter(m => m.store_type === '重点候选' || m.store_type === '一般候选')
-    // 是否购买过联通数据（打标）
-    const boughtNames = db.prepare(
-      `SELECT DISTINCT store_name FROM purchases WHERE ${isAdmin ? '1=1' : 'user_id = ?'} AND status = 'active' AND result_data IS NOT NULL AND result_data != ''`
-    ).all(...(isAdmin ? [] : [req.user.id])).map(r => r.store_name)
-    const boughtSet = new Set(boughtNames)
+    // 已购联通数据：门店名 → 半径列表（多个半径逗号展示）
+    const boughtRows = db.prepare(
+      `SELECT store_name, radius FROM purchases WHERE ${isAdmin ? '1=1' : 'user_id = ?'} AND status = 'active' AND result_data IS NOT NULL AND result_data != ''`
+    ).all(...(isAdmin ? [] : [req.user.id]))
+    const boughtMap = {}
+    for (const b of boughtRows) {
+      let rs = []
+      try { rs = JSON.parse(b.radius || '[]') } catch (e) { rs = [] }
+      if (!Array.isArray(rs)) rs = [rs]
+      rs = rs.map(Number).filter(n => n > 0 && !isNaN(n))
+      if (rs.length === 0) continue
+      if (!boughtMap[b.store_name]) boughtMap[b.store_name] = []
+      boughtMap[b.store_name] = [...new Set([...boughtMap[b.store_name], ...rs])].sort((a, b) => a - b)
+    }
     const list = cands.map(m => ({
       id: m.id,
       storeCode: m.store_code,
@@ -224,7 +233,8 @@ router.get('/candidates', authenticate, (req, res) => {
       mallType: m.mall_type,
       tradeAreaType: m.trade_area_type,
       storeCategory: m.store_category,
-      hasProfile: boughtSet.has(m.name)
+      hasProfile: !!boughtMap[m.name] && boughtMap[m.name].length > 0,
+      radii: boughtMap[m.name] || []
     }))
     res.json({ success: true, candidates: list })
   } catch (e) {
