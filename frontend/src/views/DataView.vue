@@ -1034,7 +1034,7 @@ const handleEdit = (row) => {
     address: row.address || '',
     open_date: row.open_date || '',
     business_hours: row.business_hours || '',
-    area: row.area || null,
+    store_area: row.store_area || row.area || null,
     seats: row.seats || null,
     rent: row.rent || null,
     store_category: row.store_category || '',
