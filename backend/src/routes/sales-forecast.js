@@ -1,4 +1,5 @@
 import express from 'express'
+import * as turf from '@turf/turf'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -138,6 +139,85 @@ function cosineSimilarity(a, b) {
 }
 
 // ===================== 参照池 =====================
+// ===================== 半径常住人口（免费网格数据 1/3/5km） =====================
+const popGeoCache = new Map()      // shapefileId -> { geojson, ts }
+const popResultCache = new Map()   // `${id}_${lat}_${lng}_${radius}` -> { total, ts }
+const POP_GEO_TTL = 10 * 60 * 1000
+const POP_RESULT_TTL = 5 * 60 * 1000
+// 定位城市人口网格（category='population'，name 含城市名）
+function getPopShapefile(db, city) {
+  const name = String(city || '').replace(/市$/, '')
+  if (!name) return null
+  return db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'population' AND name LIKE ?`).get(`%${name}%`) || null
+}
+// 计算点位 1km/3km/5km 半径内常住人口（turf 圆 + 面积加权，与 /api/shapefiles/calculate-population 同款）
+function calcRadiusPopulation(db, lat, lng, city) {
+  const radii = [1000, 3000, 5000]
+  const out = {}
+  if (!lat || !lng) return out
+  const sf = getPopShapefile(db, city)
+  if (!sf) return out
+  let geojson = null
+  const cached = popGeoCache.get(sf.id)
+  if (cached && Date.now() - cached.ts < POP_GEO_TTL) {
+    geojson = cached.geojson
+  } else {
+    const row = db.prepare('SELECT geojson FROM shapefiles WHERE id = ?').get(sf.id)
+    geojson = row ? JSON.parse(row.geojson) : null
+    if (geojson) {
+      popGeoCache.set(sf.id, { geojson, ts: Date.now() })
+      if (popGeoCache.size > 5) popGeoCache.delete(popGeoCache.keys().next().value)
+    }
+  }
+  if (!geojson || !geojson.features) return out
+  for (const radius of radii) {
+    const ck = `${sf.id}_${lat}_${lng}_${radius}`
+    const rc = popResultCache.get(ck)
+    if (rc && Date.now() - rc.ts < POP_RESULT_TTL) { out[radius] = rc.total; continue }
+    const circle = turf.circle([lng, lat], radius / 1000, { steps: 64, units: 'kilometers' })
+    const circleBbox = turf.bbox(circle)
+    let total = 0
+    for (const feature of geojson.features) {
+      const props = feature.properties || {}
+      const val = parseFloat(props['常住人口'])
+      if (isNaN(val) || val <= 0) continue
+      try {
+        const fBbox = turf.bbox(feature)
+        if (fBbox[0] > circleBbox[2] || fBbox[2] < circleBbox[0] || fBbox[1] > circleBbox[3] || fBbox[3] < circleBbox[1]) continue
+      } catch (e) { /* 包围盒失败，回退完整计算 */ }
+      const geom = feature.geometry
+      if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue
+      try {
+        if (geom.type === 'Polygon') {
+          const inter = turf.intersect(turf.featureCollection([turf.polygon(geom.coordinates), circle]))
+          if (!inter) continue
+          const polyArea = turf.area(feature)
+          const interArea = turf.area(inter)
+          total += val * Math.min(interArea / polyArea, 1)
+        } else {
+          for (const coords of geom.coordinates) {
+            try {
+              const sub = turf.polygon(coords)
+              const subInter = turf.intersect(turf.featureCollection([sub, circle]))
+              if (!subInter) continue
+              const subArea = turf.area(sub)
+              const subInterArea = turf.area(subInter)
+              total += val * Math.min(subInterArea / subArea, 1)
+            } catch (e) { /* 单子多边形失败跳过 */ }
+          }
+        }
+      } catch (e) { /* 相交失败跳过 */ }
+    }
+    out[radius] = Math.round(total)
+    popResultCache.set(ck, { total: out[radius], ts: Date.now() })
+    if (popResultCache.size > 500) popResultCache.delete(popResultCache.keys().next().value)
+  }
+  return out
+}
+function popVector(pop) {
+  return [pop[1000] || 0, pop[3000] || 0, pop[5000] || 0]
+}
+
 function getReferenceStores(db, userId, isAdmin) {
   const curYear = new Date().getFullYear()
   const targetYear = curYear - 1 // 最近完整年份
@@ -268,6 +348,9 @@ router.post('/predict', authenticate, (req, res) => {
       return res.json({ success: true, status: 'insufficient', message: '暂无参照门店（需要已开业门店录入年度销售数据）' })
     }
 
+    // 候选店半径常住人口（免费网格 1/3/5km，结果卡片展示 + 降级链第 2 级画像匹配）
+    const candPop = calcRadiusPopulation(db, cand.latitude, cand.longitude, cand.city)
+
     const candRef = {
       brand: cand.brand,
       city: cand.city,
@@ -297,24 +380,41 @@ router.post('/predict', authenticate, (req, res) => {
       }
     }
 
-    // L2 同商圈 + 同类型
+    // L2 半径人口画像相似度（免费网格常住人口 1/3/5km，联通数据少时的免费替代画像）
+    if (level === 0 && (candPop[1000] || candPop[3000] || candPop[5000])) {
+      const scored = []
+      for (const r of refs) {
+        const rPop = calcRadiusPopulation(db, r.lat, r.lng, r.city)
+        if (!(rPop[1000] || rPop[3000] || rPop[5000])) continue
+        const sim = cosineSimilarity(popVector(candPop), popVector(rPop))
+        if (sim > 0.5) scored.push({ ref: r, sim })
+      }
+      scored.sort((a, b) => b.sim - a.sim)
+      if (scored.length >= MIN_REFS) {
+        matched = scored.slice(0, 10)
+        level = 2
+        levelName = `半径人口画像相似度（基于 ${matched.length} 家，1/3/5km 常住人口）`
+      }
+    }
+
+    // L3 同商圈 + 同类型
     if (level === 0 && candDistrict) {
       const hits = refs.filter(r => r.district && r.district.name === candDistrict.name && typeMatchScore(candRef, r) > 0)
       if (hits.length >= MIN_REFS) {
         const scored = hits.map(r => ({ ref: r, sim: typeMatchScore(candRef, r) })).sort((a, b) => b.sim - a.sim)
         matched = scored.slice(0, 10)
-        level = 2
+        level = 3
         levelName = `同商圈「${candDistrict.name}」+ 同类型门店（基于 ${matched.length} 家）`
       }
     }
 
-    // L3 同类型（同城跨商圈）
+    // L4 同类型（同城跨商圈）
     if (level === 0) {
       const hits = refs.filter(r => r.city === candRef.city && typeMatchScore(candRef, r) > 0)
       if (hits.length >= MIN_REFS) {
         const scored = hits.map(r => ({ ref: r, sim: typeMatchScore(candRef, r) })).sort((a, b) => b.sim - a.sim)
         matched = scored.slice(0, 10)
-        level = 3
+        level = 4
         levelName = `同城同类型门店（${candRef.city}，基于 ${matched.length} 家）`
       }
     }
@@ -331,27 +431,27 @@ router.post('/predict', authenticate, (req, res) => {
             .sort((a, b) => b.sim - a.sim)
           if (scored.length >= MIN_REFS) {
             matched = scored.slice(0, 10)
-            level = 4
+            level = 5
             levelName = `商圈画像相似度（基于 ${matched.length} 家，跨商圈匹配）`
           }
         }
       }
     }
 
-    // L5 同城市
+    // L6 同城市
     if (level === 0) {
       const hits = refs.filter(r => r.city === candRef.city)
       if (hits.length >= MIN_REFS) {
         matched = hits.slice(0, 10).map(r => ({ ref: r }))
-        level = 5
+        level = 6
         levelName = `同城市「${candRef.city}」门店（基于 ${matched.length} 家）`
       }
     }
 
-    // L6 全国兜底
+    // L7 全国兜底
     if (level === 0) {
       matched = refs.slice(0, 10).map(r => ({ ref: r }))
-      level = 6
+      level = 7
       levelName = `全国同业态门店（基于 ${matched.length} 家，数据有限）`
     }
 
@@ -375,7 +475,7 @@ router.post('/predict', authenticate, (req, res) => {
     const predictEff = Math.round(effMedian * candArea)
 
     // 置信度（按匹配级 + 样本数）
-    const confByLevel = { 1: 0.15, 2: 0.2, 3: 0.25, 4: 0.3, 5: 0.35, 6: 0.4 }
+    const confByLevel = { 1: 0.15, 2: 0.2, 3: 0.25, 4: 0.3, 5: 0.35, 6: 0.4, 7: 0.45 }
     let conf = confByLevel[level] || 0.4
     if (matched.length < 5) conf = Math.min(conf + 0.1, 0.5)
 
@@ -397,6 +497,7 @@ router.post('/predict', authenticate, (req, res) => {
       levelName,
       candName: cand.name,
       candArea,
+      radiusPopulation: candPop,
       predictComp,   // 预测年销售额（元，综合口径含外卖）
       predictEff,    // 预测年销售额（元，堂食有效口径）
       predictCompWan: (predictComp / 10000).toFixed(1),

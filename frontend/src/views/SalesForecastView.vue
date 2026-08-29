@@ -60,6 +60,7 @@
           <div class="fc-result-meta">
             <div>匹配方式：{{ result.levelName }}</div>
             <div v-if="result.candDistrict">商圈归属：{{ result.candDistrict.city }} · {{ result.candDistrict.name }}</div>
+            <div v-if="result.radiusPopulation">常住人口：{{ fmtPop(result.radiusPopulation) }}</div>
             <div>参考门店 {{ result.refCount }} 家</div>
           </div>
         </div>
@@ -102,6 +103,16 @@ const filterCity = ref('')
 const filterBought = ref('')
 const predictingId = ref(null)
 const result = ref(null)
+// 格式化三档常住人口：1km 12.3万 / 3km 45.6万 / 5km 89.0万
+const fmtPop = (pop) => {
+  if (!pop) return ''
+  const w = (v) => (v / 10000).toFixed(1) + '万'
+  const parts = []
+  if (pop['1000']) parts.push('1km ' + w(pop['1000']))
+  if (pop['3000']) parts.push('3km ' + w(pop['3000']))
+  if (pop['5000']) parts.push('5km ' + w(pop['5000']))
+  return parts.join(' / ')
+}
 
 const cityList = computed(() => [...new Set(candidates.value.map(c => c.city).filter(Boolean))])
 
