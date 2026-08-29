@@ -511,6 +511,31 @@ function loocvL2(rows, lambda = 1) {
   return { mape, residStd: sd }
 }
 
+// 样本统计（前端提示用）：已开业店数 + 已录入销售样本行数（店×年）+ L2/L3 门槛
+router.get('/stats', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const isAdmin = req.user.role === 'admin'
+    const userId = req.user.id
+    const stores = db.prepare(
+      isAdmin ? `SELECT COUNT(*) c FROM markers WHERE store_type = '已开业'`
+              : `SELECT COUNT(*) c FROM markers WHERE user_id = ? AND store_type = '已开业'`
+    ).get(...(isAdmin ? [] : [userId])).c
+    const samples = db.prepare(
+      `SELECT COUNT(*) c FROM (
+         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id
+         WHERE ${isAdmin ? '1=1' : 'm.user_id = ?'} AND m.store_type = '已开业'
+         GROUP BY s.store_id, s.year
+       )`
+    ).get(...(isAdmin ? [] : [userId])).c
+    const l2 = 50, l3 = 300
+    res.json({ success: true, stores, samples, l2, l3, l2Gap: Math.max(l2 - samples, 0), l3Gap: Math.max(l3 - samples, 0) })
+  } catch (e) {
+    console.error('[sales-forecast] stats 失败:', e.message)
+    res.status(500).json({ message: '样本统计失败' })
+  }
+})
+
 router.post('/predict', authenticate, async (req, res) => {
   try {
     const db = getDb()

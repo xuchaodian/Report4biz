@@ -4,9 +4,23 @@
       <template #header>
         <div class="fc-header">
           <span>📈 销售预测</span>
-          <span class="fc-sub">基于已开业门店真实销售，类比预测候选门店年销售额（L1 类比法）</span>
+          <span class="fc-sub">基于已开业门店真实销售，预测候选门店年销售额（引擎按样本量自动升级：L1 类比 → L2 回归 → L3 机器学习）</span>
         </div>
       </template>
+
+      <!-- 样本量提示条 -->
+      <el-alert v-if="stats && stats.samples < stats.l2" type="info" :closable="false" style="margin-bottom: 12px;">
+        <template #title>
+          📊 当前销售样本 {{ stats.samples }} 行（已开业店 {{ stats.stores }} 家）——距离 <b>L2 回归</b>（{{ stats.l2 }} 行）还差 <b>{{ stats.l2Gap }}</b> 行，录满后自动升级（预测更准）
+          <el-button size="small" type="primary" link style="margin-left: 8px;" @click="$router.push('/data')">去录入销售 ➜</el-button>
+        </template>
+      </el-alert>
+      <el-alert v-else-if="stats && stats.samples >= stats.l2 && stats.samples < stats.l3" type="success" :closable="false" style="margin-bottom: 12px;">
+        <template #title>
+          ✅ L2 回归已启用（{{ stats.samples }} 行样本）——距离 <b>L3 机器学习</b>（{{ stats.l3 }} 行）还差 {{ stats.l3Gap }} 行，持续录入可解锁开店影响模拟
+          <el-button size="small" type="primary" link style="margin-left: 8px;" @click="$router.push('/data')">去录入销售 ➜</el-button>
+        </template>
+      </el-alert>
 
       <!-- 候选门店选择 -->
       <div class="fc-toolbar">
@@ -145,6 +159,15 @@ const filteredCandidates = computed(() => {
   return list
 })
 
+const stats = ref(null)
+const loadStats = async () => {
+  try {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const res = await fetch('/api/sales-forecast/stats', { headers: { Authorization: 'Bearer ' + token } })
+    const d = await res.json()
+    if (d && d.success) stats.value = d
+  } catch (e) { /* 忽略统计失败 */ }
+}
 const loadCandidates = async () => {
   loading.value = true
   try {
@@ -175,7 +198,7 @@ const handlePredict = async (row) => {
   }
 }
 
-onMounted(loadCandidates)
+onMounted(() => { loadStats(); loadCandidates() })
 </script>
 
 <style scoped>
