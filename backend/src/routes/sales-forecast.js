@@ -1,5 +1,6 @@
 import express from 'express'
 import * as turf from '@turf/turf'
+import { aroundSearch } from '../utils/amapPoi.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -218,6 +219,66 @@ function popVector(pop) {
   return [pop[1000] || 0, pop[3000] || 0, pop[5000] || 0]
 }
 
+// ===================== 半径点位信息（竞品/门店 DB + 高德 POI） =====================
+const poiCache = new Map()   // `${kw}_${radius}_${lat}_${lng}` -> { count, ts }
+const POI_TTL = 24 * 60 * 60 * 1000
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+// 高德周边检索（带 24h 缓存 + 串行 300ms 防 QPS 超限 + 独立降级）
+async function amapCount(lng, lat, radius, kw) {
+  const key = `${kw}_${radius}_${lat.toFixed(4)}_${lng.toFixed(4)}`
+  const hit = poiCache.get(key)
+  if (hit && Date.now() - hit.ts < POI_TTL) return hit.count
+  try {
+    const amap = await aroundSearch(lng, lat, radius, kw)
+    const count = (amap && amap.count) ? parseInt(amap.count) : 0
+    poiCache.set(key, { count, ts: Date.now() })
+    if (poiCache.size > 2000) poiCache.delete(poiCache.keys().next().value)
+    return count
+  } catch (e) {
+    console.error(`[sales-forecast] 高德检索失败 ${kw}@${radius}m:`, e.message)
+    return null
+  }
+}
+// 半径点位信息：竞品/我的门店（DB 快算）+ 写字楼/大学/医院/地铁/购物中心（高德）
+async function calcRadiusPoints(db, lat, lng) {
+  const out = { competitors500: 0, myStores500: 0, offices: {}, universities: {}, hospitals: {}, metro500: null, malls500: null }
+  if (!lat || !lng) return out
+  const R = 6371000
+  const dist = (la, lo) => {
+    const dLat = (la - lat) * Math.PI / 180
+    const dLng = (lo - lng) * Math.PI / 180
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(la * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+    return 2 * R * Math.asin(Math.sqrt(a))
+  }
+  try {
+    const comps = db.prepare('SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    const myStores = db.prepare('SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    out.competitors500 = comps.filter(c => dist(c.latitude, c.longitude) <= 500).length
+    out.myStores500 = myStores.filter(s => dist(s.latitude, s.longitude) <= 500).length
+  } catch (e) {
+    console.error('[sales-forecast] DB 点位统计失败:', e.message)
+  }
+  // 高德 POI（串行 + 300ms 间隔防 QPS 超限）
+  try {
+    for (const r of [500, 1000, 3000]) {
+      out.offices[r] = await amapCount(lng, lat, r, '写字楼')
+      await sleep(300)
+    }
+    for (const r of [1000, 3000]) {
+      out.universities[r] = await amapCount(lng, lat, r, '大学')
+      await sleep(300)
+      out.hospitals[r] = await amapCount(lng, lat, r, '医院')
+      await sleep(300)
+    }
+    out.metro500 = await amapCount(lng, lat, 500, '地铁站')
+    await sleep(300)
+    out.malls500 = await amapCount(lng, lat, 500, '购物中心')
+  } catch (e) {
+    console.error('[sales-forecast] 高德点位统计失败:', e.message)
+  }
+  return out
+}
+
 function getReferenceStores(db, userId, isAdmin) {
   const curYear = new Date().getFullYear()
   const targetYear = curYear - 1 // 最近完整年份
@@ -324,7 +385,7 @@ router.get('/candidates', authenticate, (req, res) => {
 })
 
 // ===================== 预测 =====================
-router.post('/predict', authenticate, (req, res) => {
+router.post('/predict', authenticate, async (req, res) => {
   try {
     const db = getDb()
     const storeId = Number(req.body.storeId)
@@ -350,6 +411,8 @@ router.post('/predict', authenticate, (req, res) => {
 
     // 候选店半径常住人口（免费网格 1/3/5km，结果卡片展示 + 降级链第 2 级画像匹配）
     const candPop = calcRadiusPopulation(db, cand.latitude, cand.longitude, cand.city)
+    // 候选店半径点位信息（竞品/我的门店 DB + 写字楼/大学/医院/地铁/购物中心 高德 POI）
+    const candPoints = await calcRadiusPoints(db, cand.latitude, cand.longitude)
 
     const candRef = {
       brand: cand.brand,
@@ -498,6 +561,7 @@ router.post('/predict', authenticate, (req, res) => {
       candName: cand.name,
       candArea,
       radiusPopulation: candPop,
+      radiusPoints: candPoints,
       predictComp,   // 预测年销售额（元，综合口径含外卖）
       predictEff,    // 预测年销售额（元，堂食有效口径）
       predictCompWan: (predictComp / 10000).toFixed(1),

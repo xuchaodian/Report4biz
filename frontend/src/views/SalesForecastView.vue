@@ -61,6 +61,7 @@
             <div>匹配方式：{{ result.levelName }}</div>
             <div v-if="result.candDistrict">商圈归属：{{ result.candDistrict.city }} · {{ result.candDistrict.name }}</div>
             <div v-if="result.radiusPopulation">常住人口：{{ fmtPop(result.radiusPopulation) }}</div>
+            <div v-if="result.radiusPoints">点位环境：{{ fmtPoints(result.radiusPoints) }}</div>
             <div>参考门店 {{ result.refCount }} 家</div>
           </div>
         </div>
@@ -112,6 +113,19 @@ const fmtPop = (pop) => {
   if (pop['3000']) parts.push('3km ' + w(pop['3000']))
   if (pop['5000']) parts.push('5km ' + w(pop['5000']))
   return parts.join(' / ')
+}
+// 格式化点位环境：竞品500 X家/我的门店500 X家/写字楼 500/1k/3k X家/大学 1k/3k X家/医院 X/地铁500 X站/购物中心500 X家
+const fmtPoints = (p) => {
+  if (!p) return ''
+  const parts = []
+  parts.push(`竞品500m ${p.competitors500 || 0}家`)
+  if (p.myStores500) parts.push(`我的门店500m ${p.myStores500}家`)
+  if (p.offices) parts.push(`写字楼 ${[500, 1000, 3000].filter(r => p.offices[r] != null).map(r => (r >= 1000 ? r / 1000 + 'km' : r + 'm') + ' ' + p.offices[r] + '栋').join('/')}`)
+  if (p.universities) parts.push(`大学 ${[1000, 3000].filter(r => p.universities[r] != null).map(r => r / 1000 + 'km ' + p.universities[r] + '所').join('/')}`)
+  if (p.hospitals) parts.push(`医院 ${[1000, 3000].filter(r => p.hospitals[r] != null).map(r => r / 1000 + 'km ' + p.hospitals[r] + '家').join('/')}`)
+  if (p.metro500 != null) parts.push(`地铁500m ${p.metro500}站`)
+  if (p.malls500 != null) parts.push(`购物中心500m ${p.malls500}家`)
+  return parts.join('；')
 }
 
 const cityList = computed(() => [...new Set(candidates.value.map(c => c.city).filter(Boolean))])
