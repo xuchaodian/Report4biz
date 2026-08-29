@@ -50,7 +50,10 @@
       <!-- 预测结果 -->
       <div v-if="result" class="fc-result">
         <div class="fc-result-card">
-          <div class="fc-result-title">{{ result.candName }} · 年销售额预测</div>
+          <div class="fc-result-title">
+            {{ result.candName }} · 年销售额预测
+            <el-tag size="small" :type="result.engine === 'L2' ? 'success' : 'info'" style="margin-left: 8px;">{{ result.engine === 'L2' ? 'L2 回归' : 'L1 类比' }}</el-tag>
+          </div>
           <div class="fc-result-main">
             <span class="fc-amount">{{ result.predictCompWan }}</span>
             <span class="fc-unit">万元 / 年</span>
@@ -67,7 +70,7 @@
         </div>
 
         <div class="fc-refs">
-          <div class="fc-refs-title">类比参照门店（真实销售）</div>
+          <div class="fc-refs-title">{{ result.engine === 'L2' ? '特征相似样本门店（真实销售）' : '类比参照门店（真实销售）' }}</div>
           <el-table :data="result.refs" size="small" max-height="220">
             <el-table-column prop="name" label="门店" min-width="160" show-overflow-tooltip />
             <el-table-column prop="city" label="城市" width="80" />

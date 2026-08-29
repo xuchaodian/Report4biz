@@ -385,6 +385,132 @@ router.get('/candidates', authenticate, (req, res) => {
 })
 
 // ===================== 预测 =====================
+// ===================== L2 回归（Ridge · log坪效 · LOOCV） =====================
+const DELIVERY_RATIO_MAP = {
+  '霸王茶姬': 65, '茶百道': 65, '蜜雪冰城': 70, '瑞幸咖啡': 60, '库迪咖啡': 60,
+  '肯德基': 45, '麦当劳': 45, '华莱士': 55, '正新鸡排': 70,
+  '食其家': 40, '吉野家': 40, '老乡鸡': 35, '大米先生': 45, '米村拌饭': 35, '谷田稻香': 45, '杨国福': 50, '张亮麻辣烫': 50,
+  '西塔老太太': 15, '海底捞': 15, '呷哺呷哺': 20, '外婆家': 10, '绿茶餐厅': 10
+}
+// 半径 500m 内竞品/我的门店数（DB 快算）
+function countNearby(db, lat, lng, radius) {
+  const R = 6371000
+  const dist = (la, lo) => {
+    const dLat = (la - lat) * Math.PI / 180
+    const dLng = (lo - lng) * Math.PI / 180
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(la * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+    return 2 * R * Math.asin(Math.sqrt(a))
+  }
+  try {
+    const comps = db.prepare('SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    const my = db.prepare('SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    return { comp: comps.filter(x => dist(x.latitude, x.longitude) <= radius).length, my: my.filter(x => dist(x.latitude, x.longitude) <= radius).length }
+  } catch (e) { return { comp: 0, my: 0 } }
+}
+// 特征行（训练样本与候选店同构）：[log面积, 外卖占比, 商圈4维, 半径人口3档, 竞品500, 我的门店500, 年份码, 商场类型码, 商圈类型码]
+function buildX(store, area, dr, dv, pop, nearby, year, mallCode, tradeCode) {
+  return [
+    Math.log(area), dr,
+    dv[0] || 0, dv[1] || 0, dv[2] || 0, dv[3] || 0,
+    pop[1000] || 0, pop[3000] || 0, pop[5000] || 0,
+    nearby.comp, nearby.my,
+    year - 2020,
+    mallCode, tradeCode
+  ]
+}
+// 构建训练集：该用户已开业店 × 有销售记录的年份（年度记录 month=0 + 月度按年聚合），不跨用户
+function buildTrainingSet(db, userId, isAdmin) {
+  const ms = db.prepare(isAdmin ? `SELECT * FROM markers` : `SELECT * FROM markers WHERE user_id = ?`).all(...(isAdmin ? [] : [userId]))
+  const open = ms.filter(m => m.store_type === '已开业')
+  const annual = db.prepare(`SELECT store_id, year, SUM(sales_amount) AS amount, MAX(delivery_ratio) AS dr, AVG(store_area) AS area FROM store_sales WHERE month > 0 GROUP BY store_id, year`).all()
+  const y0 = db.prepare(`SELECT * FROM store_sales WHERE month = 0`).all()
+  const mallSet = new Set(), tradeSet = new Set()
+  const cands = []
+  for (const m of open) {
+    if (!m.latitude || !m.longitude) continue
+    const baseArea = m.store_area || m.area
+    if (!baseArea || baseArea <= 0) continue
+    const recs = []
+    y0.filter(s => s.store_id === m.id).forEach(r => recs.push({ year: r.year, amount: r.sales_amount, dr: r.delivery_ratio, area: r.store_area || baseArea }))
+    annual.filter(s => s.store_id === m.id).forEach(r => recs.push({ year: r.year, amount: r.amount, dr: r.dr, area: r.area || baseArea }))
+    for (const rec of recs) {
+      if (!rec.amount || rec.amount <= 0 || rec.area <= 0) continue
+      cands.push({ store: m, rec })
+      if (m.mall_type) mallSet.add(m.mall_type)
+      if (m.trade_area_type) tradeSet.add(m.trade_area_type)
+    }
+  }
+  const MALL_CODES = new Map([...mallSet].map((v, i) => [v, i + 1]))
+  const TRADE_CODES = new Map([...tradeSet].map((v, i) => [v, i + 1]))
+  const rows = []
+  for (const { store: m, rec } of cands) {
+    const d = findDistrict(m.latitude, m.longitude)
+    const dv = d ? districtProfileVector(d) : [0, 0, 0, 0]
+    const pop = calcRadiusPopulation(db, m.latitude, m.longitude, m.city)
+    const nearby = countNearby(db, m.latitude, m.longitude, 500)
+    const dr = rec.dr != null && rec.dr !== '' ? Number(rec.dr) : (DELIVERY_RATIO_MAP[m.brand] ?? 35)
+    rows.push({
+      store: m, year: rec.year, area: rec.area, salesAmount: rec.amount, deliveryRatio: dr,
+      X: buildX(m, rec.area, dr, dv, pop, nearby, rec.year, MALL_CODES.get(m.mall_type) || 0, TRADE_CODES.get(m.trade_area_type) || 0),
+      y: Math.log(rec.amount / rec.area)
+    })
+  }
+  return rows
+}
+// ===== 最小矩阵运算 =====
+function matMul(A, B) {
+  const m = A.length, n = A[0].length, p = B[0].length
+  const C = Array.from({ length: m }, () => new Array(p).fill(0))
+  for (let i = 0; i < m; i++) for (let k = 0; k < n; k++) { const a = A[i][k]; if (!a) continue; for (let j = 0; j < p; j++) C[i][j] += a * B[k][j] }
+  return C
+}
+function matTrans(A) { return A[0].map((_, j) => A.map(r => r[j])) }
+function matInv(A) {
+  const n = A.length
+  const aug = A.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))])
+  for (let col = 0; col < n; col++) {
+    let pivot = col
+    for (let r = col; r < n; r++) if (Math.abs(aug[r][col]) > Math.abs(aug[pivot][col])) pivot = r
+    if (Math.abs(aug[pivot][col]) < 1e-12) throw new Error('矩阵奇异')
+    ;[aug[col], aug[pivot]] = [aug[pivot], aug[col]]
+    const pv = aug[col][col]
+    for (let j = 0; j < 2 * n; j++) aug[col][j] /= pv
+    for (let r = 0; r < n; r++) { if (r === col) continue; const f = aug[r][col]; for (let j = 0; j < 2 * n; j++) aug[r][j] -= f * aug[col][j] }
+  }
+  return aug.map(row => row.slice(n))
+}
+// Ridge 回归（特征 z-score 标准化 + 截距列 + L2 正则），返回可预测模型
+function ridgeFitStd(Xraw, y, lambda = 1) {
+  const n = Xraw.length, d = Xraw[0].length
+  const mean = new Array(d).fill(0), std = new Array(d).fill(1)
+  for (let j = 0; j < d; j++) { let s = 0; for (let i = 0; i < n; i++) s += Xraw[i][j]; mean[j] = s / n }
+  for (let j = 0; j < d; j++) { let s = 0; for (let i = 0; i < n; i++) s += (Xraw[i][j] - mean[j]) ** 2; std[j] = Math.sqrt(s / n) || 1 }
+  const X = Xraw.map(r => [1, ...r.map((v, j) => (v - mean[j]) / std[j])])
+  const Xt = matTrans(X)
+  const XtX = matMul(Xt, X)
+  for (let i = 1; i < XtX.length; i++) XtX[i][i] += lambda
+  const Xty = Xt.map(row => [row.reduce((s, v, k) => s + v * y[k], 0)])
+  const beta = matMul(matInv(XtX), Xty).map(r => r[0])
+  return {
+    mean, std, beta,
+    predictRaw(x) { const xs = x.map((v, j) => (v - this.mean[j]) / this.std[j]); return this.beta[0] + xs.reduce((s, v, i) => s + v * this.beta[i + 1], 0) }
+  }
+}
+// LOOCV：留一交叉验证 → MAPE + 残差百分比 std（置信度）
+function loocvL2(rows, lambda = 1) {
+  const errs = []
+  for (let i = 0; i < rows.length; i++) {
+    const train = rows.filter((_, j) => j !== i)
+    const model = ridgeFitStd(train.map(r => r.X), train.map(r => r.y), lambda)
+    const predEff = Math.exp(model.predictRaw(rows[i].X))
+    const actEff = Math.exp(rows[i].y)
+    errs.push(Math.abs(predEff - actEff) / actEff)
+  }
+  const mape = errs.reduce((a, b) => a + b, 0) / errs.length
+  const sd = Math.sqrt(errs.reduce((a, b) => a + (b - mape) ** 2, 0) / errs.length)
+  return { mape, residStd: sd }
+}
+
 router.post('/predict', authenticate, async (req, res) => {
   try {
     const db = getDb()
@@ -422,6 +548,52 @@ router.post('/predict', authenticate, async (req, res) => {
       storeCategory: cand.store_category,
       districtName: candDistrict ? candDistrict.name : null,
       districtCity: candDistrict ? candDistrict.city : null
+    }
+
+    // ===== L2 回归（样本 ≥ 50 且 LOOCV MAPE 优于 L1 经验 35%，否则回退 L1） =====
+    try {
+      const trainSet = buildTrainingSet(db, req.user.id, isAdmin)
+      console.log('[sales-forecast] L2 trainSet =', trainSet.length)
+      if (trainSet.length >= 50) {
+        const cv = loocvL2(trainSet, 1)
+        console.log('[sales-forecast] L2 LOOCV mape =', cv.mape.toFixed(3), 'residStd =', cv.residStd.toFixed(3))
+        if (cv.mape < 0.35) {
+          const model = ridgeFitStd(trainSet.map(r => r.X), trainSet.map(r => r.y), 1)
+          const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
+          const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
+          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0)
+          const predLog = model.predictRaw(candX)
+          const predictComp = Math.round(Math.exp(predLog) * candArea)
+          const predictEff = predictComp
+          const cs = candX.map((v, j) => (v - model.mean[j]) / model.std[j])
+          const top5 = trainSet
+            .map(r => ({ ref: r, d2: r.X.reduce((s, v, j) => s + ((v - model.mean[j]) / model.std[j] - cs[j]) ** 2, 0) }))
+            .sort((a, b) => a.d2 - b.d2)
+            .slice(0, 5)
+          const refList = top5.map(({ ref }) => ({
+            name: ref.store.name, brand: ref.store.brand, city: ref.store.city,
+            area: ref.area, year: ref.year, salesAmount: ref.salesAmount,
+            pingxiao: Math.round(ref.salesAmount / ref.area), sim: null
+          }))
+          const confPct = Math.max(10, Math.min(Math.round(cv.residStd * 100), 50))
+          return res.json({
+            success: true, status: 'ok', level: 8, engine: 'L2',
+            levelName: 'L2 回归模型（基于 ' + trainSet.length + ' 条门店×年样本，LOOCV MAPE ' + (cv.mape * 100).toFixed(1) + '%）',
+            candName: cand.name, candArea,
+            radiusPopulation: candPop, radiusPoints: candPoints,
+            predictComp, predictEff,
+            predictCompWan: (predictComp / 10000).toFixed(1),
+            predictEffWan: (predictEff / 10000).toFixed(1),
+            conf: confPct,
+            rangeWan: [Math.round(predictComp / 10000 * (1 - confPct / 100)), Math.round(predictComp / 10000 * (1 + confPct / 100))],
+            refCount: top5.length, refs: refList,
+            candDistrict: candDistrict ? { city: candDistrict.city, name: candDistrict.name } : null
+          })
+        }
+      }
+    } catch (e) {
+      console.error('[sales-forecast] L2 失败回退 L1:', e.message)
     }
 
     // ===== 6 级降级链匹配 =====
@@ -556,6 +728,7 @@ router.post('/predict', authenticate, async (req, res) => {
     res.json({
       success: true,
       status: 'ok',
+      engine: 'L1',
       level,
       levelName,
       candName: cand.name,
