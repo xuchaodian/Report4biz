@@ -61,6 +61,41 @@
         </el-table-column>
       </el-table>
 
+      <!-- 参照店圈定（可选精调，双轨：不圈定 = 系统全自动） -->
+      <div class="fc-ref-panel">
+        <div class="fc-ref-head" @click="openRefPanel">
+          <span class="fc-ref-title">🔧 参照店圈定</span>
+          <el-tag size="small" :type="refMode === 'custom' ? 'warning' : 'info'" style="margin-left: 8px;">
+            {{ refMode === 'custom' ? '自定义（已圈定 ' + refSelected.length + ' 家）' : '系统自动推荐' }}
+          </el-tag>
+          <span class="fc-tip">类比基准人工化：勾选想用的参照店，预测时只在这些店里类比（不勾 = 全自动）</span>
+        </div>
+        <div v-if="refOpen" class="fc-ref-body">
+          <div class="fc-toolbar">
+            <el-input v-model="refKeyword" placeholder="搜索参照店" style="width: 200px" size="small" clearable>
+              <template #prefix><el-icon><Search /></el-icon></template>
+            </el-input>
+            <el-button size="small" @click="resetRefSelection">恢复系统推荐</el-button>
+            <span class="fc-tip">{{ refPool.length }} 家参照店（已开业 + 有年度销售记录）· 勾选即保存到本机</span>
+          </div>
+          <el-table ref="refTable" :data="filteredRefPool" size="small" max-height="240" @selection-change="onRefSelect">
+            <el-table-column type="selection" width="40" />
+            <el-table-column prop="name" label="门店" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.name }}
+                <el-tag v-if="refAutoIds.includes(row.storeId)" size="small" type="success" style="margin-left: 6px;">推荐</el-tag>
+                <el-tag v-if="row.hasProfile" size="small" type="warning" style="margin-left: 4px;">联通</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="brand" label="品牌" width="90" />
+            <el-table-column prop="city" label="城市" width="80" />
+            <el-table-column label="坪效(元/㎡)" width="110" align="right">
+              <template #default="{ row }">{{ row.pingxiao.toLocaleString() }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
       <!-- 预测结果 -->
       <div v-if="result" class="fc-result">
         <div class="fc-result-card">
@@ -76,6 +111,7 @@
           <div class="fc-result-range">参考区间：{{ result.rangeWan[0] }} ~ {{ result.rangeWan[1] }} 万元（含外卖口径）</div>
           <div class="fc-result-meta">
             <div>匹配方式：{{ result.levelName }}</div>
+            <div v-if="predictRefMode">参照店：{{ predictRefMode === 'custom' ? '自定义（已圈定 ' + predictRefCount + ' 家）' : '系统自动' }}</div>
             <div v-if="result.candDistrict">商圈归属：{{ result.candDistrict.city }} · {{ result.candDistrict.name }}</div>
             <div v-if="result.radiusPopulation">常住人口：{{ fmtPop(result.radiusPopulation) }}</div>
             <div v-if="result.radiusPoints">点位环境：{{ fmtPoints(result.radiusPoints) }}</div>
@@ -212,8 +248,16 @@ const loadCandidates = async () => {
 const handlePredict = async (row) => {
   predictingId.value = row.id
   result.value = null
+  // 记录本次预测的参照模式（结果卡展示用）
+  predictRefMode.value = (refMode.value === 'custom' && refSelected.value.length) ? 'custom' : 'auto'
+  predictRefCount.value = refSelected.value.length
   try {
-    const res = await axios.post('/api/sales-forecast/predict', { storeId: row.id })
+    const payload = { storeId: row.id }
+    // 自定义圈定集：传入选中的参照店；自动模式不带（后端全自动）
+    if (refMode.value === 'custom' && refSelected.value.length) payload.refSelection = refSelected.value
+    const res = await axios.post('/api/sales-forecast/predict', payload)
+    // 用该候选店刷新面板推荐集（不改变已保存的自定义勾选）
+    if (refPool.value.length) loadRefStores(row.id)
     const d = res.data
     if (d.success && d.status === 'ok') {
       result.value = d
@@ -227,7 +271,90 @@ const handlePredict = async (row) => {
   }
 }
 
-onMounted(() => { loadStats(); loadCandidates() })
+// ===== 参照店圈定（双轨：自动 = 系统推荐；自定义 = 用户勾选集） =====
+const refOpen = ref(false)
+const refPool = ref([])
+const refAutoIds = ref([])
+const refKeyword = ref('')
+const refSelected = ref([])
+const refMode = ref('auto')
+const refTable = ref(null)
+const predictRefMode = ref('auto')
+const predictRefCount = ref(0)
+let refRestoring = false
+const savedKey = () => 'refSelection_' + (localStorage.getItem('userId') || '0')
+
+const filteredRefPool = computed(() => {
+  let list = refPool.value
+  if (refKeyword.value) {
+    const k = refKeyword.value.trim()
+    list = list.filter(r => (r.name || '').includes(k) || (r.brand || '').includes(k) || (r.city || '').includes(k))
+  }
+  return list
+})
+
+const loadRefStores = async (storeId) => {
+  try {
+    const res = await axios.get('/api/sales-forecast/ref-stores', { params: { storeId: storeId || undefined } })
+    const d = res.data
+    if (d && d.success) {
+      refPool.value = d.pool || []
+      refAutoIds.value = d.auto || []
+      restoreRefSelection()
+    }
+  } catch (e) {
+    ElMessage.error('加载参照店失败：' + (e.response?.data?.message || e.message))
+  }
+}
+
+// 恢复勾选态：有已保存自定义集则恢复；否则按系统推荐勾选（不保存，仍为自动模式）
+const restoreRefSelection = () => {
+  refRestoring = true
+  try {
+    const saved = JSON.parse(localStorage.getItem(savedKey()) || 'null')
+    if (saved && saved.mode === 'custom' && Array.isArray(saved.selected)) {
+      refMode.value = 'custom'
+      refSelected.value = saved.selected.filter(id => refPool.value.some(p => p.storeId === id))
+    } else {
+      refMode.value = 'auto'
+      refSelected.value = [...refAutoIds.value]
+    }
+  } catch (e) {
+    refMode.value = 'auto'
+    refSelected.value = [...refAutoIds.value]
+  }
+  refPool.value.forEach(p => {
+    refTable.value?.toggleRowSelection(p, refSelected.value.includes(p.storeId))
+  })
+  refRestoring = false
+}
+
+const onRefSelect = (rows) => {
+  refSelected.value = rows.map(r => r.storeId)
+  if (refRestoring) return
+  if (refSelected.value.length) {
+    refMode.value = 'custom'
+    localStorage.setItem(savedKey(), JSON.stringify({ mode: 'custom', selected: refSelected.value }))
+  } else {
+    // 全不选 = 回到系统自动
+    refMode.value = 'auto'
+    localStorage.removeItem(savedKey())
+  }
+}
+
+const resetRefSelection = () => {
+  localStorage.removeItem(savedKey())
+  refMode.value = 'auto'
+  refSelected.value = []
+  restoreRefSelection()
+}
+
+const openRefPanel = () => {
+  refOpen.value = !refOpen.value
+  if (refOpen.value && refPool.value.length === 0) loadRefStores()
+}
+
+onMounted(() => { loadStats(); loadCandidates(); loadRefStores() })
 </script>
 
 <style scoped>
@@ -308,5 +435,27 @@ onMounted(() => { loadStats(); loadCandidates() })
   color: #333;
   margin-bottom: 8px;
   font-weight: 500;
+}
+.fc-ref-panel {
+  margin-top: 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+.fc-ref-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.fc-ref-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+.fc-ref-body {
+  border-top: 1px dashed #e4e7ed;
+  padding: 12px 14px;
 }
 </style>

@@ -581,6 +581,73 @@ router.get('/stats', authenticate, (req, res) => {
   }
 })
 
+// ===================== 参照店圈定（可选精调，双轨：不圈定=全自动） =====================
+// 返回全量参照池 + 系统自动推荐列表（供前端圈定面板默认勾选）
+router.get('/ref-stores', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const storeId = Number(req.query.storeId)
+    const isAdmin = req.user.role === 'admin'
+    const refs = getReferenceStores(db, req.user.id, isAdmin)
+    if (refs.length === 0) return res.json({ success: true, pool: [], auto: [] })
+
+    // 已购联通画像门店名（轻量一次查询，避免逐店 JSON.parse）
+    const boughtNames = new Set(
+      db.prepare(
+        `SELECT store_name FROM purchases WHERE ${isAdmin ? '1=1' : 'user_id = ?'} AND status = 'active' AND result_data IS NOT NULL AND result_data != ''`
+      ).all(...(isAdmin ? [] : [req.user.id])).map(x => x.store_name)
+    )
+
+    // 候选店上下文（选填：传了才计算自动推荐分；未选候选店时全池展示无推荐）
+    let candRef = null, candDistrict = null, candProfile = null, candPop = null
+    if (storeId) {
+      const cand = db.prepare(
+        isAdmin ? `SELECT * FROM markers WHERE id = ?` : `SELECT * FROM markers WHERE id = ? AND user_id = ?`
+      ).get(storeId, ...(isAdmin ? [] : [req.user.id]))
+      if (cand) {
+        candDistrict = findDistrict(cand.latitude, cand.longitude)
+        candProfile = storeProfileVector(db, cand.name)
+        candPop = calcRadiusPopulation(db, cand.latitude, cand.longitude, cand.city)
+        candRef = { city: cand.city, mallType: cand.mall_type, tradeAreaType: cand.trade_area_type, storeCategory: cand.store_category }
+      }
+    }
+
+    const pool = refs.map(r => {
+      let score = 0
+      if (candRef) {
+        // 与 predict 降级链同权重：级3 同商圈+同类型 > 级4 同城同类型 > 级6 同城 > 级1/2/5 画像相似
+        if (r.district && candDistrict && r.district.name === candDistrict.name && typeMatchScore(candRef, r) > 0) score += 30
+        if (r.city === candRef.city && typeMatchScore(candRef, r) > 0) score += 20
+        if (r.city === candRef.city) score += 10
+        score += typeMatchScore(candRef, r) * 3
+        if (candProfile) {
+          const sp = storeProfileVector(db, r.name)
+          if (sp && cosineSimilarity(candProfile, sp) > 0.5) score += 15
+        }
+        if (candPop && (candPop[1000] || candPop[3000] || candPop[5000])) {
+          const rPop = calcRadiusPopulation(db, r.lat, r.lng, r.city)
+          if ((rPop[1000] || rPop[3000] || rPop[5000]) && cosineSimilarity(popVector(candPop), popVector(rPop)) > 0.5) score += 10
+        }
+        if (candDistrict && r.districtProfile && cosineSimilarity(districtProfileVector(candDistrict), r.districtProfile) > 0.3) score += 5
+      }
+      const { comp } = refPingxiao(r)
+      return {
+        storeId: r.storeId, name: r.name, brand: r.brand, city: r.city,
+        area: r.area, year: r.year, salesAmount: r.salesAmount,
+        pingxiao: Math.round(comp),
+        hasProfile: boughtNames.has(r.name),
+        autoScore: score
+      }
+    }).sort((a, b) => b.autoScore - a.autoScore)
+
+    const auto = candRef ? pool.filter(p => p.autoScore > 0).slice(0, 10).map(p => p.storeId) : []
+    res.json({ success: true, pool, auto })
+  } catch (e) {
+    console.error('[sales-forecast] ref-stores 失败:', e.message)
+    res.status(500).json({ message: '获取参照店失败' })
+  }
+})
+
 router.post('/predict', authenticate, async (req, res) => {
   try {
     const db = getDb()
@@ -603,9 +670,20 @@ router.post('/predict', authenticate, async (req, res) => {
     }
     const candDr = null // 候选店暂无销售记录，用业态默认（前端传或按品牌查 DELIVERY_RATIO_MAP）
 
-    const refs = getReferenceStores(db, req.user.id, isAdmin)
-    if (refs.length === 0) {
+    const refsAll = getReferenceStores(db, req.user.id, isAdmin)
+    if (refsAll.length === 0) {
       return res.json({ success: true, status: 'insufficient', message: '暂无参照门店（需要已开业门店录入年度销售数据）' })
+    }
+    // 参照店圈定（可选）：用户在圈定集内类比，降级链自动补足；未圈定则全自动（双轨默认）
+    const refSelection = Array.isArray(req.body.refSelection)
+      ? [...new Set(req.body.refSelection.map(Number).filter(n => n > 0 && !isNaN(n)))]
+      : []
+    let refs = refsAll
+    if (refSelection.length) {
+      refs = refsAll.filter(r => refSelection.includes(r.storeId))
+      if (refs.length === 0) {
+        return res.json({ success: true, status: 'insufficient', message: '圈定的参照门店均无有效销售数据，请重新圈定（或恢复系统自动）' })
+      }
     }
 
     // 候选店半径常住人口（免费网格 1/3/5km，结果卡片展示 + 降级链第 2 级画像匹配）
