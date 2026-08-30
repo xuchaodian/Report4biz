@@ -511,6 +511,51 @@ function loocvL2(rows, lambda = 1) {
   return { mape, residStd: sd }
 }
 
+// ===================== L3 机器学习（Python FastAPI + LightGBM） =====================
+import http from 'http'
+const L3_URL = 'http://127.0.0.1:9000'
+const L3_MIN = 150          // L3 触发样本门槛（开发期按客户 150 行数据量；正式值可调）
+const L3_CACHE = new Map()  // `u{user}_n{samples}` -> { mape, n, importance }
+const FEATURE_NAMES = ['logArea', 'deliveryRatio', 'dLive', 'dWork', 'dVisit', 'dRich', 'pop1km', 'pop3km', 'pop5km', 'comp500', 'my500', 'yearCode', 'mallCode', 'tradeCode']
+function postJsonOnce(url, payload, timeout) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload)
+    const req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout }, (res) => {
+      let data = ''
+      res.on('data', c => data += c)
+      res.on('end', () => { try { resolve(JSON.parse(data)) } catch (e) { reject(e) } })
+    })
+    req.on('timeout', () => req.destroy(new Error('timeout')))
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+// 偶发 socket hang up 重试 1 次
+async function postJson(url, payload, timeout = 60000) {
+  try {
+    return await postJsonOnce(url, payload, timeout)
+  } catch (e) {
+    await new Promise(r => setTimeout(r, 500))
+    return postJsonOnce(url, payload, timeout)
+  }
+}
+function haversineDist(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+// 参照店特征（与训练样本同构，供影响模拟）
+function buildXForRef(db, ref) {
+  const dv = ref.district ? districtProfileVector(ref.district) : [0, 0, 0, 0]
+  const pop = calcRadiusPopulation(db, ref.lat, ref.lng, ref.city)
+  const nearby = countNearby(db, ref.lat, ref.lng, 500)
+  const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? 35)
+  return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0)
+}
+
 // 样本统计（前端提示用）：已开业店数 + 已录入销售样本行数（店×年）+ L2/L3 门槛
 router.get('/stats', authenticate, (req, res) => {
   try {
@@ -528,7 +573,7 @@ router.get('/stats', authenticate, (req, res) => {
          GROUP BY s.store_id, s.year
        )`
     ).get(...(isAdmin ? [] : [userId])).c
-    const l2 = 50, l3 = 300
+    const l2 = 50, l3 = L3_MIN
     res.json({ success: true, stores, samples, l2, l3, l2Gap: Math.max(l2 - samples, 0), l3Gap: Math.max(l3 - samples, 0) })
   } catch (e) {
     console.error('[sales-forecast] stats 失败:', e.message)
@@ -553,6 +598,9 @@ router.post('/predict', authenticate, async (req, res) => {
     const candDistrict = findDistrict(cand.latitude, cand.longitude)
     const candProfile = storeProfileVector(db, cand.name)
     const candArea = cand.store_area || cand.area
+    if (!candArea || candArea <= 0) {
+      return res.json({ success: true, status: 'insufficient', message: '该候选门店缺少营业面积，无法预测（请在「我的门店」编辑补充面积）' })
+    }
     const candDr = null // 候选店暂无销售记录，用业态默认（前端传或按品牌查 DELIVERY_RATIO_MAP）
 
     const refs = getReferenceStores(db, req.user.id, isAdmin)
@@ -575,9 +623,76 @@ router.post('/predict', authenticate, async (req, res) => {
       districtCity: candDistrict ? candDistrict.city : null
     }
 
+    // ===== 训练集（L2/L3 共用，只构建一次） =====
+    let trainSet = []
+    try { trainSet = buildTrainingSet(db, req.user.id, isAdmin) } catch (e) { console.error('[sales-forecast] buildTrainingSet 失败:', e.message) }
+
+    // ===== L3 机器学习（LightGBM：样本 ≥ L3_MIN 且外卖占比完整率 ≥80%，验证集 MAPE 优于 L2 才启用） =====
+    try {
+      const drFill = trainSet.length ? trainSet.filter(r => r.deliveryRatio != null).length / trainSet.length : 0
+      console.log('[sales-forecast] L3 trainSet =', trainSet.length, 'drFill =', drFill.toFixed(2))
+      if (trainSet.length >= L3_MIN && drFill >= 0.8) {
+        const cvL2 = loocvL2(trainSet, 1)
+        const cacheKey = 'u' + req.user.id + '_n' + trainSet.length
+        let l3m = L3_CACHE.get(cacheKey)
+        if (!l3m) {
+          const tr = await postJson(L3_URL + '/train', { X: trainSet.map(r => r.X), y: trainSet.map(r => r.y), features: FEATURE_NAMES })
+          if (tr && tr.success) {
+            l3m = { mape: tr.mape, n: trainSet.length, importance: tr.importance || [] }
+            L3_CACHE.set(cacheKey, l3m)
+            if (L3_CACHE.size > 5) L3_CACHE.delete(L3_CACHE.keys().next().value)
+          }
+        }
+        console.log('[sales-forecast] L3 mape =', l3m ? l3m.mape.toFixed(3) : 'N/A', '| L2 mape =', cvL2.mape.toFixed(3))
+        // L3 功能更全（影响模拟/归因），同等精度优先 L3；仅当明显差于 L2（>0.5pp）才回退防回归
+        const l3Use = !!(l3m && l3m.mape < 0.35 && l3m.mape <= cvL2.mape + 0.005)
+        console.log('[sales-forecast] L3 cond:', l3m ? 'model mape=' + l3m.mape.toFixed(3) : 'NO-MODEL', 'cvL2=' + cvL2.mape.toFixed(3), '=>', l3Use)
+        if (l3Use) {
+          const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
+          const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
+          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0)
+          const nearRefs = refs.filter(r => haversineDist(cand.latitude, cand.longitude, r.lat, r.lng) <= 3000)
+          const X_near = nearRefs.map(r => buildXForRef(db, r))
+          const pr = await postJson(L3_URL + '/predict', { X_cand: candX, X_near })
+          if (pr && pr.success) {
+            const predictComp = Math.round(pr.predEff * candArea)
+            const predictEff = predictComp
+            const top5 = trainSet
+              .map(r => ({ ref: r, d2: r.X.reduce((s, v, j) => s + (v - candX[j]) ** 2, 0) }))
+              .sort((a, b) => a.d2 - b.d2)
+              .slice(0, 5)
+            const refList = top5.map(({ ref }) => ({
+              name: ref.store.name, brand: ref.store.brand, city: ref.store.city,
+              area: ref.area, year: ref.year, salesAmount: ref.salesAmount,
+              pingxiao: Math.round(ref.salesAmount / ref.area), sim: null
+            }))
+            const confPct = Math.max(10, Math.min(Math.round(l3m.mape * 100), 50))
+            const impacts = (pr.impacts || []).map((im, i) => ({
+              name: nearRefs[i] ? nearRefs[i].name : '', brand: nearRefs[i] ? nearRefs[i].brand : '',
+              origEff: Math.round(im.origEff), newEff: Math.round(im.newEff), dropPct: Math.round(im.dropPct * 100)
+            }))
+            return res.json({
+              success: true, status: 'ok', level: 9, engine: 'L3',
+              levelName: 'L3 机器学习（LightGBM，基于 ' + trainSet.length + ' 条样本，验证集 MAPE ' + (l3m.mape * 100).toFixed(1) + '%）',
+              candName: cand.name, candArea,
+              radiusPopulation: candPop, radiusPoints: candPoints,
+              predictComp, predictEff,
+              predictCompWan: (predictComp / 10000).toFixed(1),
+              predictEffWan: (predictEff / 10000).toFixed(1),
+              conf: confPct,
+              rangeWan: [Math.round(predictComp / 10000 * (1 - confPct / 100)), Math.round(predictComp / 10000 * (1 + confPct / 100))],
+              refCount: top5.length, refs: refList,
+              impacts, importance: l3m.importance,
+              candDistrict: candDistrict ? { city: candDistrict.city, name: candDistrict.name } : null
+            })
+          }
+        }
+      }
+    } catch (e) { console.error('[sales-forecast] L3 失败回退:', e.message) }
+
     // ===== L2 回归（样本 ≥ 50 且 LOOCV MAPE 优于 L1 经验 35%，否则回退 L1） =====
     try {
-      const trainSet = buildTrainingSet(db, req.user.id, isAdmin)
       console.log('[sales-forecast] L2 trainSet =', trainSet.length)
       if (trainSet.length >= 50) {
         const cv = loocvL2(trainSet, 1)

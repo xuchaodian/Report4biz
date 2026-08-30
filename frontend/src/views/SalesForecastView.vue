@@ -66,7 +66,7 @@
         <div class="fc-result-card">
           <div class="fc-result-title">
             {{ result.candName }} · 年销售额预测
-            <el-tag size="small" :type="result.engine === 'L2' ? 'success' : 'info'" style="margin-left: 8px;">{{ result.engine === 'L2' ? 'L2 回归' : 'L1 类比' }}</el-tag>
+            <el-tag size="small" :type="result.engine === 'L3' ? 'warning' : result.engine === 'L2' ? 'success' : 'info'" style="margin-left: 8px;">{{ result.engine === 'L3' ? 'L3 机器学习' : result.engine === 'L2' ? 'L2 回归' : 'L1 类比' }}</el-tag>
           </div>
           <div class="fc-result-main">
             <span class="fc-amount">{{ result.predictCompWan }}</span>
@@ -84,7 +84,30 @@
         </div>
 
         <div class="fc-refs">
-          <div class="fc-refs-title">{{ result.engine === 'L2' ? '特征相似样本门店（真实销售）' : '类比参照门店（真实销售）' }}</div>
+          <div class="fc-refs-title">{{ result.engine === 'L2' || result.engine === 'L3' ? '特征相似样本门店（真实销售）' : '类比参照门店（真实销售）' }}</div>
+
+          <!-- L3：对周边门店影响模拟 -->
+          <div v-if="result.impacts && result.impacts.length" class="fc-impact" style="margin-top: 14px;">
+            <div class="fc-refs-title">对周边 {{ result.impacts.length }} 家店影响（3km 内，新店开业蚕食模拟）</div>
+            <el-table :data="result.impacts" size="small" max-height="180">
+              <el-table-column prop="name" label="周边门店" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="brand" label="品牌" width="110" />
+              <el-table-column label="原坪效(元/㎡/年)" width="130" align="right">
+                <template #default="{ row }">{{ row.origEff.toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column label="开业后坪效" width="120" align="right">
+                <template #default="{ row }"><span style="color:#f56c6c;">{{ row.newEff.toLocaleString() }}</span></template>
+              </el-table-column>
+              <el-table-column label="下降" width="80" align="right">
+                <template #default="{ row }"><span style="color:#f56c6c;font-weight:500;">-{{ row.dropPct }}%</span></template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- L3：预测归因（SHAP/特征重要性） -->
+          <div v-if="result.importance && result.importance.length" style="margin-top: 12px; font-size: 12px; color: #666;">
+            预测归因（特征重要性 Top{{ Math.min(result.importance.length, 4) }}）：{{ fmtImportance(result.importance) }}
+          </div>
           <el-table :data="result.refs" size="small" max-height="220">
             <el-table-column prop="name" label="门店" min-width="160" show-overflow-tooltip />
             <el-table-column prop="city" label="城市" width="80" />
@@ -143,6 +166,12 @@ const fmtPoints = (p) => {
   if (p.metro500 != null) parts.push(`地铁500m ${p.metro500}站`)
   if (p.malls500 != null) parts.push(`购物中心500m ${p.malls500}家`)
   return parts.join('；')
+}
+// 特征归因展示：面积 58% · 商圈人口 20% · 竞争 12% ...
+const FEATURE_CN = { logArea: '面积', deliveryRatio: '外卖占比', dLive: '商圈居住', dWork: '商圈工作', dVisit: '商圈客流', dRich: '高消费人群', pop1km: '1km人口', pop3km: '3km人口', pop5km: '5km人口', comp500: '竞品500m', my500: '我的门店500m', yearCode: '年份', mallCode: '商场类型', tradeCode: '商圈类型' }
+const fmtImportance = (imp) => {
+  const total = imp.reduce((s, i) => s + (i.gain || 0), 0) || 1
+  return imp.slice(0, 4).map(i => (FEATURE_CN[i.feature] || i.feature) + ' ' + Math.round((i.gain / total) * 100) + '%').join(' · ')
 }
 
 const cityList = computed(() => [...new Set(candidates.value.map(c => c.city).filter(Boolean))])
