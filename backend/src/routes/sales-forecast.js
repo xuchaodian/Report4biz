@@ -139,6 +139,42 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb))
 }
 
+// ===================== 联通画像向量（L3 训练特征用，7 维） =====================
+// 从 purchases.result_data 提取：[人口, 男, 女, 客流, 富裕, 消费, hasUnicom]
+// 服务码：1001 人口(结构固定 pall_sum/male2_sum/female2_sum) / 1005 客流 / 1009 富裕 / 1013 消费 / 1015 资产（后4者结构不定→数值字段求和）
+function parseUnicomVector(resultData) {
+  if (!resultData) return null
+  try {
+    const d = JSON.parse(resultData)
+    const api = (d && d.apiResult) || d
+    if (!api || typeof api !== 'object') return null
+    const sumNumeric = (code) => {
+      const p = api[code]
+      if (!p || typeof p !== 'object') return 0
+      const vals = Object.values(p).filter(v => typeof v === 'number' && !isNaN(v) && isFinite(v))
+      return vals.length ? vals.reduce((a, b) => a + b, 0) : 0
+    }
+    const p1001 = api['1001'] || {}
+    const pop = Number(p1001.pall_sum) || 0
+    const male = Number(p1001.male2_sum) || 0
+    const female = Number(p1001.female2_sum) || 0
+    const guest = sumNumeric('1005')
+    const rich = sumNumeric('1009')
+    const spend = sumNumeric('1013') + sumNumeric('1015')
+    if (pop === 0 && male === 0 && female === 0 && guest === 0 && rich === 0 && spend === 0) return null
+    return [pop, male, female, guest, rich, spend]
+  } catch (e) {
+    return null
+  }
+}
+// 单店查库版（候选店/参照店特征用）
+function unicomVector(db, storeName) {
+  const row = db.prepare(
+    `SELECT result_data FROM purchases WHERE store_name = ? AND result_data IS NOT NULL AND result_data != '' ORDER BY id DESC LIMIT 1`
+  ).get(storeName)
+  return row ? parseUnicomVector(row.result_data) : null
+}
+
 // ===================== 参照池 =====================
 // ===================== 半径常住人口（免费网格数据 1/3/5km） =====================
 const popGeoCache = new Map()      // shapefileId -> { geojson, ts }
@@ -407,15 +443,17 @@ function countNearby(db, lat, lng, radius) {
     return { comp: comps.filter(x => dist(x.latitude, x.longitude) <= radius).length, my: my.filter(x => dist(x.latitude, x.longitude) <= radius).length }
   } catch (e) { return { comp: 0, my: 0 } }
 }
-// 特征行（训练样本与候选店同构）：[log面积, 外卖占比, 商圈4维, 半径人口3档, 竞品500, 我的门店500, 年份码, 商场类型码, 商圈类型码]
-function buildX(store, area, dr, dv, pop, nearby, year, mallCode, tradeCode) {
+// 特征行（训练样本与候选店同构）：[log面积, 外卖占比, 商圈4维, 半径人口3档, 竞品500, 我的门店500, 年份码, 商场类型码, 商圈类型码, 联通画像6维, 有无联通]
+function buildX(store, area, dr, dv, pop, nearby, year, mallCode, tradeCode, unicom) {
+  const uni = unicom && unicom.length === 6 ? [...unicom, 1] : [0, 0, 0, 0, 0, 0, 0]
   return [
     Math.log(area), dr,
     dv[0] || 0, dv[1] || 0, dv[2] || 0, dv[3] || 0,
     pop[1000] || 0, pop[3000] || 0, pop[5000] || 0,
     nearby.comp, nearby.my,
     year - 2020,
-    mallCode, tradeCode
+    mallCode, tradeCode,
+    ...uni
   ]
 }
 // 构建训练集：该用户已开业店 × 有销售记录的年份（年度记录 month=0 + 月度按年聚合），不跨用户
@@ -442,6 +480,14 @@ function buildTrainingSet(db, userId, isAdmin) {
   }
   const MALL_CODES = new Map([...mallSet].map((v, i) => [v, i + 1]))
   const TRADE_CODES = new Map([...tradeSet].map((v, i) => [v, i + 1]))
+  // 联通画像向量预取（一次查库，按用户隔离；仅该用户已购联通的门店有向量）
+  const uniMap = new Map()
+  const unRows = db.prepare(
+    `SELECT store_name, result_data FROM purchases WHERE ${isAdmin ? '1=1' : 'user_id = ?'} AND result_data IS NOT NULL AND result_data != ''`
+  ).all(...(isAdmin ? [] : [userId]))
+  for (const u of unRows) {
+    if (!uniMap.has(u.store_name)) uniMap.set(u.store_name, parseUnicomVector(u.result_data))
+  }
   const rows = []
   for (const { store: m, rec } of cands) {
     const d = findDistrict(m.latitude, m.longitude)
@@ -451,7 +497,7 @@ function buildTrainingSet(db, userId, isAdmin) {
     const dr = rec.dr != null && rec.dr !== '' ? Number(rec.dr) : (DELIVERY_RATIO_MAP[m.brand] ?? 35)
     rows.push({
       store: m, year: rec.year, area: rec.area, salesAmount: rec.amount, deliveryRatio: dr,
-      X: buildX(m, rec.area, dr, dv, pop, nearby, rec.year, MALL_CODES.get(m.mall_type) || 0, TRADE_CODES.get(m.trade_area_type) || 0),
+      X: buildX(m, rec.area, dr, dv, pop, nearby, rec.year, MALL_CODES.get(m.mall_type) || 0, TRADE_CODES.get(m.trade_area_type) || 0, uniMap.get(m.name) || null),
       y: Math.log(rec.amount / rec.area)
     })
   }
@@ -516,7 +562,7 @@ import http from 'http'
 const L3_URL = 'http://127.0.0.1:9000'
 const L3_MIN = 150          // L3 触发样本门槛（开发期按客户 150 行数据量；正式值可调）
 const L3_CACHE = new Map()  // `u{user}_n{samples}` -> { mape, n, importance }
-const FEATURE_NAMES = ['logArea', 'deliveryRatio', 'dLive', 'dWork', 'dVisit', 'dRich', 'pop1km', 'pop3km', 'pop5km', 'comp500', 'my500', 'yearCode', 'mallCode', 'tradeCode']
+const FEATURE_NAMES = ['logArea', 'deliveryRatio', 'dLive', 'dWork', 'dVisit', 'dRich', 'pop1km', 'pop3km', 'pop5km', 'comp500', 'my500', 'yearCode', 'mallCode', 'tradeCode', 'uniPop', 'uniMale', 'uniFemale', 'uniGuest', 'uniRich', 'uniSpend', 'hasUnicom']
 function postJsonOnce(url, payload, timeout) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload)
@@ -553,7 +599,7 @@ function buildXForRef(db, ref) {
   const pop = calcRadiusPopulation(db, ref.lat, ref.lng, ref.city)
   const nearby = countNearby(db, ref.lat, ref.lng, 500)
   const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? 35)
-  return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0)
+  return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0, unicomVector(db, ref.name))
 }
 
 // 样本统计（前端提示用）：已开业店数 + 已录入销售样本行数（店×年）+ L2/L3 门槛
@@ -711,7 +757,7 @@ router.post('/predict', authenticate, async (req, res) => {
       console.log('[sales-forecast] L3 trainSet =', trainSet.length, 'drFill =', drFill.toFixed(2))
       if (trainSet.length >= L3_MIN && drFill >= 0.8) {
         const cvL2 = loocvL2(trainSet, 1)
-        const cacheKey = 'u' + req.user.id + '_n' + trainSet.length
+        const cacheKey = 'u' + req.user.id + '_n' + trainSet.length + '_d' + FEATURE_NAMES.length
         let l3m = L3_CACHE.get(cacheKey)
         if (!l3m) {
           const tr = await postJson(L3_URL + '/train', { X: trainSet.map(r => r.X), y: trainSet.map(r => r.y), features: FEATURE_NAMES })
@@ -729,7 +775,7 @@ router.post('/predict', authenticate, async (req, res) => {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
-          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0)
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
           const nearRefs = refs.filter(r => haversineDist(cand.latitude, cand.longitude, r.lat, r.lng) <= 3000)
           const X_near = nearRefs.map(r => buildXForRef(db, r))
           const pr = await postJson(L3_URL + '/predict', { X_cand: candX, X_near })
@@ -783,7 +829,7 @@ router.post('/predict', authenticate, async (req, res) => {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
-          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0)
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
           const predLog = model.predictRaw(candX)
           const predictComp = Math.round(Math.exp(predLog) * candArea)
           const predictEff = predictComp

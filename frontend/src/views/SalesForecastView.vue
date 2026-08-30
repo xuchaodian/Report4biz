@@ -204,7 +204,7 @@ const fmtPoints = (p) => {
   return parts.join('；')
 }
 // 特征归因展示：面积 58% · 商圈人口 20% · 竞争 12% ...
-const FEATURE_CN = { logArea: '面积', deliveryRatio: '外卖占比', dLive: '商圈居住', dWork: '商圈工作', dVisit: '商圈客流', dRich: '高消费人群', pop1km: '1km人口', pop3km: '3km人口', pop5km: '5km人口', comp500: '竞品500m', my500: '我的门店500m', yearCode: '年份', mallCode: '商场类型', tradeCode: '商圈类型' }
+const FEATURE_CN = { logArea: '面积', deliveryRatio: '外卖占比', dLive: '商圈居住', dWork: '商圈工作', dVisit: '商圈客流', dRich: '高消费人群', pop1km: '1km人口', pop3km: '3km人口', pop5km: '5km人口', comp500: '竞品500m', my500: '我的门店500m', yearCode: '年份', mallCode: '商场类型', tradeCode: '商圈类型', uniPop: '联通人口', uniMale: '联通男性', uniFemale: '联通女性', uniGuest: '联通客流', uniRich: '联通富裕', uniSpend: '联通消费', hasUnicom: '联通画像' }
 const fmtImportance = (imp) => {
   const total = imp.reduce((s, i) => s + (i.gain || 0), 0) || 1
   return imp.slice(0, 4).map(i => (FEATURE_CN[i.feature] || i.feature) + ' ' + Math.round((i.gain / total) * 100) + '%').join(' · ')
