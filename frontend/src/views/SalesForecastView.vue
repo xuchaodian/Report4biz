@@ -169,7 +169,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
+import api from '../utils/api.js'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 
@@ -227,17 +227,15 @@ const filteredCandidates = computed(() => {
 const stats = ref(null)
 const loadStats = async () => {
   try {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
-    const res = await fetch('/api/sales-forecast/stats', { headers: { Authorization: 'Bearer ' + token } })
-    const d = await res.json()
+    const d = await api.get('/sales-forecast/stats')
     if (d && d.success) stats.value = d
   } catch (e) { /* 忽略统计失败 */ }
 }
 const loadCandidates = async () => {
   loading.value = true
   try {
-    const res = await axios.get('/api/sales-forecast/candidates')
-    candidates.value = res.data?.candidates || []
+    const d = await api.get('/sales-forecast/candidates')
+    candidates.value = d?.candidates || []
   } catch (e) {
     ElMessage.error('加载候选门店失败：' + (e.response?.data?.message || e.message))
   } finally {
@@ -255,10 +253,9 @@ const handlePredict = async (row) => {
     const payload = { storeId: row.id }
     // 自定义圈定集：传入选中的参照店；自动模式不带（后端全自动）
     if (refMode.value === 'custom' && refSelected.value.length) payload.refSelection = refSelected.value
-    const res = await axios.post('/api/sales-forecast/predict', payload)
+    const d = await api.post('/sales-forecast/predict', payload)
     // 用该候选店刷新面板推荐集（不改变已保存的自定义勾选）
     if (refPool.value.length) loadRefStores(row.id)
-    const d = res.data
     if (d.success && d.status === 'ok') {
       result.value = d
     } else {
@@ -295,8 +292,7 @@ const filteredRefPool = computed(() => {
 
 const loadRefStores = async (storeId) => {
   try {
-    const res = await axios.get('/api/sales-forecast/ref-stores', { params: { storeId: storeId || undefined } })
-    const d = res.data
+    const d = await api.get('/sales-forecast/ref-stores', { params: { storeId: storeId || undefined } })
     if (d && d.success) {
       refPool.value = d.pool || []
       refAutoIds.value = d.auto || []
