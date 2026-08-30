@@ -736,7 +736,10 @@ router.post('/predict', authenticate, async (req, res) => {
           if (pr && pr.success) {
             const predictComp = Math.round(pr.predEff * candArea)
             const predictEff = predictComp
-            const top5 = trainSet
+            // 参照解释层（特征相似样本）：圈定集内取最相似样本；未圈定或圈定集无样本则全量
+            const refSet = new Set(refSelection)
+            const top5pool = refSelection.length ? trainSet.filter(r => refSet.has(r.store.id)) : trainSet
+            const top5 = (top5pool.length ? top5pool : trainSet)
               .map(r => ({ ref: r, d2: r.X.reduce((s, v, j) => s + (v - candX[j]) ** 2, 0) }))
               .sort((a, b) => a.d2 - b.d2)
               .slice(0, 5)
@@ -785,7 +788,10 @@ router.post('/predict', authenticate, async (req, res) => {
           const predictComp = Math.round(Math.exp(predLog) * candArea)
           const predictEff = predictComp
           const cs = candX.map((v, j) => (v - model.mean[j]) / model.std[j])
-          const top5 = trainSet
+          // 参照解释层：圈定集内取最相似样本；未圈定或圈定集无样本则全量
+          const refSet = new Set(refSelection)
+          const top5pool = refSelection.length ? trainSet.filter(r => refSet.has(r.store.id)) : trainSet
+          const top5 = (top5pool.length ? top5pool : trainSet)
             .map(r => ({ ref: r, d2: r.X.reduce((s, v, j) => s + ((v - model.mean[j]) / model.std[j] - cs[j]) ** 2, 0) }))
             .sort((a, b) => a.d2 - b.d2)
             .slice(0, 5)
