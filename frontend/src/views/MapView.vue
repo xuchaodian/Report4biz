@@ -152,14 +152,20 @@
                 <div style="font-size:12px;color:#909399;margin-top:4px;">仅统计所选品牌的竞品门店，不选则统计全部</div>
               </div>
             </el-form-item>
-            <el-form-item v-if="competitionBrands.length > 0" label="数量上限">
+            <el-form-item v-if="competitionBrands.length > 0" label="数量筛选">
               <div style="width:100%;">
                 <div v-for="b in competitionBrands" :key="b" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                   <span style="font-size:13px;color:#333;min-width:70px;">{{ b }}</span>
-                  <el-input-number v-model="competitionBrandLimits[b]" :min="0" :max="50" :step="1" size="small" style="width:120px" />
-                  <span style="font-size:12px;color:#909399;">家以内（0 = 不限）</span>
+                  <el-select v-model="competitionBrandCmp[b]" size="small" style="width:100px">
+                    <el-option value="any" label="不限" />
+                    <el-option value="eq" label="恰好" />
+                    <el-option value="lte" label="不超过" />
+                    <el-option value="gte" label="不少于" />
+                  </el-select>
+                  <el-input-number v-model="competitionBrandLimits[b]" :min="0" :max="50" :step="1" size="small" style="width:110px" :disabled="competitionBrandCmp[b] === 'any'" />
+                  <span style="font-size:12px;color:#909399;">家</span>
                 </div>
-                <div style="font-size:12px;color:#909399;margin-top:2px;">圈内任一品牌超出上限 → 该圈标记「竞品超限」</div>
+                <div style="font-size:12px;color:#909399;margin-top:2px;">仅显示圈内该品牌数量满足条件的门店（多品牌需同时满足；不限 = 只过滤品牌不筛数量）</div>
               </div>
             </el-form-item>
           </template>
@@ -194,12 +200,6 @@
             </el-checkbox>
           </template>
           <template v-else-if="storeCircleMode === 'competition'">
-            <el-checkbox v-model="storeCircleFilters.competition.overLimit" style="display:block;margin-bottom:6px;font-size:13px;">
-              <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#909399;"></span>
-                竞品超限（超出品牌数量上限）
-              </span>
-            </el-checkbox>
             <el-checkbox v-model="storeCircleFilters.competition.noMyNoComp" style="display:block;margin-bottom:6px;font-size:13px;">
               <span style="display:inline-flex;align-items:center;gap:6px;">
                 <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f59e0b;"></span>
@@ -1736,7 +1736,7 @@ const storeCircleLegendVisible = ref(false)  // 图例弹窗可见性
 // 门店商圈分类筛选（默认全选）
 const storeCircleFilters = ref({
   overlap: { overlapHigh: true, overlapMid: true, overlapLow: true, overlapNone: true },
-  competition: { overLimit: true, noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true },
+  competition: { noMyNoComp: true, hasMyNoComp: true, noMyHasComp: true, hasMyHasComp: true },
   track: { noMyNoOther: true, hasMyNoOther: true, noMyHasOther: true, hasMyHasOther: true },
   opportunity: { lowDensity: true, mediumDensity: true, highDensity: true }
 })
@@ -1754,16 +1754,23 @@ const storeCircleDialogTitle = computed(() => {
 })
 // 竞争品牌多选（空数组 = 统计全部竞品）
 const competitionBrands = ref([])
-// 按品牌数量上限：{ 品牌: 上限 }，0 = 不限（圈内该品牌超出上限 → 竞品超限）
+// 按品牌数量筛选：{ 品牌: 数量 }，仅比较方式为 eq/lte/gte 时生效
 const competitionBrandLimits = ref({})
-// 品牌移除时清理残留的上限配置，新选中品牌默认 0（不限）
+// 比较方式：'any'=不限(默认) 'eq'=恰好等于 'lte'=不超过 'gte'=不少于
+const competitionBrandCmp = ref({})
+// 品牌移除时清理残留的筛选配置；新选中品牌默认「不限」（仅做品牌过滤，不筛数量）
 watch(competitionBrands, (val) => {
   const limits = competitionBrandLimits.value
   for (const k of Object.keys(limits)) {
     if (!val.includes(k)) delete limits[k]
   }
+  const cmps = competitionBrandCmp.value
+  for (const k of Object.keys(cmps)) {
+    if (!val.includes(k)) delete cmps[k]
+  }
   for (const b of val) {
-    if (limits[b] === undefined) limits[b] = 0
+    if (limits[b] === undefined) limits[b] = 2
+    if (cmps[b] === undefined) cmps[b] = 'any'
   }
 })
 const competitionBrandList = computed(() => {
@@ -6630,7 +6637,7 @@ const applyStoreCircles = () => {
     const compFilters = storeCircleFilters.value.competition
     let drawnCount = 0
     // 重置城市分布统计
-    const stats = { overLimit: {}, noMyNoComp: {}, hasMyNoComp: {}, noMyHasComp: {}, hasMyHasComp: {} }
+    const stats = { noMyNoComp: {}, hasMyNoComp: {}, noMyHasComp: {}, hasMyHasComp: {} }
     const results = []
     validStores.forEach((store) => {
       // 计算该店半径内有多少"其他"我的门店和竞品（排除圆心门店自身，d>0）
@@ -6649,22 +6656,25 @@ const applyStoreCircles = () => {
           brandCounts[b] = (brandCounts[b] || 0) + 1
         }
       }
-      // 按品牌数量上限检测：圈内任一选中品牌超出上限 → 竞品超限（灰色）
+      // 按品牌数量筛选：仅绘制圈内该品牌数量满足条件的门店（多品牌需同时满足；any=只过滤品牌不筛数量）
       const limits = competitionBrandLimits.value
-      let overLimit = false
-      for (const b of Object.keys(brandCounts)) {
-        const lim = limits[b]
-        if (lim && brandCounts[b] > lim) { overLimit = true; break }
+      const cmps = competitionBrandCmp.value
+      let brandFilterPass = true
+      for (const b of competitionBrands.value) {
+        const cmp = cmps[b] || 'any'
+        if (cmp === 'any') continue
+        const n = brandCounts[b] || 0
+        const lim = limits[b] ?? 2
+        if (cmp === 'eq' && n !== lim) { brandFilterPass = false; break }
+        if (cmp === 'lte' && n > lim) { brandFilterPass = false; break }
+        if (cmp === 'gte' && n < lim) { brandFilterPass = false; break }
       }
+      if (!brandFilterPass) return   // 不满足数量筛选 → 该圈不绘制
 
       let color
       let label
       let filterKey
-      if (overLimit) {
-        color = '#909399'    // 灰色：竞品超限（某品牌数量超出上限）
-        label = `竞品超限 我的:${myCount} 竞品:${compCount}`
-        filterKey = 'overLimit'
-      } else if (myCount === 0 && compCount === 0) {
+      if (myCount === 0 && compCount === 0) {
         color = '#f59e0b'    // 橙色：无门店无竞品
         label = `我的:${myCount} 竞品:${compCount}`
         filterKey = 'noMyNoComp'
@@ -6708,7 +6718,6 @@ const applyStoreCircles = () => {
     showStoreCircles.value = true
     // 构建图例——只显示已勾选的项
     const compLegendMap = [
-      { key: 'overLimit', color: '#909399', label: '竞品超限（超出品牌数量上限）' },
       { key: 'noMyNoComp', color: '#f59e0b', label: '无我的门店 + 无竞品' },
       { key: 'hasMyNoComp', color: '#409eff', label: '有我的门店 + 无竞品' },
       { key: 'noMyHasComp', color: '#ff69b4', label: '无我的门店 + 有竞品' },
@@ -6718,7 +6727,7 @@ const applyStoreCircles = () => {
     storeCircleLegendVisible.value = true
     console.log('[legend] competition mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
     const totalInFilter = drawnCount
-    ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因筛选未显示）` : ''}`)
+    ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因品牌数量筛选未显示）` : ''}`)
     return
   }
 
