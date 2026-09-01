@@ -6631,7 +6631,10 @@ const applyStoreCircles = () => {
       }
     }
     const myStorePoints = allMyStores.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
-    const compPoints = allComps.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude }))
+    // 注意: compPoints 必须保留 brand 字段 —— 数量筛选按品牌统计 brandCounts[b]
+    // (此前 map 成 {lat,lng} 丢弃 brand → p.brand 恒为 undefined → brandCounts['大米先生']=0
+    //  → eq 全筛掉(0结果)/lte 全放行/gte 全筛掉, 筛选形同虚设, v1.13.80-dev 已实测复现)
+    const compPoints = allComps.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude, brand: s.brand }))
 
     storeCircleLayer = L.layerGroup().addTo(map)
     const compFilters = storeCircleFilters.value.competition
