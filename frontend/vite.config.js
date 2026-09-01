@@ -79,10 +79,9 @@ export default defineConfig({
           if (id.includes('SmartstepsPanel')) {
             return 'smartsteps-panel'
           }
-          // MapView 单独分组（9074行大文件）
-          if (id.includes('MapView.vue')) {
-            return 'mapview-main'
-          }
+          // 注: 不再手动分组 MapView.vue —— 子串匹配会误伤 MarketMapView.vue(含'MapView.vue'),
+          // 使该 chunk 同时被入口静态引用(i18n)+路由动态引用, Rollup 生成 {default:组件} Module 包装,
+          // Vue Router 拿不到组件导致 /map 白屏(v1.13.78 起). 交给 Vite 默认按路由动态拆分(同 DataView).
         },
         
         // 更好的文件名格式
