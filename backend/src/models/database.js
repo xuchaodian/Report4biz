@@ -273,6 +273,53 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // ===== 竞品季度快照（开关店监测，v1.13.82+）=====
+  // competitors 轻量迁移：标记该行所属快照期次与来源快照（NULL=手工/存量基线化前数据）
+  try { db.run(`ALTER TABLE competitors ADD COLUMN period TEXT`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN snapshot_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  // 快照批次表：每期上传 = 一条批次记录；同 user+brand+period 重传 = 覆盖该期
+  db.run(`
+    CREATE TABLE IF NOT EXISTS competitor_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      brand TEXT NOT NULL,
+      period TEXT NOT NULL,
+      period_seq INTEGER NOT NULL,
+      source_file TEXT,
+      data_version TEXT,
+      total_count INTEGER DEFAULT 0,
+      open_count INTEGER DEFAULT 0,
+      file_hash TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, brand, period)
+    )
+  `)
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_cs_user_brand ON competitor_snapshots(user_id, brand)`) } catch (e) {}
+  // 快照明细表：该期全量门店行（含闭店标记行，溯源用）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS competitor_snapshot_rows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL,
+      store_key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      city TEXT,
+      district TEXT,
+      address TEXT,
+      latitude REAL,
+      longitude REAL,
+      status TEXT NOT NULL DEFAULT 'unknown',
+      description TEXT,
+      extra TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(snapshot_id, store_key),
+      FOREIGN KEY (snapshot_id) REFERENCES competitor_snapshots(id) ON DELETE CASCADE
+    )
+  `)
+  try { db.run(`ALTER TABLE competitor_snapshot_rows ADD COLUMN description TEXT`) } catch (e) { /* 老库已建表则补列 */ }
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_csr_snapshot ON competitor_snapshot_rows(snapshot_id)`) } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_csr_key ON competitor_snapshot_rows(store_key)`) } catch (e) {}
+
   // 创建品牌图标表
   db.run(`
     CREATE TABLE IF NOT EXISTS brand_icons (
@@ -733,10 +780,15 @@ export function getDb() {
       // 执行插入/更新/删除
       run: (...params) => {
         db.run(sql, params)
+        // 注意：必须在 saveDatabase() 前取 last_insert_rowid —— sql.js 的 db.export()
+        // 会重置连接上的 last_insert_rowid() 为 0（实测 insert 后=658 → export 后=0），
+        // 曾导致 register / competitors POST 响应丢失新行 id（响应只含 message）。
+        const rowid = db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0
+        const affected = db.getRowsModified()
         saveDatabase()
         return {
-          lastInsertRowid: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0,
-          changes: db.getRowsModified()
+          lastInsertRowid: rowid,
+          changes: affected
         }
       },
       
