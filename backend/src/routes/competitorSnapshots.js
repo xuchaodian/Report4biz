@@ -82,8 +82,13 @@ function manualRowsOf(db, userId, brand) {
      FROM competitors WHERE user_id = ? AND brand = ? AND snapshot_id IS NULL`
   ).all(userId, brand)
 }
-/** 品牌已有快照（升序） */
+/** 品牌已有快照（升序）；brand 空 → 取该用户全部快照（品牌聚合用） */
 function snapshotsOfBrand(db, userId, brand) {
+  if (!brand) {
+    return db.prepare(
+      `SELECT * FROM competitor_snapshots WHERE user_id = ? ORDER BY period_seq ASC`
+    ).all(userId)
+  }
   return db.prepare(
     `SELECT * FROM competitor_snapshots WHERE user_id = ? AND brand = ? ORDER BY period_seq ASC`
   ).all(userId, brand)
