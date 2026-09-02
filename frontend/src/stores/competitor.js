@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
+// 快照相关请求统一走共享 api 实例（含 token 拦截器 / 401 跳登录）——项目 HTTP 规范 v1.13.77
+import api from '../utils/api.js'
 
 const API_URL = '/api'
 
@@ -133,6 +135,88 @@ export const useCompetitorStore = defineStore('competitor', {
         filterCategory: ''
       }
       this.visibleIds = null
+    },
+
+    /* ================= 竞品期次快照（开关店监测 · P0） =================
+     * 统一走共享 api 实例：响应拦截器已解包 response.data（成功直接返回 body），
+     * 失败 reject → 调用方 try/catch 取 error.response.data.message。
+     */
+    // 快照品牌序列（含各期元信息）
+    async listSnapshotBrands() {
+      try {
+        const data = await api.get('/competitors/snapshots')
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '获取快照列表失败' }
+      }
+    },
+    // 单品牌快照序列
+    async listBrandSnapshots(brand) {
+      try {
+        const data = await api.get('/competitors/snapshots', { params: { brand } })
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '获取品牌快照失败' }
+      }
+    },
+    // 解析预览（不落库）
+    async previewSnapshot({ brand, period, file }) {
+      try {
+        const fd = new FormData()
+        fd.append('brand', brand)
+        fd.append('period', period)
+        fd.append('file', file)
+        const data = await api.post('/competitors/snapshots/preview', fd, { timeout: 120000 })
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '预览失败' }
+      }
+    },
+    // 正式导入（含收编勾选）
+    async importSnapshot({ brand, period, file, adoptIds, dataVersion }) {
+      try {
+        const fd = new FormData()
+        fd.append('brand', brand)
+        fd.append('period', period)
+        fd.append('file', file)
+        fd.append('adoptIds', JSON.stringify(adoptIds || []))
+        if (dataVersion) fd.append('data_version', dataVersion)
+        const data = await api.post('/competitors/snapshots/import', fd, { timeout: 300000 })
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '导入失败' }
+      }
+    },
+    // 两期 diff
+    async diffSnapshots({ brand, target, base }) {
+      try {
+        const params = { brand, target }
+        if (base) params.base = base
+        const data = await api.get('/competitors/snapshots/diff', { params })
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '对比失败' }
+      }
+    },
+    // 下载某期全量 CSV（blob）
+    async exportSnapshotCsv({ brand, period }) {
+      try {
+        const blob = await api.get('/competitors/snapshots/export', { params: { brand, period }, responseType: 'blob' })
+        return { success: true, blob }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '导出失败' }
+      }
+    },
+    // 下载变更明细 CSV（blob）
+    async exportDiffCsv({ brand, target, base }) {
+      try {
+        const params = { brand, target }
+        if (base) params.base = base
+        const blob = await api.get('/competitors/snapshots/export-diff', { params, responseType: 'blob' })
+        return { success: true, blob }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '导出失败' }
+      }
     }
   }
 })

@@ -1,29 +1,32 @@
 <template>
   <div class="competitor-view">
-    <div class="data-header">
-      <h2>竞品管理</h2>
-      <div class="header-actions">
-        <el-button type="primary" @click="showAddDialog">
-          <el-icon><Plus /></el-icon>添加竞品
-        </el-button>
-        <el-button @click="handleImport">
-          <el-icon><Upload /></el-icon>导入
-        </el-button>
-        <el-button @click="handleExport">
-          <el-icon><Download /></el-icon>导出
-        </el-button>
-        <el-button
-          v-if="selectedRows.length > 0"
-          type="danger"
-          @click="handleBatchDelete"
-        >
-          <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
-        </el-button>
-        <el-button type="danger" plain @click="handleClearAll">
-          <el-icon><Delete /></el-icon>全清除
-        </el-button>
-      </div>
-    </div>
+    <el-tabs v-model="activeTab" class="competitor-tabs" @tab-change="handleTabChange">
+      <!-- ================= Tab1 竞品列表（手工管理 + 最新期镜像） ================= -->
+      <el-tab-pane label="竞品列表" name="list">
+        <div class="data-header">
+          <h2>竞品管理</h2>
+          <div class="header-actions">
+            <el-button type="primary" @click="showAddDialog">
+              <el-icon><Plus /></el-icon>添加竞品
+            </el-button>
+            <el-button type="warning" plain @click="goToUpload">
+              <el-icon><Upload /></el-icon>期次上传
+            </el-button>
+            <el-button @click="handleExport">
+              <el-icon><Download /></el-icon>导出
+            </el-button>
+            <el-button
+              v-if="selectedRows.length > 0"
+              type="danger"
+              @click="handleBatchDelete"
+            >
+              <el-icon><Delete /></el-icon>批量删除({{ selectedRows.length }})
+            </el-button>
+            <el-button type="danger" plain @click="handleClearAll">
+              <el-icon><Delete /></el-icon>全清除
+            </el-button>
+          </div>
+        </div>
 
     <!-- 筛选栏 -->
     <div class="filter-bar">
@@ -144,6 +147,27 @@
         layout="total, sizes, prev, pager, next, jumper"
       />
     </div>
+      </el-tab-pane>
+
+      <!-- ================= Tab2 期次上传 ================= -->
+      <el-tab-pane label="期次上传" name="upload">
+        <SnapshotUploadPanel
+          ref="uploadPanelRef"
+          @imported="handleSnapshotImported"
+          @goto-monitor="gotoMonitor"
+        />
+      </el-tab-pane>
+
+      <!-- ================= Tab3 开关店监测 ================= -->
+      <el-tab-pane label="开关店监测" name="monitor">
+        <SnapshotMonitorPanel
+          ref="monitorPanelRef"
+          :initial-brand="monitorBrand"
+          :initial-target="monitorTarget"
+          @goto-upload="activeTab = 'upload'"
+        />
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 添加/编辑对话框 -->
     <el-dialog
@@ -277,52 +301,6 @@
         <el-button type="primary" :loading="saving" @click="handleSave">确定</el-button>
       </template>
     </el-dialog>
-
-    <!-- 导入对话框 -->
-    <el-dialog v-model="importDialogVisible" title="导入竞品数据" width="500px">
-      <div class="import-tips">
-        <p>请上传CSV格式文件，支持以下字段：</p>
-        <ul>
-          <li>store_code - 门店编号</li>
-          <li>brand - 品牌</li>
-          <li>name - 门店名称（必填）</li>
-          <li>store_category - 门店分类</li>
-          <li>city - 城市</li>
-          <li>district - 区县</li>
-          <li>address - 地址</li>
-          <li>industry - 行业分类</li>
-          <li>price - 价格</li>
-          <li>rating - 星级</li>
-          <li>reviews - 评论数</li>
-          <li>taste_score - 口味</li>
-          <li>environment_score - 环境</li>
-          <li>service_score - 服务</li>
-          <li>description - 备注</li>
-          <li>latitude - 纬度（必填）</li>
-          <li>longitude - 经度（必填）</li>
-        </ul>
-        <el-link type="primary" @click="downloadTemplate">下载模板</el-link>
-      </div>
-      <div class="import-tips" style="color: #e6a23c; font-size: 12px; margin-top: -8px;">
-        <p>⚠️ 限制：单文件最大 5MB，单次最多 10000 条数据。超限请拆分后分批导入。</p>
-      </div>
-      <el-upload
-        ref="uploadRef"
-        :auto-upload="false"
-        :limit="1"
-        accept=".csv"
-        :on-change="handleFileChange"
-        drag
-      >
-        <el-icon class="el-icon--upload"><Upload /></el-icon>
-        <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
-      </el-upload>
-      <el-progress v-if="importing" :percentage="importProgress" :stroke-width="16" style="margin: 16px 0" :status="importProgress >= 100 ? 'success' : undefined" />
-      <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -332,6 +310,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
+import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
+import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.vue'
 
 const router = useRouter()
 const competitorStore = useCompetitorStore()
@@ -446,16 +426,19 @@ const brandColorMap = {
 
 // 弹窗状态
 const dialogVisible = ref(false)
-const importDialogVisible = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
-const importing = ref(false)
-const importProgress = ref(0)
 const editingId = ref(null)
-const uploadRef = ref(null)
-const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
+
+// Tab 结构：list=竞品列表 / upload=期次上传 / monitor=开关店监测
+const activeTab = ref('list')
+const uploadPanelRef = ref(null)
+const monitorPanelRef = ref(null)
+// 从「期次上传」跳转到「开关店监测」时携带的品牌与目标期
+const monitorBrand = ref('')
+const monitorTarget = ref('')
 
 // 表单数据
 const formRef = ref(null)
@@ -689,42 +672,29 @@ const handleClearAll = async () => {
   } catch {}
 }
 
-const handleImport = () => {
-  uploadFile.value = null
-  importDialogVisible.value = true
+/* ================= Tab 切换与跨 Tab 联动 ================= */
+// 竞品列表头部「期次上传」按钮 → 切到 Tab2
+const goToUpload = () => { activeTab.value = 'upload' }
+const handleTabChange = (name) => {
+  // 进入「期次上传」时刷新历史（导入后可能新增期次）
+  if (name === 'upload') uploadPanelRef.value?.refreshHistory()
+  // 「开关店监测」内容常驻，保留用户当前选择，无需每次重载
 }
-
-const handleFileChange = (file) => {
-  // 前端预校验：文件大小 ≤ 5MB
-  const MAX_FILE_SIZE = 5 * 1024 * 1024
-  if (file.raw && file.raw.size > MAX_FILE_SIZE) {
-    ElMessage.error('文件大小超过 5MB 限制，请拆分后分批上传')
-    uploadFile.value = null
-    // 清除已选文件
-    if (uploadRef.value) uploadRef.value.clearFiles()
-    return
-  }
-  uploadFile.value = file.raw
+// Tab2 导入成功后：刷新列表镜像（UploadPanel 已提示详情，这里静默同步）
+const handleSnapshotImported = async (payload) => {
+  await competitorStore.fetchCompetitors()
+  // 列表已被新镜像替换 → 清掉本地筛选态，避免残留条件看不到新数据
+  handleClearFilters()
 }
-
-const handleImportConfirm = async () => {
-  if (!uploadFile.value) { ElMessage.warning('请选择文件'); return }
-  importing.value = true
-  importProgress.value = 0
-  try {
-    const onProgress = (event) => {
-      importProgress.value = Math.round((event.loaded / event.total) * 100)
-    }
-    const result = await competitorStore.importCompetitors(uploadFile.value, onProgress)
-    if (result.success) {
-      ElMessage.success(`成功导入 ${result.count} 条数据`)
-      importDialogVisible.value = false
-    } else {
-      ElMessage.error(result.message)
-    }
-  } finally {
-    importing.value = false
-  }
+// Tab2「去对比」→ Tab3 并预选品牌/目标期
+const gotoMonitor = (payload) => {
+  monitorBrand.value = payload?.brand || ''
+  monitorTarget.value = payload?.period || ''
+  activeTab.value = 'monitor'
+  // 等 Tab3 渲染完成后再驱动对比（组件可能尚未挂载）
+  setTimeout(() => {
+    if (monitorBrand.value) monitorPanelRef.value?.setComparison(monitorBrand.value, monitorTarget.value)
+  }, 120)
 }
 
 const handleExport = async () => {
@@ -740,28 +710,29 @@ const handleExport = async () => {
     ElMessage.success('导出成功')
   }
 }
-
-const downloadTemplate = () => {
-  const template = `store_code,brand,name,store_category,city,district,address,industry,price,rating,reviews,taste_score,environment_score,service_score,description,latitude,longitude
-COMP001,瑞幸咖啡,瑞幸咖啡国贸店,写字楼店,北京市,朝阳区,国贸大厦,咖啡,32,4.5,1280,4.3,4.1,4.2,竞品门店,39.9088,116.4610
-COMP002,瑞幸咖啡,瑞幸咖啡中关村店,商场店,北京市,海淀区,中关村大街1号,咖啡,28,4.3,980,4.1,4.0,4.0,写字楼门店,39.9830,116.3120`
-  const blob = new Blob([template], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'competitor_template.csv'
-  a.click()
-  URL.revokeObjectURL(url)
-}
 </script>
 
 <style lang="scss" scoped>
 .competitor-view {
   height: 100%;
   padding: 20px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+}
+// el-tabs 占满剩余高度，内容区内部滚动（MainLayout main-content 为 overflow:hidden）
+.competitor-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  :deep(.el-tabs__header) { margin-bottom: 12px; }
+  :deep(.el-tabs__content) {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
 }
 .data-header {
   display: flex;
@@ -783,23 +754,13 @@ COMP002,瑞幸咖啡,瑞幸咖啡中关村店,商场店,北京市,海淀区,中�
   .统计 { margin-left: auto; color: #666; font-size: 14px; }
 }
 .data-table {
-  flex: 1;
   background: white;
   border-radius: 8px;
   padding: 15px;
-  overflow: auto;
 }
 .pagination-container {
   margin-top: 15px;
   display: flex;
   justify-content: flex-end;
-}
-.import-tips {
-  margin-bottom: 20px;
-  padding: 15px;
-  background: #f5f7fa;
-  border-radius: 4px;
-  p { margin: 0 0 10px 0; font-weight: bold; }
-  ul { margin: 0; padding-left: 20px; font-size: 13px; color: #666; }
 }
 </style>
