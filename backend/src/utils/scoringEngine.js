@@ -108,16 +108,18 @@ async function queryPointPopulation(db, lng, lat, radiusM) {
  * @param {string} params.city - 城市名
  * @returns {Object} 评分结果
  */
-export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT_WEIGHTS, competitionThreshold = 10, city }) {
+export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT_WEIGHTS, competitionThreshold = 10, city, user }) {
   const db = getDb()
+  const userId = user?.id
+  const isAdmin = (user?.role === 'admin' || userId === 1) ? 1 : 0
 
   // 1. 人口指数
   const popResult = await queryPointPopulation(db, lng, lat, radius)
   const popScore = calcPopulationScore(popResult)
   const populationTotal = popResult?.totalPopulation ?? null
 
-  // 2. 竞争指数
-  const compCount = await countCompetitors(db, lng, lat, radius)
+  // 2. 竞争指数（周边有效竞品；用户隔离：admin全量特权，普通用户仅自己名下竞品）
+  const compCount = await countCompetitors(db, lng, lat, radius, userId, isAdmin)
   const compScore = calcCompetitionScore(compCount, competitionThreshold)
 
   // 3. 配套指数 + 交通指数
@@ -147,7 +149,7 @@ export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT
 /**
  * 批量评分（用于网格列表）
  */
-export async function scoreBatch(grids, config) {
+export async function scoreBatch(grids, config, user) {
   const results = []
   const weights = {
     population: config.weight_population,
@@ -170,7 +172,8 @@ export async function scoreBatch(grids, config) {
         radius: Math.round((config.radius_km || 1) * 1000),
         weights,
         competitionThreshold: config.competition_threshold || 10,
-        city: g.city
+        city: g.city,
+        user
       }).then(s => ({ ...s, lng: g.lng, lat: g.lat, address: g.address || '', gridId: g.gridId || '' }))
     )
     const batchResults = await Promise.allSettled(promises)
@@ -209,7 +212,7 @@ function calcPopulationScore(popResult) {
   }
 }
 
-function countCompetitors(db, lng, lat, radiusM) {
+function countCompetitors(db, lng, lat, radiusM, userId, isAdmin) {
   try {
     // 使用近似计算（1度≈111km）
     const latDelta = radiusM / 111000
@@ -220,9 +223,11 @@ function countCompetitors(db, lng, lat, radiusM) {
       WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))
         AND latitude BETWEEN ? AND ?
         AND longitude BETWEEN ? AND ?
+        AND (user_id = ? OR ? = 1)
     `).get(
       lat - latDelta, lat + latDelta,
-      lng - lngDelta, lng + lngDelta
+      lng - lngDelta, lng + lngDelta,
+      userId, isAdmin
     )
     return rows?.cnt || 0
   } catch (e) {

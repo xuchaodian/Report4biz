@@ -84,7 +84,8 @@ router.post('/score-point', authenticate, async (req, res) => {
       radius: radiusM,
       weights,
       competitionThreshold: compThreshold,
-      city: city || ''
+      city: city || '',
+      user: req.user
     })
 
     res.json({ success: true, ...result })
@@ -117,7 +118,7 @@ router.post('/score-batch', authenticate, async (req, res) => {
       if (saved) config = saved
     }
 
-    const results = await scoreBatch(grids, config)
+    const results = await scoreBatch(grids, config, req.user)
     res.json({ success: true, total: results.length, candidates: results.slice(0, 50) })
   } catch (error) {
     console.error('批量评分失败:', error)

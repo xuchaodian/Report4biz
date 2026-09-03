@@ -60,7 +60,7 @@ router.post('/scores', authenticate, async (req, res) => {
     const items = db.prepare('SELECT * FROM scoring_items WHERE template_id = ? ORDER BY sort_order').all(template.id)
 
     // 自动计算商圈特征项
-    const autoScores = await calcAutoScores(db, lng, lat, premium, req.user.id)
+    const autoScores = await calcAutoScores(db, lng, lat, premium, req.user)
 
     // 创建评分明细（直接拼SQL避免参数传递问题）
     let totalScore = 0
@@ -208,9 +208,21 @@ async function calcAutoScores(db, lng, lat, premium, userId) {
     result['人口密度'] = { value: null, score: 5 }
   }
 
-  // 2. 竞争强度
+  // 2. 竞争强度（周边1km有效竞品计数；用户隔离：admin全量特权，普通用户仅自己名下竞品）
   try {
-    const compCount = (db.prepare("SELECT COUNT(*) as cnt FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").get())?.cnt || 0
+    const RADIUS_M = 1000
+    const latDelta = RADIUS_M / 111000
+    const lngDelta = RADIUS_M / (111000 * Math.cos(lat * Math.PI / 180))
+    const compRow = db.prepare(`SELECT COUNT(*) as cnt FROM competitors
+      WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))
+        AND latitude BETWEEN ? AND ?
+        AND longitude BETWEEN ? AND ?
+        AND (user_id = ? OR ? = 1)`).get(
+      lat - latDelta, lat + latDelta,
+      lng - lngDelta, lng + lngDelta,
+      userId, isAdmin
+    )
+    const compCount = compRow?.cnt || 0
     const compScore = Math.min(15, Math.max(0, 15 - compCount))
     result['竞争强度'] = { value: compCount, score: Math.round(compScore) }
   } catch (_) {
