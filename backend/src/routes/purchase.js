@@ -198,7 +198,7 @@ router.get('/history', authenticate, (req, res) => {
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
       WHERE p.user_id = ? AND p.status = 'active'
       ORDER BY p.created_at DESC
-      LIMIT 100
+      LIMIT 500
     `).all(req.user.id)
 
     // 计算每笔订单购买后的剩余配额

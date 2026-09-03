@@ -171,7 +171,7 @@
       </div>
       <el-table
         v-else
-        :data="filteredHistoryList"
+        :data="pageHistoryList"
         stripe
         border
         size="small"
@@ -247,6 +247,17 @@
           </template>
         </el-table-column>
       </el-table>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <el-pagination
+          v-model:current-page="historyPage"
+          v-model:page-size="historyPageSize"
+          :total="filteredHistoryList.length"
+          :page-sizes="[20, 50, 100, 200]"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          small
+        />
+      </div>
     </el-dialog>
 
     <!-- 查询结果对比对话框（多订单同图对比） -->
@@ -592,9 +603,17 @@ const filteredHistoryList = computed(() => {
   })
 })
 
+// 履历本地分页（单次批量可超 100 条，购买履历列表需分页浏览）
+const historyPage = ref(1)
+const historyPageSize = ref(20)
+const pageHistoryList = computed(() => {
+  const start = (historyPage.value - 1) * historyPageSize.value
+  return filteredHistoryList.value.slice(start, start + historyPageSize.value)
+})
+
 // 筛选变化时重置页码
 const handleFilterChange = () => {
-  // 如果有筛选条件，自动定位到第一页
+  historyPage.value = 1
 }
 
 // 重置筛选
@@ -605,6 +624,7 @@ const resetFilters = () => {
   filterDistrict.value = ''
   filterRadius.value = ''
   filterCityMonth.value = ''
+  historyPage.value = 1
 }
 
 // 查看详情相关
@@ -1218,6 +1238,7 @@ const showQuotaHistoryDialog = async () => {
 const showHistoryDialog = async () => {
   historyDialogVisible.value = true
   historyLoading.value = true
+  historyPage.value = 1
   try {
     const { data } = await axios.get('/api/purchase/history')
     historyList.value = data.purchases || []
