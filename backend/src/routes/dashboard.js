@@ -20,8 +20,11 @@ router.get('/summary', authenticate, async (req, res) => {
     const userId = req.user.id
     const isAdmin = req.user.role === 'admin' || userId === 1
 
-    // 异常经营状态（停业/歇业/关闭等，大屏聚合排除）
+    // 异常经营状态（停业/歇业/关闭等，大屏聚合排除，markers 表字段）
     const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']
+
+    // 竞品有效口径：排除「店铺已关」「尚未营业」（competitors.status 文本列；NULL/未知/暂停营业 保留）
+    const COMP_ACTIVE_COND = `(status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
 
     // 城市→省份映射
     const toProvince = (city) => {
@@ -35,14 +38,14 @@ router.get('/summary', authenticate, async (req, res) => {
     // 已开门店过滤（KPI 我的门店/覆盖城市/覆盖省份 统一为「仅已开业」口径，与地图/TOP10 一致）
     const OPEN_ONLY_SQL = `AND store_type = '已开业'`
     const markersCount = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE (user_id = ? OR ? = 1) AND 1=1 ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).get(userId, isAdmin, ...ABNORMAL_STATUS)?.c || 0
-    const competitorsCount = db.prepare('SELECT COUNT(*) AS c FROM competitors WHERE (user_id = ? OR ? = 1)').get(userId, isAdmin)?.c || 0
+    const competitorsCount = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND ${COMP_ACTIVE_COND}`).get(userId, isAdmin)?.c || 0
     const centersCount = db.prepare('SELECT COUNT(*) AS c FROM shopping_centers').get()?.c || 0
     const brandStoresCount = db.prepare('SELECT COUNT(*) AS c FROM brand_stores').get()?.c || 0
 
     // 我的门店覆盖城市数（仅已开业）
     const markerCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM markers WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).get(userId, isAdmin, ...ABNORMAL_STATUS)?.c || 0
     // 竞品覆盖城市数
-    const compCities = db.prepare('SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != ""').get(userId, isAdmin)?.c || 0
+    const compCities = db.prepare(`SELECT COUNT(DISTINCT city) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != "" AND ${COMP_ACTIVE_COND}`).get(userId, isAdmin)?.c || 0
     // 我的门店覆盖省份数（仅已开业；城市→省份映射后去重）
     const markerProvCount = new Set(
       db.prepare(`SELECT DISTINCT city FROM markers WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != "" ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).all(userId, isAdmin, ...ABNORMAL_STATUS)
@@ -50,7 +53,7 @@ router.get('/summary', authenticate, async (req, res) => {
     ).size
     // 竞品覆盖省份数
     const compProvCount = new Set(
-      db.prepare('SELECT DISTINCT city FROM competitors WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != ""').all(userId, isAdmin)
+      db.prepare(`SELECT DISTINCT city FROM competitors WHERE (user_id = ? OR ? = 1) AND city IS NOT NULL AND city != "" AND ${COMP_ACTIVE_COND}`).all(userId, isAdmin)
         .map(r => toProvince(r.city))
     ).size
 
@@ -70,9 +73,9 @@ router.get('/summary', authenticate, async (req, res) => {
       .slice(0, 10)
 
     // 竞品品牌 TOP10
-    const compBrandTop = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all(userId, isAdmin)
+    const compBrandTop = db.prepare(`SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" AND ${COMP_ACTIVE_COND} GROUP BY brand ORDER BY value DESC LIMIT 10`).all(userId, isAdmin)
     // 竞品品牌数量（DISTINCT brand 计数，KPI）
-    const compBrandCount = db.prepare('SELECT COUNT(DISTINCT brand) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != ""').get(userId, isAdmin)?.c || 0
+    const compBrandCount = db.prepare(`SELECT COUNT(DISTINCT brand) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" AND ${COMP_ACTIVE_COND}`).get(userId, isAdmin)?.c || 0
 
     // 我的门店/竞品 近30天新增（无时间字段则给最近7天趋势占位）
     const trend = []
@@ -101,6 +104,7 @@ router.get('/summary', authenticate, async (req, res) => {
       FROM competitors
       WHERE (user_id = ? OR ? = 1) AND latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
         AND city IS NOT NULL AND city != ''
+        AND ${COMP_ACTIVE_COND}
       GROUP BY rtrim(city, '市') ORDER BY value DESC LIMIT 200
     `).all(userId, isAdmin)
 
@@ -154,6 +158,7 @@ router.get('/summary', authenticate, async (req, res) => {
       WHERE (user_id = ? OR ? = 1) AND latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0
         AND city IS NOT NULL AND city != ''
         AND brand IS NOT NULL AND brand != ''
+        AND ${COMP_ACTIVE_COND}
       GROUP BY rtrim(city, '市'), brand
     `).all(userId, isAdmin)
 
@@ -178,7 +183,7 @@ router.get('/summary', authenticate, async (req, res) => {
     const markerByTypeProv = aggToProvinceGrouped(markerByType)
     const compByBrandProv = aggToProvinceGrouped(compByBrand)
     // 竞品品牌 TOP10（前端只显示主要品牌颜色）
-    const compBrandList = db.prepare('SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" GROUP BY brand ORDER BY value DESC LIMIT 10').all(userId, isAdmin)
+    const compBrandList = db.prepare(`SELECT brand AS name, COUNT(*) AS value FROM competitors WHERE (user_id = ? OR ? = 1) AND brand IS NOT NULL AND brand != "" AND ${COMP_ACTIVE_COND} GROUP BY brand ORDER BY value DESC LIMIT 10`).all(userId, isAdmin)
 
     // ===== 用户购买/配额 =====
     const quota = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()

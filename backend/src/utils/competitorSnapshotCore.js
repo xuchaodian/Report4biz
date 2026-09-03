@@ -353,19 +353,23 @@ export function diffSnapshots(baseRows, targetRows) {
   }
   for (const [key, br] of baseOpen) {
     const tr = targetAll.get(key)
-    if (!tr || tr.status !== 'open') {
-      closed.push({ ...(tr || br), _baseName: br.name, _baseStatus: br.status, _closed: !tr })
-    }
-    if (tr && tr.status !== br.status) {
+    if (!tr) {
+      // 上期在营、本期彻底消失 → 关闭（物理移除）
+      closed.push({ ...br, _baseName: br.name, _baseStatus: br.status, _closed: true })
+    } else if (tr.status === 'closed') {
+      // 上期在营、本期标记为永久关店 → 关闭（仍在案；只入关闭，不重复计状态变化）
+      closed.push({ ...tr, _baseName: br.name, _baseStatus: br.status, _closed: false })
+    } else if (tr.status !== 'open') {
+      // 上期在营、本期暂停/尚未营业/未知 → 状态变化（非永久关闭）
       statusChanged.push({ store_key: key, name: tr.name, city: tr.city, from: br.status, to: tr.status, _displayFrom: enumToDisplayText(br.status), _displayTo: enumToDisplayText(tr.status) })
     }
   }
   const openedCount = opened.length, closedCount = closed.length
   const keptCount = targetOpen.size - openedCount
   const baseOpenCount = baseOpen.size, targetOpenCount = targetOpen.size
-  // 自洽校验
-  const selfMsg1 = `opened−closed(${openedCount}−${closedCount}=${openedCount - closedCount}) == targetOpen−baseOpen(${targetOpenCount}−${baseOpenCount}=${targetOpenCount - baseOpenCount})`
-  const pass1 = openedCount - closedCount === targetOpenCount - baseOpenCount
+  // 自洽校验：baseOpen = kept(open→open) + closed(消失/→closed) + statusChanged(→暂停/未营业/未知)
+  const selfMsg1 = `opened−closed−statusChanged(${openedCount}−${closedCount}−${statusChanged.length}=${openedCount - closedCount - statusChanged.length}) == targetOpen−baseOpen(${targetOpenCount}−${baseOpenCount}=${targetOpenCount - baseOpenCount})`
+  const pass1 = openedCount - closedCount - statusChanged.length === targetOpenCount - baseOpenCount
   const selfMsg2 = `kept+opened(${keptCount}+${openedCount}=${keptCount + openedCount}) == targetOpen(${targetOpenCount})`
   const pass2 = keptCount + openedCount === targetOpenCount
   return {

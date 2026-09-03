@@ -210,7 +210,7 @@ async function calcAutoScores(db, lng, lat, premium, userId) {
 
   // 2. 竞争强度
   try {
-    const compCount = (db.prepare('SELECT COUNT(*) as cnt FROM competitors').get())?.cnt || 0
+    const compCount = (db.prepare("SELECT COUNT(*) as cnt FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").get())?.cnt || 0
     const compScore = Math.min(15, Math.max(0, 15 - compCount))
     result['竞争强度'] = { value: compCount, score: Math.round(compScore) }
   } catch (_) {

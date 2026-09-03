@@ -173,7 +173,7 @@ router.post('/store-counts', authenticate, async (req, res) => {
     }
 
     // 2. 竞品门店 — 按品牌分组
-    const allCompetitors = db.prepare('SELECT id, name, brand, latitude, longitude FROM competitors WHERE user_id = ?').all(req.user.id)
+    const allCompetitors = db.prepare('SELECT id, name, brand, latitude, longitude FROM competitors WHERE user_id = ? AND (status IS NULL OR status NOT IN (\'店铺已关\',\'尚未营业\'))').all(req.user.id)
     const brandCounts = {}
     for (const c of allCompetitors) {
       if (c.latitude && c.longitude) {

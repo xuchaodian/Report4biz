@@ -217,7 +217,8 @@ function countCompetitors(db, lng, lat, radiusM) {
 
     const rows = db.prepare(`
       SELECT COUNT(*) as cnt FROM competitors
-      WHERE latitude BETWEEN ? AND ?
+      WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))
+        AND latitude BETWEEN ? AND ?
         AND longitude BETWEEN ? AND ?
     `).get(
       lat - latDelta, lat + latDelta,

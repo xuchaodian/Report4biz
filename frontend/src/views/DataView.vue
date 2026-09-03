@@ -1785,7 +1785,7 @@ function countStoresInCircle(centerLat, centerLng, radiusM, excludeStoreId) {
     return calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= radiusM
   }).length
 
-  const compCount = competitorStore.competitors.filter(c => {
+  const compCount = competitorStore.activeCompetitors.filter(c => {
     if (c.latitude == null || c.longitude == null) return false
     return calculateDistance(centerLat, centerLng, c.latitude, c.longitude) <= radiusM
   }).length

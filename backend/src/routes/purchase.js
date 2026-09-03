@@ -501,7 +501,7 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
     const purchase = db.prepare(`SELECT center_lng, center_lat FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
     if (!purchase) return res.status(404).json({ message: '记录不存在' })
 
-    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ?`).all(req.user.id)
+    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ? AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(req.user.id)
 
     res.json({
       center: { lat: purchase.center_lat, lng: purchase.center_lng },

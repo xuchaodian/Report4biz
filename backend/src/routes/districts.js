@@ -317,7 +317,7 @@ function pointInFeature(pt, geometry) {
 // 计算商圈内竞品数量
 function countCompetitorsInDistrict(geometry) {
   const db = getDb()
-  const competitors = db.prepare(`SELECT longitude, latitude FROM competitors`).all()
+  const competitors = db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all()
   let count = 0
   for (const c of competitors) {
     if (c.longitude && c.latitude && pointInFeature([c.longitude, c.latitude], geometry)) {

@@ -22,6 +22,12 @@ export const useCompetitorStore = defineStore('competitor', {
       filterBrand: ''
     }
   }),
+
+  getters: {
+    // 有效竞品口径：排除「店铺已关」「尚未营业」（NULL/未知/暂停营业 保留）。
+    // 用于地图图层/圆分析/统计计数/AI 上下文等分析场景；竞品列表管理页仍用全量 competitors
+    activeCompetitors: (state) => state.competitors.filter(c => !['店铺已关', '尚未营业'].includes(c && c.status))
+  },
   
   actions: {
     async fetchCompetitors() {

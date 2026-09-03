@@ -1648,7 +1648,7 @@ const clearAllTimers = () => {
 
 const aiContext = computed(() => ({
   markers_count: markerStore.markers.length,
-  competitors_count: competitorStore.competitors.length,
+  competitors_count: competitorStore.activeCompetitors.length,
   cities: [...new Set(markerStore.markers.map(m => m.city).filter(Boolean))].slice(0, 10),
   brands: [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].slice(0, 10)
 }))
@@ -1775,7 +1775,7 @@ watch(competitionBrands, (val) => {
 })
 const competitionBrandList = computed(() => {
   const brands = new Set()
-  competitorStore.competitors.forEach(c => { if (c.brand) brands.add(c.brand) })
+  competitorStore.activeCompetitors.forEach(c => { if (c.brand) brands.add(c.brand) })
   return [...brands].sort()
 })
 // 竞争数结果：城市分布统计 + 门店坐标（用于图例展开定位）
@@ -1799,8 +1799,8 @@ const DIRECTION_NAMES = ['北', '东北', '东', '东南', '南', '西南', '西
 // 点击竞争强度圆圈 → 计算该店半径内的竞品雷达数据（品牌构成/8方向/威胁评级）
 function openCompetitionRadar(lat, lng, radiusM, store) {
   let allComps = []
-  if (competitorStore.competitors) {
-    allComps = competitorStore.competitors
+  if (competitorStore.activeCompetitors) {
+    allComps = competitorStore.activeCompetitors
     if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
       allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
     }
@@ -2055,7 +2055,7 @@ const potentialCompVal = ref(1)
 const potentialMyBrands = ref([])
 const potentialCompBrands = ref([])
 const potentialMyBrandOptions = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))])
-const potentialCompBrandOptions = computed(() => [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))])
+const potentialCompBrandOptions = computed(() => [...new Set(competitorStore.activeCompetitors.map(c => c.brand).filter(Boolean))])
 // 其他品牌（高德关键词检索）
 const potentialOther1Name = ref('')
 const potentialOther1Op = ref('>')
@@ -2392,9 +2392,9 @@ const analyzeCircleStores = () => {
     .sort((a, b) => a.distance - b.distance)
 
   // 获取可见的竞品门店数据
-  let competitorData = competitorStore.competitors
+  let competitorData = competitorStore.activeCompetitors
   if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
-    competitorData = competitorStore.competitors.filter(c => competitorStore.visibleIds.includes(c.id))
+    competitorData = competitorStore.activeCompetitors.filter(c => competitorStore.visibleIds.includes(c.id))
   }
 
   // 分析竞品门店（按最大半径过滤）
@@ -4851,7 +4851,7 @@ const buildAllStoreCluster = () => {
   }
   
   // 2. 竞品门店（只有开关开启时才聚合）
-  if (showCompetitorLayer.value && competitorStore.competitors && competitorStore.competitors.length > 0) {
+  if (showCompetitorLayer.value && competitorStore.activeCompetitors && competitorStore.activeCompetitors.length > 0) {
     const brandColors = { '大米先生': '#e6a23c', '谷田稻香': '#f56c6c', '吉野家': '#409eff', '老乡鸡': '#67c23a', '米村拌饭': '#9c27b0', '其他': '#ff9800' }
     const getBrandColor = (brand) => {
       if (!brand) return brandColors['其他']
@@ -4860,8 +4860,8 @@ const buildAllStoreCluster = () => {
     }
     const visibleIds = competitorStore.visibleIds
     const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
-      ? competitorStore.competitors.filter(c => visibleIds.includes(c.id))
-      : competitorStore.competitors
+      ? competitorStore.activeCompetitors.filter(c => visibleIds.includes(c.id))
+      : competitorStore.activeCompetitors
     console.log('[聚合] 竞品门店:', data.length)
     data.forEach(c => {
       if (c.latitude && c.longitude) {
@@ -5008,8 +5008,8 @@ const loadCompetitors = async (skipFetch = false) => {
   if (!skipFetch) {
     await competitorStore.fetchCompetitors()
   }
-  console.log('竞品数据:', competitorStore.competitors)
-  console.log('竞品数量:', competitorStore.competitors?.length || 0)
+  console.log('竞品数据:', competitorStore.activeCompetitors)
+  console.log('竞品数量:', competitorStore.activeCompetitors?.length || 0)
 
   // 清除原有竞品图层
   if (competitorLayer) {
@@ -5018,7 +5018,7 @@ const loadCompetitors = async (skipFetch = false) => {
   }
 
   // 如果没有竞品数据，跳过
-  if (!competitorStore.competitors || competitorStore.competitors.length === 0) {
+  if (!competitorStore.activeCompetitors || competitorStore.activeCompetitors.length === 0) {
     console.log('没有竞品数据')
     return
   }
@@ -5026,8 +5026,8 @@ const loadCompetitors = async (skipFetch = false) => {
   // 根据 visibleIds 过滤
   const visibleIds = competitorStore.visibleIds
   const dataToShow = (visibleIds === null || visibleIds === undefined)
-    ? competitorStore.competitors
-    : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
+    ? competitorStore.activeCompetitors
+    : competitorStore.activeCompetitors.filter(c => visibleIds.includes(c.id))
 
   // 创建竞品图层（超过 500 条自动聚合，避免大量 marker 导致卡顿）
   competitorLayer = dataToShow.length > 500
@@ -5134,11 +5134,11 @@ const loadCompetitors = async (skipFetch = false) => {
 
 // 重载竞品图层（供 watcher 调用）
 const reloadCompetitorLayer = () => {
-  if (!map || !competitorStore.competitors || competitorStore.competitors.length === 0) return
+  if (!map || !competitorStore.activeCompetitors || competitorStore.activeCompetitors.length === 0) return
   const visibleIds = competitorStore.visibleIds
   const dataToShow = (visibleIds === null || visibleIds === undefined)
-    ? competitorStore.competitors
-    : competitorStore.competitors.filter(c => visibleIds.includes(c.id))
+    ? competitorStore.activeCompetitors
+    : competitorStore.activeCompetitors.filter(c => visibleIds.includes(c.id))
 
   const wasOnMap = map.hasLayer(competitorLayer)
   if (competitorLayer) { try { map.removeLayer(competitorLayer) } catch(e) {} }
@@ -6287,11 +6287,11 @@ const buildAllStoreHeatmap = () => {
   }
   
   // 2. 竞品门店（只有开关开启时才包含）
-  if (showCompetitorLayer.value && competitorStore.competitors && competitorStore.competitors.length > 0) {
+  if (showCompetitorLayer.value && competitorStore.activeCompetitors && competitorStore.activeCompetitors.length > 0) {
     const visibleIds = competitorStore.visibleIds
     const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
-      ? competitorStore.competitors.filter(c => visibleIds.includes(c.id))
-      : competitorStore.competitors
+      ? competitorStore.activeCompetitors.filter(c => visibleIds.includes(c.id))
+      : competitorStore.activeCompetitors
     data.forEach(c => {
       if (c.latitude && c.longitude) {
         hmData.push([c.latitude, c.longitude, 1])
@@ -6452,8 +6452,8 @@ const applyStoreCircles = () => {
   }
 
   // 2. 竞品门店（开关开启且可见）
-  if (showCompetitorLayer.value && competitorStore.competitors) {
-    let cs = competitorStore.competitors
+  if (showCompetitorLayer.value && competitorStore.activeCompetitors) {
+    let cs = competitorStore.activeCompetitors
     if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
       cs = cs.filter(c => competitorStore.visibleIds.includes(c.id))
     }
@@ -6503,8 +6503,8 @@ const applyStoreCircles = () => {
     // ==== 机会区分析模式：网格扫描竞品密度（0 成本，纯本地计算） ====
     // 竞品数据（不受显示开关影响，确保分析完整；按可见过滤）
     let allComps = []
-    if (competitorStore.competitors) {
-      allComps = competitorStore.competitors
+    if (competitorStore.activeCompetitors) {
+      allComps = competitorStore.activeCompetitors
       if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
         allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
       }
@@ -6620,8 +6620,8 @@ const applyStoreCircles = () => {
       }
     }
     let allComps = []
-    if (competitorStore.competitors) {
-      allComps = competitorStore.competitors
+    if (competitorStore.activeCompetitors) {
+      allComps = competitorStore.activeCompetitors
       if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
         allComps = allComps.filter(c => competitorStore.visibleIds.includes(c.id))
       }
@@ -6744,8 +6744,8 @@ const applyStoreCircles = () => {
 
     // 圆心：指定品牌的竞品门店（可见过滤）
     let trackStores = []
-    if (competitorStore.competitors) {
-      trackStores = competitorStore.competitors.filter(c => c.brand === trackBrand.value)
+    if (competitorStore.activeCompetitors) {
+      trackStores = competitorStore.activeCompetitors.filter(c => c.brand === trackBrand.value)
       if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
         trackStores = trackStores.filter(c => competitorStore.visibleIds.includes(c.id))
       }
@@ -6769,8 +6769,8 @@ const applyStoreCircles = () => {
 
     // 其他竞品（排除指定品牌，可见过滤）
     let otherComps = []
-    if (competitorStore.competitors) {
-      otherComps = competitorStore.competitors.filter(c => c.brand !== trackBrand.value)
+    if (competitorStore.activeCompetitors) {
+      otherComps = competitorStore.activeCompetitors.filter(c => c.brand !== trackBrand.value)
       if (competitorStore.visibleIds !== null && competitorStore.visibleIds !== undefined) {
         otherComps = otherComps.filter(c => competitorStore.visibleIds.includes(c.id))
       }
@@ -7958,12 +7958,12 @@ const markerDistrictList = computed(() => {
 const markerBrandList = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))].sort())
 const markerStoreStatusList = computed(() => [...new Set(markerStore.markers.map(m => m.store_status).filter(Boolean))].sort())
 
-const compCityList = computed(() => [...new Set(competitorStore.competitors.map(m => m.city).filter(Boolean))].sort())
+const compCityList = computed(() => [...new Set(competitorStore.activeCompetitors.map(m => m.city).filter(Boolean))].sort())
 const compDistrictList = computed(() => {
   const city = compFilterCity.value
-  return [...new Set(competitorStore.competitors.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
+  return [...new Set(competitorStore.activeCompetitors.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
 })
-const compBrandList = computed(() => [...new Set(competitorStore.competitors.map(m => m.brand).filter(Boolean))].sort())
+const compBrandList = computed(() => [...new Set(competitorStore.activeCompetitors.map(m => m.brand).filter(Boolean))].sort())
 
 const brandCityList = computed(() => [...new Set(brandStoreStore.brandStores.map(m => m.city).filter(Boolean))].sort())
 const brandDistrictList = computed(() => {
@@ -8024,7 +8024,7 @@ const onStoreSearch = () => {
   locateResults.value.marker = filterByKw(m, kw)
 
   // 竞品门店（独立筛选）
-  let c = competitorStore.competitors
+  let c = competitorStore.activeCompetitors
   if (compFilterCity.value) c = c.filter(i => i.city === compFilterCity.value)
   if (compFilterDistrict.value) c = c.filter(i => i.district === compFilterDistrict.value)
   if (compFilterBrand.value) c = c.filter(i => i.brand === compFilterBrand.value)
@@ -8068,7 +8068,7 @@ const onStoreSearch = () => {
   // 同步地图显示 - 竞品门店
   const compFilterActive = kw || compFilterCity.value || compFilterDistrict.value || compFilterBrand.value || compFilterReviews.value
   if (compFilterActive) {
-    competitorStore.setVisibleIds(competitorStore.competitors.filter(i => {
+    competitorStore.setVisibleIds(competitorStore.activeCompetitors.filter(i => {
       if (kw && !(i.name?.toLowerCase().includes(kw) || i.brand?.toLowerCase().includes(kw) ||
         i.address?.toLowerCase().includes(kw) || i.city?.toLowerCase().includes(kw) ||
         i.district?.toLowerCase().includes(kw) || i.store_code?.toLowerCase().includes(kw))) return false

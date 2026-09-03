@@ -368,6 +368,7 @@ async function executeQueryStats(userId, args) {
     SELECT ${col} as label, COUNT(*) as count
     FROM ${table}
     WHERE user_id = ? AND ${col} IS NOT NULL AND ${col} != ''
+    ${table === 'competitors' ? `AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))` : ''}
     GROUP BY ${col}
     ORDER BY count DESC
     LIMIT 20
@@ -488,8 +489,8 @@ async function buildSurroundingContext(lat, lng, radii, userId, isAdmin) {
   try {
     const db = getDb()
     const comps = db.prepare(
-      isAdmin ? `SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL`
-              : `SELECT brand, longitude, latitude FROM competitors WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL`
+      isAdmin ? `SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+              : `SELECT brand, longitude, latitude FROM competitors WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
     ).all(...(isAdmin ? [] : [userId]))
     const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
     const myStores = db.prepare(

@@ -104,7 +104,7 @@ export async function executeTool(name, args, ctx) {
 
     // ===== 竞品门店 =====
     case 'filter_competitors': {
-      const filtered = competitorStore.competitors.filter(m => {
+      const filtered = competitorStore.activeCompetitors.filter(m => {
         if (args.city && !m.city?.includes(args.city)) return false
         if (args.district && !m.district?.includes(args.district)) return false
         if (args.brand && !m.brand?.includes(args.brand)) return false
@@ -490,7 +490,7 @@ export async function executeTool(name, args, ctx) {
     // ===== 门店数据总览 =====
     case 'get_store_summary': {
       const myStores = markerStore.markers || []
-      const competitors = competitorStore.competitors || []
+      const competitors = competitorStore.activeCompetitors || []
       const brandStores = brandStoreStore.brandStores || []
       const centers = shoppingCenterStore.shoppingCenters || []
 
@@ -517,7 +517,7 @@ export async function executeTool(name, args, ctx) {
     // ===== 生成业务简报 =====
     case 'generate_report': {
       const myStores = markerStore.markers || []
-      const competitors = competitorStore.competitors || []
+      const competitors = competitorStore.activeCompetitors || []
       const cities = [...new Set(myStores.map(s => s.city).filter(Boolean))]
       const brands = [...new Set(competitors.map(s => s.brand).filter(Boolean))].slice(0, 10)
 

@@ -89,7 +89,7 @@ router.get('/opportunity', (req, res) => {
     // 2. 竞品按城市计数
     const compRows = db.prepare(`
       SELECT city, COUNT(*) AS c FROM competitors
-      WHERE city IS NOT NULL AND city != ''
+      WHERE city IS NOT NULL AND city != '' AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))
       GROUP BY city
     `).all()
 

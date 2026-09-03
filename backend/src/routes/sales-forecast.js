@@ -288,8 +288,8 @@ async function calcRadiusPoints(db, lat, lng, userId, isAdmin) {
   }
   try {
     const comps = db.prepare(
-      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
-              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
     ).all(...(isAdmin ? [] : [userId]))
     const myStores = db.prepare(
       isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
@@ -445,8 +445,8 @@ function countNearby(db, lat, lng, radius, userId, isAdmin) {
   }
   try {
     const comps = db.prepare(
-      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
-              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
     ).all(...(isAdmin ? [] : [userId]))
     const my = db.prepare(
       isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
