@@ -324,7 +324,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         db.exec(`DELETE FROM competitors WHERE user_id=${req.user.id} AND brand=${esc(brand)} AND snapshot_id IS NOT NULL`)
         deletedSnapshotRows += changedRows()
         // ---- 5. 写入新镜像（仅坐标完整行；缺坐标行只进快照溯源，地图/列表不需要）----
-        const insertSql = `INSERT INTO competitors (store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, user_id, industry, price, rating, reviews, taste_score, environment_score, service_score, period, snapshot_id, created_at, updated_at)
+        const insertSql = `INSERT INTO competitors (store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, user_id, industry, trading_area, price, rating, reviews, taste_score, environment_score, service_score, period, snapshot_id, created_at, updated_at)
           VALUES (`
         for (const r of cleanRows) {
           if (r.latitude === null || r.longitude === null) continue
@@ -334,7 +334,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             esc(r.city), esc(r.district), esc(r.address), escKeepEmpty(r.description),
             r.latitude, r.longitude,
             esc(statusText), `'#f56c6c'`, req.user.id,
-            esc(r.industry), r.price, r.rating, r.reviews, 0, 0, 0,
+            esc(r.industry), esc(r.trading_area), r.price, r.rating, r.reviews, 0, 0, 0,
             esc(pp.label), snapshotId, `datetime('now')`, `datetime('now')`
           ].join(',')
           db.exec(insertSql + vals + ')')

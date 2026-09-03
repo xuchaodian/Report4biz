@@ -55,7 +55,7 @@ router.post('/', authenticate, (req, res) => {
       city, district, address,
       description,
       latitude, longitude, status, icon_color,
-      industry, price, rating, reviews, taste_score, environment_score, service_score
+      industry, trading_area, price, rating, reviews, taste_score, environment_score, service_score
     } = req.body
 
     if (!name || latitude === undefined || longitude === undefined) {
@@ -69,15 +69,15 @@ router.post('/', authenticate, (req, res) => {
         city, district, address,
         description,
         latitude, longitude, status, icon_color, user_id,
-        industry, price, rating, reviews, taste_score, environment_score, service_score,
+        industry, trading_area, price, rating, reviews, taste_score, environment_score, service_score,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       store_code || '', brand || '', name, store_type || '竞品', store_category || '',
       city || '', district || '', address || '',
       description || '',
       latitude, longitude, status || '正常', icon_color || '#f56c6c', req.user.id,
-      industry || '', price || 0, rating || 0, reviews || 0, taste_score || 0, environment_score || 0, service_score || 0
+      industry || '', trading_area || '', price || 0, rating || 0, reviews || 0, taste_score || 0, environment_score || 0, service_score || 0
     )
 
     const competitor = db.prepare('SELECT * FROM competitors WHERE id = ?').get(result.lastInsertRowid)
@@ -100,7 +100,7 @@ router.put('/:id', authenticate, (req, res) => {
       city, district, address,
       description,
       latitude, longitude, status, icon_color,
-      industry, price, rating, reviews, taste_score, environment_score, service_score
+      industry, trading_area, price, rating, reviews, taste_score, environment_score, service_score
     } = req.body
 
     const db = getDb()
@@ -117,7 +117,7 @@ router.put('/:id', authenticate, (req, res) => {
         city = ?, district = ?, address = ?,
         description = ?,
         latitude = ?, longitude = ?, status = ?, icon_color = ?,
-        industry = ?, price = ?, rating = ?, reviews = ?, taste_score = ?, environment_score = ?, service_score = ?,
+        industry = ?, trading_area = ?, price = ?, rating = ?, reviews = ?, taste_score = ?, environment_score = ?, service_score = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -135,6 +135,7 @@ router.put('/:id', authenticate, (req, res) => {
       status ?? existingCompetitor.status,
       icon_color ?? existingCompetitor.icon_color,
       industry ?? existingCompetitor.industry,
+      trading_area ?? existingCompetitor.trading_area,
       price ?? existingCompetitor.price,
       rating ?? existingCompetitor.rating,
       reviews ?? existingCompetitor.reviews,
@@ -260,12 +261,12 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             esc(row.status || '正常'),
             esc(row.icon_color || '#f56c6c'),
             String(req.user.id),
-            esc(row.industry || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
+            esc(row.industry || ''), esc(row.trading_area || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
             esc(parseInt(row.reviews) || 0), esc(parseFloat(row.taste_score) || 0),
             esc(parseFloat(row.environment_score) || 0), esc(parseFloat(row.service_score) || 0),
             "datetime('now')", "datetime('now')"
           ].join(',')
-          db.exec('INSERT INTO competitors (store_code,brand,name,store_type,store_category,city,district,address,description,latitude,longitude,status,icon_color,user_id,industry,price,rating,reviews,taste_score,environment_score,service_score,created_at,updated_at) VALUES (' + vals + ')')
+          db.exec('INSERT INTO competitors (store_code,brand,name,store_type,store_category,city,district,address,description,latitude,longitude,status,icon_color,user_id,industry,trading_area,price,rating,reviews,taste_score,environment_score,service_score,created_at,updated_at) VALUES (' + vals + ')')
           imported++
         }
         db.exec('COMMIT')

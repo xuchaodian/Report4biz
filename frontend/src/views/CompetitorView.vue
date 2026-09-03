@@ -90,7 +90,7 @@
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
         <el-table-column prop="address" label="地址" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="industry" label="行业分类" width="110" show-overflow-tooltip />
+        <el-table-column prop="trading_area" label="商圈" width="120" show-overflow-tooltip />
         <el-table-column prop="price" label="价格" width="80">
           <template #default="{ row }">
             <span>{{ row.price ? '¥' + row.price : '-' }}</span>
@@ -250,8 +250,8 @@
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="行业分类" prop="industry">
-              <el-input v-model="form.industry" placeholder="如: 快餐/奶茶" />
+            <el-form-item label="商圈" prop="trading_area">
+              <el-input v-model="form.trading_area" placeholder="如: 人民广场商圈/徐家汇商圈" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -454,7 +454,7 @@ const form = reactive({
   description: '',
   latitude: 39.9042,
   longitude: 116.4074,
-  industry: '',
+  trading_area: '',
   price: 0,
   rating: 0,
   reviews: 0,
@@ -562,7 +562,7 @@ const showAddDialog = () => {
     store_code: '', brand: '', name: '', store_category: '',
     status: '正常', city: '', district: '', address: '',
     description: '', latitude: 39.9042, longitude: 116.4074,
-    industry: '', price: 0, rating: 0, reviews: 0,
+    trading_area: '', price: 0, rating: 0, reviews: 0,
     taste_score: 0, environment_score: 0, service_score: 0
   })
   dialogVisible.value = true
@@ -583,7 +583,7 @@ const handleEdit = (row) => {
     description: row.description || '',
     latitude: row.latitude,
     longitude: row.longitude,
-    industry: row.industry || '',
+    trading_area: row.trading_area || '',
     price: row.price || 0,
     rating: row.rating || 0,
     reviews: row.reviews || 0,

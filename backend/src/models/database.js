@@ -260,6 +260,8 @@ export async function initDatabase() {
   } catch (e) { /* 列已存在，忽略 */ }
   // 迁移：添加竞品评分字段
   try { db.run(`ALTER TABLE competitors ADD COLUMN industry TEXT`) } catch (e) {}
+  // 迁移：竞品商圈字段（v1.13.88：上传模板 industry→trading_area，industry 保留列不再采集）
+  try { db.run(`ALTER TABLE competitors ADD COLUMN trading_area TEXT`) } catch (e) {}
   try { db.run(`ALTER TABLE competitors ADD COLUMN price REAL DEFAULT 0`) } catch (e) {}
   try { db.run(`ALTER TABLE competitors ADD COLUMN rating REAL DEFAULT 0`) } catch (e) {}
   try { db.run(`ALTER TABLE competitors ADD COLUMN reviews INTEGER DEFAULT 0`) } catch (e) {}

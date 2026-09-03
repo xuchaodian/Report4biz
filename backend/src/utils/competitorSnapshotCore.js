@@ -128,6 +128,7 @@ const COLUMN_ALIASES = {
   category: ['store_category', 'category', '门店分类', '分类', '业态'],
   store_type: ['store_type', 'type', '门店类型', '类型'],
   industry: ['industry', '行业', '行业分类', '品类'],
+  trading_area: ['trading_area', 'trade_area', '商圈', '商圈名', '所属商圈'],
   price: ['price', '价格', '人均', '客单价'],
   rating: ['rating', '星级', '评分', 'score'],
   reviews: ['reviews', '评论数', '评论', '点评数'],
@@ -223,7 +224,7 @@ export function parseYearMonthLabel(text) {
  * 把 PapaParse 原始行数组 → 归一化行
  * 校验策略（§5/§10-6）：缺 store_key → 拒绝整批（防 diff 误判 closed）；同文件重复 key → 保留首行并告警计数
  * @returns {{rows: [], noKeyCount, dupKeyCount, missingCoordCount, missingNameCount}}
- *   row: {store_key,name,brand,city,district,address,latitude,longitude,status,store_type,category,industry,price,rating,reviews,description,extra}
+ *   row: {store_key,name,brand,city,district,address,latitude,longitude,status,store_type,category,industry,trading_area,price,rating,reviews,description,extra}
  */
 export function normalizeRows(parsedRows) {
   const out = []
@@ -251,6 +252,7 @@ export function normalizeRows(parsedRows) {
     const { value: catV } = pickCsvField(raw, 'category')
     const { value: typeV } = pickCsvField(raw, 'store_type')
     const { value: indV } = pickCsvField(raw, 'industry')
+    const { value: taV } = pickCsvField(raw, 'trading_area')
     const { value: priceV } = pickCsvField(raw, 'price')
     const { value: ratingV } = pickCsvField(raw, 'rating')
     const { value: reviewsV } = pickCsvField(raw, 'reviews')
@@ -270,11 +272,12 @@ export function normalizeRows(parsedRows) {
       store_type: String(typeV ?? '').trim(),
       category: String(catV ?? '').trim(),
       industry: String(indV ?? '').trim(),
+      trading_area: String(taV ?? '').trim(),
       price: priceV === undefined || priceV === '' ? 0 : parseFloat(priceV) || 0,
       rating: ratingV === undefined || ratingV === '' ? 0 : parseFloat(ratingV) || 0,
       reviews: reviewsV === undefined || reviewsV === '' ? 0 : parseInt(reviewsV) || 0,
       description: String(descV ?? '').trim(),
-      extra: JSON.stringify({ category: String(catV ?? '').trim(), store_type: String(typeV ?? '').trim(), industry: String(indV ?? '').trim(), status_raw: String(statusV ?? '').trim() })
+      extra: JSON.stringify({ category: String(catV ?? '').trim(), store_type: String(typeV ?? '').trim(), industry: String(indV ?? '').trim(), trading_area: String(taV ?? '').trim(), status_raw: String(statusV ?? '').trim() })
     })
   }
   return { rows: out, noKeyCount, dupKeyCount, missingCoordCount, missingNameCount }
