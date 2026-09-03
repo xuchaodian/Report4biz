@@ -18,6 +18,7 @@ export const useCompetitorStore = defineStore('competitor', {
       searchKeyword: '',
       filterCity: '',
       filterDistrict: '',
+      filterTradingArea: '',
       filterBrand: '',
       filterCategory: ''
     }
@@ -131,6 +132,7 @@ export const useCompetitorStore = defineStore('competitor', {
         searchKeyword: '',
         filterCity: '',
         filterDistrict: '',
+        filterTradingArea: '',
         filterBrand: '',
         filterCategory: ''
       }

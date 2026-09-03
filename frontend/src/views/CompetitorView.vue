@@ -50,6 +50,10 @@
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
+      <el-select v-model="filterTradingArea" placeholder="按商圈" style="width: 150px" clearable @change="handleSearch">
+        <el-option v-for="a in tradingAreaList" :key="a" :label="a" :value="a" />
+      </el-select>
+
       <el-select v-model="filterBrand" placeholder="按品牌" style="width: 200px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
@@ -324,6 +328,7 @@ const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼�
 const searchKeyword = ref('')
 const filterCity = ref('')
 const filterDistrict = ref('')
+const filterTradingArea = ref('')
 const filterBrand = ref([])
 const filterCategory = ref('')
 const filterMinStars = ref(null)
@@ -337,6 +342,7 @@ const SAVE_FIELDS = () => ({
   searchKeyword: searchKeyword.value,
   filterCity: filterCity.value,
   filterDistrict: filterDistrict.value,
+  filterTradingArea: filterTradingArea.value,
   filterBrand: filterBrand.value,
   filterCategory: filterCategory.value,
   filterMinStars: filterMinStars.value,
@@ -353,6 +359,7 @@ const restoreFiltersFromLS = () => {
     searchKeyword.value = f.searchKeyword || ''
     filterCity.value = f.filterCity || ''
     filterDistrict.value = f.filterDistrict || ''
+    filterTradingArea.value = f.filterTradingArea || ''
     filterBrand.value = Array.isArray(f.filterBrand) ? f.filterBrand : (f.filterBrand ? [f.filterBrand] : [])
     filterCategory.value = f.filterCategory || ''
     filterMinStars.value = f.filterMinStars ?? null
@@ -369,6 +376,7 @@ watch(() => competitorStore.filters, (newFilters) => {
   searchKeyword.value = newFilters.searchKeyword
   filterCity.value = newFilters.filterCity
   filterDistrict.value = newFilters.filterDistrict
+  filterTradingArea.value = newFilters.filterTradingArea || ''
   filterBrand.value = Array.isArray(newFilters.filterBrand) ? newFilters.filterBrand : (newFilters.filterBrand ? [newFilters.filterBrand] : [])
   filterCategory.value = newFilters.filterCategory
 }, { deep: true })
@@ -379,6 +387,7 @@ const syncFiltersToStore = () => {
     searchKeyword: searchKeyword.value,
     filterCity: filterCity.value,
     filterDistrict: filterDistrict.value,
+    filterTradingArea: filterTradingArea.value,
     filterBrand: filterBrand.value,
     filterCategory: filterCategory.value
   })
@@ -395,6 +404,7 @@ onMounted(() => {
       searchKeyword: searchKeyword.value,
       filterCity: filterCity.value,
       filterDistrict: filterDistrict.value,
+      filterTradingArea: filterTradingArea.value,
       filterBrand: filterBrand.value,
       filterCategory: filterCategory.value
     })
@@ -403,6 +413,7 @@ onMounted(() => {
     searchKeyword.value = competitorStore.filters.searchKeyword
     filterCity.value = competitorStore.filters.filterCity
     filterDistrict.value = competitorStore.filters.filterDistrict
+    filterTradingArea.value = competitorStore.filters.filterTradingArea || ''
     filterBrand.value = Array.isArray(competitorStore.filters.filterBrand)
       ? competitorStore.filters.filterBrand
       : (competitorStore.filters.filterBrand ? [competitorStore.filters.filterBrand] : [])
@@ -412,7 +423,7 @@ onMounted(() => {
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterCity.value || filterDistrict.value || filterBrand.value.length || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
+  return searchKeyword.value || filterCity.value || filterDistrict.value || filterTradingArea.value || filterBrand.value.length || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
 })
 
 // 品牌颜色映射
@@ -480,11 +491,32 @@ const districtList = computed(() => {
   return [...new Set(competitorStore.competitors.filter(c => !city || c.city === city).map(c => c.district).filter(Boolean))].sort()
 })
 
-// 城市切换时清空区县
+// 商圈列表（联动城市+区县：城市→区县→商圈 三级收窄）
+const tradingAreaList = computed(() => {
+  const city = filterCity.value
+  const district = filterDistrict.value
+  return [...new Set(competitorStore.competitors
+    .filter(c => (!city || c.city === city) && (!district || c.district === district))
+    .map(c => c.trading_area).filter(Boolean))].sort()
+})
+
+// 城市切换时清空区县；商圈不在新城市范围时一并清空
 watch(filterCity, (newCity) => {
   if (newCity && filterDistrict.value) {
     const districts = [...new Set(competitorStore.competitors.filter(c => c.city === newCity).map(c => c.district).filter(Boolean))]
     if (!districts.includes(filterDistrict.value)) filterDistrict.value = ''
+  }
+  if (filterTradingArea.value) {
+    const areas = tradingAreaList.value
+    if (!areas.includes(filterTradingArea.value)) filterTradingArea.value = ''
+  }
+})
+
+// 区县切换时清空不在该区县内的商圈
+watch(filterDistrict, (newDistrict) => {
+  if (filterTradingArea.value) {
+    const areas = tradingAreaList.value
+    if (!areas.includes(filterTradingArea.value)) filterTradingArea.value = ''
   }
 })
 
@@ -508,11 +540,12 @@ const filteredCompetitors = computed(() => {
       (comp.brand && comp.brand.toLowerCase().includes(searchKeyword.value.toLowerCase()))
     const matchCity = !filterCity.value || comp.city === filterCity.value
     const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
+    const matchTradingArea = !filterTradingArea.value || (comp.trading_area && comp.trading_area === filterTradingArea.value)
     const matchBrand = !filterBrand.value.length || filterBrand.value.includes(comp.brand)
     const matchCategory = !filterCategory.value || comp.store_category === filterCategory.value
     const matchStars = !filterMinStars.value || (comp.rating && comp.rating >= filterMinStars.value)
     const matchReviews = !filterMinReviews.value || (comp.reviews && comp.reviews >= filterMinReviews.value)
-    return matchKeyword && matchCity && matchDistrict && matchBrand && matchCategory && matchStars && matchReviews
+    return matchKeyword && matchCity && matchDistrict && matchTradingArea && matchBrand && matchCategory && matchStars && matchReviews
   })
 })
 
@@ -546,6 +579,7 @@ const handleClearFilters = () => {
   searchKeyword.value = ''
   filterCity.value = ''
   filterDistrict.value = ''
+  filterTradingArea.value = ''
   filterBrand.value = []
   filterCategory.value = ''
   filterMinStars.value = null
