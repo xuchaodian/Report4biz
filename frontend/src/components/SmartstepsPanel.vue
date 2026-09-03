@@ -88,7 +88,7 @@
           </el-form-item>
         </el-form>
         <div class="query-info">
-          <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 请在当月20日之后选择上月数据</span>
+          <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
         </div>
       </div>
 
@@ -167,6 +167,7 @@ import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useUserStore } from '@/stores/user'
+import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 
 const props = defineProps({
   visible: Boolean,
@@ -315,28 +316,11 @@ function stopDrag() {
   document.removeEventListener('mouseup', stopDrag)
 }
 
-// 加载可选月份（动态计算最近两个月）
+// 加载可选月份（优先取联通 getCityMonth 实测可用月份，失败降级本地最近两月）
 async function loadAvailableMonths() {
-  const now = new Date()
-  const months = []
-  
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
-
-  for (let i = 1; i <= 2; i++) {
-    let month = currentMonth - i
-    let year = currentYear
-    if (month <= 0) { month += 12; year -= 1 }
-    const padded = String(month).padStart(2, '0')
-    months.push({
-      value: `${year}${padded}`,
-      label: `${year}年${month}月`
-    })
-  }
-
-  availableMonths.value = months
-  if (months.length > 0) {
-    queryForm.value.cityMonth = months[0].value
+  availableMonths.value = await fetchAvailableMonths()
+  if (availableMonths.value.length > 0) {
+    queryForm.value.cityMonth = availableMonths.value[0].value
   }
 }
 

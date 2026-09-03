@@ -261,6 +261,59 @@ router.get('/token', async (req, res) => {
 })
 
 /**
+ * 查询可用数据月份（免费，不占调用次数）
+ * 联通 getData 数据通常滞后当前约2个月，正式查询前先用 getCityMonth 探测，
+ * 避免选中无数据月份导致 60元/次 的无效调用。
+ * 返回内部格式: [{ value: 'YYYYMM', label: 'YYYY年M月' }]，最新在前
+ */
+router.get('/months', authenticate, async (req, res) => {
+  try {
+    // 复用 getAuthorization 的 token 缓存（10min）
+    const token = await getAuthorization()
+
+    const response = await fetch(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getCityMonth`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'authorization': token
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`查询数据月份失败: ${response.status} ${errorText}`)
+    }
+
+    const apiResponse = await response.json()
+    if (apiResponse.code !== 200) {
+      throw new Error('数据月份响应异常: ' + JSON.stringify(apiResponse))
+    }
+
+    const rawMonths = Array.isArray(apiResponse.data) ? apiResponse.data : []
+    // 归一化：兼容联通返回 "YYYY-MM"（实测）与 "YYYYMM" 两种格式
+    const months = rawMonths
+      .map((m) => {
+        const s = String(m).trim()
+        const match = s.match(/^(\d{4})[-]?(\d{1,2})$/)
+        if (!match) return null
+        const year = match[1]
+        const monthNum = parseInt(match[2], 10)
+        if (monthNum < 1 || monthNum > 12) return null
+        return { value: `${year}${String(monthNum).padStart(2, '0')}`, label: `${year}年${monthNum}月` }
+      })
+      .filter(Boolean)
+      // 去重 + 倒序（最新在前）
+      .sort((a, b) => String(b.value).localeCompare(String(a.value)))
+      .filter((m, i, arr) => i === 0 || m.value !== arr[i - 1].value)
+
+    res.json({ months, raw: rawMonths })
+  } catch (error) {
+    console.error('获取数据月份失败:', error)
+    res.status(500).json({ message: error.message })
+  }
+})
+
+/**
  * 查询服务列表
  */
 router.get('/services', (req, res) => {

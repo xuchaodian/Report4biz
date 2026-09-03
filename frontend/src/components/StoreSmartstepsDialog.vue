@@ -80,7 +80,7 @@
     </el-form>
 
     <div class="query-info">
-      <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 请在当月20日之后选择上月数据</span>
+      <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
     </div>
 
     <div class="quota-section">
@@ -265,6 +265,7 @@ import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
+import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 
 const userStore = useUserStore()
 // VIP 用户（管理员视为 VIP）
