@@ -12,6 +12,9 @@ const dbPath = join(dbDir, 'webgis.db')
 
 let db = null
 let SQL = null
+// 事务标志：beginTx 后为 true，期间 prepare().run() 抑制逐次全库写盘，
+// 由 commitTx/rollbackTx 结束时统一 saveDatabase()（保证磁盘=内存且避免半截状态落盘）
+let inTransaction = false
 
 // 确保数据库目录存在
 if (!fs.existsSync(dbDir)) {
@@ -762,6 +765,24 @@ export function getDb() {
     saveNow: () => {
       saveDatabase()
     },
+
+    // ===== 事务原语（方案A v1.13.86）=====
+    // 用法：beginTx() → 若干 prepare().run() → commitTx() / rollbackTx()
+    // 事务期间 run() 不逐次写盘，结束时统一 saveDatabase()，保证原子持久化
+    beginTx: () => {
+      db.exec('BEGIN TRANSACTION')
+      inTransaction = true
+    },
+    commitTx: () => {
+      db.exec('COMMIT')
+      inTransaction = false
+      try { saveDatabase() } catch (err) { console.error('事务提交后写盘失败(内存已生效):', err) }
+    },
+    rollbackTx: () => {
+      try { db.exec('ROLLBACK') } catch (err) { console.error('事务回滚执行失败:', err) }
+      inTransaction = false
+      try { saveDatabase() } catch (err) { console.error('事务回滚后写盘失败(磁盘可能残留未提交脏页，建议重启后校验):', err) }
+    },
     
     // 执行单行查询
     prepare: (sql) => ({
@@ -785,7 +806,7 @@ export function getDb() {
         // 曾导致 register / competitors POST 响应丢失新行 id（响应只含 message）。
         const rowid = db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0
         const affected = db.getRowsModified()
-        saveDatabase()
+        if (!inTransaction) saveDatabase()
         return {
           lastInsertRowid: rowid,
           changes: affected

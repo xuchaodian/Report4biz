@@ -524,40 +524,53 @@ router.post('/query', authenticate, async (req, res) => {
     const isEmptyData = !querySuccess ? true : checkIfDataIsEmpty(result)
     
     // 实际扣减的配额（查询失败或空数据时为0）
-    const actualQuotaUsed = isEmptyData ? 0 : quotaUsed
+    let actualQuotaUsed = isEmptyData ? 0 : quotaUsed
     
-    // 记录到purchases表（查询成功且有数据才标记 active，否则 failed，避免计入已购报表/购买履历）
+    // 落库+扣配额+写缓存 → 事务化：三者要么全部生效，要么全部回滚，
+    // 杜绝"有履历没扣配额 / 扣了配额没履历"的中间不一致状态（方案A, v1.13.86）
     let purchaseId = null
     try {
-      const recordStatus = (querySuccess && !isEmptyData) ? 'active' : 'failed'
-      const insertResult = db.prepare(`
-        INSERT INTO purchases (
-          user_id, store_name, store_type, center_lng, center_lat, radius,
-          city_month, quota_used, status, result_data
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        req.user.id,
-        storeName || '',
-        storeType || '',
-        centerLng,
-        centerLat,
-        JSON.stringify(radii || [radius]),
-        cityMonth || '',
-        actualQuotaUsed,
-        recordStatus,
-        JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
-      )
-      purchaseId = insertResult.lastInsertRowid
-      
-      // 仅在查询成功且非空数据时扣减配额和缓存
-      if (querySuccess && !isEmptyData) {
-        db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
-        
-        // 保存到缓存
-        saveToCache(db, centerLng, centerLat, radius, cityMonth, services, result)
+      db.beginTx()
+      try {
+        const recordStatus = (querySuccess && !isEmptyData) ? 'active' : 'failed'
+        const insertResult = db.prepare(`
+          INSERT INTO purchases (
+            user_id, store_name, store_type, center_lng, center_lat, radius,
+            city_month, quota_used, status, result_data
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          req.user.id,
+          storeName || '',
+          storeType || '',
+          centerLng,
+          centerLat,
+          JSON.stringify(radii || [radius]),
+          cityMonth || '',
+          actualQuotaUsed,
+          recordStatus,
+          JSON.stringify({ querySuccess, apiResult: result, refunded: isEmptyData })
+        )
+        purchaseId = insertResult.lastInsertRowid
+
+        // 仅在查询成功且非空数据时扣减配额和缓存（与 INSERT 同事务，任一步失败整体回滚）
+        if (querySuccess && !isEmptyData) {
+          db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
+
+          // 保存到缓存（自身内部失败仅记日志，不影响 purchases/配额一致性）
+          saveToCache(db, centerLng, centerLat, radius, cityMonth, services, result)
+        }
+        db.commitTx()
+      } catch (txError) {
+        try { db.rollbackTx() } catch (rollbackError) {
+          console.error('事务回滚失败:', rollbackError)
+        }
+        throw txError
       }
     } catch (dbError) {
-      console.error('记录配额使用失败:', dbError)
+      // 事务整体失败：履历未写、配额未扣（已回滚），对外按"实际扣减0"返回，保持与购买履历/对账口径一致
+      console.error(`记录配额使用失败(事务已回滚，未扣配额) store=${storeName || ''} radius=${radius}:`, dbError)
+      purchaseId = null
+      actualQuotaUsed = 0
     }
     
     // 返回结果（包含扣减后的配额，空数据时返还）
