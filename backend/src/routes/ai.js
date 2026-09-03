@@ -470,7 +470,7 @@ async function executeCalculatePotential(args) {
 // ===== 品牌选址建议（数据洞察 → AI）=====
 // 读取门店品牌 + 业态映射 + 联通智慧足迹数据摘要，调用豆包给出是否符合品牌定位的选址建议
 // 周边环境要素：半径内竞品/购物中心/我的门店（DB 距离计算）+ 地铁站（高德周边搜索）
-async function buildSurroundingContext(lat, lng, radii) {
+async function buildSurroundingContext(lat, lng, radii, userId, isAdmin) {
   // 归一化半径数组：数字、去重、升序；无则默认 1000 米
   let rs = Array.isArray(radii) ? radii.map(Number).filter(n => n > 0) : []
   rs = [...new Set(rs)].sort((a, b) => a - b)
@@ -487,9 +487,15 @@ async function buildSurroundingContext(lat, lng, radii) {
   const lines = []
   try {
     const db = getDb()
-    const comps = db.prepare('SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
+    const comps = db.prepare(
+      isAdmin ? `SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL`
+              : `SELECT brand, longitude, latitude FROM competitors WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
     const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
-    const myStores = db.prepare('SELECT longitude, latitude FROM markers WHERE longitude IS NOT NULL AND latitude IS NOT NULL').all()
+    const myStores = db.prepare(
+      isAdmin ? `SELECT longitude, latitude FROM markers WHERE longitude IS NOT NULL AND latitude IS NOT NULL`
+              : `SELECT longitude, latitude FROM markers WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
     // 逐半径统计：竞品/购物中心/我的门店
     const compCounts = [], centerCounts = [], myCounts = []
     for (const r of rs) {
@@ -576,7 +582,7 @@ router.post('/site-advice', authenticate, async (req, res) => {
     // 周边环境要素：竞品/购物中心/我的门店（DB）+ 地铁站（高德周边搜索）
     let surroundings = ''
     try {
-      surroundings = await buildSurroundingContext(lat, lng, radii || (radiusMeters ? [radiusMeters] : null))
+      surroundings = await buildSurroundingContext(lat, lng, radii || (radiusMeters ? [radiusMeters] : null), req.user.id, req.user.role === 'admin')
       console.log('[site-advice] surroundings:', surroundings)
     } catch (e) {
       console.error('[site-advice] 周边要素获取失败:', e.message)

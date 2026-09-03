@@ -276,7 +276,7 @@ async function amapCount(lng, lat, radius, kw) {
   }
 }
 // 半径点位信息：竞品/我的门店（DB 快算）+ 写字楼/大学/医院/地铁/购物中心（高德）
-async function calcRadiusPoints(db, lat, lng) {
+async function calcRadiusPoints(db, lat, lng, userId, isAdmin) {
   const out = { competitors500: 0, myStores500: 0, offices: {}, universities: {}, hospitals: {}, metro500: null, malls500: null }
   if (!lat || !lng) return out
   const R = 6371000
@@ -287,8 +287,14 @@ async function calcRadiusPoints(db, lat, lng) {
     return 2 * R * Math.asin(Math.sqrt(a))
   }
   try {
-    const comps = db.prepare('SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
-    const myStores = db.prepare('SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    const comps = db.prepare(
+      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
+    const myStores = db.prepare(
+      isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
     out.competitors500 = comps.filter(c => dist(c.latitude, c.longitude) <= 500).length
     out.myStores500 = myStores.filter(s => dist(s.latitude, s.longitude) <= 500).length
   } catch (e) {
@@ -428,8 +434,8 @@ const DELIVERY_RATIO_MAP = {
   '食其家': 40, '吉野家': 40, '老乡鸡': 35, '大米先生': 45, '米村拌饭': 35, '谷田稻香': 45, '杨国福': 50, '张亮麻辣烫': 50,
   '西塔老太太': 15, '海底捞': 15, '呷哺呷哺': 20, '外婆家': 10, '绿茶餐厅': 10
 }
-// 半径 500m 内竞品/我的门店数（DB 快算）
-function countNearby(db, lat, lng, radius) {
+// 半径内竞品/我的门店数（DB 快算，按用户隔离：admin=名下全量运营数据，普通用户=仅自己上传）
+function countNearby(db, lat, lng, radius, userId, isAdmin) {
   const R = 6371000
   const dist = (la, lo) => {
     const dLat = (la - lat) * Math.PI / 180
@@ -438,8 +444,14 @@ function countNearby(db, lat, lng, radius) {
     return 2 * R * Math.asin(Math.sqrt(a))
   }
   try {
-    const comps = db.prepare('SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
-    const my = db.prepare('SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL').all()
+    const comps = db.prepare(
+      isAdmin ? `SELECT latitude, longitude FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
+    const my = db.prepare(
+      isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+    ).all(...(isAdmin ? [] : [userId]))
     return { comp: comps.filter(x => dist(x.latitude, x.longitude) <= radius).length, my: my.filter(x => dist(x.latitude, x.longitude) <= radius).length }
   } catch (e) { return { comp: 0, my: 0 } }
 }
@@ -493,7 +505,7 @@ function buildTrainingSet(db, userId, isAdmin) {
     const d = findDistrict(m.latitude, m.longitude)
     const dv = d ? districtProfileVector(d) : [0, 0, 0, 0]
     const pop = calcRadiusPopulation(db, m.latitude, m.longitude, m.city)
-    const nearby = countNearby(db, m.latitude, m.longitude, 500)
+    const nearby = countNearby(db, m.latitude, m.longitude, 500, userId, isAdmin)
     const dr = rec.dr != null && rec.dr !== '' ? Number(rec.dr) : (DELIVERY_RATIO_MAP[m.brand] ?? 35)
     rows.push({
       store: m, year: rec.year, area: rec.area, salesAmount: rec.amount, deliveryRatio: dr,
@@ -594,10 +606,10 @@ function haversineDist(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a))
 }
 // 参照店特征（与训练样本同构，供影响模拟）
-function buildXForRef(db, ref) {
+function buildXForRef(db, ref, userId, isAdmin) {
   const dv = ref.district ? districtProfileVector(ref.district) : [0, 0, 0, 0]
   const pop = calcRadiusPopulation(db, ref.lat, ref.lng, ref.city)
-  const nearby = countNearby(db, ref.lat, ref.lng, 500)
+  const nearby = countNearby(db, ref.lat, ref.lng, 500, userId, isAdmin)
   const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? 35)
   return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0, unicomVector(db, ref.name))
 }
@@ -735,7 +747,7 @@ router.post('/predict', authenticate, async (req, res) => {
     // 候选店半径常住人口（免费网格 1/3/5km，结果卡片展示 + 降级链第 2 级画像匹配）
     const candPop = calcRadiusPopulation(db, cand.latitude, cand.longitude, cand.city)
     // 候选店半径点位信息（竞品/我的门店 DB + 写字楼/大学/医院/地铁/购物中心 高德 POI）
-    const candPoints = await calcRadiusPoints(db, cand.latitude, cand.longitude)
+    const candPoints = await calcRadiusPoints(db, cand.latitude, cand.longitude, req.user.id, isAdmin)
 
     const candRef = {
       brand: cand.brand,
@@ -773,11 +785,11 @@ router.post('/predict', authenticate, async (req, res) => {
         console.log('[sales-forecast] L3 cond:', l3m ? 'model mape=' + l3m.mape.toFixed(3) : 'NO-MODEL', 'cvL2=' + cvL2.mape.toFixed(3), '=>', l3Use)
         if (l3Use) {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
-          const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
+          const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
           const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
           const nearRefs = refs.filter(r => haversineDist(cand.latitude, cand.longitude, r.lat, r.lng) <= 3000)
-          const X_near = nearRefs.map(r => buildXForRef(db, r))
+          const X_near = nearRefs.map(r => buildXForRef(db, r, req.user.id, isAdmin))
           const pr = await postJson(L3_URL + '/predict', { X_cand: candX, X_near })
           if (pr && pr.success) {
             const predictComp = Math.round(pr.predEff * candArea)
@@ -827,7 +839,7 @@ router.post('/predict', authenticate, async (req, res) => {
         if (cv.mape < 0.35) {
           const model = ridgeFitStd(trainSet.map(r => r.X), trainSet.map(r => r.y), 1)
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
-          const nearby = countNearby(db, cand.latitude, cand.longitude, 500)
+          const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
           const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
           const predLog = model.predictRaw(candX)
