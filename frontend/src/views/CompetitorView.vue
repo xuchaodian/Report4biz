@@ -58,10 +58,6 @@
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
-      <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
-        <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
-      </el-select>
-
       <el-input-number v-model="filterMinStars" :min="1" :max="5" :step="1" placeholder="最低星级" style="width: 110px" controls-position="right" @change="handleSearch" />
       <el-input-number v-model="filterMinReviews" :min="1" :step="10" placeholder="最少评论" style="width: 120px" controls-position="right" @change="handleSearch" />
 
@@ -182,30 +178,15 @@
           </el-col>
         </el-row>
 
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="名称" prop="name">
-              <el-input v-model="form.name" placeholder="门店名称" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="门店分类" prop="store_category">
-              <el-select v-model="form.store_category" placeholder="请选择" style="width: 100%" allow-create filterable>
-                <el-option v-for="c in storeCategoryOptions" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="form.name" placeholder="门店名称" />
+        </el-form-item>
 
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="状态" prop="status">
-              <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
-                <el-option v-for="s in competitorStore.statuses" :key="s" :label="s" :value="s" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="状态" prop="status">
+          <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
+            <el-option v-for="s in competitorStore.statuses" :key="s" :label="s" :value="s" />
+          </el-select>
+        </el-form-item>
 
         <el-divider content-position="left">地址信息</el-divider>
 
@@ -267,24 +248,6 @@
           </el-col>
         </el-row>
 
-        <el-row :gutter="20">
-          <el-col :span="8">
-            <el-form-item label="口味" prop="taste_score">
-              <el-input-number v-model="form.taste_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="环境" prop="environment_score">
-              <el-input-number v-model="form.environment_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="服务" prop="service_score">
-              <el-input-number v-model="form.service_score" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
@@ -309,9 +272,6 @@ import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.v
 const router = useRouter()
 const competitorStore = useCompetitorStore()
 
-// 门店分类选项
-const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店']
-
 // 筛选和分页 - 使用 store 中的筛选条件（持久化）
 // 使用 ref 包装 store 中的 filters，确保响应式
 const searchKeyword = ref('')
@@ -319,7 +279,6 @@ const filterCity = ref('')
 const filterDistrict = ref('')
 const filterTradingArea = ref('')
 const filterBrand = ref([])
-const filterCategory = ref('')
 const filterMinStars = ref(null)
 const filterMinReviews = ref(null)
 const currentPage = ref(1)
@@ -333,7 +292,6 @@ const SAVE_FIELDS = () => ({
   filterDistrict: filterDistrict.value,
   filterTradingArea: filterTradingArea.value,
   filterBrand: filterBrand.value,
-  filterCategory: filterCategory.value,
   filterMinStars: filterMinStars.value,
   filterMinReviews: filterMinReviews.value,
   currentPage: currentPage.value
@@ -350,7 +308,6 @@ const restoreFiltersFromLS = () => {
     filterDistrict.value = f.filterDistrict || ''
     filterTradingArea.value = f.filterTradingArea || ''
     filterBrand.value = Array.isArray(f.filterBrand) ? f.filterBrand : (f.filterBrand ? [f.filterBrand] : [])
-    filterCategory.value = f.filterCategory || ''
     filterMinStars.value = f.filterMinStars ?? null
     filterMinReviews.value = f.filterMinReviews ?? null
     currentPage.value = f.currentPage || 1
@@ -367,7 +324,6 @@ watch(() => competitorStore.filters, (newFilters) => {
   filterDistrict.value = newFilters.filterDistrict
   filterTradingArea.value = newFilters.filterTradingArea || ''
   filterBrand.value = Array.isArray(newFilters.filterBrand) ? newFilters.filterBrand : (newFilters.filterBrand ? [newFilters.filterBrand] : [])
-  filterCategory.value = newFilters.filterCategory
 }, { deep: true })
 
 // 同步筛选条件到 store + localStorage（持久化）
@@ -377,8 +333,7 @@ const syncFiltersToStore = () => {
     filterCity: filterCity.value,
     filterDistrict: filterDistrict.value,
     filterTradingArea: filterTradingArea.value,
-    filterBrand: filterBrand.value,
-    filterCategory: filterCategory.value
+    filterBrand: filterBrand.value
   })
   saveFiltersToLS()
 }
@@ -394,8 +349,7 @@ onMounted(() => {
       filterCity: filterCity.value,
       filterDistrict: filterDistrict.value,
       filterTradingArea: filterTradingArea.value,
-      filterBrand: filterBrand.value,
-      filterCategory: filterCategory.value
+      filterBrand: filterBrand.value
     })
   } else {
     // 从 store 恢复筛选条件
@@ -406,13 +360,12 @@ onMounted(() => {
     filterBrand.value = Array.isArray(competitorStore.filters.filterBrand)
       ? competitorStore.filters.filterBrand
       : (competitorStore.filters.filterBrand ? [competitorStore.filters.filterBrand] : [])
-    filterCategory.value = competitorStore.filters.filterCategory
   }
 })
 
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
-  return searchKeyword.value || filterCity.value || filterDistrict.value || filterTradingArea.value || filterBrand.value.length || filterCategory.value || filterMinStars.value !== null || filterMinReviews.value !== null
+  return searchKeyword.value || filterCity.value || filterDistrict.value || filterTradingArea.value || filterBrand.value.length || filterMinStars.value !== null || filterMinReviews.value !== null
 })
 
 // 品牌颜色映射
@@ -446,7 +399,6 @@ const form = reactive({
   store_code: '',
   brand: '',
   name: '',
-  store_category: '',
   status: '正常营业',
   city: '',
   district: '',
@@ -457,10 +409,7 @@ const form = reactive({
   trading_area: '',
   price: 0,
   rating: 0,
-  reviews: 0,
-  taste_score: 0,
-  environment_score: 0,
-  service_score: 0
+  reviews: 0
 })
 
 const rules = {
@@ -514,11 +463,6 @@ const brandList = computed(() => {
   return [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))].sort()
 })
 
-// 分类列表
-const categoryList = computed(() => {
-  return [...new Set(competitorStore.competitors.map(c => c.store_category).filter(Boolean))].sort()
-})
-
 // 筛选后的数据
 const filteredCompetitors = computed(() => {
   return competitorStore.competitors.filter(comp => {
@@ -531,10 +475,9 @@ const filteredCompetitors = computed(() => {
     const matchDistrict = !filterDistrict.value || comp.district === filterDistrict.value
     const matchTradingArea = !filterTradingArea.value || (comp.trading_area && comp.trading_area === filterTradingArea.value)
     const matchBrand = !filterBrand.value.length || filterBrand.value.includes(comp.brand)
-    const matchCategory = !filterCategory.value || comp.store_category === filterCategory.value
     const matchStars = !filterMinStars.value || (comp.rating && comp.rating >= filterMinStars.value)
     const matchReviews = !filterMinReviews.value || (comp.reviews && comp.reviews >= filterMinReviews.value)
-    return matchKeyword && matchCity && matchDistrict && matchTradingArea && matchBrand && matchCategory && matchStars && matchReviews
+    return matchKeyword && matchCity && matchDistrict && matchTradingArea && matchBrand && matchStars && matchReviews
   })
 })
 
@@ -555,7 +498,7 @@ const handleSearch = () => {
 
 const syncVisibleIds = () => {
   const hasFilter = searchKeyword.value || filterCity.value || filterDistrict.value ||
-    filterBrand.value.length || filterCategory.value
+    filterBrand.value.length
   if (!hasFilter) {
     competitorStore.setVisibleIds(null)
   } else {
@@ -570,7 +513,6 @@ const handleClearFilters = () => {
   filterDistrict.value = ''
   filterTradingArea.value = ''
   filterBrand.value = []
-  filterCategory.value = ''
   filterMinStars.value = null
   filterMinReviews.value = null
   competitorStore.clearFilters()
@@ -582,11 +524,10 @@ const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
   Object.assign(form, {
-    store_code: '', brand: '', name: '', store_category: '',
+    store_code: '', brand: '', name: '',
     status: '正常营业', city: '', district: '', address: '',
     description: '', latitude: 39.9042, longitude: 116.4074,
-    trading_area: '', price: 0, rating: 0, reviews: 0,
-    taste_score: 0, environment_score: 0, service_score: 0
+    trading_area: '', price: 0, rating: 0, reviews: 0
   })
   dialogVisible.value = true
 }
@@ -598,7 +539,6 @@ const handleEdit = (row) => {
     store_code: row.store_code || '',
     brand: row.brand || '',
     name: row.name,
-    store_category: row.store_category || '',
     status: row.status || '正常营业',
     city: row.city || '',
     district: row.district || '',
@@ -609,10 +549,7 @@ const handleEdit = (row) => {
     trading_area: row.trading_area || '',
     price: row.price || 0,
     rating: row.rating || 0,
-    reviews: row.reviews || 0,
-    taste_score: row.taste_score || 0,
-    environment_score: row.environment_score || 0,
-    service_score: row.service_score || 0
+    reviews: row.reviews || 0
   })
   dialogVisible.value = true
 }
