@@ -90,7 +90,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="store_category" label="门店分类" width="120" />
+        <el-table-column prop="status" label="营业状态" width="100" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.status || '未知' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="city" label="城市" width="90" />
         <el-table-column prop="district" label="区县" width="90" />
         <el-table-column prop="address" label="地址" min-width="150" show-overflow-tooltip />
@@ -108,21 +112,6 @@
         <el-table-column prop="reviews" label="评论数" width="85">
           <template #default="{ row }">
             <span>{{ row.reviews ? row.reviews.toLocaleString() : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="taste_score" label="口味" width="65">
-          <template #default="{ row }">
-            <span>{{ row.taste_score ? row.taste_score : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="environment_score" label="环境" width="65">
-          <template #default="{ row }">
-            <span>{{ row.environment_score ? row.environment_score : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="service_score" label="服务" width="65">
-          <template #default="{ row }">
-            <span>{{ row.service_score ? row.service_score : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
