@@ -6,25 +6,26 @@
 import crypto from 'crypto'
 
 /* ================= status 文本 ⇄ 枚举（§4） ================= */
+// 展示文案口径（v1.13.90）：正常营业 / 暂停营业 / 店铺已关 / 尚未营业；四文案之外 → 未知
 export const STATUS_TEXT = {
-  open: '正常',
+  open: '正常营业',
   paused: '暂停营业',
-  closed: '已闭店',
-  pending: '未开业',
-  unknown: ''
+  closed: '店铺已关',
+  pending: '尚未营业',
+  unknown: '未知'
 }
 const STATUS_EXACT = [
-  { enum: 'open', texts: ['营业中', '营业', '正常', '在营', '开业', '正常营业', 'open', '营业状态正常'] },
+  { enum: 'open', texts: ['正常营业', '营业中', '营业', '正常', '在营', '开业', 'open', '营业状态正常'] },
   { enum: 'paused', texts: ['暂停营业', '休息', '装修', '暂停', '装修中', 'paused', '临时停业'] },
-  { enum: 'closed', texts: ['已闭店', '闭店', '关店', '歇业', '关闭', '停止营业', '已关闭', '停业', 'closed'] },
-  { enum: 'pending', texts: ['未开业', '筹备', '即将开业', 'pending'] }
+  { enum: 'closed', texts: ['店铺已关', '已闭店', '闭店', '关店', '歇业', '关闭', '停止营业', '已关闭', '停业', 'closed'] },
+  { enum: 'pending', texts: ['尚未营业', '未开业', '筹备', '即将开业', 'pending'] }
 ]
 // 包含匹配（按 优先级 从特异到泛化，避免 '暂停营业' 被 '营业'/'停业' 误伤）
 const STATUS_CONTAINS = [
   { enum: 'paused', needles: ['暂停', '装修', '休息'] },
-  { enum: 'pending', needles: ['筹备中', '新店筹备', '即将开业', '未开业'] },
-  { enum: 'closed', needles: ['闭店', '关店', '歇业', '停业'] },
-  { enum: 'open', needles: ['在营', '正常营业', '营业中'] }
+  { enum: 'pending', needles: ['尚未营业', '筹备中', '新店筹备', '即将开业', '未开业'] },
+  { enum: 'closed', needles: ['已关', '闭店', '关店', '歇业', '停业'] },
+  { enum: 'open', needles: ['正常营业', '在营', '营业中'] }
 ]
 /** 上传文本 → 枚举；不认识/空 → unknown（精确优先，再按特征包含，杜绝子串串组） */
 export function textToStatus(text) {

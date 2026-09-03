@@ -88,7 +88,7 @@
         <div class="el-upload__text">将 CSV 文件拖到此处，或<em>点击上传</em></div>
         <template #tip>
           <div class="el-upload__tip">
-            必需列：store_id / store_code（稳定门店ID）、name、brand、city、district、latitude、longitude、status（营业中/已闭店等）。可选列：trading_area（商圈）、price、rating、reviews。单文件 ≤5MB。
+            必需列：store_id / store_code（稳定门店ID）、name、brand、city、district、latitude、longitude、status（正常营业/店铺已关/暂停营业/尚未营业）。可选列：trading_area（商圈）、price、rating、reviews。单文件 ≤5MB。
           </div>
         </template>
       </el-upload>
@@ -362,7 +362,7 @@ const downloadTemplate = () => {
   const csv = 'store_id,brand,name,store_category,city,district,trading_area,address,price,rating,reviews,status,latitude,longitude\n' +
     'CS1001,大米先生,大米先生人民广场店,快餐,上海市,黄浦区,人民广场商圈,人民大道100号,28,4.2,860,营业中,31.2304,121.4737\n' +
     'CS1002,大米先生,大米先生静安寺店,快餐,上海市,静安区,静安寺商圈,南京西路1601号,30,4.4,1200,营业中,31.2230,121.4450\n' +
-    'CS1003,大米先生,大米先生徐家汇店,快餐,上海市,徐汇区,徐家汇商圈,肇嘉浜路1111号,29,4.1,640,已闭店,31.1920,121.4360'
+    'CS1003,大米先生,大米先生徐家汇店,快餐,上海市,徐汇区,徐家汇商圈,肇嘉浜路1111号,29,4.1,640,店铺已关,31.1920,121.4360'
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

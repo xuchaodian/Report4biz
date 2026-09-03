@@ -458,7 +458,7 @@ const form = reactive({
   brand: '',
   name: '',
   store_category: '',
-  status: '正常',
+  status: '正常营业',
   city: '',
   district: '',
   address: '',
@@ -594,7 +594,7 @@ const showAddDialog = () => {
   editingId.value = null
   Object.assign(form, {
     store_code: '', brand: '', name: '', store_category: '',
-    status: '正常', city: '', district: '', address: '',
+    status: '正常营业', city: '', district: '', address: '',
     description: '', latitude: 39.9042, longitude: 116.4074,
     trading_area: '', price: 0, rating: 0, reviews: 0,
     taste_score: 0, environment_score: 0, service_score: 0
@@ -610,7 +610,7 @@ const handleEdit = (row) => {
     brand: row.brand || '',
     name: row.name,
     store_category: row.store_category || '',
-    status: row.status || '正常',
+    status: row.status || '正常营业',
     city: row.city || '',
     district: row.district || '',
     address: row.address || '',

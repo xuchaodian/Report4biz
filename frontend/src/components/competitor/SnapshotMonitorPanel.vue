@@ -317,7 +317,7 @@ const filteredChanges = computed(() => {
 const pagedChanges = computed(() => filteredChanges.value)
 
 const statusText = (s) => ({
-  open: '营业中', paused: '暂停营业', closed: '已闭店', pending: '未开业', unknown: '未知'
+  open: '正常营业', paused: '暂停营业', closed: '店铺已关', pending: '尚未营业', unknown: '未知'
 }[s] || s || '未知')
 
 /* ---------------- 导出 ---------------- */

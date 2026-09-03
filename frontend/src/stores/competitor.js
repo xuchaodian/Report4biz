@@ -9,7 +9,7 @@ export const useCompetitorStore = defineStore('competitor', {
   state: () => ({
     competitors: [],
     loading: false,
-    statuses: ['正常', '关闭', '装修中', '未知'],
+    statuses: ['正常营业', '店铺已关', '暂停营业', '尚未营业'],
     storeTypes: ['竞品', '其他'],
     // visibleIds: null = 显示全部；数组 = 仅显示这些ID
     visibleIds: null,

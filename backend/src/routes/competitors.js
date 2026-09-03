@@ -76,7 +76,7 @@ router.post('/', authenticate, (req, res) => {
       store_code || '', brand || '', name, store_type || '竞品', store_category || '',
       city || '', district || '', address || '',
       description || '',
-      latitude, longitude, status || '正常', icon_color || '#f56c6c', req.user.id,
+      latitude, longitude, status || '正常营业', icon_color || '#f56c6c', req.user.id,
       industry || '', trading_area || '', price || 0, rating || 0, reviews || 0, taste_score || 0, environment_score || 0, service_score || 0
     )
 
@@ -258,7 +258,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
             esc(row.description || ''),
             esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
-            esc(row.status || '正常'),
+            esc(row.status || '正常营业'),
             esc(row.icon_color || '#f56c6c'),
             String(req.user.id),
             esc(row.industry || ''), esc(row.trading_area || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
