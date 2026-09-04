@@ -180,6 +180,11 @@
             <span style="white-space:nowrap;">{{ row.city || '-' }}</span>
           </template>
         </el-table-column>
+        <el-table-column label="半径" width="130">
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.radius_display || (row.radius ? row.radius + '米' : '-') }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="数据年月" width="100">
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.city_month || '-' }}</span>
