@@ -426,14 +426,36 @@ const doExport = async (type) => {
   }
   exportLoading.value = true
   try {
-    ElMessage.info(`正在导出 ${exportSelected.value.length} 条记录，请稍候...`)
-    for (const row of exportSelected.value) {
-      await exportOneRecord(row, type)
+    if (exportSelected.value.length === 1) {
+      // 单条：保留地图截图逻辑（逐条下载）
+      ElMessage.info('正在导出 1 条记录，请稍候...')
+      await exportOneRecord(exportSelected.value[0], type)
+      ElMessage.success('导出完成')
+    } else {
+      // 批量（≥2）：后端打包为单个 ZIP 一次下载，避免浏览器多下载拦截
+      const n = exportSelected.value.length
+      ElMessage.info(`正在打包 ${n} 条记录为压缩包，请稍候（可能需数十秒）...`)
+      const ids = exportSelected.value.map(r => r.id).join(',')
+      const resp = await axios.get('/api/purchase/export-batch', {
+        params: { ids, type },
+        responseType: 'blob'
+      })
+      const ts = new Date().toISOString().slice(0, 10)
+      downloadBlob(resp.data, `导出报表_${n}条_${ts}.zip`)
+      ElMessage.success(`导出完成，共 ${n} 条（已打包为 ZIP）`)
     }
-    ElMessage.success(`导出完成，共 ${exportSelected.value.length} 条${type === 'both' ? '（每条含Excel+PDF）' : ''}`)
   } catch (e) {
     console.error('导出失败:', e)
-    ElMessage.error('导出失败: ' + (e.response?.data?.message || e.message))
+    let msg = e.message
+    const bd = e.response?.data
+    if (bd && typeof bd.text === 'function') {
+      try {
+        const txt = await bd.text()
+        const j = JSON.parse(txt)
+        if (j.message) msg = j.message
+      } catch (_) { /* ignore */ }
+    }
+    ElMessage.error('导出失败: ' + msg)
   } finally {
     exportLoading.value = false
   }

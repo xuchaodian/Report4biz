@@ -14,6 +14,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const router = express.Router()
 const SHARE_SECRET = 'Report4biz_share_2026'
 
+// 封装 child_process.exec 为 Promise（批量导出复用）
+const runExec = (cmd, timeout = 30000) => new Promise((resolve, reject) => {
+  exec(cmd, { timeout, maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
+    if (err) return reject(err)
+    resolve({ stdout, stderr })
+  })
+})
+
 /**
  * 获取用户配额信息
  */
@@ -329,6 +337,98 @@ router.get('/by-store/:storeName', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取门店购买履历失败:', error)
     res.status(500).json({ message: '获取失败' })
+  }
+})
+
+/**
+ * 批量导出为 ZIP 压缩包（无地图截图，单文件下载，避免浏览器多下载拦截）
+ * GET /api/purchase/export-batch?ids=1,2,3&type=excel|pdf|both
+ * 复用 export_excel.py 逐条生成 xlsx；type 含 pdf 时再 libreoffice 转 PDF；最后 python zipfile 打包成 zip 一次返回
+ */
+router.get('/export-batch', authenticate, async (req, res) => {
+  const rawIds = String(req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean)
+  const ids = rawIds.filter(id => /^\d+$/.test(id))
+  const type = ['excel', 'pdf', 'both'].includes(req.query.type) ? req.query.type : 'excel'
+
+  if (ids.length === 0) {
+    return res.status(400).json({ message: '未提供有效的记录 ID' })
+  }
+  if (ids.length > 200) {
+    return res.status(400).json({ message: '单次批量导出上限 200 条' })
+  }
+
+  const templatePath = join(__dirname, '../../uploads/templates/report_template.xlsx')
+  const dbPath = join(__dirname, '../../database/webgis.db')
+  const scriptPath = join(__dirname, '../../export_excel.py')
+  if (!fs.existsSync(templatePath)) {
+    return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
+  }
+
+  const db = getDb()
+  const tmpDir = join(__dirname, '../../uploads/screenshots', `batch_${Date.now()}_${Math.random().toString(36).slice(2)}`)
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const loProfile = `/tmp/lo_${process.pid}_${Date.now()}`
+  const outFiles = []
+  let skipped = 0
+
+  try {
+    for (const id of ids) {
+      const row = db.prepare('SELECT store_name, radii, city_month FROM purchases WHERE id = ? AND user_id = ?').get(Number(id), req.user.id)
+      if (!row) { skipped++; continue }
+      const safeName = String(row.store_name || '门店').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
+      let radiiStr = '未知'
+      try {
+        const arr = JSON.parse(row.radii)
+        radiiStr = (Array.isArray(arr) ? arr : [arr]).map(Number).filter(Number.isFinite).join('_')
+      } catch (e) { /* 保持默认 */ }
+      const cityMonth = row.city_month || ''
+      const base = `${safeName}_${radiiStr}米_${cityMonth}`.slice(0, 120)
+      const xlsxPath = join(tmpDir, `${base}.xlsx`)
+
+      try {
+        await runExec(`python3 "${scriptPath}" "${templatePath}" "${xlsxPath}" "${dbPath}" ${id} ${req.user.id}`, 40000)
+      } catch (e) {
+        console.error(`[批量导出] id=${id} Excel 生成失败:`, e.message)
+        skipped++
+        continue
+      }
+      if (!fs.existsSync(xlsxPath)) { skipped++; continue }
+      outFiles.push(xlsxPath)
+
+      if (type === 'pdf' || type === 'both') {
+        const pdfPath = join(tmpDir, `${base}.pdf`)
+        try {
+          await runExec(`libreoffice --headless --convert-to pdf --outdir "${tmpDir}" -env:UserInstallation=file://${loProfile} "${xlsxPath}"`, 60000)
+        } catch (e) {
+          console.error(`[批量导出] id=${id} PDF 转换失败:`, e.message)
+        }
+        if (fs.existsSync(pdfPath)) outFiles.push(pdfPath)
+      }
+    }
+
+    if (outFiles.length === 0) {
+      return res.status(500).json({ message: '导出失败：未生成任何文件' })
+    }
+
+    const zipName = `导出报表_${ids.length}条_${new Date().toISOString().slice(0, 10)}.zip`
+    const zipPath = join(tmpDir, zipName)
+    const pyCmd = `python3 -c "import zipfile,os,sys; z=zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED); [z.write(f, os.path.basename(f)) for f in sys.argv[2:]]; z.close(); print('ZIP_OK')" "${zipPath}" ${outFiles.map(f => `"${f}"`).join(' ')}`
+    await runExec(pyCmd, 120000)
+
+    if (!fs.existsSync(zipPath)) {
+      return res.status(500).json({ message: '打包失败：压缩文件未生成' })
+    }
+
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(zipName)}`)
+    const stream = fs.createReadStream(zipPath)
+    stream.pipe(res)
+    stream.on('end', () => fs.rm(tmpDir, { recursive: true, force: true }, () => {}))
+    stream.on('error', () => fs.rm(tmpDir, { recursive: true, force: true }, () => {}))
+  } catch (e) {
+    fs.rm(tmpDir, { recursive: true, force: true }, () => {})
+    console.error('[批量导出] 异常:', e)
+    if (!res.headersSent) res.status(500).json({ message: '批量导出失败: ' + e.message })
   }
 })
 
