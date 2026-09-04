@@ -165,27 +165,27 @@
             <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="门店名称" min-width="200" show-overflow-tooltip>
+        <el-table-column label="门店名称" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.store_name || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="购买时间" width="150">
+        <el-table-column label="购买时间" width="110">
           <template #default="{ row }">
-            <span style="white-space:nowrap;">{{ row.created_at ? String(row.created_at).slice(0, 16) : '-' }}</span>
+            <span style="white-space:nowrap;">{{ row.created_at ? String(row.created_at).slice(0, 10) : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="城市" width="100">
+        <el-table-column label="城市" width="90">
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.city || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="半径" width="130">
+        <el-table-column label="半径" width="120">
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.radius_display || (row.radius ? row.radius + '米' : '-') }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="数据年月" width="100">
+        <el-table-column label="数据年月" width="90">
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.city_month || '-' }}</span>
           </template>
