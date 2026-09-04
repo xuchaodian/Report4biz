@@ -143,6 +143,7 @@
         <SnapshotUploadPanel
           ref="uploadPanelRef"
           @imported="handleSnapshotImported"
+          @snapshot-deleted="handleSnapshotDeleted"
           @goto-monitor="gotoMonitor"
         />
       </el-tab-pane>
@@ -153,6 +154,7 @@
           ref="monitorPanelRef"
           :initial-brand="monitorBrand"
           :initial-target="monitorTarget"
+          @snapshot-deleted="handleSnapshotDeleted"
           @goto-upload="activeTab = 'upload'"
         />
       </el-tab-pane>
@@ -644,6 +646,12 @@ const handleTabChange = (name) => {
 const handleSnapshotImported = async (payload) => {
   await competitorStore.fetchCompetitors()
   // 列表已被新镜像替换 → 清掉本地筛选态，避免残留条件看不到新数据
+  handleClearFilters()
+}
+// Tab2 删除期次后：若删到最新期（镜像被移除）则同步刷新竞品列表
+const handleSnapshotDeleted = async (payload) => {
+  if (!payload || !payload.listReverted) return
+  await competitorStore.fetchCompetitors()
   handleClearFilters()
 }
 // Tab2「去对比」→ Tab3 并预选品牌/目标期

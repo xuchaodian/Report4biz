@@ -223,6 +223,15 @@ export const useCompetitorStore = defineStore('competitor', {
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '导出失败' }
       }
+    },
+    // 删除某期快照（撤回误传；级联清理竞品列表镜像行）
+    async deleteSnapshot(id) {
+      try {
+        const data = await api.delete(`/competitors/snapshots/${id}`)
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '删除失败' }
+      }
     }
   }
 })

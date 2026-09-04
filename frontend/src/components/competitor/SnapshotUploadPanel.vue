@@ -299,6 +299,9 @@
             <el-button size="small" type="primary" plain @click="$emit('goto-monitor', { brand, period: s.period })">
               去对比
             </el-button>
+            <el-button size="small" type="danger" plain :loading="deletingId === s.id" @click="deleteOne(s)">
+              <el-icon><Delete /></el-icon> 删除
+            </el-button>
           </div>
         </div>
       </div>
@@ -308,12 +311,44 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Upload, Download, Search, Refresh, Document } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, Download, Search, Refresh, Document, Delete } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
 
-const emit = defineEmits(['imported', 'goto-monitor'])
+const emit = defineEmits(['imported', 'goto-monitor', 'snapshot-deleted'])
 const competitorStore = useCompetitorStore()
+
+/* ---------------- 删除期次（撤回误传，v1.13.95） ---------------- */
+const deletingId = ref(null)
+const deleteOne = async (s) => {
+  // history 为最新在前（listBrandSnapshots 升序后 reverse），首项即最新期
+  const isLatest = history.value[0]?.id === s.id
+  const listTip = isLatest
+    ? '该期是最新期，正作为「竞品列表」镜像显示 —— 删除后列表中的镜像门店将一并移除（手工录入门店不受影响）。'
+    : '该期是历史归档期，不影响当前竞品列表。'
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除「${brand.value} ${s.period}」期次快照（共 ${s.total_count || '?'} 行档案）。\n${listTip}\n删除后不可恢复，如本地有 CSV 备份可重新上传。确定继续吗？`,
+      '删除该期快照',
+      { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch { return } // 用户取消
+  deletingId.value = s.id
+  try {
+    const res = await competitorStore.deleteSnapshot(s.id)
+    if (!res.success) { ElMessage.error(res.message); return }
+    const d = res.data || {}
+    ElMessage.success(d.message || `已删除 ${s.period} 期`)
+    refreshHistory()
+    // 刷新快照品牌缓存（该品牌可能已无期次，品牌下拉去残留）
+    const rb = await competitorStore.listSnapshotBrands()
+    if (rb.success) snapshotBrandsCache.value = rb.data.brands || []
+    // 若删到最新期且移除了镜像 → 通知父页面刷新竞品列表
+    emit('snapshot-deleted', { brand: brand.value, period: s.period, listReverted: !!d.listReverted, ...d })
+  } finally {
+    deletingId.value = null
+  }
+}
 
 /* ---------------- 表单状态 ---------------- */
 const brand = ref('')

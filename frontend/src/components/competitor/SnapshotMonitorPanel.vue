@@ -74,7 +74,19 @@
           :class="{ active: s.period === targetPeriod }"
           @click="pickPair(s.period)"
         >
-          <div class="tl-period">{{ s.period }}</div>
+          <div class="tl-period">{{ s.period }}
+            <el-tooltip content="删除该期快照" placement="top">
+              <el-button
+                class="tl-del"
+                size="small"
+                type="danger"
+                circle
+                :icon="Delete"
+                :loading="deletingId === s.id"
+                @click.stop="askDelete(s)"
+              />
+            </el-tooltip>
+          </div>
           <el-tag size="small" :type="s.period === targetPeriod ? 'primary' : 'info'" effect="plain">{{ s.data_version || '未标版本' }}</el-tag>
           <div class="tl-count">{{ s.open_count }} 营 / {{ s.total_count }} 总</div>
           <div class="tl-time">{{ shortTime(s.created_at) }}</div>
@@ -192,11 +204,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Search, Download, Upload, Refresh } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Download, Upload, Refresh, Delete } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
 
-const emit = defineEmits(['goto-upload'])
+const emit = defineEmits(['goto-upload', 'snapshot-deleted'])
 const competitorStore = useCompetitorStore()
 
 const props = defineProps({
@@ -335,6 +347,40 @@ const exportSnapshot = async () => {
   saveBlob(res.blob, `${brand.value}_${targetPeriod.value}_快照.csv`)
 }
 
+/* ---------------- 删除期次（撤回误传，v1.13.95） ---------------- */
+const deletingId = ref(null)
+const askDelete = async (s) => {
+  // series 升序，最后一项为最新期（其镜像正显示在竞品列表）
+  const isLatest = series.value.length ? series.value[series.value.length - 1].id === s.id : false
+  const listTip = isLatest
+    ? '该期是最新期，正作为「竞品列表」镜像显示 —— 删除后列表中的镜像门店将一并移除（手工录入门店不受影响）。'
+    : '该期是历史归档期，不影响当前竞品列表。'
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除「${brand.value} ${s.period}」期次快照（共 ${s.total_count || '?'} 行档案）。\n${listTip}\n删除后不可恢复，如本地有 CSV 备份可重新上传。确定继续吗？`,
+      '删除该期快照',
+      { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch { return }
+  deletingId.value = s.id
+  try {
+    const res = await competitorStore.deleteSnapshot(s.id)
+    if (!res.success) { ElMessage.error(res.message); return }
+    const d = res.data || {}
+    ElMessage.success(d.message || `已删除 ${s.period} 期`)
+    // 删除后该期可能正被选中为基准/目标 → 回到品牌序列默认（最新对比前一档）
+    if (d.isLatest || basePeriod.value === s.period || targetPeriod.value === s.period) {
+      diffData.value = null
+      await refresh()
+    } else {
+      await loadSeries(brand.value)
+    }
+    emit('snapshot-deleted', { brand: brand.value, period: s.period, listReverted: !!d.listReverted, ...d })
+  } finally {
+    deletingId.value = null
+  }
+}
+
 const saveBlob = (blob, name) => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -388,7 +434,11 @@ watch(() => props.initialTarget, (nv) => { if (nv) { targetPeriod.value = nv; if
       padding: 8px 10px; cursor: pointer; background: #fafafa; text-align: left;
       &:hover { border-color: #c6e2ff; }
       &.active { border-color: #409eff; background: #ecf5ff; }
-      .tl-period { font-weight: 700; font-size: 15px; color: #303133; }
+      .tl-period {
+        position: relative; display: flex; align-items: center; justify-content: space-between;
+        font-weight: 700; font-size: 15px; color: #303133;
+        .tl-del { margin-left: 6px; flex: 0 0 auto; }
+      }
       .tl-count { font-size: 12px; color: #666; margin-top: 3px; }
       .tl-time { font-size: 11px; color: #bbb; margin-top: 2px; }
     }

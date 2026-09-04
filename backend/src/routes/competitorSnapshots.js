@@ -491,4 +491,58 @@ function rowToCsv(r) {
   }
 }
 
+/* ================= DELETE /:id  删除某期快照（撤回误传，v1.13.95） =================
+ * 语义：级联三步清理 ——
+ *   ① competitors 中 snapshot_id=该期的镜像行（竞品列表若正显示该期则一并移除，手工行 snapshot_id IS NULL 不受影响）
+ *   ② competitor_snapshot_rows 该期明细
+ *   ③ competitor_snapshots 头表
+ * 归属：per-user 隔离（仅删自己名下，与列表可见性一致）；事务化 + saveDatabase 兜底
+ */
+router.delete('/:id', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: '无效的快照 ID' })
+
+    const snap = db.prepare(`SELECT * FROM competitor_snapshots WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    if (!snap) return res.status(404).json({ message: '未找到该期快照或无权删除' })
+
+    // 是否最新期（最新期镜像正占据竞品列表；历史期镜像在导入更新期时已被清空）
+    const snaps = snapshotsOfBrand(db, req.user.id, snap.brand)
+    const maxSeq = snaps.length ? Math.max(...snaps.map(s => s.period_seq)) : 0
+    const isLatest = snap.period_seq === maxSeq
+    const remainingAfter = snaps.filter(s => s.id !== id)
+
+    let removedMirrored = 0
+    db.exec('BEGIN TRANSACTION')
+    try {
+      // ① 清该期镜像行（competitors.snapshot_id=该期；手工行 NULL 不碰）
+      db.exec(`DELETE FROM competitors WHERE user_id=${req.user.id} AND snapshot_id=${id}`)
+      removedMirrored = db.exec('SELECT changes() AS c')[0].values[0][0]
+      // ② 清该期明细
+      db.exec(`DELETE FROM competitor_snapshot_rows WHERE snapshot_id=${id}`)
+      // ③ 清头表
+      db.exec(`DELETE FROM competitor_snapshots WHERE id=${id} AND user_id=${req.user.id}`)
+      db.exec('COMMIT')
+    } catch (e) {
+      db.exec('ROLLBACK')
+      console.error('[snapshots] delete 事务失败:', e)
+      return res.status(500).json({ message: '删除失败，已回滚: ' + e.message })
+    }
+    saveDatabase()
+
+    const listReverted = isLatest && removedMirrored > 0
+    console.log(`[snapshots] delete OK id=${id} brand=${snap.brand} period=${snap.period} seq=${snap.period_seq} isLatest=${isLatest} mirrored=${removedMirrored}`)
+    res.json({
+      message: `已删除 ${snap.period} 期快照${listReverted ? '，竞品列表中的该期镜像门店已同步移除，可重新上传正确文件' : ''}`,
+      id, brand: snap.brand, period: snap.period, period_seq: snap.period_seq,
+      isLatest, listReverted, removedMirrored,
+      remainingCount: remainingAfter.length
+    })
+  } catch (e) {
+    console.error('[snapshots] delete 错误:', e)
+    res.status(500).json({ message: '删除失败' })
+  }
+})
+
 export default router
