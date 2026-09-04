@@ -80,6 +80,14 @@
     </div>
 
     <template #footer>
+      <el-button
+        v-if="exportAvailable"
+        type="success"
+        :loading="exporting"
+        @click="exportExcel"
+      >
+        <el-icon style="margin-right: 4px;"><Download /></el-icon>导出合并 Excel
+      </el-button>
       <el-button @click="dialogVisible = false">取消</el-button>
       <el-button 
         type="primary" 
@@ -119,6 +127,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 
@@ -148,6 +157,9 @@ const availableMonths = ref([])
 const quotaInfo = ref(null)
 const isLoading = ref(false)
 const showConfirm = ref(false)
+const exportAvailable = ref(false)   // 本次批量购买成功后开放导出
+const exporting = ref(false)
+const exportPayload = ref(null)      // 快照：导出时精确对应本次购买组合（防表单被改）
 
 // 计算属性
 const canQuery = computed(() => {
@@ -253,6 +265,13 @@ async function executeBatchQuery() {
     if (successCount > 0) {
       ElMessage.success(`批量查询完成：成功获取 ${successCount} 次，无数据 ${failCount} 次（不消耗配额）`)
       loadQuota()
+      // 快照本次组合 → 开放「导出合并 Excel」
+      exportPayload.value = {
+        stores: localStores.value.map(s => ({ name: s.name, lng: s.longitude, lat: s.latitude })),
+        radii: radii,
+        cityMonth: queryForm.value.cityMonth
+      }
+      exportAvailable.value = true
     } else if (failCount > 0) {
       ElMessage.warning('批量查询完成，所选月份数据全部为空，配额已全部返还')
       loadQuota()
@@ -266,7 +285,34 @@ async function executeBatchQuery() {
   }
 }
 
+// 导出合并 Excel：把本次批量购买的每个「门店×半径」购买履历渲染成一张 xlsx（内容=查询结果详情页）
+// 数据源为已购买履历（purchases.result_data），不重复调用联通 API、不消耗配额
+async function exportExcel() {
+  if (!exportPayload.value) return
+  exporting.value = true
+  try {
+    const payload = exportPayload.value
+    const res = await axios.post('/api/purchase/export-merged', payload, { responseType: 'blob', timeout: 120000 })
+    const fileName = `批量购买_${payload.cityMonth}_${payload.stores.length}店${payload.radii.length}半径.xlsx`
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success(`已导出 ${fileName}（含 ${payload.stores.length * payload.radii.length} 个门店×半径组合）`)
+  } catch (e) {
+    ElMessage.error('导出失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    exporting.value = false
+  }
+}
+
 function onClose() {
+  exportAvailable.value = false
+  exportPayload.value = null
   emit('close')
 }
 
