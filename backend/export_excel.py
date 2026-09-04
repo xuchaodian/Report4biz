@@ -85,13 +85,23 @@ def main():
             ws['C1'] = radius_str
             ws['E1'] = city_month
 
-            # 构建字段映射（小写）
-            field_map = {}
+            # ===== 构建按服务码分区的字段映射 =====
+            # v1.13.97 修正：旧实现用全局 field_map（键=字段名小写），1009/1010/1011/1012/1013
+            # 五服务区的同名字段 pop{群}_p{档} 互相覆盖（后遍历的 1013 覆盖消费力/教育/行业/人生四区）。
+            # 现按「成品服务码」分区 field_map[code][field_lower]，模板行按其 A 列 code 归属取对应分区。
+            field_map = {}  # code -> {field_lower: value}
+
+            def _put(code, key, val):
+                try:
+                    val = int(round(float(val)))
+                except (TypeError, ValueError):
+                    return
+                field_map.setdefault(code, {})[str(key).lower()] = val
 
             # 1001 - 对象
             if '1001' in api_result and isinstance(api_result['1001'], dict):
                 for k, v in api_result['1001'].items():
-                    field_map[k.lower()] = v
+                    _put('1001', k, v)
 
             # 1002 - 标签（按人群类型分开：0=到访 1=居住 2=工作）
             if '1002' in api_result and isinstance(api_result['1002'], list):
@@ -103,14 +113,14 @@ def main():
                     # 1. 精确匹配优先（如"求职招聘"，避免被子串"招聘"覆盖）
                     if name in tag_names:
                         idx = tag_names.index(name)
-                        field_map[f'webtag{pop}_{idx + 1}'] = val
+                        _put('1002', f'webtag{pop}_{idx + 1}', val)
                         continue
                     # 2. 包含匹配（如"时政要闻"等），已写过的槽位不覆盖
                     for i, tn in enumerate(tag_names, 1):
                         if tn in name or name in tn:
                             key = f'webtag{pop}_{i}'
-                            if key not in field_map:
-                                field_map[key] = val
+                            if key not in field_map.setdefault('1002', {}):
+                                _put('1002', key, val)
                             break
 
             # 1005 - 小时段
@@ -119,8 +129,8 @@ def main():
                     dt = item.get('day_type', 0)
                     hp = item.get('hour_period')
                     if hp is not None:
-                        field_map[f'hour{dt}_{hp}_visit'] = item.get('hour_visit', 0)
-                        field_map[f'hour{dt}_{hp}_all'] = item.get('hour_all', 0)
+                        _put('1005', f'hour{dt}_{hp}_visit', item.get('hour_visit', 0))
+                        _put('1005', f'hour{dt}_{hp}_all', item.get('hour_all', 0))
 
             # 1006 - 日均
             if '1006' in api_result and isinstance(api_result['1006'], list) and len(api_result['1006']) > 0:
@@ -131,47 +141,70 @@ def main():
                 for d in days:
                     for k in keys:
                         totals[k] += d.get(k, 0) or 0
-                field_map['day_avg_visit'] = round(totals['day_visit'] / n)
-                field_map['day_avg_total'] = round(totals['day_all'] / n)
-                field_map['stay_30'] = round(totals['stay1'] / n)
-                field_map['stay_60'] = round(totals['stay2'] / n)
-                field_map['stay_120'] = round(totals['stay3'] / n)
-                field_map['stay_240'] = round(totals['stay4'] / n)
-                field_map['stay_480'] = round(totals['stay5'] / n)
+                _put('1006', 'day_avg_visit', round(totals['day_visit'] / n))
+                _put('1006', 'day_avg_total', round(totals['day_all'] / n))
+                _put('1006', 'stay_30', round(totals['stay1'] / n))
+                _put('1006', 'stay_60', round(totals['stay2'] / n))
+                _put('1006', 'stay_120', round(totals['stay3'] / n))
+                _put('1006', 'stay_240', round(totals['stay4'] / n))
+                _put('1006', 'stay_480', round(totals['stay5'] / n))
 
-            # 1007
+            # 1007 每月到达次数（真实返回元素无 popu_type、直接含 reach1~5；旧 popu_type==0 判断会漏配）
             if '1007' in api_result and isinstance(api_result['1007'], list):
-                for item in api_result['1007']:
-                    if item.get('popu_type') == 0:
-                        for i in range(1, 6):
-                            field_map[f'reach{i}'] = item.get(f'reach{i}', 0) or 0
-                        break
+                reach_item = next(
+                    (it for it in api_result['1007'] if isinstance(it, dict) and any(str(k).startswith('reach') for k in it)),
+                    None
+                )
+                if reach_item:
+                    for i in range(1, 6):
+                        _put('1007', f'reach{i}', reach_item.get(f'reach{i}', 0) or 0)
 
-            # 1009~1013
-            for svc in ['1009', '1010', '1011', '1012', '1013']:
+            # 1009 消费水平（富裕指数）：元素 spendpower='1'..'8' + spendpower_value（模板 pop{群}_p{档}）
+            if '1009' in api_result and isinstance(api_result['1009'], list):
+                for item in api_result['1009']:
+                    pt = item.get('popu_type', 0)
+                    sp = item.get('spendpower')
+                    if sp is not None:
+                        _put('1009', f'pop{pt}_p{sp}', item.get('spendpower_value', 0))
+
+            # 1010 教育 / 1011 行业 / 1012 人生阶段 / 1013 综合消费能力：各自独立分区
+            for svc in ['1010', '1011', '1012', '1013']:
                 if svc in api_result and isinstance(api_result[svc], list):
                     for item in api_result[svc]:
                         pt = item.get('popu_type', 0)
                         for k, v in item.items():
+                            if k == 'popu_type':
+                                continue
                             if k.startswith('p') and isinstance(v, (int, float)):
-                                field_map[f'pop{pt}_{k}'] = v or 0
+                                _put(svc, f'pop{pt}_{k}', v or 0)
 
-            # 1015
+            # 1015 资产预测数组（收入/有车/有房 fname 分流 → 成品报表区 1014/1015/1016）
             if '1015' in api_result and isinstance(api_result['1015'], list):
-                fname_map = {'收入预测': 'income', '有车预测': 'car', '有房预测': 'house'}
+                fname_map = {'收入预测': ('1014', 'income'), '有车预测': ('1015', 'car'), '有房预测': ('1016', 'house')}
                 for item in api_result['1015']:
-                    fn = fname_map.get(item.get('fname', ''), item.get('fname', ''))
+                    fm = fname_map.get(item.get('fname', ''))
+                    if not fm:
+                        continue
+                    dst_code, prefix = fm
                     pt = item.get('popu_type', 0)
                     for k, v in item.items():
+                        if k == 'popu_type':
+                            continue
                         if k.startswith('p') and isinstance(v, (int, float)):
-                            field_map[f'{fn}_pop{pt}_{k}'] = v or 0
+                            _put(dst_code, f'{prefix}_pop{pt}_{k}', v or 0)
 
-            # 填入E列
-            for row_cells in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=3, max_col=3):
-                cell = row_cells[0]
-                field_name = str(cell.value or '').strip().lower()
-                if field_name and field_name in field_map:
-                    ws.cell(row=cell.row, column=5).value = field_map[field_name]
+            # 填入E列（按模板行 A 列 code 继承归属取对应分区）
+            cur_code = None
+            for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=5):
+                code_val = row[0].value
+                if code_val not in (None, ''):
+                    cur_code = str(code_val).strip()
+                field_name = str(row[2].value or '').strip().lower()
+                if not field_name or cur_code is None:
+                    continue
+                seg = field_map.get(cur_code)
+                if seg and field_name in seg:
+                    ws.cell(row=row[0].row, column=5).value = seg[field_name]
 
         # ===== 3. 竞品列表（中心3km范围内） =====
         if '竞品列表' in wb.sheetnames:

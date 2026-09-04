@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url'
 import { exec } from 'child_process'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
-import { renderPurchaseBlocks } from '../utils/unicomDetailSheets.js'
+import { buildSummaryValues, summaryValue } from '../utils/unicomSummaryValues.js'
+import { UNICOM_SUMMARY_COLS } from '../utils/unicomSummaryCols.js'
 import * as XLSX from 'xlsx'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -752,8 +753,11 @@ router.post('/:id/export-pdf-report', authenticate, async (req, res) => {
 })
 
 // ================= 批量购买结果合并导出 Excel（内容 = 查询结果详情页） =================
-// 入参 { stores:[{name,lng,lat}], radii:[米], cityMonth } → 单 sheet 平铺分块：
-//   每「门店×半径」一块：块标题 + 详情页等价渲染（人口概览交叉表 / 各服务表）
+// ===== 批量购买结果 → 单 sheet 汇总宽表（纵向=门店×半径，横向=模板「商圈数据」343 指标） =====
+// 入参 { stores:[{name,lng,lat}], radii:[米], cityMonth } → xlsx：
+//   A1=「门店 / 半径」标签列头；B1.. = 343 指标含义（模板顺序）；数据行 A 列=「门店名半径Xm/km」
+// 数值口径 = 按「成品服务码」分区精确取值（unicomSummaryValues），修正 export_excel.py 同字段名覆盖 BUG：
+//   1009 消费力/1010 教育/1011 行业/1012 人生/1013 综合消费各区取各自真实数据（旧报表四区被 1013 污染）
 // 数据源 = 购买履历 purchases.result_data（不重新调联通 API，不消耗配额）
 const parseStoredRadii = (raw) => {
   try {
@@ -764,20 +768,11 @@ const parseStoredRadii = (raw) => {
   }
 }
 
-function pushBlockHeader(aoa, text) {
-  aoa.push({ row: [text], style: 'block' })
-}
-function pushTable(aoa, block) {
-  if (block.t === 'table') {
-    aoa.push({ row: [block.title || ''], style: 'title' })
-    aoa.push({ row: block.headers, style: 'header' })
-    for (const r of block.rows) aoa.push({ row: r.map(v => (typeof v === 'number' ? v : String(v))), style: 'data' })
-    aoa.push({ row: [], style: null }) // 表后空行
-  } else if (block.t === 'kv') {
-    aoa.push({ row: [String(block.label), typeof block.value === 'number' ? block.value : String(block.value ?? '')], style: 'data' })
-  } else if (block.t === 'sec') {
-    aoa.push({ row: [block.s], style: 'sec' })
-  }
+// 行标签：与用户参照样式一致（500m / 1.5km / 3km 式）
+const radiusLabel = (name, R) => {
+  const r = Number(R)
+  const unit = r >= 1000 ? `${r % 1000 === 0 ? String(r / 1000) : String(Number((r / 1000).toFixed(2)))}km` : `${r}m`
+  return `${name}半径${unit}`
 }
 
 router.post('/export-merged', authenticate, (req, res) => {
@@ -788,7 +783,8 @@ router.post('/export-merged', authenticate, (req, res) => {
     if (!cityMonth) return res.status(400).json({ message: '缺少数据年月' })
 
     const db = getDb()
-    const aoa = [] // { row:[], style:'block'|'title'|'header'|'data'|'sec'|null }
+    const colCount = UNICOM_SUMMARY_COLS.length
+    const rows = [['门店 / 半径', ...UNICOM_SUMMARY_COLS.map(c => c.m)]]
     let combos = 0, matched = 0, empty = 0
 
     for (const store of stores) {
@@ -810,72 +806,47 @@ router.post('/export-merged', authenticate, (req, res) => {
           p.city_month === cityMonth && parseStoredRadii(p.radius).some(x => Math.abs(x - R) <= 1)
         )
 
-        pushBlockHeader(aoa, `【${name}】半径 ${R} 米 ｜ 数据年月 ${cityMonth}`)
         if (!match) {
           empty++
-          aoa.push({ row: ['该组合无购买记录（或数据为空已返还配额）'], style: 'sec' })
-          aoa.push({ row: [], style: null })
+          rows.push([`${radiusLabel(name, R)}(无购买记录)`, ...new Array(colCount).fill(null)])
+          continue
+        }
+        const byCode = buildSummaryValues(match.result_data)
+        const hasAny = Object.keys(byCode).some(k => Object.keys(byCode[k]).length > 0)
+        if (!hasAny) {
+          empty++
+          rows.push([`${radiusLabel(name, R)}(无数据)`, ...new Array(colCount).fill(null)])
           continue
         }
         matched++
-        const blocks = renderPurchaseBlocks(match.result_data)
-        if (!blocks.length) {
-          aoa.push({ row: ['暂无数据（该订单配额已返还）'], style: 'sec' })
-          aoa.push({ row: [], style: null })
-          continue
-        }
-        for (const b of blocks) pushTable(aoa, b)
-        aoa.push({ row: [], style: null }) // 块尾空行
+        rows.push([radiusLabel(name, R), ...UNICOM_SUMMARY_COLS.map(c => summaryValue(byCode, c.c, c.f))])
       }
     }
 
-    if (aoa.length === 0) return res.status(400).json({ message: '没有可导出的门店组合' })
+    if (rows.length === 1) return res.status(400).json({ message: '没有可导出的门店组合' })
 
-    // SheetJS 组装（含样式：块标题蓝底白字粗体 / 节标题粗体 / 表头灰底粗体）
-    const sheetData = aoa.map(item => item.row)
-    const ws = XLSX.utils.aoa_to_sheet(sheetData)
-    const widthMap = {}
-    for (let i = 0; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      const style = aoa[i].style
-      if (!style) continue
-      for (let c = 0; c < row.length; c++) {
-        const addr = XLSX.utils.encode_cell({ r: i, c })
-        if (!ws[addr]) continue
-        const font = { name: '微软雅黑' }
-        let fill = null
-        if (style === 'block') { font.bold = true; font.sz = 12; font.color = { rgb: 'FFFFFF' }; fill = { fgColor: { rgb: '305496' } } }
-        else if (style === 'sec') { font.bold = true; font.color = { rgb: '333333' } }
-        else if (style === 'title') { font.bold = true; font.color = { rgb: '764BA2' } }
-        else if (style === 'header') { font.bold = true; fill = { fgColor: { rgb: 'D9E1F2' } } }
-        const cell = ws[addr]
-        cell.s = { font, alignment: { vertical: 'center', wrapText: true } }
-        if (fill) cell.s.fill = { patternType: 'solid', ...fill }
-      }
+    // SheetJS 组装（表头灰底粗体居中，指标列定宽 12；A 列行标签 20）
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    const headerStyle = {
+      font: { name: '微软雅黑', bold: true, sz: 10 },
+      fill: { patternType: 'solid', fgColor: { rgb: 'D9E1F2' } },
+      alignment: { vertical: 'center', horizontal: 'center', wrapText: true }
     }
-    ws['!cols'] = [
-      { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
-      { wch: 16 }, { wch: 16 }, { wch: 16 }
-    ]
-    // 块标题/节标题/表标题跨列合并到 H（使整行通栏）
-    const merges = []
-    for (let i = 0; i < sheetData.length; i++) {
-      const style = aoa[i].style
-      if ((style === 'block' || style === 'sec' || style === 'title') && sheetData[i].length >= 1) {
-        merges.push({ s: { r: i, c: 0 }, e: { r: i, c: 7 } })
-      }
+    for (let c = 0; c < rows[0].length; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 0, c })
+      if (ws[addr]) ws[addr].s = headerStyle
     }
-    if (merges.length) ws['!merges'] = merges
+    ws['!cols'] = [{ wch: 20 }, ...UNICOM_SUMMARY_COLS.map(() => ({ wch: 12 }))]
 
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '批量购买结果')
+    XLSX.utils.book_append_sheet(wb, ws, '门店×指标汇总')
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', compression: true })
 
-    const fileName = `批量购买_${cityMonth}_${stores.length}店${radii.length}半径.xlsx`
+    const fileName = `批量购买_${cityMonth}_${stores.length}店${radii.length}半径_汇总.xlsx`
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`)
     res.end(buffer)
-    console.log(`[purchase] export-merged OK combos=${combos} matched=${matched} empty=${empty} buffer=${(buffer.length / 1024 / 1024).toFixed(2)}MB`)
+    console.log(`[purchase] export-merged OK combos=${combos} matched=${matched} empty=${empty} cols=${colCount + 1} buffer=${(buffer.length / 1024 / 1024).toFixed(2)}MB`)
   } catch (error) {
     console.error('批量导出失败:', error)
     res.status(500).json({ message: '批量导出失败: ' + error.message })
