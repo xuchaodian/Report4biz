@@ -1204,6 +1204,17 @@ onMounted(async () => {
   }
 })
 
+// 组件卸载兜底清理：若弹窗开着时切走路由，el-dialog 的 @closed 不会触发，
+// 需在此释放图表实例与 resize 监听，避免累积泄漏
+onUnmounted(() => {
+  disposeAllCharts()
+  disposeCompareCharts()
+  if (chartResizeHandler) {
+    window.removeEventListener('resize', chartResizeHandler)
+    chartResizeHandler = null
+  }
+})
+
 // 刷新配额
 const refreshQuota = async () => {
   quotaLoading.value = true

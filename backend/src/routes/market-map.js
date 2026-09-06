@@ -7,7 +7,7 @@ import { getDb } from '../models/database.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { CITY_TAGS } from '../data/city-tags.js'
 import { CITY_GEO } from '../data/city-geo.js'
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -241,7 +241,7 @@ router.get('/weights', (req, res) => {
  * 更新评分权重（仅管理员）
  * Body: { weights: { marketSize, competition, brandGap, consumption } }
  */
-router.put('/weights', authenticate, (req, res) => {
+router.put('/weights', authenticate, requireAdmin, (req, res) => {
   try {
     const { weights } = req.body || {}
     if (!weights || typeof weights !== 'object') {

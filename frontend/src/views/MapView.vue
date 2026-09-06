@@ -2196,6 +2196,8 @@ const selectedPopulationField = ref('')  // 用户选择的统计字段
 const populationAnalysisCompleted = ref(false)  // 标记分析是否已完成
 const populationFieldLoading = ref(false)  // 是否正在加载字段
 const loadingElapsedSeconds = ref(0)      // 加载已用时间（秒）
+// 商圈人口加载定时器：提升为模块级，便于组件卸载时清理（原为 openPopulationDistribution 内局部变量，加载中切走路由会泄漏）
+let loadingTimer = null
 
 // UI增强：地图加载状态
 const mapLoading = ref(true)
@@ -2474,7 +2476,6 @@ const closeCircleDialog = () => {
 // 商圈人口分布 - 打开对话框
 const openPopulationDistribution = async () => {
   console.log('openPopulationDistribution开始执行')
-  let loadingTimer = null
   if (!map) {
     console.error('地图对象未初始化')
     return
@@ -9713,6 +9714,12 @@ onUnmounted(() => {
   
   // 清理所有定时器
   clearAllTimers()
+
+  // 清理商圈人口字段加载轮询定时器（加载中切走路由时兜底，防持续泄漏）
+  if (loadingTimer) {
+    clearInterval(loadingTimer)
+    loadingTimer = null
+  }
   
   // 清理所有 AbortController
   cleanupResources.abortControllers.forEach(controller => {
@@ -9743,6 +9750,7 @@ onUnmounted(() => {
   delete window.openStorePoiSearch
   delete window.handleShapefileQueryFromGlobal
   delete window.__poiSearchDebug
+  delete window.clearMeasureResult
   
   shapefileProcessing = false
   

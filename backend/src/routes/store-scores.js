@@ -49,38 +49,46 @@ router.post('/scores', authenticate, async (req, res) => {
     // 创建评分记录
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ message: '用户未认证' })
+    const isAdmin = req.user?.role === 'admin'
 
-    // 直接使用 db.exec 插入（避免prepare/run的参���传递问题）
-    const insertSql = `INSERT INTO store_scores (template_id, user_id, store_id, lng, lat, address, premium, status) VALUES (${template.id}, ${userId}, ${storeId || 'NULL'}, ${lng}, ${lat}, '${(address || '').replace(/'/g, "''")}', ${premium ? 1 : 0}, 'draft')`
-    db.exec(insertSql)
-    const lastIdResult = db.exec('SELECT last_insert_rowid() as id')
-    const scoreId = lastIdResult[0]?.values?.[0]?.[0]
+    // 参数化插入（杜绝 SQL 注入）
+    const insertSql = `INSERT INTO store_scores (template_id, user_id, store_id, lng, lat, address, premium, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')`
+    const insertResult = db.prepare(insertSql).run(
+      template.id,
+      userId,
+      storeId ?? null,
+      lng,
+      lat,
+      (address || '').trim() || null,
+      premium ? 1 : 0
+    )
+    const scoreId = insertResult.lastInsertRowid
     console.log('[StoreScores] inserted id:', scoreId)
 
-    // 获取评分���
+    // 获取评分项
     const items = db.prepare('SELECT * FROM scoring_items WHERE template_id = ? ORDER BY sort_order').all(template.id)
 
     // 自动计算商圈特征项
-    const autoScores = await calcAutoScores(db, lng, lat, premium, req.user)
+    const autoScores = await calcAutoScores(db, lng, lat, premium, userId, isAdmin)
 
-    // 创建评分明细（直接拼SQL避免参数传递问题）
+    // 创建评分明细（参数化插入）
     let totalScore = 0
     for (const item of items) {
-      let autoVal = 'NULL'
+      let autoVal = null
       let finalScore = 0
 
       if (item.input_type === 'auto') {
         const aVal = autoScores[item.name]?.value
-        autoVal = aVal !== null && aVal !== undefined ? aVal : 'NULL'
+        autoVal = (aVal !== null && aVal !== undefined) ? aVal : null
         finalScore = autoScores[item.name]?.score ?? 0
       }
 
-      db.exec(`INSERT INTO score_details (score_id, item_id, auto_value, manual_value, final_score) VALUES (${scoreId}, ${item.id}, ${autoVal}, NULL, ${finalScore})`)
+      db.prepare(`INSERT INTO score_details (score_id, item_id, auto_value, manual_value, final_score) VALUES (?, ?, ?, NULL, ?)`).run(scoreId, item.id, autoVal, finalScore)
       totalScore += finalScore
     }
 
     // 更新总分
-    db.exec(`UPDATE store_scores SET total_score = ${Math.round(totalScore)} WHERE id = ${scoreId}`)
+    db.prepare(`UPDATE store_scores SET total_score = ? WHERE id = ?`).run(Math.round(totalScore), scoreId)
 
     // 返回完整评分
     const details = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(scoreId)
@@ -103,7 +111,7 @@ router.put('/scores/:id', authenticate, (req, res) => {
     if (!score) return res.status(404).json({ message: '评分记录不存在' })
 
     // 更新手动填写的评分项
-    const updateDetail = db.prepare('UPDATE score_details SET manual_value = ?, final_score = ?, remark = ? WHERE id = ? AND score_id = ?')
+    const updateDetail = db.prepare('UPDATE score_details SET auto_value = ?, manual_value = ?, final_score = ?, remark = ? WHERE id = ? AND score_id = ?')
     const getItem = db.prepare('SELECT * FROM scoring_items WHERE id = ?')
 
     let totalScore = 0
@@ -119,8 +127,16 @@ router.put('/scores/:id', authenticate, (req, res) => {
           finalScore = calcRentScore(d.manualValue, item.max_score)
         }
 
-        const escaped = (v) => { if (v === null || v === undefined) return 'NULL'; return `'${String(v).replace(/'/g, "''")}'` }
-        db.exec(`UPDATE score_details SET auto_value = ${escaped(d.autoValue)}, manual_value = ${escaped(d.manualValue)}, final_score = ${finalScore}, remark = ${escaped(d.remark || '')} WHERE id = ${d.id} AND score_id = ${score.id}`)
+        if (d.id == null) continue
+        // 参数化更新（杜绝 SQL 注入）
+        updateDetail.run(
+          d.autoValue ?? null,
+          d.manualValue ?? null,
+          finalScore,
+          d.remark || '',
+          d.id,
+          score.id
+        )
         totalScore += finalScore
       }
     }
@@ -131,7 +147,7 @@ router.put('/scores/:id', authenticate, (req, res) => {
       totalScore += ad.final_score || 0
     }
 
-    db.exec(`UPDATE store_scores SET total_score = ${Math.round(totalScore)}, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ${score.id}`)
+    db.prepare(`UPDATE store_scores SET total_score = ?, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(Math.round(totalScore), score.id)
 
     const updatedScore = db.prepare('SELECT * FROM store_scores WHERE id = ?').get(score.id)
     const updatedDetails = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(score.id)
@@ -177,8 +193,13 @@ router.get('/scores/:id', authenticate, (req, res) => {
 router.delete('/scores/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
-    db.exec(`DELETE FROM score_details WHERE score_id = ${req.params.id}`)
-    db.exec(`DELETE FROM store_scores WHERE id = ${req.params.id} AND user_id = ${req.user.id}`)
+    const id = req.params.id
+    const uid = req.user.id
+    // 先确认该评分属于当前用户（防止越权删他人明细）
+    const owned = db.prepare('SELECT id FROM store_scores WHERE id = ? AND user_id = ?').get(id, uid)
+    if (!owned) return res.status(404).json({ message: '评分记录不存在' })
+    db.prepare(`DELETE FROM score_details WHERE score_id = ?`).run(id)
+    db.prepare(`DELETE FROM store_scores WHERE id = ? AND user_id = ?`).run(id, uid)
     res.json({ message: '已删除' })
   } catch (error) {
     res.status(500).json({ message: '删除失败' })
@@ -187,7 +208,7 @@ router.delete('/scores/:id', authenticate, (req, res) => {
 
 // === 辅助函数 ===
 
-async function calcAutoScores(db, lng, lat, premium, userId) {
+async function calcAutoScores(db, lng, lat, premium, userId, isAdmin = false) {
   const result = {}
 
   // 1. 人口密度（统一使用联通精算数据）
@@ -221,7 +242,7 @@ async function calcAutoScores(db, lng, lat, premium, userId) {
         AND (user_id = ? OR ? = 1)`).get(
       lat - latDelta, lat + latDelta,
       lng - lngDelta, lng + lngDelta,
-      userId, isAdmin
+      userId, isAdmin ? 1 : 0
     )
     const compCount = compRow?.cnt || 0
     const compScore = Math.min(15, Math.max(0, 15 - compCount))

@@ -484,7 +484,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, DataAnalysis, WarningFilled } from '@element-plus/icons-vue'
@@ -497,6 +497,13 @@ import { exportChartImage } from '@/utils/chartExport'
 const userStore = useUserStore()
 const store = useShoppingCenterStore()
 const router = useRouter()
+// 统一鉴权请求头（mall-tenants 等接口后端已要求 JWT）
+const scAuthHeaders = (isJson = false) => {
+  const token = userStore.token
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
+  if (isJson) headers['Content-Type'] = 'application/json'
+  return headers
+}
 const scActiveTab = ref('centers')
 const tenantData = ref([])
 const tenantTotal = ref(0)
@@ -1070,7 +1077,8 @@ function getHeatmapCellStyle(nums, idx) {
 }
 
 // 窗口resize时重绘图表
-window.addEventListener('resize', () => { if (compareChart) compareChart.resize() })
+const onCompareResize = () => { if (compareChart) compareChart.resize() }
+window.addEventListener('resize', onCompareResize)
 
 // ====== 商场商户功能 ======
 const loadTenants = async () => {
@@ -1088,7 +1096,7 @@ const loadTenants = async () => {
       sortBy: tenantSortBy.value,
       sortOrder: tenantSortOrder.value
     })
-    const r = await fetch('/api/mall-tenants?' + params.toString())
+    const r = await fetch('/api/mall-tenants?' + params.toString(), { headers: scAuthHeaders() })
     const d = await r.json()
     if (d.success) {
       tenantData.value = d.data
@@ -1136,7 +1144,7 @@ const handleTenantUpload = async (options) => {
     }, 200)
     const formData = new FormData()
     formData.append('file', file)
-    const r = await fetch('/api/mall-tenants/import', { method: 'POST', body: formData })
+    const r = await fetch('/api/mall-tenants/import', { method: 'POST', body: formData, headers: scAuthHeaders() })
     clearInterval(progressInterval)
     tenantImportProgress.value = 100
     const d = await r.json()
@@ -1155,7 +1163,7 @@ const handleClearAllTenants = async () => {
     await ElMessageBox.confirm('确定要清除所有商户数据吗？此操作不可恢复！', '警告', {
       type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消'
     })
-    const r = await fetch('/api/mall-tenants', { method: 'DELETE' })
+    const r = await fetch('/api/mall-tenants', { method: 'DELETE', headers: scAuthHeaders() })
     const d = await r.json()
     if (d.success) { ElMessage.success('已清除所有数据'); loadTenants() }
     else { ElMessage.error(d.message || '清除失败') }
@@ -1265,7 +1273,7 @@ const tcFilteredMallList = computed(() => {
 const tcMallNames = ref([])
 const tcLoadMallList = async () => {
   try {
-    const r = await fetch('/api/mall-tenants/options')
+    const r = await fetch('/api/mall-tenants/options', { headers: scAuthHeaders() })
     const d = await r.json()
     if (d.success) {
       tcMallNames.value = d.data.mallNames || []
@@ -1302,7 +1310,7 @@ const tcStartCompare = async () => {
       types: tcSelectedTypes.value.join(','),
       byClassification: 'true'
     })
-    const r = await fetch('/api/mall-tenants/compare?' + params.toString())
+    const r = await fetch('/api/mall-tenants/compare?' + params.toString(), { headers: scAuthHeaders() })
     const d = await r.json()
     if (d.success) {
       tcCompareData.value = d.data
@@ -1317,7 +1325,8 @@ const tcStartCompare = async () => {
 }
 
 // 窗口resize时重绘饼图
-window.addEventListener('resize', () => { if (tcChartInstance) tcChartInstance.resize() })
+const onTcResize = () => { if (tcChartInstance) tcChartInstance.resize() }
+window.addEventListener('resize', onTcResize)
 
 // 筛选变化时重置商户翻页到第1页并重新加载
 watch([tenantKeyword, tenantFilterCity, tenantFilterDistrict, tenantFilterBizCircle, tenantFilterType, tenantFilterClassification], (newVals, oldVals) => {
@@ -1343,6 +1352,14 @@ const exportCompareChart = () => {
 const exportTenantChart = () => {
   exportChartImage(tcChartInstance, '商户类型分布')
 }
+
+// 组件卸载时释放图表实例与事件监听，避免长会话内存/监听累积泄漏
+onUnmounted(() => {
+  if (compareChart) { compareChart.dispose(); compareChart = null }
+  if (tcChartInstance) { tcChartInstance.dispose(); tcChartInstance = null }
+  window.removeEventListener('resize', onCompareResize)
+  window.removeEventListener('resize', onTcResize)
+})
 </script>
 
 <style lang="scss" scoped>

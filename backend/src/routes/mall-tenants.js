@@ -4,6 +4,7 @@ import fs from 'fs'
 import multer from 'multer'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -33,7 +34,7 @@ function invalidateCache() {
 }
 
 // GET /api/mall-tenants?page=1&pageSize=20&keyword=&city=&district=&bizCircle=&type=
-router.get('/', (req, res) => {
+router.get('/', authenticate, (req, res) => {
   try {
     const all = loadData()
     const page = Math.max(1, parseInt(req.query.page) || 1)
@@ -90,8 +91,8 @@ router.get('/', (req, res) => {
   }
 })
 
-// POST /api/mall-tenants/import - 导入CSV
-router.post('/import', upload.single('file'), (req, res) => {
+// POST /api/mall-tenants/import - 导入CSV（仅管理员）
+router.post('/import', authenticate, requireAdmin, upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传 CSV 文件' })
     const csvRaw = fs.readFileSync(req.file.path, 'utf-8')
@@ -146,7 +147,7 @@ router.post('/import', upload.single('file'), (req, res) => {
 })
 
 // GET /api/mall-tenants/options - 返回过滤选项（轻量，不含数据）
-router.get('/options', (req, res) => {
+router.get('/options', authenticate, (req, res) => {
   try {
     const all = loadData()
     const mallNames = [...new Set(all.map(d => d['商场名称']).filter(Boolean))].sort()
@@ -159,7 +160,7 @@ router.get('/options', (req, res) => {
 })
 
 // GET /api/mall-tenants/compare?malls=商场A,商场B&types=分类1,分类2&byClassification=true
-router.get('/compare', (req, res) => {
+router.get('/compare', authenticate, (req, res) => {
   try {
     const all = loadData()
     const mallNames = (req.query.malls || '').split(',').filter(Boolean)
@@ -190,8 +191,8 @@ router.get('/compare', (req, res) => {
   }
 })
 
-// DELETE /api/mall-tenants - 清除所有数据
-router.delete('/', (req, res) => {
+// DELETE /api/mall-tenants - 清除所有数据（仅管理员）
+router.delete('/', authenticate, requireAdmin, (req, res) => {
   try {
     fs.writeFileSync(dataPath, JSON.stringify([], null, 2))
     invalidateCache()
