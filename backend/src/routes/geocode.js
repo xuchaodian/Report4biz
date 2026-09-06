@@ -1,11 +1,12 @@
 import express from 'express'
 import https from 'https'
 import http from 'http'
+import { AMAP_KEY } from '../config.js'
 
 const router = express.Router()
 
 // 高德 Web 服务 Key
-const AMap_KEY = '8e22ba2cec83bc554753a47842383949'
+const AMap_KEY = AMAP_KEY
 
 // 确保正确编码
 const ensureProperEncoding = (str) => {

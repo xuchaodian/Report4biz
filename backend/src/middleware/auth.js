@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken'
-
-const JWT_SECRET = process.env.JWT_SECRET || 'geomanger-secret-key-2024'
+import { JWT_SECRET } from '../config.js'
 
 // 验证Token中间件
 export function authenticate(req, res, next) {

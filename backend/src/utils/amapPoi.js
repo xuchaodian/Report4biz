@@ -3,9 +3,10 @@
  * https://lbs.amap.com/api/webservice/guide/api/newpoisearch
  */
 import axios from 'axios'
+import { AMAP_KEY as CONFIG_AMAP_KEY } from '../config.js'
 
-// 高德地图 Web服务 API Key
-const AMAP_KEY = '8e22ba2cec83bc554753a47842383949';
+// 高德地图 Web服务 API Key（来自环境变量）
+const AMAP_KEY = CONFIG_AMAP_KEY;
 const AMAP_PLACE_URL = 'https://restapi.amap.com/v3/place';
 const AMAP_GEO_URL = 'https://restapi.amap.com/v3/geocode';
 

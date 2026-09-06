@@ -2,13 +2,14 @@ import express from 'express'
 import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { SMARTSTEPS_API_KEY } from '../config.js'
 
 const router = express.Router()
 
 // 智慧足迹API配置
 const SMARTSTEPS_CONFIG = {
   baseUrl: 'https://jm-odp.smartsteps.com/febs',
-  apiKey: 'bdca5013c9a66ab882dc6b82be93e3a8de3',
+  apiKey: SMARTSTEPS_API_KEY,
   // 费用60元/次
   costPerQuery: 60
 }

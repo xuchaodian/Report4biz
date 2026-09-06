@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
@@ -15,6 +15,20 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const router = express.Router()
+
+// 生成 shapefile 可见性 SQL 片段及参数。
+// 语义：管理员(role='admin')可见全部；普通用户可见「本人上传」+「管理员共享」的文件。
+// 返回 { clause, params }，clause 可直接拼进 WHERE。
+function visibilityClause(user, alias) {
+  const p = alias ? alias + '.' : ''
+  if (user.role === 'admin') {
+    return { clause: '1=1', params: [] }
+  }
+  return {
+    clause: `(${p}user_id = ? OR ${p}user_id IN (SELECT id FROM users WHERE role = 'admin'))`,
+    params: [user.id]
+  }
+}
 
 // 简单内存缓存：避免同一 shapefile 被频繁 JSON.parse（key=shapefileId, value={geojson, ts}）
 const shapefileCache = new Map()
@@ -88,22 +102,21 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       } catch (e) { /* GBK 编码失败，保持原样 */ }
     }
 
-    // 获取用户ID (从 header 或默认)
-    const userId = req.headers['x-user-id'] || 1
+    // 获取当前登录用户ID（来自JWT，安全）
+    const userId = req.user.id
 
     // 获取类别参数（默认 population），放在前面供解析时使用
     const category = req.body.category || 'population'
 
-    // 调用 Python 脚本解析 shapefile (使用 exec 代替 execSync，避免缓冲区溢出)
+    // 调用 Python 脚本解析 shapefile (使用 execFile，避免 shell 命令注入)
     const pythonScript = path.join(__dirname, '../utils/shapefile_parser.py')
 
-    // citynd 类型是七普人口数据（WGS84），需要转换到 GCJ-02
-    // other 类型是城市商圈数据（已是高德坐标系），跳过转换
-    const skipCoordConvert = category === 'other' ? '--skip-convert' : ''
-
-    // 使用 Promise 包装 exec
+    // 使用 execFile 传参数数组（不经过 shell），杜绝命令注入
+    // citynd 七普人口数据(WGS84)需转 GCJ-02；other 城市商圈数据已是高德坐标，跳过转换
+    const args = [pythonScript, filePath]
+    if (category === 'other') args.push('--skip-convert')
     const pythonResult = await new Promise((resolve, reject) => {
-      exec(`python3 "${pythonScript}" "${filePath}" ${skipCoordConvert}`.trim(), { 
+      execFile('python3', args, {
         encoding: 'utf-8',
         maxBuffer: 100 * 1024 * 1024  // 100MB 缓冲区
       }, (error, stdout, stderr) => {
@@ -157,18 +170,17 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
   }
 })
 
-// 获取用户的所有 Shapefile（同时包含管理员的，方便商圈人口分布功能共享数据）
-router.get('/', (req, res) => {
+// 获取当前用户可见的 Shapefile（本人上传 + 管理员共享；管理员可看全部）
+router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
     const category = req.query.category  // 可选：population / other
 
-    // 返回当前用户 + 管理员(user_id=1) 的文件（去重）
     let sql = `SELECT id, name, field_names, feature_count, created_at, user_id, category
                FROM shapefiles
-               WHERE (user_id = ? OR user_id = 1)`
-    const params = [userId]
+               WHERE ${vis.clause}`
+    const params = [...vis.params]
 
     if (category) {
       sql += ` AND category = ?`
@@ -197,16 +209,16 @@ router.get('/', (req, res) => {
   }
 })
 
-// 获取单个 Shapefile 的 GeoJSON 数据（普通用户可访问管理员共享的文件）
-router.get('/:id', (req, res) => {
+// 获取单个 Shapefile 的 GeoJSON 数据（登录用户可访问自己 + 管理员共享的文件）
+router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
-    ).get(id, userId)
+      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND ${vis.clause}`
+    ).get(id, ...vis.params)
 
     if (!row) {
       return res.status(404).json({ message: '未找到' })
@@ -230,24 +242,29 @@ router.get('/:id', (req, res) => {
   }
 })
 
-// 重命名 Shapefile
-router.put('/:id/rename', (req, res) => {
+// 重命名 Shapefile（仅本人或管理员可操作自己/管理的文件）
+router.put('/:id/rename', authenticate, (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const userId = req.headers['x-user-id'] || 1
+    const userId = req.user.id
+    const isAdmin = req.user.role === 'admin'
     const { name } = req.body
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: '文件名不能为空' })
     }
 
-    const row = db.prepare(`SELECT id FROM shapefiles WHERE id = ? AND user_id = ?`).get(id, userId)
+    // 归属校验：本人可改；管理员可改任意文件（共享数据维护）
+    const whereSql = isAdmin ? `id = ?` : `id = ? AND user_id = ?`
+    const whereParams = isAdmin ? [id] : [id, userId]
+
+    const row = db.prepare(`SELECT id FROM shapefiles WHERE ${whereSql}`).get(...whereParams)
     if (!row) {
-      return res.status(404).json({ message: '未找到该文件' })
+      return res.status(404).json({ message: '未找到该文件或无权操作' })
     }
 
-    db.prepare(`UPDATE shapefiles SET name = ? WHERE id = ? AND user_id = ?`).run(name.trim(), id, userId)
+    db.prepare(`UPDATE shapefiles SET name = ? WHERE ${whereSql}`).run(name.trim(), ...whereParams)
     db.saveNow()
 
     res.json({ success: true, message: '重命名成功' })
@@ -257,17 +274,22 @@ router.put('/:id/rename', (req, res) => {
   }
 })
 
-// 删除 Shapefile
-router.delete('/:id', (req, res) => {
+// 删除 Shapefile（仅本人或管理员可删除）
+router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const userId = req.headers['x-user-id'] || 1
+    const userId = req.user.id
+    const isAdmin = req.user.role === 'admin'
 
-    db.prepare(`DELETE FROM shapefiles WHERE id = ? AND user_id = ?`).run(id, userId)
+    const whereSql = isAdmin ? `id = ?` : `id = ? AND user_id = ?`
+    const whereParams = isAdmin ? [id] : [id, userId]
+
+    const result = db.prepare(`DELETE FROM shapefiles WHERE ${whereSql}`).run(...whereParams)
     db.saveNow()
 
-    res.json({ success: true, message: '删除成功' })
+    // result.changes === 0 表示无匹配行（越权或不存在）
+    res.json({ success: true, message: result.changes > 0 ? '删除成功' : '未找到该文件或无权删除' })
 
   } catch (error) {
     console.error('删除 Shapefile 失败:', error)
@@ -275,18 +297,18 @@ router.delete('/:id', (req, res) => {
   }
 })
 
-// 检索 Shapefile 数据（支持多条件查询）
-router.post('/:id/query', (req, res) => {
+// 检索 Shapefile 数据（支持多条件查询；登录用户可查自己+管理员共享）
+router.post('/:id/query', authenticate, (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
     const { conditions } = req.body
 
-    // 获取 Shapefile 数据（普通用户可访问管理员共享的文件）
+    // 获取 Shapefile 数据
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
-    ).get(id, userId)
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+    ).get(id, ...vis.params)
 
     if (!row) {
       return res.status(404).json({ message: '未找到该文件' })
@@ -368,15 +390,15 @@ router.post('/:id/query', (req, res) => {
 })
 
 // 获取 Shapefile 的数值字段列表
-router.get('/:id/fields', (req, res) => {
+router.get('/:id/fields', authenticate, (req, res) => {
   try {
     const db = getDb()
     const id = req.params.id
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND (user_id = ? OR user_id = 1)`
-    ).get(id, userId)
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+    ).get(id, ...vis.params)
 
     if (!row) {
       return res.status(404).json({ message: '未找到该文件' })
@@ -430,9 +452,9 @@ router.get('/:id/fields', (req, res) => {
 })
 
 // 计算人口分布 - 根据圆心+半径计算各shapefile内人口统计
-router.post('/calculate-population', (req, res) => {
+router.post('/calculate-population', authenticate, (req, res) => {
   try {
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
     const { lat, lng, radius, fieldName, shapefileId } = req.body
 
     if (!lat || !lng || !radius) {
@@ -440,16 +462,16 @@ router.post('/calculate-population', (req, res) => {
     }
 
     const db = getDb()
-    // 获取shapefile（如果前端传了shapefileId则只处理该文件，否则全部加载）
+    // 获取shapefile（如果前端传了shapefileId则只处理该文件，否则全部可加载的）
     let rows
     if (shapefileId) {
       rows = db.prepare(
-        `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ?`
-      ).all(shapefileId)
+        `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+      ).all(shapefileId, ...vis.params)
     } else {
       rows = db.prepare(
-        `SELECT id, name, geojson, field_names FROM shapefiles`
-      ).all()
+        `SELECT id, name, geojson, field_names FROM shapefiles WHERE ${vis.clause}`
+      ).all(...vis.params)
     }
 
     if (!rows || rows.length === 0) {
@@ -585,10 +607,10 @@ router.post('/calculate-population', (req, res) => {
  * Body: { keyword: string }
  * 在所有 category='other' 的 shapefile 中查找名称/name 字段包含 keyword 的要素
  */
-router.post('/search-commerce', (req, res) => {
+router.post('/search-commerce', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
     const { keyword } = req.body
 
     if (!keyword || !keyword.trim()) {
@@ -597,10 +619,10 @@ router.post('/search-commerce', (req, res) => {
 
     const kw = keyword.trim()
 
-    // 获取所有 other 类 shapefile
+    // 获取所有 other 类 shapefile（当前用户可见）
     const rows = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'other' AND (user_id = ? OR user_id = 1)`
-    ).all(userId)
+      `SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'other' AND ${vis.clause}`
+    ).all(...vis.params)
 
     const matchedFeatures = []
 
@@ -654,14 +676,14 @@ router.post('/search-commerce', (req, res) => {
  * POST /api/shapefiles/calculate-potential
  * 开店余地分析
  */
-router.post('/calculate-potential', async (req, res) => {
+router.post('/calculate-potential', authenticate, async (req, res) => {
   try {
-    const userId = req.headers['x-user-id'] || 1
+    const vis = visibilityClause(req.user)
     const { cityName, radius, myStoreMin, competitorMin, conditions } = req.body
     if (!cityName || !radius) return res.status(400).json({ success: false, error: '缺少参数' })
     const r = parseFloat(radius) || 1
     const db = getDb()
-    const rows = db.prepare(`SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'population' AND name LIKE ? AND (user_id = ? OR user_id = 1) LIMIT 1`).all(`%${cityName}%`, userId)
+    const rows = db.prepare(`SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'population' AND name LIKE ? AND ${vis.clause} LIMIT 1`).all(`%${cityName}%`, ...vis.params)
     if (!rows || !rows.length) return res.json({ success: false, error: `未找到${cityName}的数据` })
     const geojson = JSON.parse(rows[0].geojson)
     const features = geojson.features || []

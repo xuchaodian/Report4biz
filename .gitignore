@@ -15,6 +15,8 @@ dist.old*/
 .env
 .env.local
 .env.*.local
+# 本地自动生成的 JWT 密钥（生产请通过环境变量 JWT_SECRET 显式指定）
+.jwt_secret
 
 # 日志
 npm-debug.log*

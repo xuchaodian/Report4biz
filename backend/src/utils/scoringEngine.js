@@ -1,5 +1,6 @@
 import { getDb } from '../models/database.js'
 import { saveToCache, getAuthorization, buildCircleWkt, checkIfDataIsEmpty, initCacheTable } from '../routes/smartsteps.js'
+import { AMAP_KEY } from '../config.js'
 
 // === 评分引擎配置 ===
 const DEFAULT_WEIGHTS = {
@@ -243,7 +244,7 @@ function calcCompetitionScore(count, threshold) {
 async function fetchPOIScores(lng, lat, radiusM) {
   try {
     // 使用原生 fetch（Node 18+）
-    const apiKey = '8e22ba2cec83bc554753a47842383949'
+    const apiKey = AMAP_KEY
 
     // 搜索办公楼
     const officeRes = await fetch(

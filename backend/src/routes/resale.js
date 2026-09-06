@@ -3,13 +3,14 @@ import crypto from 'crypto'
 import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { SMARTSTEPS_API_KEY } from '../config.js'
 
 const router = express.Router()
 
 // 智慧足迹（联通）上游配置 —— 仅后端可见，绝不随响应暴露
 const SMARTSTEPS_CONFIG = {
   baseUrl: 'https://jm-odp.smartsteps.com/febs',
-  apiKey: 'bdca5013c9a66ab882dc6b82be93e3a8de3',
+  apiKey: SMARTSTEPS_API_KEY,
   costPerQuery: 60  // 上游成本 60 元/次
 }
 

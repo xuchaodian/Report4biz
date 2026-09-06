@@ -2,6 +2,7 @@ import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { scoreLocation } from '../utils/scoringEngine.js'
+import { AMAP_KEY } from '../config.js'
 
 const router = express.Router()
 
@@ -231,7 +232,7 @@ async function calcAutoScores(db, lng, lat, premium, userId) {
 
   // 4. 配套丰富度 + 交通便利度
   try {
-    const apiKey = '8e22ba2cec83bc554753a47842383949'
+    const apiKey = AMAP_KEY
     const officeRes = await fetch(
       `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=1000&types=050000&offset=20&page=1`
     ).then(r => r.json()).catch(() => ({ count: 0 }))

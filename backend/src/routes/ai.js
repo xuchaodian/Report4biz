@@ -3,10 +3,10 @@ import { authenticate } from '../middleware/auth.js'
 import { getDb } from '../models/database.js'
 import { tools, serverSideTools } from '../ai/tools.js'
 import { aroundSearch } from '../utils/amapPoi.js'
+import { ARK_API_KEY } from '../config.js'
 
 const router = express.Router()
 
-const ARK_API_KEY = process.env.ARK_API_KEY || 'f92f55af-7642-49d8-94f5-d1492b7b4e19'
 const ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const MODEL = 'doubao-seed-2-0-pro-260215'
 

@@ -8,11 +8,12 @@ import express from 'express'
 import axios from 'axios'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { AMAP_KEY } from '../config.js'
 
 const router = express.Router()
 
-// 高德 WebService API Key
-const KEY = '8e22ba2cec83bc554753a47842383949'
+// 高德 WebService API Key（来自环境变量）
+const KEY = AMAP_KEY
 const AMAP_URL = 'https://restapi.amap.com/v3/config/district'
 const EARTH_RADIUS = 6371.0 // km
 

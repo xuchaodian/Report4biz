@@ -8,11 +8,12 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { buildSummaryValues, summaryValue } from '../utils/unicomSummaryValues.js'
 import { UNICOM_SUMMARY_COLS } from '../utils/unicomSummaryCols.js'
+import { PURCHASE_SHARE_SECRET } from '../config.js'
 import * as XLSX from 'xlsx'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const router = express.Router()
-const SHARE_SECRET = 'Report4biz_share_2026'
+const SHARE_SECRET = PURCHASE_SHARE_SECRET
 
 // 封装 child_process.exec 为 Promise（批量导出复用）
 const runExec = (cmd, timeout = 30000) => new Promise((resolve, reject) => {

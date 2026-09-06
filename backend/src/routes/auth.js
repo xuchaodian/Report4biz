@@ -2,9 +2,9 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { getDb } from '../models/database.js'
+import { JWT_SECRET } from '../config.js'
 
 const router = express.Router()
-const JWT_SECRET = process.env.JWT_SECRET || 'geomanger-secret-key-2024'
 
 // 注册
 router.post('/register', async (req, res) => {

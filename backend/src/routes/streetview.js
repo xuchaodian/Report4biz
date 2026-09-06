@@ -9,11 +9,12 @@
  */
 
 import express from 'express'
+import { TENCENT_LBS_KEY } from '../config.js'
 
 const router = express.Router()
 
-// 腾讯位置服务 API Key
-const KEY = 'PL5BZ-HGV6J-MC2FC-DXNCT-EF6W3-EWFKU'
+// 腾讯位置服务 API Key（来自环境变量，仅存于服务端）
+const KEY = TENCENT_LBS_KEY
 
 /**
  * GET /api/streetview/open?lat=&lng=
