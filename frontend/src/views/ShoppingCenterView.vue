@@ -888,8 +888,8 @@ const startCompare = async () => {
   compareTableData.value = []
 
   try {
-    const userId = localStorage.getItem('userId') || 1
-    const listRes = await fetch(`/api/shapefiles`, { headers: { 'x-user-id': userId } })
+    const token = userStore.token
+    const listRes = await fetch(`/api/shapefiles`, { headers: { 'Authorization': `Bearer ${token}` } })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
 
@@ -929,7 +929,7 @@ const startCompare = async () => {
       const storeCity = extractCityFromStore(item)
       const targetSf = findShapefileForCity(storeCity, shapefiles)
 
-      const sfRes = await fetch(`/api/shapefiles/${targetSf.id}`, { headers: { 'x-user-id': userId } })
+      const sfRes = await fetch(`/api/shapefiles/${targetSf.id}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const sfData = await sfRes.json()
       const geojson = sfData.data?.geojson || sfData.geojson
 
@@ -948,7 +948,7 @@ const startCompare = async () => {
 
       const res = await fetch('/api/shapefiles/calculate-population', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ lat, lng, radius: radiusMeters, fieldName: statField, city: targetSf.city })
       })
       if (!res.ok) throw new Error(`API错误: ${res.status}`)

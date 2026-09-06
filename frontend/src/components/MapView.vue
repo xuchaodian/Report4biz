@@ -835,6 +835,11 @@ const shoppingCenterStore = useShoppingCenterStore()
 const userStore = useUserStore()
 const route = useRoute()
 
+// 鉴权请求头（shapefile 等需要登录的接口统一携带 JWT）
+function authHeader() {
+  return { Authorization: `Bearer ${userStore.token}` }
+}
+
 // AI 助手
 const aiAssistantRef = ref(null)
 const aiContext = computed(() => ({
@@ -1099,7 +1104,7 @@ const openPopulationDistribution = async () => {
   try {
     const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles`, {
-      headers: { 'x-user-id': userId }
+      headers: authHeader()
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -1109,7 +1114,7 @@ const openPopulationDistribution = async () => {
     for (const sf of shapefiles.slice(0, 5)) {  // 最多检查5个文件
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
-          headers: { 'x-user-id': userId }
+          headers: authHeader()
         })
         const sfData = await sfRes.json()
         const geojson = sfData.data?.geojson || sfData.geojson
@@ -1233,7 +1238,7 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
   try {
     const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles`, {
-      headers: { 'x-user-id': userId }
+      headers: authHeader()
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -1242,7 +1247,7 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
     for (const sf of shapefiles.slice(0, 5)) {
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
-          headers: { 'x-user-id': userId }
+          headers: authHeader()
         })
         const sfData = await sfRes.json()
         const geojson = sfData.data?.geojson || sfData.geojson
@@ -1456,7 +1461,7 @@ const analyzePopulationDistribution = async () => {
 
     ElMessage.info('正在扫描数据文件...')
     const listRes = await fetch(`/api/shapefiles`, {
-      headers: { 'x-user-id': userId }
+      headers: authHeader()
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -1472,7 +1477,7 @@ const analyzePopulationDistribution = async () => {
     for (const sf of shapefiles) {
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
-          headers: { 'x-user-id': userId }
+          headers: authHeader()
         })
         const sfData = await sfRes.json()
         const geojson = sfData.data?.geojson || sfData.geojson
@@ -5140,7 +5145,7 @@ const startPopulationCompare = async () => {
     // 获取所有shapefile
     const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles`, {
-      headers: { 'x-user-id': userId }
+      headers: authHeader()
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -5169,7 +5174,7 @@ const startPopulationCompare = async () => {
     // 获取第一个整数字段作为统计字段
     const firstSf = shapefiles[0]
     const sfRes = await fetch(`/api/shapefiles/${firstSf.id}`, {
-      headers: { 'x-user-id': userId }
+      headers: authHeader()
     })
     const sfData = await sfRes.json()
     const geojson = sfData.data?.geojson || sfData.geojson
@@ -5308,7 +5313,7 @@ const startPopulationCompare = async () => {
           console.log(`使用城市过滤参数获取shapefile: city=${storeCity}`)
           try {
             const listRes = await fetch(`/api/shapefiles?city=${encodedCity}`, {
-              headers: { 'x-user-id': userId }
+              headers: authHeader()
             })
             if (!listRes.ok) {
               console.warn(`城市过滤API请求失败: ${listRes.status}，将回退到所有shapefile`)
@@ -5322,7 +5327,7 @@ const startPopulationCompare = async () => {
                 for (const sf of filteredShapefiles) {
                   try {
                     const res = await fetch(`/api/shapefiles/${sf.id}`, {
-                      headers: { 'x-user-id': userId }
+                      headers: authHeader()
                     })
                     const data = await res.json()
                     const geojson = data.data?.geojson || data.geojson
@@ -5356,7 +5361,7 @@ const startPopulationCompare = async () => {
             if (!sf) continue
             try {
               const res = await fetch(`/api/shapefiles/${sf.id}`, {
-                headers: { 'x-user-id': userId }
+                headers: authHeader()
               })
               const data = await res.json()
               const geojson = data.data?.geojson || data.geojson

@@ -1618,6 +1618,11 @@ const shoppingCenterStore = useShoppingCenterStore()
 const userStore = useUserStore()
 const route = useRoute()
 
+// 鉴权请求头（登录后带 JWT；本页均在 MainLayout 登录守卫内，token 存在）
+function authHeader() {
+  return { Authorization: `Bearer ${userStore.token}` }
+}
+
 // AI 助手
 const aiAssistantRef = ref(null)
 
@@ -2525,7 +2530,7 @@ const openPopulationDistribution = async () => {
     try {
       const userId = localStorage.getItem('userId') || 1
       const listRes = await fetch(`/api/shapefiles?category=population`, {
-        headers: { 'x-user-id': userId }
+        headers: { Authorization: `Bearer ${userStore.token}` }
       })
       const listData = await listRes.json()
       const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -2541,7 +2546,7 @@ const openPopulationDistribution = async () => {
         try {
           // 使用字段端点，只获取字段列表，不获取完整GeoJSON
           const sfRes = await fetch(`/api/shapefiles/${sf.id}/fields`, {
-            headers: { 'x-user-id': userId },
+            headers: { Authorization: `Bearer ${userStore.token}` },
             signal: controller.signal
           })
           clearTimeout(timeoutId)
@@ -2689,7 +2694,7 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
   try {
     const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles?category=population`, {
-      headers: { 'x-user-id': userId }
+      headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -2700,7 +2705,7 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
     const filePromises = shapefiles.slice(0, maxFiles).map(async (sf) => {
       try {
         const sfRes = await fetch(`/api/shapefiles/${sf.id}/fields`, {
-          headers: { 'x-user-id': userId }
+          headers: { Authorization: `Bearer ${userStore.token}` }
         })
         const sfData = await sfRes.json()
         if (sfData.success && sfData.data) {
@@ -3285,7 +3290,7 @@ const analyzePopulationDistribution = async () => {
 
     // 获取所有shapefile
     const listRes = await fetch(`/api/shapefiles?category=population`, {
-      headers: { 'x-user-id': userId }
+      headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -3318,7 +3323,7 @@ const analyzePopulationDistribution = async () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': userId
+            Authorization: `Bearer ${userStore.token}`
           },
           body: JSON.stringify({
             lat: centerLat,
@@ -3410,7 +3415,7 @@ const analyzePopulationDistribution = async () => {
         const sf = shapefiles[0]
         if (sf) {
           const sfRes = await fetch(`/api/shapefiles/${sf.id}`, {
-            headers: { 'x-user-id': userId }
+            headers: { Authorization: `Bearer ${userStore.token}` }
           })
           const sfData = await sfRes.json()
           const geojson = sfData.data?.geojson || sfData.geojson
@@ -6955,7 +6960,7 @@ const openCityTradeArea = async () => {
   try {
     const userId = userStore.user?.id || 1
     const res = await fetch(`/api/shapefiles?category=other`, {
-      headers: { 'x-user-id': userId }
+      headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const json = await res.json()
     const files = json.data || []
@@ -6998,7 +7003,7 @@ const loadCityTradeArea = async (selectedCities) => {
     const userId = userStore.user?.id || 1
     // 先获取所有 other 类 shapefile
     const listRes = await fetch(`/api/shapefiles?category=other`, {
-      headers: { 'x-user-id': userId }
+      headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const listJson = await listRes.json()
     const allFiles = listJson.data || []
@@ -7019,7 +7024,7 @@ const loadCityTradeArea = async (selectedCities) => {
     for (let i = 0; i < cityFileIds.length; i++) {
       const fid = cityFileIds[i]
       const res = await fetch(`/api/shapefiles/${fid}`, {
-        headers: { 'x-user-id': userId }
+        headers: { Authorization: `Bearer ${userStore.token}` }
       })
       const json = await res.json()
       const geojson = json.data?.geojson
@@ -7283,7 +7288,7 @@ const searchCommerce = async () => {
 
     const res = await fetch('/api/shapefiles/search-commerce', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ keyword: commerceKeyword.value.trim() })
     })
     const data = await res.json()
@@ -7470,7 +7475,7 @@ const clearCommerceLayer = () => {
 // 开店余地：加载城市列表
 const loadPotentialCities = async () => {
   try {
-    const res = await fetch('/api/shapefiles?category=population')
+    const res = await fetch('/api/shapefiles?category=population', { headers: authHeader() })
     const data = await res.json()
     if (data && data.data) {
       let cities = data.data.map(f => {
@@ -7491,11 +7496,11 @@ const loadPotentialCities = async () => {
 const loadPotentialFields = async () => {
   if (!potentialCity.value || potentialNumericFields.value.length > 0) return
   try {
-    const res = await fetch('/api/shapefiles?category=population')
+    const res = await fetch('/api/shapefiles?category=population', { headers: authHeader() })
     const data = await res.json()
     const file = (data.data || []).find(f => (f.name || '').includes(potentialCity.value))
     if (file) {
-      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields')
+      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields', { headers: authHeader() })
       const fieldsData = await fieldsRes.json()
       if (fieldsData.success) {
         potentialNumericFields.value = fieldsData.data.numericFields || []
@@ -7510,11 +7515,11 @@ const loadPotentialFields = async () => {
 const onPotentialFieldChange = async (idx) => {
   if (!potentialCity.value) return
   try {
-    const res = await fetch('/api/shapefiles?category=population')
+    const res = await fetch('/api/shapefiles?category=population', { headers: authHeader() })
     const data = await res.json()
     const file = (data.data || []).find(f => (f.name || '').includes(potentialCity.value))
     if (file) {
-      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields')
+      const fieldsRes = await fetch('/api/shapefiles/' + file.id + '/fields', { headers: authHeader() })
       const fieldsData = await fieldsRes.json()
       if (fieldsData.success) {
         potentialNumericFields.value = fieldsData.data.numericFields || []
@@ -7544,7 +7549,7 @@ const calculatePotential = async () => {
     }
     const res = await fetch('/api/shapefiles/calculate-potential', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({
         cityName: potentialCity.value,
         radius: potentialRadius.value,
@@ -9272,7 +9277,7 @@ const startPopulationCompare = async () => {
     // 获取所有shapefile
     const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles?category=population`, {
-      headers: { 'x-user-id': userId }
+      headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
@@ -9366,7 +9371,7 @@ const startPopulationCompare = async () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-user-id': userId
+            Authorization: `Bearer ${userStore.token}`
           },
           body: JSON.stringify({
             lat,
