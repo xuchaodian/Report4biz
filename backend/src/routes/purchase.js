@@ -617,7 +617,7 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
     })
   } catch (error) {
     console.error('获取竞品地图数据失败:', error)
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: '获取竞品地图数据失败' })
   }
 })
 
@@ -643,7 +643,7 @@ router.get('/:id/shopping-centers-for-map', authenticate, (req, res) => {
     })
   } catch (error) {
     console.error('获取购物中心地图数据失败:', error)
-    res.status(500).json({ message: error.message })
+    res.status(500).json({ message: '获取购物中心地图数据失败' })
   }
 })
 

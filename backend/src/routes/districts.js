@@ -228,7 +228,8 @@ router.post('/refresh', authenticate, async (req, res) => {
     try {
       result = await queryUnicomPolygon(wkt, cityMonth)
     } catch (e) {
-      return res.status(502).json({ success: false, message: e.message })
+      console.error('[Districts] 联通多边形人口查询失败:', e)
+      return res.status(502).json({ success: false, message: '人口数据服务暂不可用，请稍后重试' })
     }
 
     // 4. 扣配额 + 缓存
@@ -246,7 +247,7 @@ router.post('/refresh', authenticate, async (req, res) => {
     })
   } catch (e) {
     console.error('[Districts] 刷新商圈失败:', e)
-    res.status(500).json({ message: '刷新失败: ' + e.message })
+    res.status(500).json({ message: '刷新失败，请稍后重试' })
   }
 })
 

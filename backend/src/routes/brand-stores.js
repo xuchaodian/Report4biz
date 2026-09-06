@@ -284,7 +284,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         // 批量写入完成后一次性保存
         db.saveNow()
 
-        fs.unlinkSync(req.file.path)
+        // 删除上传的文件（清理失败不影响导入结果）
+        try { fs.unlinkSync(req.file.path) } catch (e) { console.warn('[BrandStores] 清理上传临时文件失败:', e.message) }
 
         res.json({
           success: true,

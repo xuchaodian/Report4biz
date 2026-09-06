@@ -318,7 +318,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
 
   } catch (error) {
     console.error('AI 接口错误:', error)
-    res.status(500).json({ message: '服务器错误', detail: error.message })
+    res.status(500).json({ message: '服务器错误，请稍后重试' })
   }
 })
 
@@ -696,7 +696,7 @@ router.post('/site-advice', authenticate, async (req, res) => {
     res.json({ success: true, reply })
   } catch (e) {
     console.error('[site-advice] 失败:', e.message)
-    res.status(500).json({ message: '服务器错误', detail: e.message })
+    res.status(500).json({ message: '选址建议生成失败，请稍后重试' })
   }
 })
 

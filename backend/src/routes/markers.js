@@ -232,7 +232,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
         // 使用事务批量写入，大幅提升性能
         db.exec('BEGIN TRANSACTION')
-        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"
+        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
 
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue
@@ -257,8 +257,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         // 保存到磁盘
         saveDatabase()
 
-        // 删除上传的文件
-        fs.unlinkSync(req.file.path)
+        // 删除上传的文件（清理失败不影响导入结果）
+        try { fs.unlinkSync(req.file.path) } catch (e) { console.warn('[Markers] 清理上传临时文件失败:', e.message) }
 
         res.json({
           message: `成功导入 ${imported} 条数据`,

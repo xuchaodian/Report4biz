@@ -97,7 +97,7 @@ router.post('/scores', authenticate, async (req, res) => {
     res.status(201).json({ score, details, items })
   } catch (error) {
     console.error('创建评分失败:', error)
-    res.status(500).json({ message: '创建评分失败: ' + error.message })
+    res.status(500).json({ message: '创建评分失败，请稍后重试' })
   }
 })
 
@@ -153,7 +153,8 @@ router.put('/scores/:id', authenticate, (req, res) => {
     const updatedDetails = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(score.id)
     res.json({ score: updatedScore, details: updatedDetails })
   } catch (error) {
-    res.status(500).json({ message: '更新评分失败: ' + error.message })
+    console.error('更新评分失败:', error)
+    res.status(500).json({ message: '更新评分失败，请稍后重试' })
   }
 })
 

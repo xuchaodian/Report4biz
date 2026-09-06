@@ -249,7 +249,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
         // 使用事务批量写入，大幅提升性能
         db.exec('BEGIN TRANSACTION')
-        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"
+        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
 
         for (const row of results.data) {
           if (!row.name || !row.latitude || !row.longitude) continue

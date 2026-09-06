@@ -21,7 +21,7 @@ const upload = multer({ dest: 'uploads/', limits: { fileSize: 5 * 1024 * 1024 } 
 const MAX_IMPORT_ROWS = 10000
 
 /* ---------- 内部工具 ---------- */
-const esc = v => v === null || v === undefined || v === '' ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"
+const esc = v => v === null || v === undefined || v === '' ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
 const escKeepEmpty = v => v === null || v === undefined ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'"
 
 /** 还原 multer/busboy 按 latin1 解码的中文文件名（UTF-8 字节被逐字节读成 latin1 → 乱码） */

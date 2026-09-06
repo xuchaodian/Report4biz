@@ -7625,8 +7625,6 @@ const handleShapefileQuery = (event) => {
   try {
     const { id, name, geojson, matched, displayFields } = event.detail
 
-    console.log('[Shapefile Query] 收到请求:', { name, matched, displayFields, mapReady: !!map })
-
     // 首先检查 map 是否存在
     if (!map) {
       console.log('[Shapefile Query] 地图未初始化，等待...')
@@ -7642,7 +7640,6 @@ const handleShapefileQuery = (event) => {
 
     // 防止重复处理
     if (shapefileProcessing) {
-      console.log('[Shapefile Query] 正在处理中，跳过')
       return
     }
 
@@ -7668,8 +7665,6 @@ const handleShapefileQuery = (event) => {
       shapefileQueryLayer = null
     }
 
-    console.log('[Shapefile Query] 开始处理，共', features.length, '个要素')
-
     // 标记开始处理
     shapefileProcessing = true
     ElMessage.info(`正在加载 ${features.length} 个要素...`)
@@ -7691,7 +7686,6 @@ const handleShapefileQuery = (event) => {
 
       if (currentIndex >= features.length) {
         // 全部处理完成，调整视图
-        console.log('[Shapefile Query] 处理完成')
         shapefileProcessing = false
 
         // 确保图层已添加到地图
@@ -7725,7 +7719,6 @@ const handleShapefileQuery = (event) => {
 
       // 处理当前批次
       const endIndex = Math.min(currentIndex + BATCH_SIZE, features.length)
-      console.log(`[Shapefile Query] 处理批次 ${currentIndex + 1}-${endIndex}/${features.length}`)
 
       for (let i = currentIndex; i < endIndex; i++) {
         const feature = features[i]
@@ -9629,7 +9622,6 @@ onMounted(() => {
   // 暴露Shapefile检索结果显示函数
   window.handleShapefileQueryFromGlobal = () => {
     if (window.shapefileQueryResult) {
-      console.log('[Shapefile Query] 全局触发, map存在:', !!map)
       if (map) {
         handleShapefileQuery({ detail: window.shapefileQueryResult })
         delete window.shapefileQueryResult
@@ -9678,7 +9670,6 @@ onMounted(() => {
       // 检查是否有Shapefile检索结果需要显示
       // 只有在地图完全准备好后才处理
       if (window.shapefileQueryResult && map) {
-        console.log('[MapView] 检测到Shapefile检索结果，开始处理')
         try {
           handleShapefileQuery({ detail: window.shapefileQueryResult })
         } catch (e) {
