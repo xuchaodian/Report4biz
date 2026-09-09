@@ -103,9 +103,6 @@
           <el-button type="text" @click="showHistoryDialog">
             📋 购买履历
           </el-button>
-          <el-button v-if="userStore.isAdmin" type="text" @click="importDialogVisible = true">
-            📥 导入联通 Excel
-          </el-button>
         </div>
       </div>
     </el-card>
@@ -124,6 +121,9 @@
             <div class="dhf-title">购买履历</div>
             <div class="dhf-sub">历史查询订单与配额消耗记录</div>
           </div>
+          <el-button type="primary" plain size="small" style="margin-left:auto;" @click="importDialogVisible = true">
+            📥 导入联通 Excel
+          </el-button>
         </div>
       </template>
       <!-- 筛选表单 -->
@@ -497,7 +497,7 @@
       </template>
     </el-dialog>
 
-    <!-- 外部联通 Excel 批量导入（仅管理员） -->
+    <!-- 外部联通 Excel 批量导入（所有登录用户；仅能匹配本人名下门店） -->
     <PurchaseImportDialog v-model="importDialogVisible" @imported="onImportDone" />
   </div>
 </template>

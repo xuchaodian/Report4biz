@@ -4,6 +4,7 @@
     :width="dialogWidth"
     :close-on-click-modal="false"
     class="import-dialog"
+    append-to-body
     :title="'📥 导入联通 Excel（外部报表批量导入）'"
     @update:model-value="onVisibleChange"
     @closed="resetAll"

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import * as XLSX from 'xlsx'
 import { getDb } from '../models/database.js'
-import { authenticate, requireAdmin } from '../middleware/auth.js'
+import { authenticate } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -266,7 +266,7 @@ function analyzeFile(db, userId, filePath, originalName) {
 }
 
 // ============ 接口一：预检（dry-run，不写库） ============
-router.post('/preview', authenticate, requireAdmin, (req, res) => {
+router.post('/preview', authenticate, (req, res) => {
   cleanupExpired()
   upload.array('files', MAX_FILES)(req, res, (err) => {
     if (err) {
@@ -320,7 +320,7 @@ router.post('/preview', authenticate, requireAdmin, (req, res) => {
 })
 
 // ============ 接口二：正式导入（落库；整文件原子、文件间独立） ============
-router.post('/commit', authenticate, requireAdmin, (req, res) => {
+router.post('/commit', authenticate, (req, res) => {
   cleanupExpired()
   const fileKeys = Array.isArray(req.body?.fileKeys) ? req.body.fileKeys : []
   if (fileKeys.length === 0) return res.status(400).json({ message: '请提供要导入的文件' })
