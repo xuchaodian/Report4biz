@@ -19,6 +19,7 @@ import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
 import smartstepsRoutes from './routes/smartsteps.js'
 import purchaseRoutes from './routes/purchase.js'
+import purchaseImportRoutes from './routes/purchase-import.js'
 import streetviewRoutes from './routes/streetview.js'
 import districtRoutes from './routes/district.js'
 import tileProxyRoutes from './routes/tile-proxy.js'
@@ -71,6 +72,8 @@ async function start() {
     app.use('/api/ai', aiRoutes)
     app.use('/api/poi', poiRoutes)
     app.use('/api/smartsteps', smartstepsRoutes)
+    // 外部联通 Excel 批量导入须先于 /api/purchase 注册（/import/* 不被 purchase 子路由吞）
+    app.use('/api/purchase/import', purchaseImportRoutes)
     app.use('/api/purchase', purchaseRoutes)
     app.use('/api/streetview', streetviewRoutes)
     app.use('/api/district', districtRoutes)

@@ -103,6 +103,9 @@
           <el-button type="text" @click="showHistoryDialog">
             📋 购买履历
           </el-button>
+          <el-button v-if="userStore.isAdmin" type="text" @click="importDialogVisible = true">
+            📥 导入联通 Excel
+          </el-button>
         </div>
       </div>
     </el-card>
@@ -493,6 +496,9 @@
         <p class="share-tip">电脑端：复制图片后到微信按 Ctrl+V 粘贴发送</p>
       </template>
     </el-dialog>
+
+    <!-- 外部联通 Excel 批量导入（仅管理员） -->
+    <PurchaseImportDialog v-model="importDialogVisible" @imported="onImportDone" />
   </div>
 </template>
 
@@ -506,12 +512,21 @@ import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { FIELD_LABELS } from './field_labels'
+import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
+
+// 外部联通 Excel 批量导入
+const importDialogVisible = ref(false)
+const onImportDone = async () => {
+  if (historyDialogVisible.value) {
+    await showHistoryDialog() // 履历已开着 → 刷新列表展示新导入记录
+  }
+}
 
 // ===== VIP 身份标识 =====
 const isVip = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial')
