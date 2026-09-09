@@ -1,72 +1,57 @@
 import api from './api'
 
-// 可回溯月份跨度（v1.13.103 B3：月份选择放开——以「联通当前可用最新月」为锚向前回溯 N 个月，
-// 不再死绑「最近 2 个月」，使 6 月及更早历史月份始终可选；联通对历史月 getData 仍受理）
-const MONTH_SPAN = 12
+// 联通 getData 规格：只受理「以数据最新月为锚的最近 2 个月」数据（2026-09 实测：最新可用 202607/202606）。
+// 因此可选数据年月 = 后端 /smartsteps/months 实测月（联通 getCityMonth，免费探测）截取前 AVAILABLE_TOP 项。
+// 注意：不得以「日历当前月」推算（数据通常滞后约 2 个月，日历推算会让用户选到无数据月），
+// 也不得向更早历史月展开（无数据月查询 = 60元/次 无效调用风险）。
+const AVAILABLE_TOP = 2
 
-// 月份值数组 → [{ value: 'YYYYMM', label: 'YYYY年M月' }]（保持入参顺序）
-function formatMonths(values) {
-  return values.map(v => {
-    const y = String(v).slice(0, 4)
-    const m = parseInt(String(v).slice(4, 6), 10)
-    return { value: String(v), label: `${y}年${m}月` }
-  })
+// 月份值 → { value: 'YYYYMM', label: 'YYYY年M月' }；非法返回 null
+function toMonthItem(v) {
+  const s = String(v ?? '').trim()
+  if (!/^\d{6}$/.test(s)) return null
+  const y = s.slice(0, 4)
+  const m = parseInt(s.slice(4, 6), 10)
+  if (m < 1 || m > 12) return null
+  return { value: s, label: `${y}年${m}月` }
 }
 
-// 本地估算最近 count 个月（联通不可达时的降级数据源）——以「当前自然月 −1」为最新锚向前回溯
-function recentLocalMonths(count = MONTH_SPAN) {
+// 本地估算兜底（联通探测接口不可达时，仍保证 UI 可用）：
+// 按「数据通常滞后当前约 2 个月」估算，以「当前自然月 −2」为最新锚向前取 count 个，最新在前。
+function recentLocalMonths(count = AVAILABLE_TOP) {
   const now = new Date()
-  const values = []
-  for (let i = 1; i <= count; i++) {
-    let month = now.getMonth() + 1 - i
+  const out = []
+  const anchor = now.getMonth() + 1 - 2 // 锚 = 当前月 −2（0/负数跨年处理）
+  for (let i = 0; i < count; i++) {
+    let month = anchor - i
     let year = now.getFullYear()
     if (month <= 0) {
       month += 12
       year -= 1
     }
-    values.push(`${year}${String(month).padStart(2, '0')}`)
+    out.push(toMonthItem(`${year}${String(month).padStart(2, '0')}`))
   }
-  return formatMonths(values)
-}
-
-// 以列表最新月为锚向前回溯 span 个月（含锚在内共 span 个自然月），历史月补足进列表；
-// 入参须为 YYYYMM 字符串数组。输出保持最新在前，长度 ≤ max(values 去重数, span)
-function expandBackward(values, span = MONTH_SPAN) {
-  if (!Array.isArray(values) || values.length === 0) return []
-  const seen = new Set(values)
-  const out = [...seen]  // 输入去重（防联通重复/乱序传入）
-  // 最新 = 数值最大（YYYYMM 字典序即时间序）
-  const anchor = [...values].sort().pop()
-  let y = parseInt(anchor.slice(0, 4), 10)
-  let m = parseInt(anchor.slice(4, 6), 10)
-  // 从锚的次一月开始逐自然月回退 span-1 步（撞到已存在实测月仅跳过不入 out，但月份推进照旧）
-  for (let step = 0; step < span - 1; step++) {
-    m -= 1
-    if (m <= 0) { m += 12; y -= 1 }
-    if (y < 2000) break
-    const v = `${y}${String(m).padStart(2, '0')}`
-    if (!seen.has(v)) {
-      seen.add(v)
-      out.push(v)
-    }
-  }
-  out.sort().reverse() // 最新在前
-  return formatMonths(out)
+  return out.filter(Boolean)
 }
 
 /**
  * 拉取可选数据月份（免费探测，不占调用次数）
- * 优先取后端 /api/smartsteps/months 实测值（联通 getCityMonth 当前可用月，最新在前），
- * 再以最新月为锚向前回溯 MONTH_SPAN 个月（历史月 getData 仍受理，选择放开）；
- * 失败时降级为本地估算最近 MONTH_SPAN 个月，不阻断功能。
- * @returns {Promise<Array<{value: string, label: string}>>} 最新在前
+ * 主路径：后端 /api/smartsteps/months（联通 getCityMonth 实测可拉月，最新在前）→ 归一化后截取前 2 项。
+ * 失败/为空时降级 recentLocalMonths(2)（本地估算，不阻断功能）。
+ * @returns {Promise<Array<{value: string, label: string}>>} 最新在前，最多 AVAILABLE_TOP 项
  */
 export async function fetchAvailableMonths() {
   try {
     const res = await api.get('/smartsteps/months')
     if (res?.months?.length) {
-      const values = res.months.map(m => String(m.value || m.month || m))
-      return expandBackward(values)
+      const months = res.months
+        .map((m) => toMonthItem(m?.value ?? m?.month ?? m))
+        .filter(Boolean)
+        // 后端已按 value 降序 + 去重，此处再保险一次
+        .sort((a, b) => String(b.value).localeCompare(String(a.value)))
+        .filter((m, i, arr) => i === 0 || m.value !== arr[i - 1].value)
+        .slice(0, AVAILABLE_TOP)
+      if (months.length) return months
     }
     console.warn('可用数据月份为空，使用本地估算:', res)
   } catch (e) {

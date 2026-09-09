@@ -599,9 +599,10 @@ function getRadiiInMeters() {
   return radii
 }
 
-// 加载可选月份（v1.13.103 B3：与 SmartstepsPanel/BatchSmartstepsDialog 同源——
-// 调联通 getCityMonth 实测可用月，再以最新月为锚回溯 12 个月使历史月可选。
-// 删除原本地硬编码「最近 2 个月」导致 2026-06 等更早月份不可选的问题）
+// 加载可选月份（v1.13.104 修正：与 SmartstepsPanel/BatchSmartstepsDialog 同源——
+// 调联通 getCityMonth 实测可用月，截取最近 2 个月（API 仅受理数据最新月为锚的过往 2 个月，
+// 如最新 202607 则可选 7月/6月；6 月等次新真实月可选，5 月及更早不可选）。
+// 历史版本曾以日历月 −1/−2 推算导致显示 8月7月（8 月无数据）、以及回溯展开 12 个月（无数据月可选），均已废弃）
 async function loadAvailableMonths() {
   const months = await fetchAvailableMonths()
   availableMonths.value = months
