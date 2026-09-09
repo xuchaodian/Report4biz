@@ -1572,7 +1572,7 @@ const handleGeocodeImport = async () => {
     }
     ElMessage.success(`成功导入 ${importCount} 条${failCount > 0 ? `，失败 ${failCount} 条` : ''}`)
     geocodeDialogVisible.value = false
-    markerStore.fetchMarkers()
+    markerStore.fetchMarkers(true)  // 批量导入后强制刷新（绕过 H2 新鲜期去重）
   } catch (err) {
     ElMessage.error('导入出错：' + err.message)
   } finally {

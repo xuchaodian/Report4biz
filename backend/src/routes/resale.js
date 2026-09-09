@@ -719,4 +719,4 @@ router.post('/', requireApiKey, async (req, res) => {
 })
 
 export default router
-export { adminRouter }
+export { adminRouter, getPoolInfo }

@@ -1674,6 +1674,7 @@ let businessLayer = null
 let competitorLayer = null  // 竞品门店图层
 let brandStoreLayer = null  // 品牌门店图层
 let brandMarkerMap = {}     // 品牌门店ID到marker的映射
+let myStoreMarkerMap = {}   // 我的门店ID到marker的映射（v1.13.103 H1：businessLayer 聚合化后 locateStore 经此取 marker）
 let shoppingCenterLayer = null  // 购物中心图层
 let shoppingCenterMarkerMap = {}  // 购物中心ID到marker的映射
 let allStoreClusterGroup = null  // 所有门店统一聚合图层
@@ -4400,8 +4401,15 @@ const getLocationByBrowser = () => {
 
 // 初始化地图
 const initMap = async () => {
-  // IP定位（有sessionStorage缓存，通常很快；城市名从IP获取）
-  const ipLocation = await getLocationByIP()
+  // v1.13.103 H2：IP 定位不再无条件串行阻塞首屏——给 1.5s 上限：
+  // 命中 30 天缓存（通常 <50ms）→ 地图直接以 IP 城市为中心创建；
+  // 无缓存且后端慢 → 1.5s 后照常以默认中心建图（不白屏干等），
+  // 后端返回后写入 localStorage，下次进入即命中缓存
+  const IP_WAIT_MS = 1500
+  const ipLocation = await Promise.race([
+    getLocationByIP(),
+    new Promise((resolve) => { setTimeout(() => resolve(null), IP_WAIT_MS) })
+  ])
 
   // 初始中心：IP定位坐标（无缓存时后端可能耗时，但比浏览器定位快）
   const centerLat = ipLocation ? ipLocation.lat : DEFAULT_LAT
@@ -4714,8 +4722,18 @@ const loadMarkers = async (skipFetch = false) => {
     dataToShow = dataToShow.filter(filterStoreByStatus)
   }
 
-  // 创建点位图层
-  businessLayer = L.layerGroup()
+  // 创建点位图层（v1.13.103 H1：升级为 markerClusterGroup 聚合——
+  // 原 L.layerGroup() 默认逐点渲染 1904 家门店，日常拖动地图卡顿；
+  // 聚合配置对齐竞品/品牌图层（chunkedLoading 分帧 + spiderfy），
+  // popup/拖拽编辑等原事件全部保留，拖拽需在单点展开（高 zoom）时操作）
+  businessLayer = L.markerClusterGroup({
+    chunkedLoading: true,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 17
+  })
+  myStoreMarkerMap = {}  // 重建时清空映射
 
   console.log('开始创建标记点, 数量:', dataToShow.length)
 
@@ -4792,6 +4810,7 @@ const loadMarkers = async (skipFetch = false) => {
     })
 
     marker._storeId = markerData.id
+    myStoreMarkerMap[markerData.id] = marker
     businessLayer.addLayer(marker)
   })
 
@@ -4938,7 +4957,14 @@ const reloadBusinessLayer = () => {
     ? markerStore.markers
     : markerStore.markers.filter(m => visibleIds.includes(m.id))
 
-  businessLayer = L.layerGroup()
+  businessLayer = L.markerClusterGroup({
+    chunkedLoading: true,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    disableClusteringAtZoom: 17
+  })
+  myStoreMarkerMap = {}  // 重建时清空映射
   dataToShow.forEach(markerData => {
     const isClosed = isStoreClosed(markerData.store_status)
     const brandIconUrl = brandIconMap.value[markerData.brand]
@@ -4985,6 +5011,7 @@ const reloadBusinessLayer = () => {
       }
     })
     marker._storeId = markerData.id
+    myStoreMarkerMap[markerData.id] = marker
     businessLayer.addLayer(marker)
   })
 
@@ -8125,10 +8152,15 @@ const locateStore = (store, type) => {
   }
   map.flyTo([store.latitude, store.longitude], 16, { animate: true, duration: 0.8 })
   // 根据类型找到对应 marker 打开 popup
-  if (type === 'marker' && businessLayer) {
-    businessLayer.eachLayer(layer => {
-      if (layer._storeId === store.id) layer.openPopup()
-    })
+  if (type === 'marker') {
+    // v1.13.103 H1：businessLayer 已聚合化（markerClusterGroup 无 eachLayer）→ 经 myStoreMarkerMap 定位，
+    // 聚合态需先 zoomToShowLayer 展开该点再 openPopup
+    const mk = myStoreMarkerMap[store.id]
+    if (mk && businessLayer && typeof businessLayer.zoomToShowLayer === 'function') {
+      businessLayer.zoomToShowLayer(mk, () => mk.openPopup())
+    } else if (mk) {
+      mk.openPopup()
+    }
   } else if (type === 'brand' && brandMarkerMap[store.id]) {
     brandMarkerMap[store.id].openPopup()
   } else if (type === 'shopping' && shoppingCenterMarkerMap[store.id]) {

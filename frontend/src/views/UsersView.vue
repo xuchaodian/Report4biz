@@ -16,9 +16,13 @@
             <span class="label">当前剩余配额</span>
             <span class="value">{{ quotaInfo.remainingQuota }}</span>
           </div>
-          <div class="quota-card available">
-            <span class="label">剩余可分配次数</span>
-            <span class="value">{{ quotaInfo.availableQuota }}</span>
+          <div class="quota-card api">
+            <span class="label">API开放页已占</span>
+            <span class="value">{{ quotaInfo.apiAllocatedQuota }}</span>
+          </div>
+          <div class="quota-card pool">
+            <span class="label">全池剩余可分配</span>
+            <span class="value">{{ quotaInfo.poolAvailableQuota }}</span>
           </div>
           <div class="quota-card consumed">
             <span class="label">消费总次数</span>
@@ -156,7 +160,7 @@
           <div class="quota-tip">
             <div>当前剩余次数: {{ form.remaining }}</div>
             <div>已使用次数: {{ form.usedQuota }}</div>
-            <div>系统剩余可分配: {{ quotaInfo.availableQuota }}</div>
+            <div>系统剩余可分配(全池): {{ quotaInfo.poolAvailableQuota }} <span style="color:#909399;">（已扣除 API 开放页占用 {{ quotaInfo.apiAllocatedQuota }} 次）</span></div>
             <div style="color: #67c23a; margin-top: 4px;">输入新的剩余次数，系统将自动换算为配额总数</div>
           </div>
         </el-form-item>
@@ -282,10 +286,12 @@ const filterCompany = ref('')
 
 // 配额相关
 const quotaInfo = ref({
-  initialQuota: 0,    // 初始总配额
-  remainingQuota: 0,  // 当前剩余配额
-  allocatedQuota: 0,  // 已分配
-  availableQuota: 0   // 剩余可分配次数
+  initialQuota: 0,        // 初始总配额
+  remainingQuota: 0,      // 当前剩余配额（读 admin_quota.remaining_quota 列，全口径实时）
+  allocatedQuota: 0,      // 已分配给用户页的额度
+  availableQuota: 0,      // 仅用户页口径剩余可分配（保留字段）
+  apiAllocatedQuota: 0,   // API 开放页已分配（真实模式余额合计，mock 不占池）
+  poolAvailableQuota: 0   // 全池剩余可分配 = 总配额 − 用户页已分配 − API页已分配（分配校验权威）
 })
 // 所有用户消费次数的总和
 const totalConsumed = computed(() =>
@@ -618,7 +624,15 @@ onMounted(() => {
         .value { color: #409eff; font-weight: bold; font-size: 18px; }
       }
 
-      &.available {
+      &.api {
+        border-color: #b37feb;
+        background: linear-gradient(135deg, #f5f0ff 0%, #efe8ff 100%);
+
+        .label { color: #8a5cd6; }
+        .value { color: #8a5cd6; font-weight: bold; font-size: 18px; }
+      }
+
+      &.pool {
         border-color: #67c23a;
         background: linear-gradient(135deg, #f0f9eb 0%, #e8f5e0 100%);
 

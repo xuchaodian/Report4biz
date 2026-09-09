@@ -642,16 +642,16 @@ const handleTabChange = (name) => {
   if (name === 'upload') uploadPanelRef.value?.refreshHistory()
   // 「开关店监测」内容常驻，保留用户当前选择，无需每次重载
 }
-// Tab2 导入成功后：刷新列表镜像（UploadPanel 已提示详情，这里静默同步）
+// Tab2 导入成功后：刷新列表镜像（UploadPanel 已提示详情，这里静默同步；导入后强制绕过 H2 新鲜期）
 const handleSnapshotImported = async (payload) => {
-  await competitorStore.fetchCompetitors()
+  await competitorStore.fetchCompetitors(true)
   // 列表已被新镜像替换 → 清掉本地筛选态，避免残留条件看不到新数据
   handleClearFilters()
 }
-// Tab2 删除期次后：若删到最新期（镜像被移除）则同步刷新竞品列表
+// Tab2 删除期次后：若删到最新期（镜像被移除）则同步刷新竞品列表（强制绕过 H2 新鲜期）
 const handleSnapshotDeleted = async (payload) => {
   if (!payload || !payload.listReverted) return
-  await competitorStore.fetchCompetitors()
+  await competitorStore.fetchCompetitors(true)
   handleClearFilters()
 }
 // Tab2「去对比」→ Tab3 并预选品牌/目标期

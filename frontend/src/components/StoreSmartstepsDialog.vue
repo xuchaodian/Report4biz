@@ -599,21 +599,11 @@ function getRadiiInMeters() {
   return radii
 }
 
-// 加载可选月份（动态计算最近两个月）
-function loadAvailableMonths() {
-  const now = new Date()
-  const months = []
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
-
-  for (let i = 1; i <= 2; i++) {
-    let month = currentMonth - i
-    let year = currentYear
-    if (month <= 0) { month += 12; year -= 1 }
-    const padded = String(month).padStart(2, '0')
-    months.push({ value: `${year}${padded}`, label: `${year}年${month}月` })
-  }
-
+// 加载可选月份（v1.13.103 B3：与 SmartstepsPanel/BatchSmartstepsDialog 同源——
+// 调联通 getCityMonth 实测可用月，再以最新月为锚回溯 12 个月使历史月可选。
+// 删除原本地硬编码「最近 2 个月」导致 2026-06 等更早月份不可选的问题）
+async function loadAvailableMonths() {
+  const months = await fetchAvailableMonths()
   availableMonths.value = months
   if (months.length > 0) {
     queryForm.value.cityMonth = months[0].value

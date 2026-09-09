@@ -3,10 +3,16 @@ import api from '../utils/api.js'
 
 const API_URL = '/api'
 
+// v1.13.103 H2：会话内去重——60s 新鲜期内不重复拉全量（品牌门店 9000+ 条）；在途合并；force=true 强制刷新
+const FRESH_MS = 60 * 1000
+let brandStoresInFlight = null
+
 export const useBrandStoreStore = defineStore('brandStore', {
   state: () => ({
     brandStores: [],
     loading: false,
+    loaded: false,
+    loadedAt: 0,
     // visibleIds: null = 显示全部；数组 = 仅显示这些ID
     visibleIds: null,
     // 筛选条件（持久化，切换页面后保留）
@@ -20,11 +26,24 @@ export const useBrandStoreStore = defineStore('brandStore', {
   }),
 
   actions: {
-    async fetchBrandStores() {
+    async fetchBrandStores(force = false) {
+      if (!force && this.loaded && this.loadedAt && Date.now() - this.loadedAt < FRESH_MS) return
+      if (brandStoresInFlight) return brandStoresInFlight
       this.loading = true
+      brandStoresInFlight = this._fetchBrandStores()
+      try {
+        await brandStoresInFlight
+      } finally {
+        brandStoresInFlight = null
+      }
+    },
+
+    async _fetchBrandStores() {
       try {
         const data = await api.get('/brand-stores')
         this.brandStores = data.brandStores || []
+        this.loaded = true
+        this.loadedAt = Date.now()
       } catch (error) {
         console.error('获取品牌门店列表失败:', error)
         this.brandStores = []

@@ -786,7 +786,7 @@ const handleImportConfirm = async () => {
     if (result.success !== false) {
       ElMessage.success(result.message)
       importDialogVisible.value = false
-      await store.fetchShoppingCenters()
+      await store.fetchShoppingCenters(true)  // 导入后强制刷新（绕过 H2 新鲜期去重）
     } else {
       ElMessage.error(result.message)
     }

@@ -570,7 +570,7 @@ const handleImportConfirm = async () => {
       importStatus.value = 'done'
       ElMessage.success(result.message)
       setTimeout(() => { importDialogVisible.value = false }, 800)
-      await brandStoreStore.fetchBrandStores()
+      await brandStoreStore.fetchBrandStores(true)  // 导入后强制刷新（绕过 H2 新鲜期去重）
     } else {
       importStatus.value = 'error'
       ElMessage.error(result.message)

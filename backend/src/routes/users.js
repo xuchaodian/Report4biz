@@ -2,6 +2,7 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
+import { getPoolInfo } from './resale.js'
 
 const router = express.Router()
 
@@ -45,19 +46,13 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
 
-    // 获取初始总配额
-    const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
+    // 获取初始总配额与权威剩余配额（v1.13.103 B2：直接读 remaining_quota 列——
+    // 该列由 smartsteps/purchase/districts 每次真实上游查询实时 -N，含「区域洞察」
+    // （只扣列不写 purchases 履历）。原「initial − Σactive 履历」口径统计不进区域洞察
+    // 消费 → 卡片持续虚高；改列后与顶栏「剩余 N 次」、purchase.js:62 同一权威来源）
+    const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
     const initialQuota = quotaRecord?.initial_quota || 0
-
-    // 计算所有用户已消费的配额总和
-    const usedResult = db.prepare(`
-      SELECT COALESCE(SUM(quota_used), 0) as used
-      FROM purchases
-      WHERE status = 'active'
-    `).get()
-    const totalUsedForQuota = usedResult?.used || 0
-    // 当前剩余配额 = 初始总配额 - 已消费配额总和
-    const remainingQuota = Math.max(0, initialQuota - totalUsedForQuota)
+    const remainingQuota = Math.max(0, quotaRecord?.remaining_quota || 0)
 
     // 剩余可分配 = 初始总配额 - 已分配（与用户实际使用无关）
     const availableQuota = Math.max(0, initialQuota - allocatedQuota)
@@ -116,6 +111,10 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
 
     // 剩余可分配 = 初始总配额 - 已分配
     const availableQuota = Math.max(0, parseInt(totalQuota) - allocatedQuota)
+    // API 开放页占用与全池口径（与 GET / 一致，前端整体赋值需全字段）
+    const apiAllocatedResult = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 0`).get()
+    const apiAllocatedQuota = apiAllocatedResult?.total || 0
+    const poolAvailableQuota = Math.max(0, parseInt(totalQuota) - allocatedQuota - apiAllocatedQuota)
 
     res.json({
       message: '总配额已更新',
@@ -123,7 +122,9 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
         initialQuota: parseInt(totalQuota),
         remainingQuota: newRemaining,
         allocatedQuota,
-        availableQuota
+        availableQuota,
+        apiAllocatedQuota,
+        poolAvailableQuota
       }
     })
   } catch (error) {
@@ -261,19 +262,14 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
 
       // 只有在增加时才需要检查可用配额
       if (diff > 0) {
-        // 已分配给其他用户的总配额
-        const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin' AND id != ?`).get(userId)
-        const otherAllocated = allocatedResult?.total || 0
-
-        const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
-        const initialQuota = quotaRecord?.initial_quota || 0
-
-        // 可用 = 初始总配额 - 其他用户已分配 - 当前用户已有
-        const availableQuota = Math.max(0, initialQuota - otherAllocated - currentUserQuota)
-
-        if (diff > availableQuota) {
-          return res.status(400).json({ 
-            message: `分配失败：超出可用配额。需追加 ${diff} 次，当前可用 ${availableQuota} 次`
+        // v1.13.103 B2-C：与 resale.js 同一单一预算池口径（getPoolInfo）——
+        // 池剩余 = 总配额 − Σ(users.quota, 非admin) − Σ(api_keys.balance, mock=0)。
+        // 原校验只减用户页已分配、漏减 API 开放页占用 → 用户页可超额分配，
+        // 两页总和可超买入批次总额（超额部分实际无上游额度支撑）
+        const pool = getPoolInfo(db)
+        if (diff > pool.available) {
+          return res.status(400).json({
+            message: `分配失败：超出可用配额。需追加 ${diff} 次，当前可用 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 开放页已分配 ${pool.allocatedApi}）`
           })
         }
       }
@@ -346,12 +342,16 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     params.push(userId)
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
-    // 返回更新后的配额信息
+    // 返回更新后的配额信息（含 API 页占用与全池口径，前端整体赋值需全字段）
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
     const quotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
     const initialQuota = quotaRecord?.initial_quota || 0
     const remainingQuota = quotaRecord?.remaining_quota || 0
+    const apiAllocatedResult = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 0`).get()
+    const apiAllocatedQuota = apiAllocatedResult?.total || 0
+    const availableQuota = Math.max(0, initialQuota - allocatedQuota)
+    const poolAvailableQuota = Math.max(0, initialQuota - allocatedQuota - apiAllocatedQuota)
 
     const user = db.prepare('SELECT id, username, email, role, company, quota, created_at FROM users WHERE id = ?').get(userId)
 
@@ -362,7 +362,9 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
         initialQuota,
         remainingQuota,
         allocatedQuota,
-        availableQuota: Math.max(0, initialQuota - allocatedQuota)
+        availableQuota,
+        apiAllocatedQuota,
+        poolAvailableQuota
       }
     })
   } catch (error) {

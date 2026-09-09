@@ -3,10 +3,17 @@ import axios from 'axios'
 
 const API_URL = '/api'
 
+// v1.13.103 H2：会话内去重——60s 新鲜期内不重复拉全量（地图进出/切页高频触发会重复下 1900+ 门店）；
+// 在途请求合并（并发调用共用同一 Promise）；force=true 强制刷新（导入/上传/显式刷新按钮）
+const FRESH_MS = 60 * 1000
+let markersInFlight = null
+
 export const useMarkerStore = defineStore('marker', {
   state: () => ({
     markers: [],
     loading: false,
+    loaded: false,       // 是否已成功加载过
+    loadedAt: 0,         // 最近成功加载时间戳（新鲜期判断）
     categories: ['门店', '设备', '人员', '仓库', '站点'],
     statuses: ['正常', '告警', '维护', '停用'],
     storeTypes: ['已开业', '重点候选', '一般候选'],
@@ -27,11 +34,24 @@ export const useMarkerStore = defineStore('marker', {
   }),
   
   actions: {
-    async fetchMarkers() {
+    async fetchMarkers(force = false) {
+      if (!force && this.loaded && this.loadedAt && Date.now() - this.loadedAt < FRESH_MS) return
+      if (markersInFlight) return markersInFlight
       this.loading = true
+      markersInFlight = this._fetchMarkers()
+      try {
+        await markersInFlight
+      } finally {
+        markersInFlight = null
+      }
+    },
+
+    async _fetchMarkers() {
       try {
         const { data } = await axios.get(`${API_URL}/markers`)
         this.markers = data.markers
+        this.loaded = true
+        this.loadedAt = Date.now()
       } catch (error) {
         console.error('获取点位失败:', error)
       } finally {
@@ -98,8 +118,8 @@ export const useMarkerStore = defineStore('marker', {
         formData.append('file', file)
         const response = await axios.post(`${API_URL}/markers/import`, formData, { timeout: 300000, onUploadProgress: onProgress })
         const { data } = response
-        // 重新从服务器拉取完整列表（后端不返回 imported 数组）
-        await this.fetchMarkers()
+        // 重新从服务器拉取完整列表（后端不返回 imported 数组）；导入后强制刷新，绕过新鲜期
+        await this.fetchMarkers(true)
         return { success: true, count: data.count || 0 }
       } catch (error) {
         console.error('[导入] 捕获异常:', error.message, error.response?.data || error.code)

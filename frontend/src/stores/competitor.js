@@ -5,10 +5,16 @@ import api from '../utils/api.js'
 
 const API_URL = '/api'
 
+// v1.13.103 H2：会话内去重——60s 新鲜期内不重复拉全量（8941+ 竞品）；在途请求合并；force=true 强制刷新
+const FRESH_MS = 60 * 1000
+let competitorsInFlight = null
+
 export const useCompetitorStore = defineStore('competitor', {
   state: () => ({
     competitors: [],
     loading: false,
+    loaded: false,
+    loadedAt: 0,
     statuses: ['正常营业', '店铺已关', '暂停营业', '尚未营业'],
     storeTypes: ['竞品', '其他'],
     // visibleIds: null = 显示全部；数组 = 仅显示这些ID
@@ -30,13 +36,26 @@ export const useCompetitorStore = defineStore('competitor', {
   },
   
   actions: {
-    async fetchCompetitors() {
+    async fetchCompetitors(force = false) {
+      if (!force && this.loaded && this.loadedAt && Date.now() - this.loadedAt < FRESH_MS) return
+      if (competitorsInFlight) return competitorsInFlight
       this.loading = true
+      competitorsInFlight = this._fetchCompetitors()
+      try {
+        await competitorsInFlight
+      } finally {
+        competitorsInFlight = null
+      }
+    },
+
+    async _fetchCompetitors() {
       try {
         const { data } = await axios.get(`${API_URL}/competitors`)
         console.log('API返回数据:', data)
         this.competitors = data.competitors || []
         console.log('竞品列表已更新, 数量:', this.competitors.length)
+        this.loaded = true
+        this.loadedAt = Date.now()
       } catch (error) {
         console.error('获取竞品门店失败:', error)
         console.error('错误详情:', error.response?.data)
@@ -105,7 +124,8 @@ export const useCompetitorStore = defineStore('competitor', {
         formData.append('file', file)
         const response = await axios.post(`${API_URL}/competitors/import`, formData, { timeout: 300000, onUploadProgress: onProgress })
         const { data } = response
-        await this.fetchCompetitors()
+        // 导入后强制刷新（绕过 60s 新鲜期），立即反映新导入数据
+        await this.fetchCompetitors(true)
         return { success: true, count: data.count || 0 }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '导入失败' }

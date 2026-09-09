@@ -1,5 +1,5 @@
 import express from 'express'
-import { aroundSearch, polygonSearch, textSearch, geocode, wgs84ToGcj02 } from '../utils/amapPoi.js'
+import { aroundSearch, polygonSearch, textSearch, geocode } from '../utils/amapPoi.js'
 
 const router = express.Router()
 
@@ -24,8 +24,8 @@ router.post('/business-count', async (req, res) => {
       return res.status(400).json({ error: '缺少经纬度参数' })
     }
 
-    // 转换为高德坐标（GCJ-02）
-    const [gcjLng, gcjLat] = wgs84ToGcj02(parseFloat(lng), parseFloat(lat))
+    // 入参为系统内 GCJ-02 坐标（全链路一致），高德 around 要求 GCJ-02，直接透传
+    // （v1.13.103 B1 修复：原在此 wgs84ToGcj02 二次转换 → 门店 GCJ-02 被再转一次，检索圆心偏移 ~500m）
 
     // 按分类分别查询（高德 around 单次返回有限，分类查询更准；限流时重试一次）
     const counts = {}
@@ -34,7 +34,7 @@ router.post('/business-count', async (req, res) => {
       let count = 0
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const result = await aroundSearch(gcjLng, gcjLat, radius, '', cat.types)
+          const result = await aroundSearch(parseFloat(lng), parseFloat(lat), radius, '', cat.types)
           count = result.count || 0
           break
         } catch (e) {
@@ -97,15 +97,13 @@ router.post('/environment-score', async (req, res) => {
       return res.json({ success: true, radius: rN, counts: cached.counts, total: cached.total, fromCache: true })
     }
 
-    const [gcjLng, gcjLat] = wgs84ToGcj02(lngN, latN)
-
     const counts = {}
     let total = 0
     for (const cat of ENV_POI_TYPES) {
       let count = 0
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const result = await aroundSearch(gcjLng, gcjLat, rN, '', cat.types)
+          const result = await aroundSearch(lngN, latN, rN, '', cat.types)
           count = result.count || 0
           break
         } catch (e) {
@@ -148,10 +146,8 @@ router.post('/around', async (req, res) => {
       return res.status(400).json({ error: '缺少经纬度参数' })
     }
     
-    // 转换为高德坐标（GCJ-02）
-    const [gcjLng, gcjLat] = wgs84ToGcj02(parseFloat(lng), parseFloat(lat))
-    
-    const result = await aroundSearch(gcjLng, gcjLat, radius, keywords, types)
+    // 入参为系统内 GCJ-02（v1.13.103 B1：删除二次转换，原把 GCJ-02 当 WGS84 再转 → 圆心偏移 ~500m）
+    const result = await aroundSearch(parseFloat(lng), parseFloat(lat), radius, keywords, types)
     res.json(result)
   } catch (error) {
     console.error('周边搜索失败:', error.message)
@@ -173,12 +169,9 @@ router.post('/polygon', async (req, res) => {
       return res.status(400).json({ error: '多边形至少需要3个坐标点' })
     }
     
-    // 转换为GCJ-02坐标并构建多边形字符串
+    // 入参为系统内 GCJ-02（v1.13.103 B1：删除二次转换），直接构建多边形字符串
     const polygon = coordinates
-      .map(coord => {
-        const [lng, lat] = wgs84ToGcj02(parseFloat(coord.lng), parseFloat(coord.lat))
-        return `${lng},${lat}`
-      })
+      .map(coord => `${parseFloat(coord.lng)},${parseFloat(coord.lat)}`)
       .join(';')
     
     const result = await polygonSearch(polygon, keywords, types)
