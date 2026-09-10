@@ -625,20 +625,6 @@ const doExport = async (type) => {
   overflow: hidden;
 }
 
-/* 管理员专属入口（下拉置顶）：浅蓝底 + 加粗，与下方常规项区分 */
-.dd-admin-item {
-  background: #eef5ff !important;
-  color: #1f6fd0 !important;
-  font-weight: 600;
-}
-.dd-admin-item:hover {
-  background: #dceaff !important;
-  color: #1557a5 !important;
-}
-.dd-admin-item .el-icon {
-  color: #409eff !important;
-}
-
 /* 配额显示项（下拉菜单渲染在body下，需全局样式） */
 .quota-dropdown-item {
   padding: 8px 16px;

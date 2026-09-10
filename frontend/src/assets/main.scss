@@ -345,3 +345,23 @@ body {
 .pop-labels-hidden .population-label {
   display: none !important;
 }
+
+/* ===== 个人下拉：管理员专属入口（用户管理 / API开放）置顶区分 =====
+   放置在下拉菜单最上方，用浅蓝底 + 主题蓝字与下方常规项（个人中心/设置图标/
+   购买履历…）拉开层次，其后由 el-dropdown-item 的 divided 分隔线分组。
+   注：样式必须写在全局（不能放组件 scoped）——Element Plus 的 el-dropdown-item
+   根节点外层包了 el-roving-focus-item，父组件 scopeId 的 data-v-* 不会落到
+   真正带 .dd-admin-item 的 li 上，scoped 规则会整体失效。 */
+.el-dropdown-menu__item.dd-admin-item {
+  background: #eef5ff !important;
+  color: #1f6fd0 !important;
+  font-weight: 600;
+}
+.el-dropdown-menu__item.dd-admin-item:hover,
+.el-dropdown-menu__item.dd-admin-item:focus {
+  background: #dceaff !important;
+  color: #1557a5 !important;
+}
+.el-dropdown-menu__item.dd-admin-item .el-icon {
+  color: #409eff;
+}
