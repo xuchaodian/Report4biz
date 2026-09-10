@@ -71,24 +71,31 @@ router.post('/scores', authenticate, async (req, res) => {
     // 自动计算商圈特征项
     const autoScores = await calcAutoScores(db, lng, lat, premium, userId, isAdmin)
 
-    // 创建评分明细（参数化插入）
+    // 创建评分明细（参数化插入）——H3/S1-A：明细+总分更新包事务，N 项从 N 次落盘收敛为 1 次
     let totalScore = 0
-    for (const item of items) {
-      let autoVal = null
-      let finalScore = 0
+    db.beginTx()
+    try {
+      for (const item of items) {
+        let autoVal = null
+        let finalScore = 0
 
-      if (item.input_type === 'auto') {
-        const aVal = autoScores[item.name]?.value
-        autoVal = (aVal !== null && aVal !== undefined) ? aVal : null
-        finalScore = autoScores[item.name]?.score ?? 0
+        if (item.input_type === 'auto') {
+          const aVal = autoScores[item.name]?.value
+          autoVal = (aVal !== null && aVal !== undefined) ? aVal : null
+          finalScore = autoScores[item.name]?.score ?? 0
+        }
+
+        db.prepare(`INSERT INTO score_details (score_id, item_id, auto_value, manual_value, final_score) VALUES (?, ?, ?, NULL, ?)`).run(scoreId, item.id, autoVal, finalScore)
+        totalScore += finalScore
       }
 
-      db.prepare(`INSERT INTO score_details (score_id, item_id, auto_value, manual_value, final_score) VALUES (?, ?, ?, NULL, ?)`).run(scoreId, item.id, autoVal, finalScore)
-      totalScore += finalScore
+      // 更新总分
+      db.prepare(`UPDATE store_scores SET total_score = ? WHERE id = ?`).run(Math.round(totalScore), scoreId)
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
     }
-
-    // 更新总分
-    db.prepare(`UPDATE store_scores SET total_score = ? WHERE id = ?`).run(Math.round(totalScore), scoreId)
 
     // 返回完整评分
     const details = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(scoreId)
@@ -110,44 +117,51 @@ router.put('/scores/:id', authenticate, (req, res) => {
     const score = db.prepare('SELECT * FROM store_scores WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id)
     if (!score) return res.status(404).json({ message: '评分记录不存在' })
 
-    // 更新手动填写的评分项
+    // 更新手动填写的评分项——H3/S1-A：逐项更新包事务（多详情项从逐次落盘收敛为 1 次）
     const updateDetail = db.prepare('UPDATE score_details SET auto_value = ?, manual_value = ?, final_score = ?, remark = ? WHERE id = ? AND score_id = ?')
     const getItem = db.prepare('SELECT * FROM scoring_items WHERE id = ?')
 
     let totalScore = 0
-    if (details && Array.isArray(details)) {
-      for (const d of details) {
-        const item = getItem.get(d.itemId)
-        if (!item) continue
+    db.beginTx()
+    try {
+      if (details && Array.isArray(details)) {
+        for (const d of details) {
+          const item = getItem.get(d.itemId)
+          if (!item) continue
 
-        let finalScore = d.manualValue ?? d.finalScore ?? 0
+          let finalScore = d.manualValue ?? d.finalScore ?? 0
 
-        // 特殊处理：租金合理性
-        if (item.name === '月租金(元)') {
-          finalScore = calcRentScore(d.manualValue, item.max_score)
+          // 特殊处理：租金合理性
+          if (item.name === '月租金(元)') {
+            finalScore = calcRentScore(d.manualValue, item.max_score)
+          }
+
+          if (d.id == null) continue
+          // 参数化更新（杜绝 SQL 注入）
+          updateDetail.run(
+            d.autoValue ?? null,
+            d.manualValue ?? null,
+            finalScore,
+            d.remark || '',
+            d.id,
+            score.id
+          )
+          totalScore += finalScore
         }
-
-        if (d.id == null) continue
-        // 参数化更新（杜绝 SQL 注入）
-        updateDetail.run(
-          d.autoValue ?? null,
-          d.manualValue ?? null,
-          finalScore,
-          d.remark || '',
-          d.id,
-          score.id
-        )
-        totalScore += finalScore
       }
-    }
 
-    // 加上自动项的分数
-    const autoDetails = db.prepare('SELECT sd.*, si.input_type FROM score_details sd JOIN scoring_items si ON sd.item_id = si.id WHERE sd.score_id = ? AND si.input_type = ?').all(score.id, 'auto')
-    for (const ad of autoDetails) {
-      totalScore += ad.final_score || 0
-    }
+      // 加上自动项的分数
+      const autoDetails = db.prepare('SELECT sd.*, si.input_type FROM score_details sd JOIN scoring_items si ON sd.item_id = si.id WHERE sd.score_id = ? AND si.input_type = ?').all(score.id, 'auto')
+      for (const ad of autoDetails) {
+        totalScore += ad.final_score || 0
+      }
 
-    db.prepare(`UPDATE store_scores SET total_score = ?, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(Math.round(totalScore), score.id)
+      db.prepare(`UPDATE store_scores SET total_score = ?, status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(Math.round(totalScore), score.id)
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
 
     const updatedScore = db.prepare('SELECT * FROM store_scores WHERE id = ?').get(score.id)
     const updatedDetails = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(score.id)

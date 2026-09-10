@@ -263,31 +263,40 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         const db = getDb()
         const imported = []
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
+        // H3/S1-A（v1.13.106）：批量导入包事务——N 行从 N 次整库 export 落盘收敛为 1 次，
+        // 且任一行失败整体回滚（杜绝半截导入）
+        db.beginTx()
+        try {
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
 
-          const result = db.prepare(`
-            INSERT INTO shopping_centers (
-              user_id, store_code, name, store_category,
-              city, district, address,
-              rank_info, comments, stars,
-              latitude, longitude, status, icon_color,
-              created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-          `).run(
-            req.user.id,
-            row.store_code || '', row.name, row.store_category || '',
-            row.city || '', row.district || '', row.address || '',
-            row.rank_info || '',
-            parseInt(row.comments) || 0,
-            parseFloat(row.stars) || 0,
-            parseFloat(row.latitude), parseFloat(row.longitude),
-            row.status || '正常',
-            row.icon_color || '#67c23a'
-          )
+            const result = db.prepare(`
+              INSERT INTO shopping_centers (
+                user_id, store_code, name, store_category,
+                city, district, address,
+                rank_info, comments, stars,
+                latitude, longitude, status, icon_color,
+                created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            `).run(
+              req.user.id,
+              row.store_code || '', row.name, row.store_category || '',
+              row.city || '', row.district || '', row.address || '',
+              row.rank_info || '',
+              parseInt(row.comments) || 0,
+              parseFloat(row.stars) || 0,
+              parseFloat(row.latitude), parseFloat(row.longitude),
+              row.status || '正常',
+              row.icon_color || '#67c23a'
+            )
 
-          const shoppingCenter = db.prepare('SELECT * FROM shopping_centers WHERE id = ?').get(result.lastInsertRowid)
-          imported.push(shoppingCenter)
+            const shoppingCenter = db.prepare('SELECT * FROM shopping_centers WHERE id = ?').get(result.lastInsertRowid)
+            imported.push(shoppingCenter)
+          }
+          db.commitTx()
+        } catch (txError) {
+          try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+          throw txError
         }
 
         fs.unlinkSync(req.file.path)

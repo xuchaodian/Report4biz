@@ -13,7 +13,7 @@ import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
 import shoppingCenterRoutes from './routes/shopping-centers.js'
-import { initDatabase, getDb } from './models/database.js'
+import { initDatabase, getDb, createTxScope } from './models/database.js'
 import geocodeRoutes from './routes/geocode.js'
 import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
@@ -61,6 +61,15 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// 请求级事务上下文（S2/A3, v1.13.106）：ALS 隔离每请求 inTransaction，
+// 防 async handler 的 await 间隙被并发请求覆盖事务标志；
+// 请求结束若有未决事务（异常逃逸）自动回滚，杜绝毒化全局写盘抑制
+app.use((req, res, next) => {
+  const scope = createTxScope()
+  res.on('close', () => scope.rollbackIfPending())
+  scope.run(next)
+})
 
 // 静态文件服务 - 品牌图标上传目录
 app.use('/uploads/brand-icons', express.static(join(__dirname, '../uploads/brand-icons')))

@@ -3,18 +3,54 @@ import bcrypt from 'bcryptjs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const dbDir = join(__dirname, '../../database')
-const dbPath = join(dbDir, 'webgis.db')
+// R4B_DB_PATH 支持覆盖库文件路径（S4 测试用临时库，避免加载/污染真实 webgis.db）
+const dbPath = process.env.R4B_DB_PATH || join(dbDir, 'webgis.db')
 
 let db = null
 let SQL = null
-// 事务标志：beginTx 后为 true，期间 prepare().run() 抑制逐次全库写盘，
-// 由 commitTx/rollbackTx 结束时统一 saveDatabase()（保证磁盘=内存且避免半截状态落盘）
+// 事务标志 fallback：无请求上下文（initDatabase / 一次性脚本直接调用事务原语）时使用。
+// HTTP 请求内一律走 txAls 的 per-request store（见 createTxScope），杜绝并发请求在
+// async handler 的 await 间隙互相覆盖 inTransaction 导致漏写盘/事务边界错乱（A3/S2, v1.13.106）
 let inTransaction = false
+
+// 请求级事务上下文（AsyncLocalStorage）：每个请求独立 { inTransaction }，
+// beginTx 期间 prepare().run() 抑制逐次全库写盘，
+// 由 commitTx/rollbackTx 结束时统一 saveDatabase()（保证磁盘=内存且避免半截状态落盘）
+const txAls = new AsyncLocalStorage()
+
+/**
+ * 创建一个请求级事务作用域（S2 per-request 化）。
+ * 用法（app.js 中间件）：scope.run(next)；请求结束未决事务由 rollbackIfPending() 兜底回滚。
+ * 非请求上下文（模块初始化/脚本）不调 run 亦可直接用 beginTx/commitTx，走模块级 fallback 标志。
+ */
+export function createTxScope() {
+  const store = { inTransaction: false }
+  return {
+    run: (fn) => txAls.run(store, fn),
+    rollbackIfPending: () => {
+      if (store.inTransaction) {
+        try { db && db.exec('ROLLBACK') } catch (e) { /* 连接已释放等情况忽略 */ }
+        store.inTransaction = false
+      }
+    }
+  }
+}
+
+function getTxFlag() {
+  const s = txAls.getStore()
+  return s ? s.inTransaction : inTransaction
+}
+function setTxFlag(on) {
+  const s = txAls.getStore()
+  if (s) s.inTransaction = on
+  else inTransaction = on
+}
 
 // 确保数据库目录存在
 if (!fs.existsSync(dbDir)) {
@@ -747,6 +783,9 @@ export function saveDatabase() {
   if (db) {
     const data = db.export()
     const buffer = Buffer.from(data)
+    // R4B_DB_PATH 指向不存在目录时兜底创建（S4 测试用临时库路径）
+    const dir = dirname(dbPath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(dbPath, buffer)
   }
 }
@@ -768,21 +807,22 @@ export function getDb() {
       saveDatabase()
     },
 
-    // ===== 事务原语（方案A v1.13.86）=====
+    // ===== 事务原语（方案A v1.13.86 / per-request 化 v1.13.106）=====
     // 用法：beginTx() → 若干 prepare().run() → commitTx() / rollbackTx()
     // 事务期间 run() 不逐次写盘，结束时统一 saveDatabase()，保证原子持久化
+    // 事务标志存于 per-request ALS store（无请求上下文时回退模块级标志）
     beginTx: () => {
       db.exec('BEGIN TRANSACTION')
-      inTransaction = true
+      setTxFlag(true)
     },
     commitTx: () => {
       db.exec('COMMIT')
-      inTransaction = false
+      setTxFlag(false)
       try { saveDatabase() } catch (err) { console.error('事务提交后写盘失败(内存已生效):', err) }
     },
     rollbackTx: () => {
       try { db.exec('ROLLBACK') } catch (err) { console.error('事务回滚执行失败:', err) }
-      inTransaction = false
+      setTxFlag(false)
       try { saveDatabase() } catch (err) { console.error('事务回滚后写盘失败(磁盘可能残留未提交脏页，建议重启后校验):', err) }
     },
     
@@ -808,7 +848,7 @@ export function getDb() {
         // 曾导致 register / competitors POST 响应丢失新行 id（响应只含 message）。
         const rowid = db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] || 0
         const affected = db.getRowsModified()
-        if (!inTransaction) saveDatabase()
+        if (!getTxFlag()) saveDatabase()
         return {
           lastInsertRowid: rowid,
           changes: affected

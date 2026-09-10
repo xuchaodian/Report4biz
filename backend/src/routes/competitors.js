@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
-import { getDb, saveDatabase } from '../models/database.js'
+import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -247,31 +247,35 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         const db = getDb()
         let imported = 0
 
-        // 使用事务批量写入，大幅提升性能
-        db.exec('BEGIN TRANSACTION')
-        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
+        // H3/S1-A（v1.13.106）：裸 exec BEGIN/COMMIT 收编为 wrapper 事务原语，
+        // 任一行失败 ROLLBACK 整体回滚（原实现中途异常会悬挂 BEGIN、不落盘即丢半截数据）
+        db.beginTx()
+        try {
+          const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
-          const vals = [
-            esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '竞品'), esc(row.store_category || ''),
-            esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
-            esc(row.description || ''),
-            esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
-            esc(row.status || '正常营业'),
-            esc(row.icon_color || '#f56c6c'),
-            String(req.user.id),
-            esc(row.industry || ''), esc(row.trading_area || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
-            esc(parseInt(row.reviews) || 0), esc(parseFloat(row.taste_score) || 0),
-            esc(parseFloat(row.environment_score) || 0), esc(parseFloat(row.service_score) || 0),
-            "datetime('now')", "datetime('now')"
-          ].join(',')
-          db.exec('INSERT INTO competitors (store_code,brand,name,store_type,store_category,city,district,address,description,latitude,longitude,status,icon_color,user_id,industry,trading_area,price,rating,reviews,taste_score,environment_score,service_score,created_at,updated_at) VALUES (' + vals + ')')
-          imported++
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
+            const vals = [
+              esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '竞品'), esc(row.store_category || ''),
+              esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
+              esc(row.description || ''),
+              esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
+              esc(row.status || '正常营业'),
+              esc(row.icon_color || '#f56c6c'),
+              String(req.user.id),
+              esc(row.industry || ''), esc(row.trading_area || ''), esc(parseFloat(row.price) || 0), esc(parseFloat(row.rating) || 0),
+              esc(parseInt(row.reviews) || 0), esc(parseFloat(row.taste_score) || 0),
+              esc(parseFloat(row.environment_score) || 0), esc(parseFloat(row.service_score) || 0),
+              "datetime('now')", "datetime('now')"
+            ].join(',')
+            db.exec('INSERT INTO competitors (store_code,brand,name,store_type,store_category,city,district,address,description,latitude,longitude,status,icon_color,user_id,industry,trading_area,price,rating,reviews,taste_score,environment_score,service_score,created_at,updated_at) VALUES (' + vals + ')')
+            imported++
+          }
+          db.commitTx() // 内含统一落盘
+        } catch (txError) {
+          try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+          throw txError
         }
-        db.exec('COMMIT')
-        // 保存到磁盘
-        saveDatabase()
 
         console.log(`[竞品导入] 成功导入 ${imported} 条数据`)
         // 删除上传的文件（清理失败不影响响应）

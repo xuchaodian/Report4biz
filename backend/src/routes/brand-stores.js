@@ -266,23 +266,29 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         const db = getDb()
         const imported = []
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
+        // H3/S1-A（v1.13.106）：execNoSave+saveNow 收编为 wrapper 事务原语，
+        // 任一行失败整体回滚（原实现中途异常会残留半截内存数据且不落盘）
+        db.beginTx()
+        try {
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
 
-          // 使用 db.exec 直接执行，避免每行触发 saveDatabase()
-          const esc = (v) => { if (v === null || v === undefined) return 'NULL'; return `'${String(v).replace(/'/g, "''")}'` }
-          const sql = `INSERT INTO brand_stores (user_id, store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, created_at, updated_at) VALUES (${req.user.id}, ${esc(row.store_code || '')}, ${esc(row.brand || '')}, ${esc(row.name)}, ${esc(row.store_type || '品牌')}, ${esc(row.store_category || '')}, ${esc(row.city || '')}, ${esc(row.district || '')}, ${esc(row.address || '')}, ${esc(row.description || '')}, ${parseFloat(row.latitude)}, ${parseFloat(row.longitude)}, ${esc(row.status || '正常')}, ${esc(row.icon_color || '#409eff')}, datetime('now'), datetime('now'))`
-          db.execNoSave(sql)
+            // 使用 db.exec 直接执行，避免每行触发 saveDatabase()
+            const esc = (v) => { if (v === null || v === undefined) return 'NULL'; return `'${String(v).replace(/'/g, "''")}'` }
+            const sql = `INSERT INTO brand_stores (user_id, store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, created_at, updated_at) VALUES (${req.user.id}, ${esc(row.store_code || '')}, ${esc(row.brand || '')}, ${esc(row.name)}, ${esc(row.store_type || '品牌')}, ${esc(row.store_category || '')}, ${esc(row.city || '')}, ${esc(row.district || '')}, ${esc(row.address || '')}, ${esc(row.description || '')}, ${parseFloat(row.latitude)}, ${parseFloat(row.longitude)}, ${esc(row.status || '正常')}, ${esc(row.icon_color || '#409eff')}, datetime('now'), datetime('now'))`
+            db.execNoSave(sql)
 
-          const lastId = db.exec('SELECT last_insert_rowid() as id')[0]?.values?.[0]?.[0]
-          if (lastId) {
-            const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(lastId)
-            imported.push(brandStore)
+            const lastId = db.exec('SELECT last_insert_rowid() as id')[0]?.values?.[0]?.[0]
+            if (lastId) {
+              const brandStore = db.prepare('SELECT * FROM brand_stores WHERE id = ?').get(lastId)
+              imported.push(brandStore)
+            }
           }
+          db.commitTx() // 内含统一落盘
+        } catch (txError) {
+          try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+          throw txError
         }
-
-        // 批量写入完成后一次性保存
-        db.saveNow()
 
         // 删除上传的文件（清理失败不影响导入结果）
         try { fs.unlinkSync(req.file.path) } catch (e) { console.warn('[BrandStores] 清理上传临时文件失败:', e.message) }

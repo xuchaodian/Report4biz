@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
-import { getDb, saveDatabase } from '../models/database.js'
+import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -228,34 +228,38 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       skipEmptyLines: true,
       complete: (results) => {
         const db = getDb()
-                let imported = 0
+        let imported = 0
 
-        // 使用事务批量写入，大幅提升性能
-        db.exec('BEGIN TRANSACTION')
-        const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
+        // H3/S1-A（v1.13.106）：裸 exec BEGIN/COMMIT 收编为 wrapper 事务原语，
+        // 任一行失败 ROLLBACK 整体回滚（原实现中途异常会悬挂 BEGIN、不落盘即丢半截数据）
+        db.beginTx()
+        try {
+          const esc = v => v === null || v === undefined ? 'NULL' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : 'NULL') : "'" + String(v).replace(/'/g, "''") + "'"
 
-        for (const row of results.data) {
-          if (!row.name || !row.latitude || !row.longitude) continue
-          const vals = [
-            esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '已开业'),
-            esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
-            esc(row.open_date || ''), esc(row.business_hours || ''),
-            row.store_area ? esc(parseFloat(row.store_area)) : 'NULL',
-            row.seats ? esc(parseInt(row.seats)) : 'NULL',
-            row.frontage ? esc(parseFloat(row.frontage)) : 'NULL',
-            esc(row.store_category || ''), esc(row.store_status || ''), esc(row.mall_type || ''), esc(row.trade_area_type || ''), esc(row.description || ''),
-            esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
-            "'正常'",
-            esc(row.icon_color || '#409eff'),
-            String(req.user.id),
-            "datetime('now')", "datetime('now')"
-          ].join(',')
-          db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,created_at,updated_at) VALUES (' + vals + ')')
-          imported++
+          for (const row of results.data) {
+            if (!row.name || !row.latitude || !row.longitude) continue
+            const vals = [
+              esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '已开业'),
+              esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
+              esc(row.open_date || ''), esc(row.business_hours || ''),
+              row.store_area ? esc(parseFloat(row.store_area)) : 'NULL',
+              row.seats ? esc(parseInt(row.seats)) : 'NULL',
+              row.frontage ? esc(parseFloat(row.frontage)) : 'NULL',
+              esc(row.store_category || ''), esc(row.store_status || ''), esc(row.mall_type || ''), esc(row.trade_area_type || ''), esc(row.description || ''),
+              esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
+              "'正常'",
+              esc(row.icon_color || '#409eff'),
+              String(req.user.id),
+              "datetime('now')", "datetime('now')"
+            ].join(',')
+            db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,created_at,updated_at) VALUES (' + vals + ')')
+            imported++
+          }
+          db.commitTx() // 内含统一落盘
+        } catch (txError) {
+          try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+          throw txError
         }
-        db.exec('COMMIT')
-        // 保存到磁盘
-        saveDatabase()
 
         // 删除上传的文件（清理失败不影响导入结果）
         try { fs.unlinkSync(req.file.path) } catch (e) { console.warn('[Markers] 清理上传临时文件失败:', e.message) }

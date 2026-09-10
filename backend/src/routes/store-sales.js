@@ -111,41 +111,48 @@ router.post('/', authenticate, (req, res) => {
 
     const results = []
     let okCount = 0
-    for (const it of items) {
-      const storeId = Number(it.storeId)
-      const year = Number(it.year)
-      // month=0 表示年度汇总记录（按年录入）；1-12 为月度
-      const month = it.month === undefined || it.month === null || it.month === '' ? 0 : Number(it.month)
-      const amount = Number(it.salesAmount)
-      if (!storeId || !year || isNaN(month) || month < 0 || month > 12 || isNaN(amount)) {
-        results.push({ storeId, ok: false, reason: '参数不完整或格式错误' })
-        continue
+    // H3/S1-A：批量保存包事务——N 条 upsert 从 N 次整库落盘收敛为 1 次（commitTx 统一落盘）
+    db.beginTx()
+    try {
+      for (const it of items) {
+        const storeId = Number(it.storeId)
+        const year = Number(it.year)
+        // month=0 表示年度汇总记录（按年录入）；1-12 为月度
+        const month = it.month === undefined || it.month === null || it.month === '' ? 0 : Number(it.month)
+        const amount = Number(it.salesAmount)
+        if (!storeId || !year || isNaN(month) || month < 0 || month > 12 || isNaN(amount)) {
+          results.push({ storeId, ok: false, reason: '参数不完整或格式错误' })
+          continue
+        }
+        // 门店归属校验 + 快照字段
+        const store = db.prepare('SELECT id, name, brand, city, user_id FROM markers WHERE id = ?').get(storeId)
+        if (!store) {
+          results.push({ storeId, ok: false, reason: '门店不存在' })
+          continue
+        }
+        if (req.user.role !== 'admin' && store.user_id !== req.user.id) {
+          results.push({ storeId, ok: false, reason: '无权操作该门店' })
+          continue
+        }
+        const dr = it.deliveryRatio !== undefined && it.deliveryRatio !== null && it.deliveryRatio !== '' ? Number(it.deliveryRatio) : null
+        upsert.run(
+          req.user.id, storeId,
+          store.name || '', store.brand || '', store.city || '',
+          year, month,
+          amount,
+          it.storeArea !== undefined && it.storeArea !== null && it.storeArea !== '' ? Number(it.storeArea) : (store.store_area || null),
+          (dr !== null && dr >= 0 && dr <= 100) ? Math.round(dr) : null,
+          it.customerCount !== undefined && it.customerCount !== null && it.customerCount !== '' ? Number(it.customerCount) : null,
+          it.remark || null
+        )
+        okCount++
+        results.push({ storeId, year, month, ok: true })
       }
-      // 门店归属校验 + 快照字段
-      const store = db.prepare('SELECT id, name, brand, city, user_id FROM markers WHERE id = ?').get(storeId)
-      if (!store) {
-        results.push({ storeId, ok: false, reason: '门店不存在' })
-        continue
-      }
-      if (req.user.role !== 'admin' && store.user_id !== req.user.id) {
-        results.push({ storeId, ok: false, reason: '无权操作该门店' })
-        continue
-      }
-      const dr = it.deliveryRatio !== undefined && it.deliveryRatio !== null && it.deliveryRatio !== '' ? Number(it.deliveryRatio) : null
-      upsert.run(
-        req.user.id, storeId,
-        store.name || '', store.brand || '', store.city || '',
-        year, month,
-        amount,
-        it.storeArea !== undefined && it.storeArea !== null && it.storeArea !== '' ? Number(it.storeArea) : (store.store_area || null),
-        (dr !== null && dr >= 0 && dr <= 100) ? Math.round(dr) : null,
-        it.customerCount !== undefined && it.customerCount !== null && it.customerCount !== '' ? Number(it.customerCount) : null,
-        it.remark || null
-      )
-      okCount++
-      results.push({ storeId, year, month, ok: true })
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
     }
-    db.saveNow && db.saveNow()
     res.json({ success: true, ok: okCount, total: items.length, results })
   } catch (e) {
     console.error('[store-sales] 保存失败:', e.message)
@@ -234,37 +241,44 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
     const results = []
     let okCount = 0
-    rows.forEach((r, idx) => {
-      const rowNo = idx + 2
-      const code = String(r['门店编号'] || '').trim()
-      const name = String(r['门店名称'] || '').trim()
-      const year = Number(r['年份'])
-      const amountW = Number(r['年销售额(万元)'])
-      const areaRaw = String(r['面积(㎡)'] || '').trim()
-      const drRaw = String(r['外卖占比(%)'] || '').trim()
-      const remark = String(r['备注'] || '').trim() || null
+    // H3/S1-A：Excel 批量导入包事务——逐行 upsert 从逐次落盘收敛为 1 次，任一行失败整体回滚
+    db.beginTx()
+    try {
+      rows.forEach((r, idx) => {
+        const rowNo = idx + 2
+        const code = String(r['门店编号'] || '').trim()
+        const name = String(r['门店名称'] || '').trim()
+        const year = Number(r['年份'])
+        const amountW = Number(r['年销售额(万元)'])
+        const areaRaw = String(r['面积(㎡)'] || '').trim()
+        const drRaw = String(r['外卖占比(%)'] || '').trim()
+        const remark = String(r['备注'] || '').trim() || null
 
-      if (!code && !name) { results.push({ row: rowNo, reason: '门店编号与名称均为空' }); return }
-      const matched = findStore(code, name)
-      if (matched.err) { results.push({ row: rowNo, reason: matched.err }); return }
-      if (!year || year < 2000 || year > 2100) { results.push({ row: rowNo, reason: `年份无效：${r['年份']}` }); return }
-      if (isNaN(amountW) || amountW <= 0) { results.push({ row: rowNo, reason: `年销售额无效（需>0）：${r['年销售额(万元)']}` }); return }
-      let dr = null
-      if (drRaw !== '') {
-        dr = Number(drRaw)
-        if (isNaN(dr) || dr < 0 || dr > 100) { results.push({ row: rowNo, reason: `外卖占比无效（0-100）：${drRaw}` }); return }
-        dr = Math.round(dr)
-      }
-      const area = areaRaw !== '' ? Number(areaRaw) : (matched.store.store_area || null)
-      upsert.run(userId, matched.store.id, matched.store.name || '', matched.store.brand || '', matched.store.city || '',
-        year, Math.round(amountW * 10000), isNaN(area) ? null : area, dr, remark)
-      okCount++
-      results.push({ row: rowNo, ok: true })
-    })
+        if (!code && !name) { results.push({ row: rowNo, reason: '门店编号与名称均为空' }); return }
+        const matched = findStore(code, name)
+        if (matched.err) { results.push({ row: rowNo, reason: matched.err }); return }
+        if (!year || year < 2000 || year > 2100) { results.push({ row: rowNo, reason: `年份无效：${r['年份']}` }); return }
+        if (isNaN(amountW) || amountW <= 0) { results.push({ row: rowNo, reason: `年销售额无效（需>0）：${r['年销售额(万元)']}` }); return }
+        let dr = null
+        if (drRaw !== '') {
+          dr = Number(drRaw)
+          if (isNaN(dr) || dr < 0 || dr > 100) { results.push({ row: rowNo, reason: `外卖占比无效（0-100）：${drRaw}` }); return }
+          dr = Math.round(dr)
+        }
+        const area = areaRaw !== '' ? Number(areaRaw) : (matched.store.store_area || null)
+        upsert.run(userId, matched.store.id, matched.store.name || '', matched.store.brand || '', matched.store.city || '',
+          year, Math.round(amountW * 10000), isNaN(area) ? null : area, dr, remark)
+        okCount++
+        results.push({ row: rowNo, ok: true })
+      })
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
 
     try { fs.unlinkSync(req.file.path) } catch (e) {}
     const fails = results.filter(r => !r.ok)
-    db.saveNow && db.saveNow()
     res.json({ success: true, ok: okCount, total: rows.length, results: fails })
   } catch (e) {
     console.error('[store-sales] 导入失败:', e.message)

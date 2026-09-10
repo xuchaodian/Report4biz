@@ -143,15 +143,23 @@ router.post('/candidates', authenticate, (req, res) => {
     `)
 
     let saved = 0
-    for (const c of candidates) {
-      insert.run(
-        configId || null, req.user.id,
-        c.city || '', c.district || '', c.gridId || '',
-        c.lng, c.lat, c.score || 0,
-        c.scorePopulation, c.scoreCompetition, c.scoreSupport, c.scoreTransport,
-        c.populationDensity, c.competitorCount, c.poiCount, c.address || ''
-      )
-      saved++
+    // H3/S1-A：候选点位批量保存包事务——N 个候选从逐次落盘收敛为 1 次，任一行失败整体回滚
+    db.beginTx()
+    try {
+      for (const c of candidates) {
+        insert.run(
+          configId || null, req.user.id,
+          c.city || '', c.district || '', c.gridId || '',
+          c.lng, c.lat, c.score || 0,
+          c.scorePopulation, c.scoreCompetition, c.scoreSupport, c.scoreTransport,
+          c.populationDensity, c.competitorCount, c.poiCount, c.address || ''
+        )
+        saved++
+      }
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
     }
 
     res.status(201).json({ message: `已保存 ${saved} 个候选点位` })

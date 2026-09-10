@@ -3,11 +3,54 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getAuthorization } from './smartsteps.js'
 import crypto from 'crypto'
+import NodeCache from 'node-cache'
 
 const router = express.Router()
 
 // 内存缓存：shapefileId -> { geojson, ts }
 const geojsonCache = new Map()
+
+// H4（v1.13.106）：商圈内门店/竞品计数缓存——bbox 预筛后仅对少量候选跑射线，结果按
+// (bbox + 数据版本) 缓存 60s。数据版本取 competitors/markers 的 MAX(updated_at)，
+// 导入/更新/删除后自动失效，无需在写路径手动清缓存。
+const districtCountCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
+
+// 数据版本指纹：两表最新 updated_at（秒级），用于计数缓存失效
+function storeDataVersion(db) {
+  const r = db.prepare(`
+    SELECT COALESCE((SELECT MAX(updated_at) FROM competitors), '') || '|' ||
+           COALESCE((SELECT MAX(updated_at) FROM markers), '') AS v
+  `).get()
+  return r?.v || ''
+}
+
+/**
+ * 几何 bbox [minLng, minLat, maxLng, maxLat]（Polygon/MultiPolygon），
+ * 不支持的类型返回 null（调用方回退全表扫描）。
+ */
+function geometryBBox(geometry) {
+  if (!geometry) return null
+  const polys = geometry.type === 'Polygon'
+    ? [geometry.coordinates]
+    : geometry.type === 'MultiPolygon'
+      ? geometry.coordinates
+      : null
+  if (!polys) return null
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity
+  for (const rings of polys) {
+    for (const ring of rings) {
+      for (const pt of ring) {
+        const lng = pt[0], lat = pt[1]
+        if (lng < minLng) minLng = lng
+        if (lat < minLat) minLat = lat
+        if (lng > maxLng) maxLng = lng
+        if (lat > maxLat) maxLat = lat
+      }
+    }
+  }
+  if (!isFinite(minLng)) return null
+  return [minLng, minLat, maxLng, maxLat]
+}
 
 // 智慧足迹上游配置
 const SMARTSTEPS_BASE_URL = 'https://jm-odp.smartsteps.com/febs'
@@ -232,10 +275,17 @@ router.post('/refresh', authenticate, async (req, res) => {
       return res.status(502).json({ success: false, message: '人口数据服务暂不可用，请稍后重试' })
     }
 
-    // 4. 扣配额 + 缓存
-    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
-    db.prepare(`INSERT OR REPLACE INTO district_cache (city, name, polygon_key, city_month, result_data) VALUES (?, ?, ?, ?, ?)`)
-      .run(city, name, polygonKey, cityMonth, JSON.stringify(result))
+    // 4. 扣配额 + 缓存（同事务，杜绝"扣了配额没缓存 / 有缓存没扣"不一致，v1.13.106）
+    db.beginTx()
+    try {
+      db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+      db.prepare(`INSERT OR REPLACE INTO district_cache (city, name, polygon_key, city_month, result_data) VALUES (?, ?, ?, ?, ?)`)
+        .run(city, name, polygonKey, cityMonth, JSON.stringify(result))
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
 
     res.json({
       success: true,
@@ -315,30 +365,48 @@ function pointInFeature(pt, geometry) {
   return false
 }
 
-// 计算商圈内竞品数量
+// 计算商圈内竞品数量（H4：bbox SQL 预筛替代全表拉取 + 60s 缓存，射线仅在 bbox 内少量候选上跑）
 function countCompetitorsInDistrict(geometry) {
+  const bbox = geometryBBox(geometry)
   const db = getDb()
-  const competitors = db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all()
+  const ver = storeDataVersion(db)
+  const cacheKey = 'comp|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
+  const cached = districtCountCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const rows = bbox
+    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all()
   let count = 0
-  for (const c of competitors) {
+  for (const c of rows) {
     if (c.longitude && c.latitude && pointInFeature([c.longitude, c.latitude], geometry)) {
       count++
     }
   }
+  districtCountCache.set(cacheKey, count)
   return count
 }
 
 
-// 计算商圈内我的门店数量（自家门店相互蚕食：竞争强度计分时加权）
+// 计算商圈内我的门店数量（自家门店相互蚕食：竞争强度计分时加权；H4 同 bbox 预筛 + 缓存）
 function countMyStoresInDistrict(geometry) {
+  const bbox = geometryBBox(geometry)
   const db = getDb()
-  const stores = db.prepare(`SELECT longitude, latitude FROM markers`).all()
+  const ver = storeDataVersion(db)
+  const cacheKey = 'store|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
+  const cached = districtCountCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const rows = bbox
+    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM markers`).all()
   let count = 0
-  for (const s of stores) {
+  for (const s of rows) {
     if (s.longitude && s.latitude && pointInFeature([s.longitude, s.latitude], geometry)) {
       count++
     }
   }
+  districtCountCache.set(cacheKey, count)
   return count
 }
 
@@ -490,8 +558,11 @@ router.get('/detail', authenticate, (req, res) => {
         const compCount = countCompetitorsInDistrict(feature.geometry)
         const myStoreCount = countMyStoresInDistrict(feature.geometry)
         const scores = computeScore(props, compCount, myStoreCount)
-        // 商圈内购物中心（polygon 包含判定，取前 10）
-        const centers = db.prepare(`SELECT name, city, district, address, latitude, longitude, stars, comments FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0`).all()
+        // 商圈内购物中心（bbox 预筛 + polygon 包含判定，取前 10；H4 免全表拉取）
+        const scBbox = geometryBBox(feature.geometry)
+        const centers = scBbox
+          ? db.prepare(`SELECT name, city, district, address, latitude, longitude, stars, comments FROM shopping_centers WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?`).all(scBbox[1], scBbox[3], scBbox[0], scBbox[2])
+          : db.prepare(`SELECT name, city, district, address, latitude, longitude, stars, comments FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0`).all()
         const inDistrict = []
         for (const c of centers) {
           if (pointInFeature([c.longitude, c.latitude], feature.geometry)) {
