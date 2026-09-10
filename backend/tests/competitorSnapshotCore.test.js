@@ -10,6 +10,8 @@ import {
   parsePeriod,
   toMonthPeriod,
   monthToQuarterIfEdge,
+  parseYearMonthLabel,
+  detectDataVersion,
   normalizeStoreName,
   levenshtein,
   nameSimilarity,
@@ -60,6 +62,59 @@ describe('期次解析（月/季双粒度）', () => {
     expect(monthToQuarterIfEdge(2026, 9)).toBe('2026Q3')
     expect(monthToQuarterIfEdge(2026, 3)).toBe('2026Q1')
     expect(monthToQuarterIfEdge(2026, 5)).toBeNull()
+  })
+})
+
+describe('文件名 / 版本列的年月识别（期次自动预填的数据来源）', () => {
+  const guess = (f) => detectDataVersion([{ name: 'x' }], f).suggestedPeriod
+
+  it('parseYearMonthLabel：五种写法均可识别（含季度与裸 YYYYMM）', () => {
+    expect(parseYearMonthLabel('米村拌饭2026年9月.csv')).toMatchObject({ year: 2026, month: 9, quarter: null })
+    expect(parseYearMonthLabel('米村拌饭2026-09.csv')).toMatchObject({ year: 2026, month: 9, quarter: null })
+    expect(parseYearMonthLabel('米村拌饭2026/9.csv')).toMatchObject({ year: 2026, month: 9, quarter: null })
+    expect(parseYearMonthLabel('米村拌饭2026Q3.csv')).toMatchObject({ year: 2026, month: 9, quarter: 3 }) // 季度取季末月
+    expect(parseYearMonthLabel('米村拌饭202609.csv')).toMatchObject({ year: 2026, month: 9, quarter: null }) // 裸 YYYYMM
+  })
+
+  it('文件名 → 建议期次，允许前后缀与扩展名', () => {
+    expect(guess('米村拌饭202609.csv')).toBe('2026-09')
+    expect(guess('202609.csv')).toBe('2026-09')
+    expect(guess('米村拌饭2026Q3.csv')).toBe('2026-09')
+    expect(guess('米村拌饭_2026Q3_门店.xlsx')).toBe('2026-09')
+    expect(guess('米村拌饭2026-09.csv')).toBe('2026-09')
+    expect(guess('米村拌饭2026年9月门店清单.xlsx')).toBe('2026-09')
+    expect(guess('米村拌饭20260915.csv')).toBe('2026-09') // 带日期的文件名取年月
+  })
+
+  it('识别不到或月份非法时一律不产出期次（防误填、防截断）', () => {
+    expect(guess('门店清单.csv')).toBe('')
+    expect(guess('competitor_snapshot_template.csv')).toBe('')
+    expect(guess('米村拌饭202613.csv')).toBe('')  // 13 月非法
+    expect(guess('米村拌饭202600.csv')).toBe('')  // 00 月非法
+    expect(guess('米村拌饭2026-13.csv')).toBe('') // 不得被截成 2026-01
+    expect(guess('SKU2026393912.csv')).toBe('')   // 长数字串不截取
+    expect(parseYearMonthLabel(null)).toBeNull()
+    expect(parseYearMonthLabel('')).toBeNull()
+  })
+
+  it('数据版本标签：季度标签只来自显式 Q 写法（季末月的月度文件不冒充季度）', () => {
+    const label = (f) => detectDataVersion([{ name: 'x' }], f).dataVersion
+    expect(label('米村拌饭2026Q3.csv')).toBe('2026Q3版')
+    expect(label('米村拌饭_2026Q4_门店.xlsx')).toBe('2026Q4版')
+    expect(label('米村拌饭2026Q1.csv')).toBe('2026Q1版')
+    expect(label('米村拌饭202609.csv')).toBe('2026年9月版') // 裸 YYYYMM 虽落在季末月，仍是月度文件
+    expect(label('米村拌饭2026-09.csv')).toBe('2026年9月版')
+    expect(label('米村拌饭2026年9月.csv')).toBe('2026年9月版')
+    expect(label('米村拌饭202603.csv')).toBe('2026年3月版')
+    expect(label('门店清单.csv')).toBe('')
+  })
+
+  it('CSV 版本列优先于文件名', () => {
+    const rows = [{ 数据版本: '2026年6月版', name: 'x' }, { 数据版本: '2026年6月版', name: 'y' }]
+    const v = detectDataVersion(rows, '米村拌饭202609.csv')
+    expect(v.versionSource).toBe('column')
+    expect(v.dataVersion).toBe('2026年6月版')
+    expect(v.suggestedPeriod).toBe('2026-06')
   })
 })
 

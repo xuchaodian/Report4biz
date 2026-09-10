@@ -197,8 +197,11 @@ export function detectDataVersion(rows, fileName) {
   // ② 文件名模式：2026年9月 / 2026-09 / 202609 / 2026Q3
   const ym = parseYearMonthLabel(fileName || '')
   if (ym) {
-    const quarter = monthToQuarterIfEdge(ym.year, ym.month)
-    const label = quarter ? `${ym.year}年${ym.month}月版` : `${ym.year}年${ym.month}月版`
+    // 仅当文件名「显式」写了 Q（如 2026Q3）才标季度；月写法（202609 / 2026-09）即便是季末月
+    // （3/6/9/12）也保持月度标签 —— 否则无法区分「9 月的月度快照」与「Q3 季度快照」，会误导溯源。
+    const label = ym.quarter
+      ? `${monthToQuarterIfEdge(ym.year, ym.month)}版`
+      : `${ym.year}年${ym.month}月版`
     return {
       dataVersion: label,
       versionSource: 'filename',
@@ -208,15 +211,26 @@ export function detectDataVersion(rows, fileName) {
   }
   return { dataVersion: '', versionSource: '', versionInconsistent: false, suggestedPeriod: '' }
 }
-/** 从任意文本提取年月 → {year, month} | null */
+/** 从任意文本提取年月 → {year, month, quarter} | null
+ *  支持写法：`2026年9月` / `2026-09` / `2026/9` / `2026Q3` / `202609`（裸 YYYYMM）
+ *  后两种允许带前后缀与扩展名（如 `米村拌饭202609.csv`）
+ *  `quarter` 仅在命中**显式季度写法**（含 Q）时给出，用于区分季末月的月度文件与季度文件；
+ *  月写法（含 202609）一律为 null。
+ *  ⚠ 改动时须同步 frontend/src/utils/periodParse.js（同名规则，前端预填用）
+ */
 export function parseYearMonthLabel(text) {
   const t = String(text || '')
+  // 前两条按月做范围校验：越界（如 2026-13）视为识别失败，避免产出非法期次
   let m = t.match(/(\d{4})\s*年\s*(\d{1,2})\s*月/)
-  if (m) return { year: +m[1], month: +m[2] }
+  if (m) { const mo = +m[2]; if (mo >= 1 && mo <= 12) return { year: +m[1], month: mo, quarter: null } }
   m = t.match(/(\d{4})[-\/](\d{1,2})/)
-  if (m) return { year: +m[1], month: +m[2] }
-  m = t.match(/^(\d{4})Q([1-4])$/i)
-  if (m) return { year: +m[1], month: +m[2] * 3 }
+  if (m) { const mo = +m[2]; if (mo >= 1 && mo <= 12) return { year: +m[1], month: mo, quarter: null } }
+  // 季度写法：不再要求整串完全匹配，允许文件名前后缀（米村拌饭2026Q3.csv）
+  m = t.match(/(\d{4})\s*Q([1-4])(?!\d)/i)
+  if (m) return { year: +m[1], month: +m[2] * 3, quarter: +m[2] }
+  // 裸 YYYYMM（米村拌饭202609.csv）；前面要求非数字边界，避免从长数字串中截取
+  m = t.match(/(?:^|\D)(\d{4})(0[1-9]|1[0-2])/)
+  if (m) return { year: +m[1], month: +m[2], quarter: null }
   return null
 }
 

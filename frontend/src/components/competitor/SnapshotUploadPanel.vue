@@ -37,10 +37,11 @@
                   placeholder="如 2026Q3 或 2026-09"
                   clearable
                   style="width: 100%"
+                  @input="periodEdited = true"
                 >
                   <template #append>
                     <el-tooltip content="填入系统建议的最近期次" placement="top">
-                      <el-button :disabled="!suggestedPeriod" @click="period = suggestedPeriod">
+                      <el-button :disabled="!suggestedPeriod" @click="applySuggestion">
                         建议:{{ suggestedPeriod || '--' }}
                       </el-button>
                     </el-tooltip>
@@ -314,6 +315,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Download, Search, Refresh, Document, Delete } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
+import { guessPeriodFromFilename } from '@/utils/periodParse'
 
 const emit = defineEmits(['imported', 'goto-monitor', 'snapshot-deleted'])
 const competitorStore = useCompetitorStore()
@@ -353,6 +355,7 @@ const deleteOne = async (s) => {
 /* ---------------- 表单状态 ---------------- */
 const brand = ref('')
 const period = ref('')
+const periodEdited = ref(false)   // 用户是否手改过期次；改过则选文件时不再自动预填
 const dataVersion = ref('')
 const suggestedPeriod = ref('')
 const fileName = ref('')
@@ -384,6 +387,11 @@ const canImport = computed(() => previewData.value && !previewData.value.blockIm
 const handleFileChange = (file) => {
   rawFile.value = file.raw
   fileName.value = file.name
+  // 选文件即按文件名预填期次（用户未手改过时才自动填，可覆盖）
+  if (!periodEdited.value) {
+    const guess = guessPeriodFromFilename(file.name)
+    if (guess) period.value = guess
+  }
   // 换文件后旧预览失效
   if (previewData.value) resetPreview(false)
 }
@@ -474,6 +482,7 @@ const handleImport = async () => {
     ElMessage.success(d.message || `导入成功（${d.total} 条）`)
     emit('imported', { brand: brand.value, period: period.value, ...d })
     resetPreview(true)
+    periodEdited.value = false   // 表单已收尾，下一份文件恢复按文件名自动预填
     rawFile.value = null
     fileName.value = ''
     uploadRef.value?.clearFiles()
@@ -525,7 +534,9 @@ const formatTime = (t) => {
 }
 
 const applySuggestion = () => {
+  if (!suggestedPeriod.value) return
   period.value = suggestedPeriod.value
+  periodEdited.value = true
   ElMessage.success(`已填入建议期次 ${suggestedPeriod.value}`)
 }
 
