@@ -13,7 +13,7 @@ export default {
     cityInsight: '城市洞察',
     districtInsight: '商圈洞察',
     salesForecast: '销售预测',
-    users: '用户',
+    users: '用户管理',
     apiOpen: 'API开放',
     dashboard: '数据大屏',
     account: '账号'

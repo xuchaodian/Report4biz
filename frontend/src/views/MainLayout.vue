@@ -52,14 +52,6 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <router-link v-if="userStore.isAdmin" to="/users" class="nav-item" :class="{ active: $route.path === '/users' }">
-          <el-icon><User /></el-icon>
-          <span>{{ $t('nav.users') }}</span>
-        </router-link>
-        <router-link v-if="userStore.isAdmin" to="/resale" class="nav-item" :class="{ active: $route.path === '/resale' }">
-          <el-icon><Key /></el-icon>
-          <span>{{ $t('nav.apiOpen') }}</span>
-        </router-link>
         <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }">
           <el-icon><DataBoard /></el-icon>
           <span>{{ $t('nav.dashboard') }}</span>
@@ -76,7 +68,14 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="profile">
+              <!-- 管理员专属入口：置顶 + 蓝色底与下方常规项区分 -->
+              <el-dropdown-item v-if="userStore.isAdmin" command="users" class="dd-admin-item">
+                <el-icon><User /></el-icon>{{ $t('nav.users') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="userStore.isAdmin" command="resale" class="dd-admin-item">
+                <el-icon><Key /></el-icon>{{ $t('nav.apiOpen') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="profile" :divided="userStore.isAdmin">
                 <el-icon><User /></el-icon>个人中心
               </el-dropdown-item>
               <el-dropdown-item command="brands">
@@ -296,7 +295,11 @@ onMounted(() => {
 })
 
 const handleCommand = async (command) => {
-  if (command === 'profile') {
+  if (command === 'users') {
+    router.push('/users')
+  } else if (command === 'resale') {
+    router.push('/resale')
+  } else if (command === 'profile') {
     router.push('/account')
   } else if (command === 'brands') {
     router.push('/brands')
@@ -620,6 +623,20 @@ const doExport = async (type) => {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* 管理员专属入口（下拉置顶）：浅蓝底 + 加粗，与下方常规项区分 */
+.dd-admin-item {
+  background: #eef5ff !important;
+  color: #1f6fd0 !important;
+  font-weight: 600;
+}
+.dd-admin-item:hover {
+  background: #dceaff !important;
+  color: #1557a5 !important;
+}
+.dd-admin-item .el-icon {
+  color: #409eff !important;
 }
 
 /* 配额显示项（下拉菜单渲染在body下，需全局样式） */
