@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import compression from 'compression'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 
@@ -43,6 +44,17 @@ const PORT = process.env.PORT || 3000
 
 // 信任代理（获取真实客户端IP）
 app.set('trust proxy', true)
+
+// 响应压缩（v1.13.107 M4）：列表接口全量返回（markers 1900+ / competitors 8900+ / brand-stores 9200+ 行 JSON）
+// 未压缩时单响应可达数 MB；gzip 后通常降到 ~10-15%，显著缩短弱网下的首屏拉取时间。
+// 注意：必须排除 SSE（AI 流式 text/event-stream），否则压缩中间件会缓冲分块、破坏流式输出。
+app.use(compression({
+  filter: (req, res) => {
+    const ct = res.getHeader('Content-Type')
+    if (ct && String(ct).includes('text/event-stream')) return false
+    return compression.filter(req, res)
+  }
+}))
 
 // CORS 白名单（v1.13.105 S-M2）：仅放行前端站点与本地开发地址，杜绝任意站点在已登录态向 API 发跨域请求。
 // 说明：非浏览器请求（curl / 服务端直连，无 Origin 头）不受 CORS 约束，正常放行（第三方 API 转售即此类）。

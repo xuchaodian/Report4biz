@@ -880,15 +880,17 @@
       @close="closePoiResults"
     />
 
-    <!-- 智慧足迹面板 -->
+    <!-- 智慧足迹面板（M1：异步组件，首次打开才加载；everOpened 保证打开后常驻，保留拖动位置等状态） -->
     <SmartstepsPanel
+      v-if="smartstepsEverOpened"
       :visible="smartstepsVisible"
       :map="map"
       @update:visible="smartstepsVisible = $event"
     />
 
-    <!-- 门店联通人口对话框 -->
+    <!-- 门店联通人口对话框（M1：异步组件，首次打开才加载） -->
     <StoreSmartstepsDialog
+      v-if="storeSmartstepsEverOpened"
       :visible="storeSmartstepsVisible"
       :store="selectedStoreForSmartsteps"
       @update:visible="storeSmartstepsVisible = $event"
@@ -1565,7 +1567,7 @@
 </template>
 
 <script setup>
-import { ref, shallowRef, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, shallowRef, reactive, computed, onMounted, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 // 按需导入：ElMessage/ElMessageBox 通过JS调用，需显式加载CSS
@@ -1591,8 +1593,10 @@ import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
 import PoiSearchPanel from '@/components/map/PoiSearchPanel.vue'
 import BusinessCirclePanel from '@/components/map/BusinessCirclePanel.vue'
-import SmartstepsPanel from '@/components/SmartstepsPanel.vue'
-import StoreSmartstepsDialog from '@/components/StoreSmartstepsDialog.vue'
+// M1（v1.13.107）：重弹窗改异步组件——SmartstepsPanel(1411 行) / StoreSmartstepsDialog(2815 行)
+// 原先静态 import 会一并打进 MapView 首屏 chunk；改为首次打开时才拉取各自 chunk。
+const SmartstepsPanel = defineAsyncComponent(() => import('@/components/SmartstepsPanel.vue'))
+const StoreSmartstepsDialog = defineAsyncComponent(() => import('@/components/StoreSmartstepsDialog.vue'))
 import MapToolbar from '@/components/map/MapToolbar.vue'
 import AddressSearchPanel from '@/components/map/AddressSearchPanel.vue'
 import StoreControlPanel from '@/components/map/StoreControlPanel.vue'
@@ -1604,7 +1608,14 @@ import {
 } from '@/utils/map'
 import axios from 'axios'
 import echarts from '@/utils/echarts'
-import * as turf from '@turf/turf'
+// M1（v1.13.107）：turf 按函数引入——`import * as turf from '@turf/turf'` 会把整个 turf 包
+// （约 200 个 CJS 子模块，Rollup 无法 tree-shake CJS）打进 vendor-maps；本文件实际只用 6 个函数。
+// 命名避开文件内已有的局部变量 turfPolygon / turfCircle。
+import { polygon as turfPoly, point as turfPt } from '@turf/helpers'
+import turfAreaFn from '@turf/area'
+import turfCircleFn from '@turf/circle'
+import turfIntersectFn from '@turf/intersect'
+import turfPointInPoly from '@turf/boolean-point-in-polygon'
 import { formatNumber } from '@/utils/populationStats'
 import { handleApiError } from '@/utils/errorHandler'
 import { exportChartImage } from '@/utils/chartExport'
@@ -2190,6 +2201,8 @@ const circleAnalysisTitle = ref('圆形内门店分析')
 
 // 商圈人口分布相关
 let populationLayerGroup = null  // 人口分布图层组
+// M2（v1.13.107）：人口网格分帧渲染令牌——每次发起新渲染自增，使仍在 rAF 队列中的旧渲染循环作废
+let populationRenderToken = 0
 let tempPopulationMarker = null   // 人口分布临时圆心标记
 let currentStatsPanelMarker = null  // 当前统计面板标记
 const populationFieldOptions = ref([])  // 可选的统计字段列表
@@ -2262,9 +2275,17 @@ let poiCenterPoint = null     // POI中心点坐标
 
 // 智慧足迹面板
 const smartstepsVisible = ref(false)
+// M1（v1.13.107）：异步弹窗「是否曾打开过」——首次打开时才挂载（触发 chunk 按需加载），
+// 之后保持挂载（配合组件内部 v-if/v-model 显隐），避免每次开关都重建、丢失拖动位置等状态。
+const smartstepsEverOpened = ref(false)
+watch(smartstepsVisible, (v) => { if (v) smartstepsEverOpened.value = true })
 
 // 门店联通人口对话框
 const storeSmartstepsVisible = ref(false)
+// M1（v1.13.107）：同上——首次打开才挂载异步组件（父组件先设 selectedStoreForSmartsteps 再置 visible，
+// 组件挂载时 store 已就绪，其 immediate watcher 会正常加载月份/配额/履历）
+const storeSmartstepsEverOpened = ref(false)
+watch(storeSmartstepsVisible, (v) => { if (v) storeSmartstepsEverOpened.value = true })
 const selectedStoreForSmartsteps = ref(null)
 
 // 周边检索面板
@@ -3538,87 +3559,112 @@ const analyzePopulationDistribution = async () => {
     const frontendGrandTotal = allValues.reduce((s, v) => s + v, 0)
     const grandTotal = apiGrandTotal > 0 ? apiGrandTotal : frontendGrandTotal
 
-    // 绘制多边形
+    // 绘制所有半径圆（黑色加粗实线边框）——圆列表提前排序，供分帧渲染的收尾回调使用
+    const sortedRadii = [...allRadiiMeters].sort((a, b) => b - a)
+
+    // 绘制多边形（v1.13.107 M2：分帧渲染）
+    // 人口网格可达数千个多边形 + 标签，原同步 forEach 会长时间阻塞主线程（地图数秒无响应）；
+    // 改为每帧最多渲染 POP_RENDER_CHUNK 个，把主线程交还给地图交互。
     console.log(`开始绘制多边形，共${maxRadiusData.matchingData.length}个`)
+    const POP_RENDER_CHUNK = 150
+    const popRenderToken = ++populationRenderToken   // 新一轮渲染作废旧循环
     let polygonCount = 0
     let labelCount = 0
-    if (maxRadiusData.matchingData.length > 0) {
-      maxRadiusData.matchingData.forEach((data, index) => {
-      const { feature, value, geom } = data
-      const props = feature.properties || {}
-      const rawValue = parseInt(props[fieldName]) || 0  // 原始shapefile值
-      const color = getColorByValue(rawValue)
 
-      let latlngs = []
-      if (geom.type === 'Polygon') {
-        latlngs = geom.coordinates[0].map(c => [c[1], c[0]])
-      } else if (geom.type === 'MultiPolygon') {
-        latlngs = geom.coordinates[0][0].map(c => [c[1], c[0]])
-      }
-
-      if (latlngs.length > 0) {
-        const polygon = L.polygon(latlngs, {
-          color: '#888', weight: 1, fillColor: color, fillOpacity: 0.7
+    // 半径圆与多边形同处 overlay pane（SVG），需「后加」才能绘制在多边形之上，
+    // 故放入分帧渲染的收尾回调，保持与原同步实现一致的视觉层级。
+    const drawRadiusRings = () => {
+      if (popRenderToken !== populationRenderToken) return
+      console.log(`多边形绘制完成: ${polygonCount}个多边形, ${labelCount}个标签`)
+      sortedRadii.forEach((r) => {
+        const circle = L.circle([centerLat, centerLng], {
+          radius: r,
+          color: '#333333',
+          fillColor: 'transparent',
+          fillOpacity: 0,
+          weight: 4,
+          dashArray: null
         })
-        polygon.bindPopup(`
-          <div style="font-size: 12px; min-width: 140px;">
-            <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
-            <span style="color: #666;">${fieldName}:</span>
-            <strong style="color: #e6a23c;">${rawValue.toLocaleString()}</strong><br/>
-            <span style="color: #999; font-size: 11px;">
-              占比: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
-            </span>
-          </div>
-        `)
-        populationLayerGroup.addLayer(polygon)
-        polygonCount++
-
-        // 添加标签
-        const polyCenter = getFeatureCenter(feature)
-        if (polyCenter) {
-          let displayValue = rawValue
-          if (displayValue >= 10000) displayValue = (displayValue / 10000).toFixed(1) + '万'
-          else if (rawValue >= 1000) displayValue = rawValue.toLocaleString()
-
-          const labelMarker = L.marker([polyCenter.lat, polyCenter.lng], {
-            icon: L.divIcon({
-              className: 'population-label',
-              html: `<div style="
-                background: rgba(255,255,255,0.9);
-                border: 1px solid ${color};
-                border-radius: 4px;
-                padding: 2px 6px;
-                font-size: 11px;
-                font-weight: bold;
-                color: #333;
-                white-space: nowrap;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-                text-align: center;
-              ">${displayValue}</div>`,
-              iconSize: [60, 20],
-              iconAnchor: [30, 10]
-            })
-          })
-          populationLayerGroup.addLayer(labelMarker)
-          labelCount++
-        }
-      }
-    }) }
-    console.log(`多边形绘制完成: ${polygonCount}个多边形, ${labelCount}个标签`)
-
-    // 绘制所有半径圆（黑色加粗实线边框）
-    const sortedRadii = [...allRadiiMeters].sort((a, b) => b - a)
-    sortedRadii.forEach((r) => {
-      const circle = L.circle([centerLat, centerLng], {
-        radius: r,
-        color: '#333333',
-        fillColor: 'transparent',
-        fillOpacity: 0,
-        weight: 4,
-        dashArray: null
+        populationLayerGroup.addLayer(circle)
       })
-      populationLayerGroup.addLayer(circle)
-    })
+    }
+
+    const popRenderItems = maxRadiusData.matchingData
+    if (popRenderItems.length > 0) {
+      let popRenderIdx = 0
+      const renderPopulationChunk = () => {
+        if (popRenderToken !== populationRenderToken) return  // 已被新一轮渲染取代
+        const chunkEnd = Math.min(popRenderIdx + POP_RENDER_CHUNK, popRenderItems.length)
+        for (; popRenderIdx < chunkEnd; popRenderIdx++) {
+          const data = popRenderItems[popRenderIdx]
+          const index = popRenderIdx
+          const { feature, value, geom } = data
+          const props = feature.properties || {}
+          const rawValue = parseInt(props[fieldName]) || 0  // 原始shapefile值
+          const color = getColorByValue(rawValue)
+
+          let latlngs = []
+          if (geom.type === 'Polygon') {
+            latlngs = geom.coordinates[0].map(c => [c[1], c[0]])
+          } else if (geom.type === 'MultiPolygon') {
+            latlngs = geom.coordinates[0][0].map(c => [c[1], c[0]])
+          }
+
+          if (latlngs.length > 0) {
+            const polygon = L.polygon(latlngs, {
+              color: '#888', weight: 1, fillColor: color, fillOpacity: 0.7
+            })
+            polygon.bindPopup(`
+              <div style="font-size: 12px; min-width: 140px;">
+                <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
+                <span style="color: #666;">${fieldName}:</span>
+                <strong style="color: #e6a23c;">${rawValue.toLocaleString()}</strong><br/>
+                <span style="color: #999; font-size: 11px;">
+                  占比: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
+                </span>
+              </div>
+            `)
+            populationLayerGroup.addLayer(polygon)
+            polygonCount++
+
+            // 添加标签
+            const polyCenter = getFeatureCenter(feature)
+            if (polyCenter) {
+              let displayValue = rawValue
+              if (displayValue >= 10000) displayValue = (displayValue / 10000).toFixed(1) + '万'
+              else if (rawValue >= 1000) displayValue = rawValue.toLocaleString()
+
+              const labelMarker = L.marker([polyCenter.lat, polyCenter.lng], {
+                icon: L.divIcon({
+                  className: 'population-label',
+                  html: `<div style="
+                    background: rgba(255,255,255,0.9);
+                    border: 1px solid ${color};
+                    border-radius: 4px;
+                    padding: 2px 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    color: #333;
+                    white-space: nowrap;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                    text-align: center;
+                  ">${displayValue}</div>`,
+                  iconSize: [60, 20],
+                  iconAnchor: [30, 10]
+                })
+              })
+              populationLayerGroup.addLayer(labelMarker)
+              labelCount++
+            }
+          }
+        }
+        if (popRenderIdx < popRenderItems.length) requestAnimationFrame(renderPopulationChunk)
+        else drawRadiusRings()
+      }
+      requestAnimationFrame(renderPopulationChunk)
+    } else {
+      drawRadiusRings()
+    }
 
     // 圆心标记 - 创建更显眼的永久标记
     console.log('处理圆心标记，tempPopulationMarker:', !!tempPopulationMarker)
@@ -4083,30 +4129,30 @@ const calculateIntersectionRatio = (geom, centerLat, centerLng, radius) => {
     // 将GeoJSON几何体转换为Turf多边形
     let turfPolygon
     if (geom.type === 'Polygon') {
-      turfPolygon = turf.polygon(geom.coordinates)
+      turfPolygon = turfPoly(geom.coordinates)
     } else if (geom.type === 'MultiPolygon') {
       // 使用第一个多边形（通常只有一个）
-      turfPolygon = turf.polygon(geom.coordinates[0])
+      turfPolygon = turfPoly(geom.coordinates[0])
     } else {
       return 0
     }
     
     // 计算多边形面积（平方米）
-    const polygonArea = turf.area(turfPolygon)
+    const polygonArea = turfAreaFn(turfPolygon)
     if (polygonArea === 0) return 0
     
     // 创建圆形（Turf.circle半径单位为公里，需要从米转换）
     const radiusKm = radius / 1000
-    const turfCircle = turf.circle([centerLng, centerLat], radiusKm, { steps: 64 })
+    const turfCircle = turfCircleFn([centerLng, centerLat], radiusKm, { steps: 64 })
     
     // 计算交集
-    const intersection = turf.intersect(turfPolygon, turfCircle)
+    const intersection = turfIntersectFn(turfPolygon, turfCircle)
     
     // 如果没有交集，返回0
     if (!intersection) return 0
     
     // 计算交集面积（平方米）
-    const intersectionArea = turf.area(intersection)
+    const intersectionArea = turfAreaFn(intersection)
     
     // 返回交集面积占多边形面积的比例
     return intersectionArea / polygonArea
@@ -4453,8 +4499,14 @@ const initMap = async () => {
   drawnItems = new L.FeatureGroup()
   map.addLayer(drawnItems)
 
-  // 鼠标移动显示坐标
+  // 鼠标移动显示坐标（M3 v1.13.107：节流 ~100ms）
+  // 原实现每次 mousemove（~60 次/秒）都写 currentCoords 触发 Vue 重渲染，拖拽时明显掉帧；
+  // 坐标显示对 100ms 节流无感知。
+  let lastCoordTs = 0
   map.on('mousemove', (e) => {
+    const now = performance.now()
+    if (now - lastCoordTs < 100) return
+    lastCoordTs = now
     currentCoords.value = e.latlng
   })
 
@@ -7410,7 +7462,7 @@ const searchCommerce = async () => {
           ])
 
           // 将边界转为 turf Polygon（需要 [lng,lat] 格式）
-          const turfPolygon = turf.polygon(boundaries.map(ring =>
+          const turfPolygon = turfPoly(boundaries.map(ring =>
             ring.map(p => [p[1], p[0]])  // [lat,lng] -> [lng,lat]
           ))
 
@@ -7422,8 +7474,8 @@ const searchCommerce = async () => {
             const allMarkers = md.markers || md.data || md || []
             if (Array.isArray(allMarkers)) for (const m of allMarkers) {
               if (m.latitude && m.longitude) {
-                const pt = turf.point([m.longitude, m.latitude])
-                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                const pt = turfPt([m.longitude, m.latitude])
+                if (turfPointInPoly(pt, turfPolygon)) {
                   myTotal++
                   if (m.store_status && closedKeywords.some(kw => m.store_status.includes(kw))) closed++
                 }
@@ -7438,8 +7490,8 @@ const searchCommerce = async () => {
             const competitors = cd.competitors || cd.data || cd || []
             if (Array.isArray(competitors)) for (const c of competitors) {
               if (c.latitude && c.longitude) {
-                const pt = turf.point([c.longitude, c.latitude])
-                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                const pt = turfPt([c.longitude, c.latitude])
+                if (turfPointInPoly(pt, turfPolygon)) {
                   const brand = c.brand || '未知品牌'
                   brandCounts[brand] = (brandCounts[brand] || 0) + 1
                 }
@@ -7454,8 +7506,8 @@ const searchCommerce = async () => {
             const centers = sd.shoppingCenters || sd.data || sd || []
             if (Array.isArray(centers)) for (const s of centers) {
               if (s.latitude && s.longitude) {
-                const pt = turf.point([s.longitude, s.latitude])
-                if (turf.booleanPointInPolygon(pt, turfPolygon)) {
+                const pt = turfPt([s.longitude, s.latitude])
+                if (turfPointInPoly(pt, turfPolygon)) {
                   shoppingTotal++
                 }
               }

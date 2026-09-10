@@ -3,7 +3,13 @@
  * 用于商圈人口分布分析和门店人口对比
  */
 
-import * as turf from '@turf/turf'
+// M1（v1.13.107）：turf 按函数引入——原先 `import * as turf from '@turf/turf'` 会把整个 turf 包
+// （约 200 个 CJS 子模块，Rollup 无法 tree-shake CJS）整体打进 vendor-maps；
+// 本文件实际只用 4 个函数。命名避开文件内已有的局部变量 turfPolygon / turfCircle。
+import { polygon as turfPoly } from '@turf/helpers'
+import turfAreaFn from '@turf/area'
+import turfCircleFn from '@turf/circle'
+import turfIntersectFn from '@turf/intersect'
 
 // 判断多边形是否与圆相交
 export const isPolygonIntersectsCircle = (geom, centerLat, centerLng, radius) => {
@@ -154,30 +160,30 @@ export const calculateIntersectionRatio = (geom, centerLat, centerLng, radius) =
     // 将GeoJSON几何体转换为Turf多边形
     let turfPolygon
     if (geom.type === 'Polygon') {
-      turfPolygon = turf.polygon(geom.coordinates)
+      turfPolygon = turfPoly(geom.coordinates)
     } else if (geom.type === 'MultiPolygon') {
       // 使用第一个多边形（通常只有一个）
-      turfPolygon = turf.polygon(geom.coordinates[0])
+      turfPolygon = turfPoly(geom.coordinates[0])
     } else {
       return 0
     }
     
     // 计算多边形面积（平方米）
-    const polygonArea = turf.area(turfPolygon)
+    const polygonArea = turfAreaFn(turfPolygon)
     if (polygonArea === 0) return 0
     
     // 创建圆形（Turf.circle半径单位为公里，需要从米转换）
     const radiusKm = radius / 1000
-    const turfCircle = turf.circle([centerLng, centerLat], radiusKm, { steps: 64 })
+    const turfCircle = turfCircleFn([centerLng, centerLat], radiusKm, { steps: 64 })
     
     // 计算交集
-    const intersection = turf.intersect(turfPolygon, turfCircle)
+    const intersection = turfIntersectFn(turfPolygon, turfCircle)
     
     // 如果没有交集，返回0
     if (!intersection) return 0
     
     // 计算交集面积（平方米）
-    const intersectionArea = turf.area(intersection)
+    const intersectionArea = turfAreaFn(intersection)
     
     // 返回交集面积占多边形面积的比例
     return intersectionArea / polygonArea

@@ -1,6 +1,7 @@
 import express from 'express'
 import * as turf from '@turf/turf'
 import { aroundSearch } from '../utils/amapPoi.js'
+import { PersistentCache } from '../utils/persistentCache.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -177,10 +178,11 @@ function unicomVector(db, storeName) {
 
 // ===================== 参照池 =====================
 // ===================== 半径常住人口（免费网格数据 1/3/5km） =====================
-const popGeoCache = new Map()      // shapefileId -> { geojson, ts }
-const popResultCache = new Map()   // `${id}_${lat}_${lng}_${radius}` -> { total, ts }
 const POP_GEO_TTL = 10 * 60 * 1000
 const POP_RESULT_TTL = 5 * 60 * 1000
+// v1.13.107 S3：改文件持久化缓存——重启后首查仍命中，避免重解析人口网格 GeoJSON、重跑 turf 相交
+const popGeoCache = new PersistentCache('sales-pop-geo', { ttl: POP_GEO_TTL, maxSize: 5 })
+const popResultCache = new PersistentCache('sales-pop-result', { ttl: POP_RESULT_TTL, maxSize: 500 })
 // 定位城市人口网格（category='population'，name 含城市名）
 function getPopShapefile(db, city) {
   const name = String(city || '').replace(/市$/, '')
@@ -196,21 +198,18 @@ function calcRadiusPopulation(db, lat, lng, city) {
   if (!sf) return out
   let geojson = null
   const cached = popGeoCache.get(sf.id)
-  if (cached && Date.now() - cached.ts < POP_GEO_TTL) {
-    geojson = cached.geojson
+  if (cached) {
+    geojson = cached.v
   } else {
     const row = db.prepare('SELECT geojson FROM shapefiles WHERE id = ?').get(sf.id)
     geojson = row ? JSON.parse(row.geojson) : null
-    if (geojson) {
-      popGeoCache.set(sf.id, { geojson, ts: Date.now() })
-      if (popGeoCache.size > 5) popGeoCache.delete(popGeoCache.keys().next().value)
-    }
+    if (geojson) popGeoCache.set(sf.id, geojson)
   }
   if (!geojson || !geojson.features) return out
   for (const radius of radii) {
     const ck = `${sf.id}_${lat}_${lng}_${radius}`
     const rc = popResultCache.get(ck)
-    if (rc && Date.now() - rc.ts < POP_RESULT_TTL) { out[radius] = rc.total; continue }
+    if (rc) { out[radius] = rc.v; continue }
     const circle = turf.circle([lng, lat], radius / 1000, { steps: 64, units: 'kilometers' })
     const circleBbox = turf.bbox(circle)
     let total = 0
@@ -246,8 +245,7 @@ function calcRadiusPopulation(db, lat, lng, city) {
       } catch (e) { /* 相交失败跳过 */ }
     }
     out[radius] = Math.round(total)
-    popResultCache.set(ck, { total: out[radius], ts: Date.now() })
-    if (popResultCache.size > 500) popResultCache.delete(popResultCache.keys().next().value)
+    popResultCache.set(ck, out[radius])
   }
   return out
 }
@@ -256,19 +254,19 @@ function popVector(pop) {
 }
 
 // ===================== 半径点位信息（竞品/门店 DB + 高德 POI） =====================
-const poiCache = new Map()   // `${kw}_${radius}_${lat}_${lng}` -> { count, ts }
 const POI_TTL = 24 * 60 * 60 * 1000
+// v1.13.107 S3：持久化——高德 POI 属付费 + QPS 限频调用，重启后应继续命中而非重烧
+const poiCache = new PersistentCache('sales-poi', { ttl: POI_TTL, maxSize: 2000 })
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 // 高德周边检索（带 24h 缓存 + 串行 300ms 防 QPS 超限 + 独立降级）
 async function amapCount(lng, lat, radius, kw) {
   const key = `${kw}_${radius}_${lat.toFixed(4)}_${lng.toFixed(4)}`
   const hit = poiCache.get(key)
-  if (hit && Date.now() - hit.ts < POI_TTL) return hit.count
+  if (hit) return hit.v
   try {
     const amap = await aroundSearch(lng, lat, radius, kw)
     const count = (amap && amap.count) ? parseInt(amap.count) : 0
-    poiCache.set(key, { count, ts: Date.now() })
-    if (poiCache.size > 2000) poiCache.delete(poiCache.keys().next().value)
+    poiCache.set(key, count)
     return count
   } catch (e) {
     console.error(`[sales-forecast] 高德检索失败 ${kw}@${radius}m:`, e.message)

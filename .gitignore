@@ -39,6 +39,9 @@ Thumbs.db
 *.sqlite
 database/
 
+# 运行时缓存（sales-forecast 持久化缓存等，见 backend/src/utils/persistentCache.js）
+data/
+
 # 上传文件
 uploads/
 __pycache__/

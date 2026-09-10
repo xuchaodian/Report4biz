@@ -4,6 +4,7 @@ import Papa from 'papaparse'
 import fs from 'fs'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { parsePaging } from '../utils/paging.js'
 
 const router = express.Router()
 // 竞品导入限制：单文件最大 5MB（约1万+行），防止超大 CSV 阻塞服务
@@ -14,16 +15,27 @@ const upload = multer({
 const MAX_IMPORT_ROWS = 10000 // 单次导入数据行上限
 
 // 获取所有竞品门店（只看自己的数据）
+// M4（v1.13.107）：支持可选分页（?limit=&offset=&total=1）；不传 limit 时维持原「全量返回」语义
+// ——地图图层/圆分析依赖全量坐标，管理端表格可显式传 limit 分页。
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    
-    // 每个用户只看自己的竞品门店数据
-    const competitors = db.prepare(`
-      SELECT * FROM competitors WHERE user_id = ? ORDER BY created_at DESC
-    `).all(req.user.id)
+    const { limit, offset, wantTotal } = parsePaging(req.query)
 
-    res.json({ competitors })
+    // 每个用户只看自己的竞品门店数据
+    let sql = `SELECT * FROM competitors WHERE user_id = ? ORDER BY created_at DESC`
+    const params = [req.user.id]
+    if (limit) {
+      sql += ` LIMIT ? OFFSET ?`
+      params.push(limit, offset)
+    }
+    const competitors = db.prepare(sql).all(...params)
+
+    const payload = { competitors }
+    if (wantTotal) {
+      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE user_id = ?`).get(req.user.id)?.c || 0
+    }
+    res.json(payload)
   } catch (error) {
     console.error('获取竞品列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })

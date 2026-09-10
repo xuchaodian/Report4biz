@@ -4,21 +4,33 @@ import Papa from 'papaparse'
 import fs from 'fs'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { parsePaging } from '../utils/paging.js'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
 // 获取所有门店（只看自己的数据）
+// M4（v1.13.107）：支持可选分页（?limit=&offset=&total=1）；不传 limit 时维持原「全量返回」语义
+// ——地图图层依赖全量坐标，管理端表格可显式传 limit 分页。
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    
-    // 每个用户只看自己的门店数据
-    const markers = db.prepare(`
-      SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC
-    `).all(req.user.id)
+    const { limit, offset, wantTotal } = parsePaging(req.query)
 
-    res.json({ markers })
+    // 每个用户只看自己的门店数据
+    let sql = `SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC`
+    const params = [req.user.id]
+    if (limit) {
+      sql += ` LIMIT ? OFFSET ?`
+      params.push(limit, offset)
+    }
+    const markers = db.prepare(sql).all(...params)
+
+    const payload = { markers }
+    if (wantTotal) {
+      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE user_id = ?`).get(req.user.id)?.c || 0
+    }
+    res.json(payload)
   } catch (error) {
     console.error('获取门店列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })

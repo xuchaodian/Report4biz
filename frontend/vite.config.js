@@ -73,6 +73,13 @@ export default defineConfig({
           }
           
           // 业务组件分组
+          // M1（v1.13.107）：Pinia stores 必须显式分组。
+          // 否则 Rollup 会把 stores/user.js 合并进「某个动态 chunk」（实测为 smartsteps-panel），
+          // 使入口被迫静态引用该 chunk（router 守卫里 useUserStore()）→ 整块被提前加载，
+          // 异步组件懒加载失效。显式分组后 stores 独立成块，动态组件才真正按需加载。
+          if (id.includes('/src/stores/')) {
+            return 'app-stores'
+          }
           if (id.includes('StoreSmartstepsDialog')) {
             return 'store-dialog'
           }
