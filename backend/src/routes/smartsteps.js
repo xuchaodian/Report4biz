@@ -3,6 +3,7 @@ import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { SMARTSTEPS_API_KEY } from '../config.js'
+import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 
 const router = express.Router()
 
@@ -107,12 +108,12 @@ export async function getAuthorization() {
   const url = `${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getAuthorization?key=${SMARTSTEPS_CONFIG.apiKey}`
   
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json'
       }
-    })
+    }, DEFAULT_HTTP_TIMEOUT_MS)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -272,13 +273,13 @@ router.get('/months', authenticate, async (req, res) => {
     // 复用 getAuthorization 的 token 缓存（10min）
     const token = await getAuthorization()
 
-    const response = await fetch(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getCityMonth`, {
+    const response = await fetchWithTimeout(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getCityMonth`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'authorization': token
       }
-    })
+    }, DEFAULT_HTTP_TIMEOUT_MS)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -496,14 +497,14 @@ router.post('/query', authenticate, async (req, res) => {
     console.log('获取到Token:', token ? `${token.substring(0, 20)}...` : 'null')
     
     // 调用智慧足迹API（需带Token）
-    const response = await fetch(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
+    const response = await fetchWithTimeout(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'authorization': token
       },
       body: JSON.stringify(requestBody)
-    })
+    }, SLOW_HTTP_TIMEOUT_MS)
     
     let result = null
     let querySuccess = false

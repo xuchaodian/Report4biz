@@ -4,6 +4,7 @@ import fs from 'fs'
 import multer from 'multer'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { getCityData, getCityDataArray, invalidateCityData } from '../utils/cityData.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -13,12 +14,10 @@ const upload = multer({ dest: '/tmp/uploads/' })
 
 const dataPath = path.join(__dirname, '../data/city_data.json')
 
-// GET /api/city-data - 获取城市宏观数据
+// GET /api/city-data - 获取城市宏观数据（M6：模块级缓存，不再每请求读盘解析）
 router.get('/', (req, res) => {
   try {
-    const raw = fs.readFileSync(dataPath, 'utf-8')
-    const data = JSON.parse(raw)
-    res.json({ success: true, data })
+    res.json({ success: true, data: getCityData() })
   } catch (error) {
     console.error('[CityData] 读取失败:', error)
     res.status(500).json({ success: false, message: error.message })
@@ -28,8 +27,7 @@ router.get('/', (req, res) => {
 // GET /api/city-data/:city - 获取单个城市数据
 router.get('/:city', (req, res) => {
   try {
-    const raw = fs.readFileSync(dataPath, 'utf-8')
-    const data = JSON.parse(raw)
+    const data = getCityDataArray()
     const city = data.find(d => d['城市'] === req.params.city)
     if (!city) return res.status(404).json({ success: false, message: '未找到该城市' })
     res.json({ success: true, data: city })
@@ -109,6 +107,7 @@ router.post('/import', upload.single('file'), (req, res) => {
     }
 
     fs.writeFileSync(dataPath, JSON.stringify(existing, null, 2))
+    invalidateCityData()
     fs.unlinkSync(csvPath)
     res.json({ success: true, message: `导入完成：更新 ${updatedCount} 条，新增 ${addedCount} 条`, total: existing.length })
   } catch (error) {
@@ -137,6 +136,7 @@ router.put('/:city', (req, res) => {
 router.delete('/', (req, res) => {
   try {
     fs.writeFileSync(dataPath, JSON.stringify([], null, 2))
+    invalidateCityData()
     res.json({ success: true, message: '已清除所有数据' })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })

@@ -1617,6 +1617,7 @@ import turfCircleFn from '@turf/circle'
 import turfIntersectFn from '@turf/intersect'
 import turfPointInPoly from '@turf/boolean-point-in-polygon'
 import { formatNumber } from '@/utils/populationStats'
+import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { handleApiError } from '@/utils/errorHandler'
 import { exportChartImage } from '@/utils/chartExport'
 // 注意：public目录的中文名图片会被Vite直接复制到dist根目录
@@ -2831,24 +2832,15 @@ const loadStoreSimilarRadiusOptions = async () => {
 
 // 从 result_data 提取 1001 人口字段（与 /data 一致）
 const extractPopDataFromMap = (resultData) => {
-  if (!resultData) return null
-  let apiResult = resultData
-  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return null } }
-  if (apiResult?.apiResult) apiResult = apiResult.apiResult
-  const d = apiResult?.['1001']
-  if (!d || typeof d !== 'object') return null
-  const findField = (pattern) => {
-    for (const [k, v] of Object.entries(d)) {
-      if (typeof v === 'number' && pattern.test(k)) return v
-    }
-    return null
-  }
+  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
+  const d = get1001Dict(resultData)
+  if (!d) return null
   return {
-    visit: findField(/^P0_SUM\d*$/i),
-    live: findField(/^P1_SUM\d*$/i),
-    work: findField(/^P2_SUM\d*$/i),
-    out: findField(/^P3_SUM\d*$/i),
-    entertain: findField(/^P4_SUM\d*$/i)
+    visit: pick1001(d, 'P0_SUM', null),
+    live: pick1001(d, 'P1_SUM', null),
+    work: pick1001(d, 'P2_SUM', null),
+    out: pick1001(d, 'P3_SUM', null),
+    entertain: pick1001(d, 'P4_SUM', null)
   }
 }
 
@@ -4509,6 +4501,19 @@ const initMap = async () => {
     lastCoordTs = now
     currentCoords.value = e.latlng
   })
+
+  // L1（v1.13.109）：人口网格标签低 zoom 隐藏
+  // 标签是数千个 HTML divIcon，低 zoom 时互相重叠、无参考价值，却持续参与布局/绘制；
+  // 给地图容器切一个 CSS 类（O(1)）即可批量隐藏，zoom 回升后立即恢复，无需重建图层。
+  const POP_LABEL_MIN_ZOOM = 12
+  const updatePopLabelVisibility = () => {
+    if (!map || !map.getContainer) return
+    const el = map.getContainer()
+    if (!el) return
+    el.classList.toggle('pop-labels-hidden', map.getZoom() < POP_LABEL_MIN_ZOOM)
+  }
+  map.on('zoomend', updatePopLabelVisibility)
+  updatePopLabelVisibility()
 
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)

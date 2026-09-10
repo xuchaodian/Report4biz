@@ -28,7 +28,7 @@ router.get('/geocode', (req, res) => {
   const encodedAddress = encodeURIComponent(address)
   const url = `https://restapi.amap.com/v3/geocode/geo?address=${encodedAddress}&key=${AMap_KEY}`
   
-  https.get(url, (apiRes) => {
+  const amapReq = https.get(url, (apiRes) => {
     let data = ''
     apiRes.on('data', chunk => data += chunk)
     apiRes.on('end', () => {
@@ -55,6 +55,8 @@ router.get('/geocode', (req, res) => {
     console.error('地理编码错误:', error)
     res.status(500).json({ error: '地理编码服务出错' })
   })
+  // L6：10s 超时（destroy 携带 error → 触发上面的 error 处理返回 500）
+  amapReq.setTimeout(10000, () => amapReq.destroy(new Error('高德地理编码请求超时(10s)')))
 })
 
 // 搜索建议：模糊匹配，返回提示列表
@@ -69,7 +71,7 @@ router.get('/suggest', (req, res) => {
   // 使用高德搜索建议API
   const url = `https://restapi.amap.com/v3/assistant/inputtips?keywords=${encodedKeyword}&key=${AMap_KEY}`
   
-  https.get(url, (apiRes) => {
+  const amapReq = https.get(url, (apiRes) => {
     let data = ''
     apiRes.on('data', chunk => data += chunk)
     apiRes.on('end', () => {
@@ -137,6 +139,8 @@ router.get('/suggest', (req, res) => {
     console.error('搜索建议错误:', error)
     res.status(500).json({ error: '搜索建议服务出错' })
   })
+  // L6：10s 超时
+  amapReq.setTimeout(10000, () => amapReq.destroy(new Error('高德搜索建议请求超时(10s)')))
 })
 
 // IP定位缓存：{ ip: { result, expireAt } }，24小时有效
@@ -285,7 +289,7 @@ router.get('/district', (req, res) => {
   if (!rawCity) return res.status(400).json({ error: '城市名不能为空' })
   const city = ensureProperEncoding(rawCity)
   const url = `https://restapi.amap.com/v3/config/district?keywords=${encodeURIComponent(city)}&key=${AMap_KEY}&extensions=all&subdistrict=0`
-  https.get(url, (apiRes) => {
+  const amapReq = https.get(url, (apiRes) => {
     let data = ''
     apiRes.on('data', chunk => data += chunk)
     apiRes.on('end', () => {
@@ -322,6 +326,8 @@ router.get('/district', (req, res) => {
   }).on('error', (error) => {
     res.status(500).json({ error: '服务出错' })
   })
+  // L6：10s 超时
+  amapReq.setTimeout(10000, () => amapReq.destroy(new Error('高德行政区划请求超时(10s)')))
 })
 
 export default router

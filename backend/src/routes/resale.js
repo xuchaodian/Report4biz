@@ -4,6 +4,7 @@ import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { SMARTSTEPS_API_KEY } from '../config.js'
+import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 
 const router = express.Router()
 
@@ -70,10 +71,10 @@ async function getAuthorization() {
 
   const url = `${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getAuthorization?key=${SMARTSTEPS_CONFIG.apiKey}`
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    })
+    }, DEFAULT_HTTP_TIMEOUT_MS)
     if (!response.ok) {
       throw new Error(`获取Token失败: ${response.status}`)
     }
@@ -670,14 +671,14 @@ router.post('/', requireApiKey, async (req, res) => {
       polygons: wkt
     }
     const token = await getAuthorization()
-    const response = await fetch(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
+    const response = await fetchWithTimeout(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'authorization': token
       },
       body: JSON.stringify(requestBody)
-    })
+    }, SLOW_HTTP_TIMEOUT_MS)
 
     let result = null
     let querySuccess = false

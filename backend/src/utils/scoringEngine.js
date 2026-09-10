@@ -1,6 +1,7 @@
 import { getDb } from '../models/database.js'
 import { saveToCache, getAuthorization, buildCircleWkt, checkIfDataIsEmpty, initCacheTable } from '../routes/smartsteps.js'
 import { AMAP_KEY } from '../config.js'
+import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS, DEFAULT_HTTP_TIMEOUT_MS } from './httpTimeout.js'
 
 // === 评分引擎配置 ===
 const DEFAULT_WEIGHTS = {
@@ -64,11 +65,11 @@ async function queryPointPopulation(db, lng, lat, radiusM) {
     // 3. 调上游 1001
     const token = await getAuthorization()
     const wkt = buildCircleWkt(lng, lat, radiusM)
-    const response = await fetch(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
+    const response = await fetchWithTimeout(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'authorization': token },
       body: JSON.stringify({ codes: '1001', cityMonth, radius: radiusM, polygons: wkt })
-    })
+    }, SLOW_HTTP_TIMEOUT_MS)
     if (!response.ok) {
       console.warn('[Scoring] 人口上游调用失败:', response.status)
       return null
@@ -247,18 +248,18 @@ async function fetchPOIScores(lng, lat, radiusM) {
     const apiKey = AMAP_KEY
 
     // 搜索办公楼
-    const officeRes = await fetch(
-      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=050000&offset=20&page=1`
+    const officeRes = await fetchWithTimeout(
+      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=050000&offset=20&page=1`, {}, DEFAULT_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ count: 0 }))
 
     // 搜索地铁站
-    const metroRes = await fetch(
-      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=150500&offset=20&page=1`
+    const metroRes = await fetchWithTimeout(
+      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=150500&offset=20&page=1`, {}, DEFAULT_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ count: 0 }))
 
     // 搜索住宅小区
-    const resiRes = await fetch(
-      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=120300&offset=20&page=1`
+    const resiRes = await fetchWithTimeout(
+      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=${radiusM}&types=120300&offset=20&page=1`, {}, DEFAULT_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ count: 0 }))
 
     const officeCount = parseInt(officeRes.count || 0)

@@ -4,11 +4,15 @@ import { getDb } from '../models/database.js'
 import { tools, serverSideTools } from '../ai/tools.js'
 import { aroundSearch } from '../utils/amapPoi.js'
 import { ARK_API_KEY } from '../config.js'
+import { fetchWithTimeout, fetchStreamWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, STREAM_HEAD_TIMEOUT_MS } from '../utils/httpTimeout.js'
 
 const router = express.Router()
 
 const ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const MODEL = 'doubao-seed-2-0-pro-260215'
+
+// L6：AI 上游（火山方舟）非流式调用整体超时 90s；流式见 STREAM_HEAD_TIMEOUT_MS（仅首字节计时）
+const AI_TIMEOUT_MS = 90000
 
 // 每月AI token用量限额配置
 const TOKEN_LIMITS = [
@@ -40,6 +44,20 @@ function recordTokenUsage(userId, tokens) {
     db.saveNow()
   } catch (e) {
     console.error('[AI] 记录token用量失败:', e.message)
+  }
+}
+
+// 4C-D4：AI 数据外发审计日志——凡将用户数据（对话内容/人口摘要/周边要素）发送至第三方大模型
+// （火山方舟 ark.cn-beijing.volces.com）时留痕，供合规审计与用量核对。前端另有知情提示与开关。
+function logAiEgress(userId, endpoint, payloadChars) {
+  try {
+    const db = getDb()
+    db.prepare(`INSERT INTO ai_egress_log (user_id, endpoint, payload_chars) VALUES (?, ?, ?)`)
+      .run(userId, endpoint, Number(payloadChars) || 0)
+    db.saveNow()
+    console.log(`[AI-Egress] user=${userId} endpoint=${endpoint} payload=${Number(payloadChars) || 0}chars → ark.cn-beijing.volces.com`)
+  } catch (e) {
+    console.error('[AI] 记录数据外发日志失败:', e.message)
   }
 }
 
@@ -185,7 +203,10 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
 3. 用简洁的中文回复，告知用户执行了什么操作
 4. 如果需要用户配合（如点击地图），明确告知`
 
-    const response = await fetch(`${ARK_BASE_URL}/chat/completions`, {
+    // 4C-D4：数据外发审计留痕（对话内容 + 用户数据概览将发送至火山方舟）
+    logAiEgress(userId, 'chat', JSON.stringify(messages || []).length + (context ? JSON.stringify(context).length : 0))
+
+    const response = await fetchWithTimeout(`${ARK_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -203,7 +224,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
         temperature: 0.1,
         max_tokens: 1500
       })
-    })
+    }, AI_TIMEOUT_MS)
 
     if (!response.ok) {
       const err = await response.text()
@@ -278,7 +299,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
         }))
       ]
 
-      const followUp = await fetch(`${ARK_BASE_URL}/chat/completions`, {
+      const followUp = await fetchWithTimeout(`${ARK_BASE_URL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -290,7 +311,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
           temperature: 0.3,
           max_tokens: 400
         })
-      })
+      }, AI_TIMEOUT_MS)
 
       const followUpResult = await followUp.json()
       const finalContent = followUpResult.choices?.[0]?.message?.content || '已完成统计查询'
@@ -384,7 +405,7 @@ async function executeQueryStats(userId, args) {
 async function executeCityDataQuery(args) {
   const { city } = args
   if (!city) return { success: false, error: '请提供城市名称' }
-  const r = await fetch(`https://mka-online.cn/api/city-data/${encodeURIComponent(city)}`)
+  const r = await fetchWithTimeout(`https://mka-online.cn/api/city-data/${encodeURIComponent(city)}`, {}, DEFAULT_HTTP_TIMEOUT_MS)
   const d = await r.json()
   if (!d.success) return { success: false, error: d.message || '未找到该城市数据' }
   const c = d.data
@@ -409,7 +430,7 @@ async function executeMallTenantsQuery(args) {
   if (!mall_name) return { success: false, error: '请提供商场名称' }
   const params = new URLSearchParams({ pageSize: 50, keyword: mall_name })
   if (classification) params.set('classification', classification)
-  const r = await fetch(`https://mka-online.cn/api/mall-tenants?${params}`)
+  const r = await fetchWithTimeout(`https://mka-online.cn/api/mall-tenants?${params}`, {}, DEFAULT_HTTP_TIMEOUT_MS)
   const d = await r.json()
   if (!d.success) return { success: false, error: '查询失败' }
   const tenants = d.data || []
@@ -436,7 +457,7 @@ async function executeMallTenantsCompare(args) {
   const { malls, by_classification = true } = args
   if (!malls || malls.length < 2) return { success: false, error: '请至少选择2个商场' }
   const params = new URLSearchParams({ malls: malls.join(','), byClassification: String(by_classification) })
-  const r = await fetch(`https://mka-online.cn/api/mall-tenants/compare?${params}`)
+  const r = await fetchWithTimeout(`https://mka-online.cn/api/mall-tenants/compare?${params}`, {}, DEFAULT_HTTP_TIMEOUT_MS)
   const d = await r.json()
   if (!d.success) return { success: false, error: '对比失败' }
   const lines = d.data.map(m =>
@@ -451,11 +472,11 @@ async function executeMallTenantsCompare(args) {
 async function executeCalculatePotential(args) {
   const { city, radius = 1, min_stores = 1, min_competitors = 1 } = args
   if (!city) return { success: false, error: '请提供城市名称' }
-  const r = await fetch('https://mka-online.cn/api/shapefiles/calculate-potential', {
+  const r = await fetchWithTimeout('https://mka-online.cn/api/shapefiles/calculate-potential', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cityName: city, radius, myStoreMin: min_stores, competitorMin: min_competitors, conditions: [] })
-  })
+  }, 30000)
   const d = await r.json()
   if (!d.success) return { success: false, error: d.error || '分析失败' }
   const matched = d.data?.matched || 0
@@ -620,25 +641,46 @@ router.post('/site-advice', authenticate, async (req, res) => {
       '请基于以上信息（含周边环境要素），给出该区域是否符合该品牌定位的选址建议。'
     ].join('\n')
 
-    const response = await fetch(`${ARK_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ARK_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent }
-        ],
-        temperature: 0.5,
-        max_tokens: 1200,
-        stream: !!stream,
-        // 流式模式下让最后一块携带 usage（用于 token 用量统计）
-        stream_options: stream ? { include_usage: true } : undefined
-      })
-    })
+    // 4C-D4：数据外发审计留痕（联通人口摘要 + 周边要素将发送至火山方舟）
+    logAiEgress(userId, 'site-advice', (dataSummary || '').length + (surroundings || '').length)
+
+    // 流式：只对「连接+首字节」计时，避免打断长回答；非流式：整体 90s
+    const response = stream
+      ? await fetchStreamWithTimeout(`${ARK_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ARK_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userContent }
+            ],
+            temperature: 0.5,
+            max_tokens: 1200,
+            stream: true,
+            // 流式模式下让最后一块携带 usage（用于 token 用量统计）
+            stream_options: { include_usage: true }
+          })
+        }, STREAM_HEAD_TIMEOUT_MS)
+      : await fetchWithTimeout(`${ARK_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ARK_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userContent }
+            ],
+            temperature: 0.5,
+            max_tokens: 1200
+          })
+        }, AI_TIMEOUT_MS)
 
     if (!response.ok) {
       const err = await response.text()

@@ -5,6 +5,9 @@
 import axios from 'axios'
 import { AMAP_KEY as CONFIG_AMAP_KEY } from '../config.js'
 
+// L6：统一 10s 超时，避免高德挂起导致请求永久 pending
+const http = axios.create({ timeout: 10000 })
+
 // 高德地图 Web服务 API Key（来自环境变量）
 const AMAP_KEY = CONFIG_AMAP_KEY;
 const AMAP_PLACE_URL = 'https://restapi.amap.com/v3/place';
@@ -74,7 +77,7 @@ async function geocode(address) {
     address: address
   };
   
-  const response = await axios.get(`${AMAP_GEO_URL}/geo`, { params });
+  const response = await http.get(`${AMAP_GEO_URL}/geo`, { params });
   const data = response.data;
   
   if (data.status !== '1') {
@@ -123,7 +126,7 @@ async function aroundSearch(locationLng, locationLat, radius, keywords, types) {
   const query = Object.entries(params)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v).replace(/%2C/gi, ',')}`)
     .join('&')
-  const response = await axios.get(`${AMAP_PLACE_URL}/around?${query}`);
+  const response = await http.get(`${AMAP_PLACE_URL}/around?${query}`);
   return parseResponse(response.data);
 }
 
@@ -144,7 +147,7 @@ async function polygonSearch(polygon, keywords, types) {
     extensions: 'all'
   };
   
-  const response = await axios.get(`${AMAP_PLACE_URL}/polygon`, { params });
+  const response = await http.get(`${AMAP_PLACE_URL}/polygon`, { params });
   return parseResponse(response.data);
 }
 
@@ -165,7 +168,7 @@ async function textSearch(city, keywords, types) {
     extensions: 'all'
   };
   
-  const response = await axios.get(`${AMAP_PLACE_URL}/text`, { params });
+  const response = await http.get(`${AMAP_PLACE_URL}/text`, { params });
   return parseResponse(response.data);
 }
 
@@ -191,7 +194,7 @@ async function textSearchAll(city, keywords, maxPages = 8) {
       page,
       extensions: 'all'
     }
-    const resp = await axios.get(`${AMAP_PLACE_URL}/text`, { params })
+    const resp = await http.get(`${AMAP_PLACE_URL}/text`, { params })
     if (resp.data.status !== '1') break
     const pois = (resp.data.pois || []).map(p => {
       const parts = (p.location || '0,0').split(',')

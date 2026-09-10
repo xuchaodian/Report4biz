@@ -229,6 +229,10 @@
         <p><strong>位置:</strong> {{ currentDetail.center_lat?.toFixed(6) }}, {{ currentDetail.center_lng?.toFixed(6) }}</p>
         <p><strong>半径:</strong> {{ currentDetail.radii?.join(', ') }}米</p>
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
+        <p style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <el-switch v-model="aiEgressAllowed" size="small" />
+          <span style="font-size:12px;color:#909399;">允许将本单数据发送至第三方 AI（火山方舟）用于生成建议</span>
+        </p>
       </div>
       <!-- AI 选址建议 -->
       <div v-if="aiAdvice" class="ai-advice-section">
@@ -261,12 +265,13 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { parseP0S1001, get1001Dict, pick1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
 
 const userStore = useUserStore()
 // VIP 用户（管理员视为 VIP）
@@ -401,15 +406,16 @@ function buildDataSummary(data) {
   try {
     // 1001 人口结构
     if (data['1001'] && typeof data['1001'] === 'object') {
-      const p0 = findFieldValue(data['1001'], /^P0_SUM\d*$/i)
-      const p1 = findFieldValue(data['1001'], /^P1_SUM\d*$/i)
-      const p2 = findFieldValue(data['1001'], /^P2_SUM\d*$/i)
-      const p3 = findFieldValue(data['1001'], /^P3_SUM\d*$/i)
+      const d1001 = get1001Dict(data['1001'])
+      const p0 = pick1001(d1001, 'P0_SUM')
+      const p1 = pick1001(d1001, 'P1_SUM')
+      const p2 = pick1001(d1001, 'P2_SUM')
+      const p3 = pick1001(d1001, 'P3_SUM')
       const total = p0 + p1 + p2 + p3
       if (total > 0) {
         lines.push(`人口总数 ${total}，居住占比 ${Math.round(p1 / total * 100)}%，工作占比 ${Math.round(p2 / total * 100)}%，到访占比 ${Math.round(p3 / total * 100)}%`)
-        const male0 = findFieldValue(data['1001'], /^MALE0_SUM\d*$/i)
-        const female0 = findFieldValue(data['1001'], /^FEMALE0_SUM\d*$/i)
+        const male0 = pick1001(d1001, 'MALE0_SUM')
+        const female0 = pick1001(d1001, 'FEMALE0_SUM')
         if (male0 > 0 && female0 > 0) lines.push(`性别比 男:女 = ${Math.round(male0 / female0 * 100)}:100`)
       }
     }
@@ -466,6 +472,28 @@ function buildDataSummary(data) {
   } catch (e) { /* 提炼失败忽略 */ }
   return lines.length > 0 ? lines.join('；') : ''
 }
+// 4C-D4：第三方 AI 数据外发知情与开关（持久化到 localStorage）
+const AI_EGRESS_ALLOWED_KEY = 'aiEgressAllowed_v1'
+const AI_EGRESS_NOTICE_KEY = 'aiEgressNoticeSeen_v1'
+const aiEgressAllowed = ref(localStorage.getItem(AI_EGRESS_ALLOWED_KEY) !== '0')
+watch(aiEgressAllowed, (v) => { localStorage.setItem(AI_EGRESS_ALLOWED_KEY, v ? '1' : '0') })
+
+// 首次点击时的数据外发知情确认（仅提示一次，之后由开关控制）
+async function ensureAiEgressConsent() {
+  if (localStorage.getItem(AI_EGRESS_NOTICE_KEY) === '1') return true
+  try {
+    await ElMessageBox.confirm(
+      'AI 选址建议会将本单的联通人口数据摘要（人口结构/客流/消费/教育/行业等，不含个人明细）与周边环境要素发送至第三方大模型服务（火山方舟）用于生成分析，该行为会被系统留痕。是否继续？',
+      '数据外发提示',
+      { confirmButtonText: '同意并继续', cancelButtonText: '取消', type: 'warning', distinguishCancelAndClose: true }
+    )
+    localStorage.setItem(AI_EGRESS_NOTICE_KEY, '1')
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 // 处理 AI 选址建议
 const handleAiAdvice = async () => {
   // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
@@ -479,6 +507,12 @@ const handleAiAdvice = async () => {
     return
   }
   if (aiAdviceLoading.value) return
+  // 4C-D4：数据外发知情与开关校验
+  if (!aiEgressAllowed.value) {
+    ElMessage.warning('已关闭「允许发送数据至第三方 AI」，可在详情页重新开启后再试')
+    return
+  }
+  if (!(await ensureAiEgressConsent())) return
   aiAdviceLoading.value = true
   aiAdvice.value = ''
   try {
@@ -826,27 +860,23 @@ function formatResultData(data) {
 function formatP0SData(data) {
   if (!data || typeof data !== 'object') return '<p>数据格式错误</p>'
 
-  const visitTotal = data.p0_sum || 0
-  const grandTotal = data.pall_sum || 0
-  // 居住人数 = 居住人口男+女
-  const dwellTotal = (data.male1_sum || 0) + (data.female1_sum || 0)
-  // 工作人数 = 工作人口男+女
-  const workTotal = (data.male2_sum || 0) + (data.female2_sum || 0)
+  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
+  const p = parseP0S1001(data)
+  if (!p) return '<p>暂无数据</p>'
 
-  // 年龄段（age0_=到访，age1_=居住，age2_=工作）
-  const ageGroups = [
-    ['0-6岁', '0006'], ['6-12岁', '0612'], ['12-15岁', '1215'], ['15-18岁', '1518'],
-    ['19-24岁', '1924'], ['25-29岁', '2529'], ['30-34岁', '3034'], ['35-39岁', '3539'],
-    ['40-44岁', '4044'], ['45-49岁', '4549'], ['50-54岁', '5054'], ['55-59岁', '5559'],
-    ['60-64岁', '6064'], ['65-69岁', '6569'], ['70岁+', '70up']
-  ]
+  const visitTotal = p.visit
+  const grandTotal = p.grand
+  // 居住人数 = 居住人口男+女
+  const dwellTotal = p.male[1] + p.female[1]
+  // 工作人数 = 工作人口男+女
+  const workTotal = p.male[2] + p.female[2]
 
   // P层级（去掉P1/P2，去掉前缀，只显示中文名称）
   const pLevels = [
     ['总人口规模', grandTotal],
-    ['外省到访人数', data.p3_sum || 0],
-    ['娱乐人数', data.p4_sum || 0],
-    ['居住工作重合人数', data.p5_sum || 0],
+    ['外省到访人数', p.out],
+    ['娱乐人数', p.entertain],
+    ['居住工作重合人数', p.overlap],
   ]
 
   // 三个大数字卡片
@@ -873,12 +903,12 @@ function formatP0SData(data) {
   html += `</tbody></table>`
 
   // 性别分布
-  const maleV = data.male0_sum || 0
-  const femaleV = data.female0_sum || 0
-  const maleD = data.male1_sum || 0
-  const femaleD = data.female1_sum || 0
-  const maleW = data.male2_sum || 0
-  const femaleW = data.female2_sum || 0
+  const maleV = p.male[0]
+  const femaleV = p.female[0]
+  const maleD = p.male[1]
+  const femaleD = p.female[1]
+  const maleW = p.male[2]
+  const femaleW = p.female[2]
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">性别分布</div>`
   html += `<table class="data-table"><thead><tr><th>性别</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
   html += `<tr><td>男性人数</td><td class="num">${maleV.toLocaleString()}</td><td class="num">${maleD.toLocaleString()}</td><td class="num">${maleW.toLocaleString()}</td></tr>`
@@ -888,26 +918,18 @@ function formatP0SData(data) {
   // 年龄分布
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">年龄段分布</div>`
   html += `<table class="data-table"><thead><tr><th>年龄段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
-  for (const [label, code] of ageGroups) {
-    const v0 = data[`age0_${code}`] || 0
-    const v1 = data[`age1_${code}`] || 0
-    const v2 = data[`age2_${code}`] || 0
+  for (const [label, code] of AGE_GROUPS) {
+    const [v0, v1, v2] = p.ages[code] || [0, 0, 0]
     if (v0 + v1 + v2 === 0) continue
     html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
   }
   html += `</tbody></table>`
 
   // 月出账金额（改为三列：到访/居住/工作）
-  const arpuGroups = [
-    ['50元以下', '50'], ['50-100元', '100'], ['100-150元', '150'],
-    ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
-  ]
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">月出账金额</div>`
   html += `<table class="data-table"><thead><tr><th>话费区间</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
-  for (const [label, suffix] of arpuGroups) {
-    const v0 = data[`arpu0_${suffix}`] || 0
-    const v1 = data[`arpu1_${suffix}`] || 0
-    const v2 = data[`arpu2_${suffix}`] || 0
+  for (const [label, suffix] of ARPU_GROUPS) {
+    const [v0, v1, v2] = p.arpu[suffix] || [0, 0, 0]
     if (v0 + v1 + v2 === 0) continue
     html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
   }
@@ -2214,15 +2236,6 @@ function onClose() {
   emit('close')
 }
 
-// 从数据中通过正则匹配取值（handleDataInsight 依赖）
-const findFieldValue = (data, pattern) => {
-  for (const [key, val] of Object.entries(data)) {
-    if (typeof val !== 'number') continue
-    if (pattern.test(key)) return val
-  }
-  return 0
-}
-
 // ====== 数据洞察函数 ======
 
 // 处理数据洞察
@@ -2251,17 +2264,18 @@ const handleDataInsight = async () => {
 
     // 1001 全量人口分析
     if (data['1001'] && typeof data['1001'] === 'object') {
-      const p0 = findFieldValue(data['1001'], /^P0_SUM\d*$/i)
-      const p1 = findFieldValue(data['1001'], /^P1_SUM\d*$/i)
-      const p2 = findFieldValue(data['1001'], /^P2_SUM\d*$/i)
-      const p3 = findFieldValue(data['1001'], /^P3_SUM\d*$/i)
+      const d1001 = get1001Dict(data['1001'])
+      const p0 = pick1001(d1001, 'P0_SUM')
+      const p1 = pick1001(d1001, 'P1_SUM')
+      const p2 = pick1001(d1001, 'P2_SUM')
+      const p3 = pick1001(d1001, 'P3_SUM')
       const total = p0 + p1 + p2 + p3
       if (total > 0) {
         const liveRatio = Math.round((p1 / total) * 100)
         const workRatio = Math.round((p2 / total) * 100)
         const outPopRatio = Math.round((p3 / total) * 100)
-        const male0 = findFieldValue(data['1001'], /^MALE0_SUM\d*$/i)
-        const female0 = findFieldValue(data['1001'], /^FEMALE0_SUM\d*$/i)
+        const male0 = pick1001(d1001, 'MALE0_SUM')
+        const female0 = pick1001(d1001, 'FEMALE0_SUM')
         if (liveRatio > 40) {
           result.push({ type: 'positive', text: `居住人口占比 ${liveRatio}%，该区域为高密度居住区，适合面向居民的生活服务类业态` })
         } else if (workRatio > 40) {

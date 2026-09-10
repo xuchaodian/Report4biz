@@ -1,21 +1,12 @@
 import express from 'express'
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { dirname } from 'path'
 import { getDb } from '../models/database.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { CITY_TAGS } from '../data/city-tags.js'
 import { CITY_GEO } from '../data/city-geo.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+import { getCityDataArray } from '../utils/cityData.js'
 
 const router = express.Router()
-
-// 城市宏观数据（GDP/人口/社零等）
-const cityDataPath = path.join(__dirname, '../data/city_data.json')
 
 // 评分权重默认值（存 market_map_config 表，可在前端调整）
 const DEFAULT_WEIGHTS = {
@@ -58,15 +49,9 @@ const toProvince = (city) => {
   return CITY_TO_PROVINCE[c] || c
 }
 
-// 读取城市宏观数据
+// 读取城市宏观数据（M6：统一走 cityData.js 模块级缓存 + mtime 感知）
 function loadCityData() {
-  try {
-    const raw = fs.readFileSync(cityDataPath, 'utf-8')
-    return JSON.parse(raw)
-  } catch (e) {
-    console.error('[MarketMap] city_data.json 读取失败:', e)
-    return []
-  }
+  return getCityDataArray()
 }
 
 /**

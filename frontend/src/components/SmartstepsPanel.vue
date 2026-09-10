@@ -169,6 +169,7 @@ import 'leaflet/dist/leaflet.css'
 import { useUserStore } from '@/stores/user'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { parseP0S1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
 
 const props = defineProps({
   visible: Boolean,
@@ -589,27 +590,23 @@ function getServiceName(code) {
 function formatP0SData(data) {
   if (!data || typeof data !== 'object') return '<p>数据格式错误</p>'
 
-  const visitTotal = data.p0_sum || 0
-  const grandTotal = data.pall_sum || 0
-  // 居住人数 = 居住人口男+女
-  const dwellTotal = (data.male1_sum || 0) + (data.female1_sum || 0)
-  // 工作人数 = 工作人口男+女
-  const workTotal = (data.male2_sum || 0) + (data.female2_sum || 0)
+  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
+  const p = parseP0S1001(data)
+  if (!p) return '<p>暂无数据</p>'
 
-  // 年龄段（age0_=到访，age1_=居住，age2_=工作）
-  const ageGroups = [
-    ['0-6岁', '0006'], ['6-12岁', '0612'], ['12-15岁', '1215'], ['15-18岁', '1518'],
-    ['19-24岁', '1924'], ['25-29岁', '2529'], ['30-34岁', '3034'], ['35-39岁', '3539'],
-    ['40-44岁', '4044'], ['45-49岁', '4549'], ['50-54岁', '5054'], ['55-59岁', '5559'],
-    ['60-64岁', '6064'], ['65-69岁', '6569'], ['70岁+', '70up']
-  ]
+  const visitTotal = p.visit
+  const grandTotal = p.grand
+  // 居住人数 = 居住人口男+女
+  const dwellTotal = p.male[1] + p.female[1]
+  // 工作人数 = 工作人口男+女
+  const workTotal = p.male[2] + p.female[2]
 
   // P层级（去掉P1/P2，去掉前缀，只显示中文名称）
   const pLevels = [
     ['总人口规模', grandTotal],
-    ['外省到访人数', data.p3_sum || 0],
-    ['娱乐人数', data.p4_sum || 0],
-    ['居住工作重合人数', data.p5_sum || 0],
+    ['外省到访人数', p.out],
+    ['娱乐人数', p.entertain],
+    ['居住工作重合人数', p.overlap],
   ]
 
   // 三个大数字
@@ -636,12 +633,12 @@ function formatP0SData(data) {
   html += `</tbody></table>`
 
   // 性别分布
-  const maleV = data.male0_sum || 0
-  const femaleV = data.female0_sum || 0
-  const maleD = data.male1_sum || 0
-  const femaleD = data.female1_sum || 0
-  const maleW = data.male2_sum || 0
-  const femaleW = data.female2_sum || 0
+  const maleV = p.male[0]
+  const femaleV = p.female[0]
+  const maleD = p.male[1]
+  const femaleD = p.female[1]
+  const maleW = p.male[2]
+  const femaleW = p.female[2]
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">性别分布</div>`
   html += `<table class="data-table"><thead><tr><th>性别</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
   html += `<tr><td>男性人数</td><td class="num">${maleV.toLocaleString()}</td><td class="num">${maleD.toLocaleString()}</td><td class="num">${maleW.toLocaleString()}</td></tr>`
@@ -651,26 +648,18 @@ function formatP0SData(data) {
   // 年龄分布
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">年龄段分布</div>`
   html += `<table class="data-table"><thead><tr><th>年龄段</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
-  for (const [label, code] of ageGroups) {
-    const v0 = data[`age0_${code}`] || 0
-    const v1 = data[`age1_${code}`] || 0
-    const v2 = data[`age2_${code}`] || 0
+  for (const [label, code] of AGE_GROUPS) {
+    const [v0, v1, v2] = p.ages[code] || [0, 0, 0]
     if (v0 + v1 + v2 === 0) continue
     html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
   }
   html += `</tbody></table>`
 
   // 月出账金额（改为三列：到访/居住/工作）
-  const arpuGroups = [
-    ['50元以下', '50'], ['50-100元', '100'], ['100-150元', '150'],
-    ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
-  ]
   html += `<div style="font-size:12px;font-weight:bold;color:#666;margin-top:12px;margin-bottom:6px;">月出账金额</div>`
   html += `<table class="data-table"><thead><tr><th>话费区间</th><th class="num">到访</th><th class="num">居住</th><th class="num">工作</th></tr></thead><tbody>`
-  for (const [label, suffix] of arpuGroups) {
-    const v0 = data[`arpu0_${suffix}`] || 0
-    const v1 = data[`arpu1_${suffix}`] || 0
-    const v2 = data[`arpu2_${suffix}`] || 0
+  for (const [label, suffix] of ARPU_GROUPS) {
+    const [v0, v1, v2] = p.arpu[suffix] || [0, 0, 0]
     if (v0 + v1 + v2 === 0) continue
     html += `<tr><td>${label}</td><td class="num">${v0.toLocaleString()}</td><td class="num">${v1.toLocaleString()}</td><td class="num">${v2.toLocaleString()}</td></tr>`
   }

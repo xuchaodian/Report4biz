@@ -1,13 +1,37 @@
 import express from 'express'
-import path from 'path'
-import fs from 'fs'
-import { fileURLToPath } from 'url'
+import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
+import { getCityDataArray } from '../utils/cityData.js'
 
 const router = express.Router()
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// M6：大屏聚合结果短 TTL 缓存。key 含「数据版本指纹」，任何写入都会改变指纹 →
+// 命中旧 key 自然失效（无需在写路径手动清缓存）。60s 兜底过期。
+const dashboardCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
+
+/**
+ * 数据版本指纹：所有参与大屏聚合的表「行数 + 最新 updated_at」拼接，
+ * 外加配额池 remaining_quota。任一行增删/更新都会改变指纹。
+ * 注意 purchases 无 updated_at 列 → 只用 COUNT(*)。
+ */
+function dashboardDataVersion(db) {
+  try {
+    const r = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM markers) || '|' || COALESCE((SELECT MAX(updated_at) FROM markers), '') || '|' ||
+        (SELECT COUNT(*) FROM competitors) || '|' || COALESCE((SELECT MAX(updated_at) FROM competitors), '') || '|' ||
+        (SELECT COUNT(*) FROM shopping_centers) || '|' || COALESCE((SELECT MAX(updated_at) FROM shopping_centers), '') || '|' ||
+        (SELECT COUNT(*) FROM brand_stores) || '|' || COALESCE((SELECT MAX(updated_at) FROM brand_stores), '') || '|' ||
+        (SELECT COUNT(*) FROM purchases) || '|' ||
+        COALESCE((SELECT remaining_quota FROM admin_quota WHERE id = 1), 0) AS v
+    `).get()
+    return r?.v || ''
+  } catch (e) {
+    return 'noversion' // 指纹失败时退化为不缓存（key 恒定 + TTL 60s）
+  }
+}
 
 /**
  * 数据大屏聚合接口
@@ -20,6 +44,14 @@ router.get('/summary', authenticate, async (req, res) => {
     const userId = req.user.id
     // v1.13.105 S-M4：仅按角色判定全平台口径，删除硬编码 userId===1 后门（id=1 的普通用户不再能看全平台统计）
     const isAdmin = req.user.role === 'admin'
+
+    // M6：命中缓存直接返回（key = 用户 + 角色 + 数据版本指纹）
+    const cacheKey = `dash:${userId}:${isAdmin ? 1 : 0}:${dashboardDataVersion(db)}`
+    const cachedPayload = dashboardCache.get(cacheKey)
+    if (cachedPayload) {
+      res.setHeader('X-Dashboard-Cache', 'HIT')
+      return res.json(cachedPayload)
+    }
 
     // 异常经营状态（停业/歇业/关闭等，大屏聚合排除，markers 表字段）
     const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']
@@ -251,17 +283,10 @@ router.get('/summary', authenticate, async (req, res) => {
       storeTrend
     }
 
-    // ===== 城市宏观数据（JSON 文件）=====
-    let cityData = []
-    try {
-      const raw = fs.readFileSync(path.join(__dirname, '../data/city_data.json'), 'utf-8')
-      const parsed = JSON.parse(raw)
-      cityData = Array.isArray(parsed) ? parsed : (parsed.cities || [])
-    } catch (e) {
-      console.warn('读取城市数据失败:', e.message)
-    }
+    // ===== 城市宏观数据（JSON 文件，模块级缓存 + mtime 感知，不再每请求读盘解析）=====
+    const cityData = getCityDataArray()
 
-    res.json({
+    const payload = {
       success: true,
       kpi: {
         markers: markersCount,
@@ -299,7 +324,11 @@ router.get('/summary', authenticate, async (req, res) => {
       },
       cityData: cityData.slice(0, 50),
       updatedAt: new Date().toISOString()
-    })
+    }
+
+    dashboardCache.set(cacheKey, payload)
+    res.setHeader('X-Dashboard-Cache', 'MISS')
+    res.json(payload)
   } catch (e) {
     console.error('大屏数据聚合失败:', e)
     res.status(500).json({ error: e.message })

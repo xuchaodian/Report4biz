@@ -2,6 +2,7 @@ import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getAuthorization } from './smartsteps.js'
+import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
 
@@ -186,11 +187,11 @@ function buildPolygonWkt(geometry) {
  */
 async function queryUnicomPolygon(wkt, cityMonth) {
   const token = await getAuthorization()
-  const response = await fetch(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
+  const response = await fetchWithTimeout(`${SMARTSTEPS_BASE_URL}/server/openApi/getData`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'authorization': token },
     body: JSON.stringify({ codes: '1001', cityMonth, polygons: wkt, radius: 0 })
-  })
+  }, SLOW_HTTP_TIMEOUT_MS)
   if (!response.ok) {
     throw new Error(`联通API调用失败: ${response.status}`)
   }

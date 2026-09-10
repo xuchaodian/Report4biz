@@ -8,7 +8,9 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { buildSummaryValues, summaryValue } from '../utils/unicomSummaryValues.js'
 import { UNICOM_SUMMARY_COLS } from '../utils/unicomSummaryCols.js'
+import { mapWithConcurrency } from '../utils/concurrency.js'
 import { PURCHASE_SHARE_SECRET } from '../config.js'
+import NodeCache from 'node-cache'
 import * as XLSX from 'xlsx'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -39,6 +41,10 @@ function verifyShareToken(id, token) {
     return false
   }
 }
+
+// M6：详情接口 result_data 解析结果缓存（购买记录内容不可变，键含长度防 id 复用）
+// 避免用户反复打开同一门店详情时重复 JSON.parse 大 payload（单条可达数十 KB）
+const parsedResultCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 })
 
 // 封装 child_process.exec 为 Promise（批量导出复用）
 const runExec = (cmd, timeout = 30000) => new Promise((resolve, reject) => {
@@ -339,10 +345,17 @@ router.get('/export-batch', authenticate, async (req, res) => {
   const outFiles = []
   let skipped = 0
 
+  // M5：Excel 生成由「逐条串行」改为有界并发。生产为 2 vCPU / 1.6G 小机，
+  // 每条约一个 python+openpyxl 进程（~100MB），默认并发 2；PDF 走 libreoffice
+  // （重内存、共享 profile 不能并发），保持串行。可用 env 调整（夹在 1..4 / 1..2）。
+  const excelConcurrency = Math.max(1, Math.min(4, Number(process.env.R4B_EXPORT_CONCURRENCY) || 2))
+  const pdfConcurrency = Math.max(1, Math.min(2, Number(process.env.R4B_EXPORT_PDF_CONCURRENCY) || 1))
+
   try {
-    for (const id of ids) {
+    // 阶段 1：并发生成 Excel（保持 ids 原始顺序）
+    const jobs = await mapWithConcurrency(ids, excelConcurrency, async (id) => {
       const row = db.prepare('SELECT store_name, radii, city_month FROM purchases WHERE id = ? AND user_id = ?').get(Number(id), req.user.id)
-      if (!row) { skipped++; continue }
+      if (!row) return null
       const safeName = String(row.store_name || '门店').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
       let radiiStr = '未知'
       try {
@@ -357,22 +370,37 @@ router.get('/export-batch', authenticate, async (req, res) => {
         await runExec(`python3 "${scriptPath}" "${templatePath}" "${xlsxPath}" "${dbPath}" ${id} ${req.user.id}`, 40000)
       } catch (e) {
         console.error(`[批量导出] id=${id} Excel 生成失败:`, e.message)
-        skipped++
-        continue
+        return null
       }
-      if (!fs.existsSync(xlsxPath)) { skipped++; continue }
-      outFiles.push(xlsxPath)
+      if (!fs.existsSync(xlsxPath)) return null
+      return { base, xlsxPath }
+    })
 
-      if (type === 'pdf' || type === 'both') {
-        const pdfPath = join(tmpDir, `${base}.pdf`)
-        try {
-          await runExec(`libreoffice --headless --convert-to pdf --outdir "${tmpDir}" -env:UserInstallation=file://${loProfile} "${xlsxPath}"`, 60000)
-        } catch (e) {
-          console.error(`[批量导出] id=${id} PDF 转换失败:`, e.message)
-        }
-        if (fs.existsSync(pdfPath)) outFiles.push(pdfPath)
-      }
-    }
+    // 阶段 2：按原始顺序汇总；PDF 转换走有界并发（默认串行，独立 profile 支持将来调高）
+    const pdfTargets = jobs.map((j, i) => ({ j, i })).filter(o => o.j)
+    const pdfResults = (type === 'pdf' || type === 'both')
+      ? await mapWithConcurrency(pdfTargets, pdfConcurrency, async ({ j, i }) => {
+          const pdfPath = join(tmpDir, `${j.base}.pdf`)
+          const profile = pdfConcurrency > 1 ? `${loProfile}_${i}` : loProfile
+          try {
+            await runExec(`libreoffice --headless --convert-to pdf --outdir "${tmpDir}" -env:UserInstallation=file://${profile} "${j.xlsxPath}"`, 60000)
+          } catch (e) {
+            console.error(`[批量导出] ${j.base} PDF 转换失败:`, e.message)
+            return null
+          }
+          return fs.existsSync(pdfPath) ? pdfPath : null
+        })
+      : []
+
+    const pdfByIndex = new Map()
+    pdfTargets.forEach((o, k) => pdfByIndex.set(o.i, pdfResults[k] || null))
+
+    jobs.forEach((j, i) => {
+      if (!j) { skipped++; return }
+      outFiles.push(j.xlsxPath)
+      const pdfPath = pdfByIndex.get(i)
+      if (pdfPath) outFiles.push(pdfPath)
+    })
 
     if (outFiles.length === 0) {
       return res.status(500).json({ message: '导出失败：未生成任何文件' })
@@ -422,19 +450,26 @@ router.get('/:id', authenticate, (req, res) => {
       return res.status(404).json({ message: '记录不存在' })
     }
 
-    // 解析 result_data
+    // 解析 result_data（M6：命中解析缓存则跳过 JSON.parse 与 1016 过滤）
     let resultData = null
     if (purchase.result_data) {
-      try {
-        resultData = JSON.parse(purchase.result_data)
-        // 过滤掉 1016 服务的条目
-        if (Array.isArray(resultData)) {
-          resultData = resultData.filter(item => item.service_code !== '1016' && item.service_code !== 1016)
-        } else if (resultData && typeof resultData === 'object') {
-          delete resultData['1016']
+      const cacheKey = `${purchase.id}:${purchase.result_data.length}`
+      const cachedParsed = parsedResultCache.get(cacheKey)
+      if (cachedParsed !== undefined) {
+        resultData = cachedParsed
+      } else {
+        try {
+          resultData = JSON.parse(purchase.result_data)
+          // 过滤掉 1016 服务的条目
+          if (Array.isArray(resultData)) {
+            resultData = resultData.filter(item => item.service_code !== '1016' && item.service_code !== 1016)
+          } else if (resultData && typeof resultData === 'object') {
+            delete resultData['1016']
+          }
+        } catch (e) {
+          resultData = purchase.result_data
         }
-      } catch (e) {
-        resultData = purchase.result_data
+        parsedResultCache.set(cacheKey, resultData)
       }
     }
 

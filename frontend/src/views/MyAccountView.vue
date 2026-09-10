@@ -512,6 +512,7 @@ import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
 
@@ -963,18 +964,13 @@ const extractApiResult = (resultData) => {
 
 // 1001 人口汇总提取：P0_SUM/到访 P1_SUM/居住 P2_SUM/工作
 const extractPopSums = (apiResult) => {
-  const d = apiResult && apiResult['1001']
-  if (!d || typeof d !== 'object') return null
-  const find = (pattern) => {
-    for (const [k, v] of Object.entries(d)) {
-      if (typeof v === 'number' && pattern.test(k)) return v
-    }
-    return null
-  }
+  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
+  const d = get1001Dict(apiResult)
+  if (!d) return null
   return {
-    visit: find(/^P0_SUM\d*$/i),
-    live: find(/^P1_SUM\d*$/i),
-    work: find(/^P2_SUM\d*$/i)
+    visit: pick1001(d, 'P0_SUM', null),
+    live: pick1001(d, 'P1_SUM', null),
+    work: pick1001(d, 'P2_SUM', null)
   }
 }
 
@@ -2587,14 +2583,8 @@ const buildChartOption = (code, data, chartKey) => {
   }
 }
 
-// 从数据中通过正则匹配取值（大小写不敏感，兼容后缀数字）
-const findFieldValue = (data, pattern) => {
-  for (const [key, val] of Object.entries(data)) {
-    if (typeof val !== 'number') continue
-    if (pattern.test(key)) return val
-  }
-  return 0
-}
+// 从数据中通过正则匹配取值（统一走 utils/smartsteps1001 的 pick1001：大小写不敏感、兼容后缀数字）
+const findFieldValue = (data, pattern) => pick1001(data, pattern)
 
 // 1001-a 全量人口 - 人口总数水平柱状图（到访/居住/工作/外省到访/娱乐）
 const buildOption1001_Totals = (data) => {

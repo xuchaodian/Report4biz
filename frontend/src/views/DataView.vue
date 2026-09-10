@@ -716,6 +716,7 @@ import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocat
 import axios from 'axios'
 import Papa from 'papaparse'
 import { escapeHtml } from '@/utils/escapeHtml'
+import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -1756,25 +1757,15 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
 
 // 从 result_data 提取 1001 人口字段
 function extractPopData(resultData) {
-  if (!resultData) return null
-  let apiResult = resultData
-  if (typeof apiResult === 'string') { try { apiResult = JSON.parse(apiResult) } catch (e) { return null } }
-  if (apiResult?.apiResult) apiResult = apiResult.apiResult
-  const d = apiResult?.['1001']
-  if (!d || typeof d !== 'object') return null
-
-  const findField = (pattern) => {
-    for (const [k, v] of Object.entries(d)) {
-      if (typeof v === 'number' && pattern.test(k)) return v
-    }
-    return null
-  }
+  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
+  const d = get1001Dict(resultData)
+  if (!d) return null
   return {
-    visit: findField(/^P0_SUM\d*$/i),
-    live: findField(/^P1_SUM\d*$/i),
-    work: findField(/^P2_SUM\d*$/i),
-    out: findField(/^P3_SUM\d*$/i),
-    entertain: findField(/^P4_SUM\d*$/i)
+    visit: pick1001(d, 'P0_SUM', null),
+    live: pick1001(d, 'P1_SUM', null),
+    work: pick1001(d, 'P2_SUM', null),
+    out: pick1001(d, 'P3_SUM', null),
+    entertain: pick1001(d, 'P4_SUM', null)
   }
 }
 

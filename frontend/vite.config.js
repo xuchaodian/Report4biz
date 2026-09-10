@@ -42,6 +42,14 @@ export default defineConfig({
       output: {
         // 手动代码分割
         manualChunks: (id) => {
+          // L（v1.13.109）：Vite 的 __vitePreload 助手是虚拟模块 `\0vite/preload-helper.js`，
+          // 所有做动态 import 的 chunk 都要静态引用它。若不显式归组，Rollup 会把它塞进
+          // 某个 vendor chunk（实测为 vendor-pdf）→ 于是每个含动态 import 的 chunk 都静态
+          // 依赖 vendor-pdf，index.html 被迫预加载 539KB 的 jspdf/html2canvas。
+          // 归入始终预加载的 vendor-core，可彻底消除这一「假依赖」。
+          if (id.includes('preload-helper')) {
+            return 'vendor-core'
+          }
           // 第三方库分组
           if (id.includes('node_modules')) {
             // Element Plus 和 Vue 生态

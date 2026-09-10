@@ -643,6 +643,15 @@ export async function initDatabase() {
       tokens_used INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
+
+    // 4C-D4：AI 数据外发审计日志——凡将用户数据发送至第三方大模型（火山方舟）时留痕，供合规审计
+    db.run(`CREATE TABLE IF NOT EXISTS ai_egress_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL,
+      payload_chars INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
   } catch (e) {
     console.warn('创建 ai_usage 表失败:', e.message)
   }

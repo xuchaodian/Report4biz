@@ -3,6 +3,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { scoreLocation } from '../utils/scoringEngine.js'
 import { AMAP_KEY } from '../config.js'
+import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS, DEFAULT_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 
 const router = express.Router()
 
@@ -229,8 +230,8 @@ async function calcAutoScores(db, lng, lat, premium, userId, isAdmin = false) {
   // 1. 人口密度（统一使用联通精算数据）
   try {
     // 调用智慧足迹API获取人口数据
-    const smartstepsRes = await fetch(
-      `http://localhost:3000/api/smartsteps/query-population?lng=${lng}&lat=${lat}`
+    const smartstepsRes = await fetchWithTimeout(
+      `http://localhost:${process.env.PORT || 3000}/api/smartsteps/query-population?lng=${lng}&lat=${lat}`, {}, SLOW_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ total: null }))
 
     const smartPop = smartstepsRes.total || null
@@ -269,12 +270,12 @@ async function calcAutoScores(db, lng, lat, premium, userId, isAdmin = false) {
   // 4. 配套丰富度 + 交通便利度
   try {
     const apiKey = AMAP_KEY
-    const officeRes = await fetch(
-      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=1000&types=050000&offset=20&page=1`
+    const officeRes = await fetchWithTimeout(
+      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=1000&types=050000&offset=20&page=1`, {}, DEFAULT_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ count: 0 }))
 
-    const metroRes = await fetch(
-      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=1000&types=150500&offset=20&page=1`
+    const metroRes = await fetchWithTimeout(
+      `https://restapi.amap.com/v3/place/around?key=${apiKey}&location=${lng},${lat}&radius=1000&types=150500&offset=20&page=1`, {}, DEFAULT_HTTP_TIMEOUT_MS
     ).then(r => r.json()).catch(() => ({ count: 0 }))
 
     const officeCount = parseInt(officeRes.count || 0)

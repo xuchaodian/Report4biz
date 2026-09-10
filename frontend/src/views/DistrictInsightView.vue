@@ -76,8 +76,8 @@
             </div>
           </div>
           <div class="dv-facts">
-            <div class="dv-fact"><span>居住人口</span><b>{{ formatNum(selectedDistrict.population) }}</b></div>
-            <div class="dv-fact"><span>工作人口</span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
+            <div class="dv-fact"><span>居住人口<em class="dv-est" title="联通 1001 未提供「居住/工作」细分，此处按商圈总人口各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.population) }}</b></div>
+            <div class="dv-fact"><span>工作人口<em class="dv-est" title="联通 1001 未提供「居住/工作」细分，此处按商圈总人口各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
             <div class="dv-fact"><span>到访人次</span><b>{{ formatNum(selectedDistrict.visit) }}</b></div>
             <div class="dv-fact"><span>竞品门店</span><b>{{ selectedDistrict.competitorCount }} 家</b></div>
             <div class="dv-fact" :class="{ 'dv-fact-warn': selectedDistrict.myStoreCount > 0 }"><span>我的门店</span><b>{{ selectedDistrict.myStoreCount || 0 }} 家</b></div>
@@ -139,6 +139,9 @@
       </el-table>
       <p style="font-size:12px;color:#909399;margin:8px 0 0;">
         <span class="dv-best" style="padding:1px 6px;border-radius:4px;">绿色高亮</span> = 该列最优值（评分/人口/居住/工作/到访取最高，竞品数取最低）
+      </p>
+      <p style="font-size:12px;color:#b88230;margin:6px 0 0;">
+        注：「居住(估)」「工作(估)」为联通 1001 商圈总人口按各半拆分的<b>近似值</b>（该服务未提供居住/工作细分），仅供横向对比参考。
       </p>
     </el-dialog>
   </div>

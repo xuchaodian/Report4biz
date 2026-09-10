@@ -336,3 +336,12 @@ body {
 .candidate-marker img {
   border-style: dashed !important;
 }
+
+/* ===== L1（v1.13.109）：人口网格标签低 zoom 隐藏 =====
+   人口网格查询可产生数千个 HTML divIcon 标签，低 zoom 时彼此重叠、无参考价值，
+   却持续参与布局与绘制。MapView 在地图容器上按 zoom 切换 .pop-labels-hidden
+   （O(1) 类切换，无需重建图层），zoom 回升后标签立即恢复显示。
+   注：Leaflet divIcon 的 className 会叠加 leaflet-* 类，故用后代选择器匹配。 */
+.pop-labels-hidden .population-label {
+  display: none !important;
+}
