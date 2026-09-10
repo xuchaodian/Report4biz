@@ -134,7 +134,24 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Close } from '@element-plus/icons-vue'
 import { setAppLocale } from '@/i18n'
-import * as echarts from 'echarts'
+// L2（v1.13.108）：echarts 按需引入。本项目 echarts 唯一使用者即本页
+// （另一处 components/MapView.vue 为死代码，已随 4A 删除），故按需可显著缩小 vendor-echarts。
+// 本页仅用 饼图(pie) + 横向柱状(bar)，组件需 grid/tooltip/legend，渲染器 Canvas。
+import * as echarts from 'echarts/core'
+import { PieChart, BarChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { LabelLayout } from 'echarts/features'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([
+  PieChart,
+  BarChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  LabelLayout,
+  CanvasRenderer
+])
 
 const { t, locale } = useI18n()
 // 语言按钮缩写：中 / 日 / EN

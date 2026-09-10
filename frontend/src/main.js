@@ -1,6 +1,28 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+// L3（v1.13.108）：图标改为按需命名导入（原为 `import *` 全量 293 个遍历注册 → 无法 tree-shake）。
+// 白名单由脚本扫描全部 .vue/.js（含 <el-icon> 跨行写法、:icon 绑定、字符串 icon）生成，共 57 个。
+// 注意：命名导入 + 本包 sideEffects:false → Rollup 可剔除未用图标；新增图标时须补入下方白名单。
+import {
+  Aim, ArrowDown, ArrowLeft, ArrowRight,
+  ChatDotRound, ChatLineRound, Check, Close, Collection, Compass, Connection, Coordinate,
+  CopyDocument, Crop,
+  DataAnalysis, DataBoard, DataLine, Delete, Document, Download,
+  Edit, EditPen,
+  Flag, FolderAdd, FolderOpened, FullScreen,
+  Grid,
+  InfoFilled,
+  Key,
+  Loading, Location, LocationFilled, LocationInformation, Lock,
+  MagicStick, MapLocation, Message, Money,
+  Odometer,
+  Plus, Pointer, Position,
+  Refresh, RefreshRight,
+  Search, Setting, Shop, Star, SwitchButton,
+  TrendCharts,
+  Unlock, Upload, UploadFilled, User, UserFilled,
+  View, WarningFilled
+} from '@element-plus/icons-vue'
 import axios from 'axios'
 
 import App from './App.vue'
@@ -17,8 +39,28 @@ axios.defaults.timeout = 30000
 
 const app = createApp(App)
 
-// 注册所有图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+// 注册白名单图标（按需，见上方 import 注释）
+const usedIcons = {
+  Aim, ArrowDown, ArrowLeft, ArrowRight,
+  ChatDotRound, ChatLineRound, Check, Close, Collection, Compass, Connection, Coordinate,
+  CopyDocument, Crop,
+  DataAnalysis, DataBoard, DataLine, Delete, Document, Download,
+  Edit, EditPen,
+  Flag, FolderAdd, FolderOpened, FullScreen,
+  Grid,
+  InfoFilled,
+  Key,
+  Loading, Location, LocationFilled, LocationInformation, Lock,
+  MagicStick, MapLocation, Message, Money,
+  Odometer,
+  Plus, Pointer, Position,
+  Refresh, RefreshRight,
+  Search, Setting, Shop, Star, SwitchButton,
+  TrendCharts,
+  Unlock, Upload, UploadFilled, User, UserFilled,
+  View, WarningFilled
+}
+for (const [key, component] of Object.entries(usedIcons)) {
   app.component(key, component)
 }
 
