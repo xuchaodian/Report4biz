@@ -3102,7 +3102,9 @@ function addStorePopupHistoryCheck(marker, storeName) {
       if (hasHistory) {
         const titleEl = marker.getPopup().getElement()?.querySelector('h4')
         if (titleEl && !titleEl.querySelector('.star-icon')) {
-          titleEl.innerHTML = `<span class="star-icon" title="该门店有购买记录">⭐</span> ` + titleEl.innerHTML
+          // v1.13.105 S-H3d：不用 innerHTML 重拼（会把既有 h4 文本再次当 HTML 解析 → 门店名等用户可控文本可注入脚本）；
+          // insertAdjacentHTML 仅解析新增片段（我们控制的静态 span），既有文本保持文本节点。
+          titleEl.insertAdjacentHTML('afterbegin', '<span class="star-icon" title="该门店有购买记录">⭐</span> ')
         }
       }
     } catch (e) {

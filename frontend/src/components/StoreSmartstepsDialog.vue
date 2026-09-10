@@ -116,7 +116,7 @@
         </span>
       </template>
       <div v-if="queryResult" class="result-dialog-content">
-        <div class="result-dialog-data" v-html="formatResult(queryResult)"></div>
+        <div class="result-dialog-data" v-html="sanitizeHtml(formatResult(queryResult))"></div>
       </div>
       <div v-else class="no-result">
         <p>暂无查询结果</p>
@@ -249,7 +249,7 @@
       </div>
       <div class="detail-result" v-if="resultData">
         <h4>📊 人口概览</h4>
-        <div class="result-grid" v-html="formatResultData(resultData)"></div>
+        <div class="result-grid" v-html="sanitizeHtml(formatResultData(resultData))"></div>
       </div>
       <div v-else class="no-result">
         <p>暂无数据（该订单配额已返还）</p>
@@ -266,6 +266,7 @@ import { Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 const userStore = useUserStore()
 // VIP 用户（管理员视为 VIP）

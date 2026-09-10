@@ -18,7 +18,8 @@ router.get('/summary', authenticate, async (req, res) => {
   try {
     const db = getDb()
     const userId = req.user.id
-    const isAdmin = req.user.role === 'admin' || userId === 1
+    // v1.13.105 S-M4：仅按角色判定全平台口径，删除硬编码 userId===1 后门（id=1 的普通用户不再能看全平台统计）
+    const isAdmin = req.user.role === 'admin'
 
     // 异常经营状态（停业/歇业/关闭等，大屏聚合排除，markers 表字段）
     const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']

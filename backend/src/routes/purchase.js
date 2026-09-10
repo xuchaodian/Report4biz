@@ -15,6 +15,31 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const router = express.Router()
 const SHARE_SECRET = PURCHASE_SHARE_SECRET
 
+// 分享 token 生成/校验（v1.13.105 S-H2 加固）
+// 旧实现 = HMAC(secret, id).slice(16)：无盐无过期，且密钥曾可回退到源码公开值 → 可遍历 id 伪造分享链接读他人付费数据。
+// 新实现 = 签名携带过期时间：token = base36(exp).hmacHex20，其中 hmac = HMAC(sha256, secret, `${id}:${exp}`)；
+// 无密钥（env 未配、无默认回退）时分享功能整体禁用。旧链接（无 '.' 结构）一律失效，需重新生成。
+const SHARE_TTL_MS = 30 * 24 * 3600 * 1000 // 有效期 30 天
+function buildShareToken(id) {
+  if (!SHARE_SECRET) throw new Error('分享密钥未配置')
+  const exp = Date.now() + SHARE_TTL_MS
+  const sig = crypto.createHmac('sha256', SHARE_SECRET).update(`${id}:${exp}`).digest('hex').slice(0, 20)
+  return `${exp.toString(36)}.${sig}`
+}
+function verifyShareToken(id, token) {
+  if (!SHARE_SECRET) return false
+  try {
+    const parts = String(token || '').split('.')
+    if (parts.length !== 2) return false
+    const exp = parseInt(parts[0], 36)
+    if (!Number.isFinite(exp) || exp < Date.now()) return false // 过期拒绝
+    const expect = crypto.createHmac('sha256', SHARE_SECRET).update(`${id}:${exp}`).digest('hex').slice(0, 20)
+    return parts[1] === expect
+  } catch (e) {
+    return false
+  }
+}
+
 // 封装 child_process.exec 为 Promise（批量导出复用）
 const runExec = (cmd, timeout = 30000) => new Promise((resolve, reject) => {
   exec(cmd, { timeout, maxBuffer: 1024 * 1024 * 100 }, (err, stdout, stderr) => {
@@ -111,69 +136,11 @@ router.post('/buy', authenticate, (req, res) => {
 })
 
 /**
- * 使用配额查询
- * 请求体: {
- *   centerLng, centerLat, radius,
- *   services: string[],
- *   cityMonth: string,
- *   quotaUsed: number  // 本次消耗的配额
- * }
+ * 使用配额查询（已下线 v1.13.105 B2/S-H1）
+ * 原 POST /use 允许客户端自报 quotaUsed + 任意 resultData 注入假购买记录（计费旁路 + XSS 弹药源）。
+ * 无前端调用、语义与 smartsteps/query 重复 → 整体移除。请求本路由返回 404。
+ * 真实购买统一走 /api/smartsteps/query（服务端固定扣 1，见 smartsteps.js）。
  */
-router.post('/use', authenticate, (req, res) => {
-  try {
-    const { centerLng, centerLat, radius, services, cityMonth, quotaUsed, resultData } = req.body
-    
-    if (quotaUsed === undefined || quotaUsed < 0) {
-      return res.status(400).json({ message: '请提供正确的配额消耗数量' })
-    }
-    
-    const db = getDb()
-    
-    // 检查运营商当前剩余配额是否足够
-    const quotaRecord = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
-    const available = quotaRecord?.remaining_quota || 0
-    
-    if (available < quotaUsed) {
-      return res.status(400).json({
-        message: `运营商剩余配额不足，需要 ${quotaUsed} 次，当前剩余 ${available} 次。请联系管理员追加配额。`
-      })
-    }
-    
-    // 创建购买记录
-    const result = db.prepare(`
-      INSERT INTO purchases (
-        user_id, center_lng, center_lat, radius,
-        city_month, services, quota_used, status, result_data
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
-    `).run(
-      req.user.id,
-      centerLng,
-      centerLat,
-      radius,
-      cityMonth || '',
-      JSON.stringify(services),
-      quotaUsed,
-      resultData ? JSON.stringify(resultData) : null
-    )
-    
-    // 扣减运营商当前剩余配额
-    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
-    
-    // 获取更新后的配额
-    const newQuotaRecord = db.prepare(`SELECT initial_quota, remaining_quota FROM admin_quota WHERE id = 1`).get()
-    
-    res.json({
-      message: '查询成功',
-      purchaseId: result.lastInsertRowid,
-      quotaUsed,
-      initialQuota: newQuotaRecord?.initial_quota || 0,
-      remainingQuota: newQuotaRecord?.remaining_quota || 0
-    })
-  } catch (error) {
-    console.error('使用配额失败:', error)
-    res.status(500).json({ message: '操作失败' })
-  }
-})
 
 /**
  * 获取购买历史（静态路由必须在 /:id 之前）
@@ -504,14 +471,17 @@ router.get('/:id', authenticate, (req, res) => {
  */
 router.get('/:id/share-token', authenticate, (req, res) => {
   try {
+    if (!SHARE_SECRET) {
+      return res.status(503).json({ message: '分享功能未启用（后端未配置 PURCHASE_SHARE_SECRET）' })
+    }
     const { id } = req.params
     const db = getDb()
     const purchase = db.prepare(`SELECT id FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
     if (!purchase) return res.status(404).json({ message: '记录不存在' })
     
-    const hash = crypto.createHmac('sha256', SHARE_SECRET).update(String(id)).digest('hex').slice(0, 16)
-    const shareUrl = `${req.protocol}://${req.get('host')}/shared/purchase?id=${id}&token=${hash}`
-    res.json({ shareUrl, token: hash })
+    const token = buildShareToken(id)
+    const shareUrl = `${req.protocol}://${req.get('host')}/shared/purchase?id=${id}&token=${encodeURIComponent(token)}`
+    res.json({ shareUrl, token })
   } catch (error) {
     console.error('生成分享token失败:', error)
     res.status(500).json({ message: '生成分享链接失败' })
@@ -525,10 +495,7 @@ router.get('/shared/:id', (req, res) => {
   try {
     const { id } = req.params
     const { token } = req.query
-    if (!token) return res.status(403).json({ message: '缺少访问令牌' })
-    
-    const hash = crypto.createHmac('sha256', SHARE_SECRET).update(String(id)).digest('hex').slice(0, 16)
-    if (hash !== token) return res.status(403).json({ message: '访问令牌无效' })
+    if (!verifyShareToken(id, token)) return res.status(403).json({ message: '访问令牌无效或已过期' })
     
     const db = getDb()
     const purchase = db.prepare(`

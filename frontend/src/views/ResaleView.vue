@@ -48,11 +48,9 @@
       </el-table-column>
       <el-table-column label="API Key" min-width="240">
         <template #default="{ row }">
-          <el-input :model-value="row.api_key" readonly size="small" class="key-input">
-            <template #append>
-              <el-button @click="copyKey(row.api_key)">复制</el-button>
-            </template>
-          </el-input>
+          <el-tooltip content="Key 已加密存储，完整 Key 仅在创建时显示一次（复制请在创建弹窗内完成）" placement="top">
+            <code style="font-size:12px;color:#909399;word-break:break-all;">{{ row.api_key }}</code>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column label="剩余次数" width="110" align="center">

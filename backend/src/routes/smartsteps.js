@@ -395,15 +395,19 @@ function generateMockData(services) {
  *   radii: number[],     // 所有半径数组（米）
  *   services: string[], // 服务编码数组，如 ['1001', '1005']
  *   cityMonth: string,  // 格式: '202403'，为空则用最新月份
- *   quotaUsed: number   // 本次消耗的配额（默认1）
  * }
+ * 计费（v1.13.105 B1）：本次查询固定消耗 1 次上游 getData 调用。服务端自行计量，
+ * 不接受客户端传入 quotaUsed（防改包 quotaUsed:0 绕过扣减），与 districts/scoringEngine 硬编码 -1 对齐。
  */
 router.post('/query', authenticate, async (req, res) => {
   // 从请求体获取参数（提到try外面供catch块访问）
-  const { centerLng, centerLat, radius, radii, services, cityMonth, quotaUsed = 1, storeName, storeType, mock } = req.body
+  const { centerLng, centerLat, radius, radii, services, cityMonth, storeName, storeType, mock } = req.body
 
   // 数据库和配额变量（提到try外供catch访问）
   let db, available
+
+  // 固定计费单位：1 次查询 = 1 次上游 getData 调用
+  const QUOTA_UNIT = 1
 
   try {
     if (!centerLng || !centerLat || !radius) {
@@ -451,9 +455,9 @@ router.post('/query', authenticate, async (req, res) => {
     const quotaRecord = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
     available = quotaRecord?.remaining_quota || 0
     
-    if (available < quotaUsed) {
+    if (available < QUOTA_UNIT) {
       return res.status(400).json({
-        message: `运营商剩余配额不足，需要 ${quotaUsed} 次，当前剩余 ${available} 次`
+        message: `运营商剩余配额不足，需要 ${QUOTA_UNIT} 次，当前剩余 ${available} 次`
       })
     }
     
@@ -525,7 +529,7 @@ router.post('/query', authenticate, async (req, res) => {
     const isEmptyData = !querySuccess ? true : checkIfDataIsEmpty(result)
     
     // 实际扣减的配额（查询失败或空数据时为0）
-    let actualQuotaUsed = isEmptyData ? 0 : quotaUsed
+    let actualQuotaUsed = isEmptyData ? 0 : QUOTA_UNIT
     
     // 落库+扣配额+写缓存 → 事务化：三者要么全部生效，要么全部回滚，
     // 杜绝"有履历没扣配额 / 扣了配额没履历"的中间不一致状态（方案A, v1.13.86）
@@ -555,7 +559,7 @@ router.post('/query', authenticate, async (req, res) => {
 
         // 仅在查询成功且非空数据时扣减配额和缓存（与 INSERT 同事务，任一步失败整体回滚）
         if (querySuccess && !isEmptyData) {
-          db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(quotaUsed)
+          db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - ? WHERE id = 1`).run(QUOTA_UNIT)
 
           // 保存到缓存（自身内部失败仅记日志，不影响 purchases/配额一致性）
           saveToCache(db, centerLng, centerLat, radius, cityMonth, services, result)
@@ -589,7 +593,7 @@ router.post('/query', authenticate, async (req, res) => {
     console.error('智慧足迹查询失败:', error)
     res.status(500).json({ 
       message: error.message,
-      quotaUsed: quotaUsed,
+      quotaUsed: QUOTA_UNIT,
       remainingQuota: null  // 无法计算
     })
   }

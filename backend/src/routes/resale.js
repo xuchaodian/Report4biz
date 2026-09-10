@@ -160,6 +160,17 @@ function generateApiKey() {
   return 'r4b_' + crypto.randomBytes(24).toString('hex')
 }
 
+// v1.13.105 S-M3：API Key 不以明文落库。库中仅存 sha256(key)。
+// key 为 48 hex 高熵随机串（r4b_ + 48hex），单向哈希后无法逆向；第三方认证时对输入做同哈希查询。
+function hashApiKey(key) {
+  return crypto.createHash('sha256').update(String(key)).digest('hex')
+}
+// 打码展示（列表用，避免 64 位 hash 全串挤占 UI）：保留前 10 / 尾 4
+function maskApiKey(hashed) {
+  if (!hashed) return ''
+  return `${hashed.slice(0, 10)}…${hashed.slice(-4)}`
+}
+
 // ===== 单一预算池 =====
 // 用户页分配与 API 开放页共用同一批次上游配额（admin_quota.initial_quota）
 // 池已占用 = Σ(users.quota) + Σ(api_keys.balance，仅真实模式)，池剩余可分配 = 总配额 - 池已占用
@@ -189,7 +200,8 @@ const requireApiKey = (req, res, next) => {
   }
   try {
     const db = getDb()
-    const client = db.prepare(`SELECT * FROM api_keys WHERE api_key = ? AND status = 'active'`).get(apiKey)
+    // v1.13.105 S-M3：库存为 sha256(key)，用哈希查询匹配（key 不明文落库）
+    const client = db.prepare(`SELECT * FROM api_keys WHERE api_key = ? AND status = 'active'`).get(hashApiKey(apiKey))
     if (!client) {
       return res.status(401).json({ code: 401, message: 'API Key 无效或已停用' })
     }
@@ -280,16 +292,17 @@ adminRouter.post('/keys', authenticate, async (req, res) => {
       })
     }
     const apiKey = generateApiKey()
+    // v1.13.105 S-M3：库存哈希（明文仅本次响应返回一次，前端 alert 提示妥善保存）
     const result = db.prepare(`
       INSERT INTO api_keys (company_name, api_key, balance, mock)
       VALUES (?, ?, ?, ?)
-    `).run(companyName.trim(), apiKey, balance, mock ? 1 : 0)
+    `).run(companyName.trim(), hashApiKey(apiKey), balance, mock ? 1 : 0)
     res.json({
       success: true,
       key: {
         id: result.lastInsertRowid,
         company_name: companyName.trim(),
-        api_key: apiKey,
+        api_key: apiKey,   // 明文仅此处返回一次
         balance,
         status: 'active',
         mock: mock ? 1 : 0
@@ -458,7 +471,8 @@ adminRouter.get('/keys', authenticate, async (req, res) => {
       SELECT k.*, (SELECT COUNT(*) FROM api_usage u WHERE u.api_key_id = k.id) AS used
       FROM api_keys k ORDER BY k.created_at DESC
     `).all()
-    res.json({ keys, pool: getPoolInfo(db) })
+    // v1.13.105 S-M3：列表不下发明文/hash 全串，api_key 字段改为打码展示（完整 Key 仅创建时返回一次）
+    res.json({ keys: keys.map(k => ({ ...k, api_key: maskApiKey(k.api_key) })), pool: getPoolInfo(db) })
   } catch (e) {
     res.status(500).json({ message: '查询失败: ' + e.message })
   }
@@ -639,6 +653,14 @@ router.post('/', requireApiKey, async (req, res) => {
       })
     }
 
+    // 上游真实配额门禁（v1.13.105 A1）：第三方真实调用同样烧同一批联通配额（admin_quota），
+    // 调上游前校验 remaining_quota>=1，不足即拒绝——避免 remaining 恒虚高、超卖内部查询直到上游真实额度耗尽。
+    // 注意：仅真实分支需此门禁；mock（L579-622）/缓存命中（上文）不经上游不消耗，不受影响。
+    const adminQuotaRow = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
+    if ((adminQuotaRow?.remaining_quota || 0) < 1) {
+      return res.status(429).json({ code: 429, message: '上游数据配额已耗尽，请联系管理员充值后再试' })
+    }
+
     // 2. 调用上游
     const wkt = buildCircleWkt(cLng, cLat, r)
     const requestBody = {
@@ -678,9 +700,11 @@ router.post('/', requireApiKey, async (req, res) => {
     const isEmpty = !querySuccess ? true : checkIfDataIsEmpty(result)
     const deducted = isEmpty ? 0 : 1
 
-    // 4. 扣费 + 记录
+    // 4. 扣费 + 记录（v1.13.105 A1：同一批联通配额双轨扣减——客户 balance 与 admin remaining_quota 同步 -1。
+    //    仅真实上游调用成功且非空数据才扣；缓存命中 / mock / 空数据失败（deducted=0）不扣 remaining）
     if (deducted > 0) {
       db.prepare(`UPDATE api_keys SET balance = balance - 1 WHERE id = ?`).run(client.id)
+      db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
     }
     db.prepare(`
       INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)

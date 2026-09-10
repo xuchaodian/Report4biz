@@ -12,7 +12,7 @@
         <p><strong>查询半径:</strong> {{ purchase.radii?.join(', ') }}米</p>
         <p><strong>查询时间:</strong> {{ formatDate(purchase.created_at) }}</p>
       </div>
-      <div class="data-result" v-if="resultData" v-html="formatResult(resultData)"></div>
+      <div class="data-result" v-if="resultData" v-html="sanitizeHtml(formatResult(resultData))"></div>
       <div v-else class="no-data">暂无数据</div>
       <div class="footer">
         <p>由 选址赢家Online 生成</p>
@@ -25,6 +25,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 const route = useRoute()
 const purchase = ref(null)

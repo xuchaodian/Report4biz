@@ -44,8 +44,21 @@ const PORT = process.env.PORT || 3000
 // 信任代理（获取真实客户端IP）
 app.set('trust proxy', true)
 
-// 中间件
-app.use(cors())
+// CORS 白名单（v1.13.105 S-M2）：仅放行前端站点与本地开发地址，杜绝任意站点在已登录态向 API 发跨域请求。
+// 说明：非浏览器请求（curl / 服务端直连，无 Origin 头）不受 CORS 约束，正常放行（第三方 API 转售即此类）。
+const ALLOWED_ORIGINS = [
+  'https://mka-online.cn',
+  'http://mka-online.cn',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+]
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true) // 无 Origin（非浏览器）放行
+    cb(null, ALLOWED_ORIGINS.includes(origin)) // 非白名单 → 不带 CORS 头，浏览器拦截
+  },
+  credentials: true
+}))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 

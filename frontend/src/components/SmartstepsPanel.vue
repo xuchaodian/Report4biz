@@ -130,7 +130,7 @@
           <span class="result-title">📊 查询结果</span>
           <button class="clear-result" @click="queryResult = null">清除</button>
         </div>
-        <div class="result-data" v-html="formatResultData(queryResult.data)"></div>
+        <div class="result-data" v-html="sanitizeHtml(formatResultData(queryResult.data))"></div>
       </div>
     </div>
 
@@ -168,6 +168,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useUserStore } from '@/stores/user'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 
 const props = defineProps({
   visible: Boolean,

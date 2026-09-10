@@ -715,6 +715,7 @@ import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim } from '@element-plus/icons-vue'
 import axios from 'axios'
 import Papa from 'papaparse'
+import { escapeHtml } from '@/utils/escapeHtml'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -1199,7 +1200,7 @@ const handleSaleImport = async (e) => {
     if (d && d.success) {
       await loadAllSales()
       if (d.results && d.results.length > 0) {
-        const detail = d.results.map(r => `第${r.row}行：${r.reason}`).join('<br/>')
+        const detail = d.results.map(r => `第${r.row}行：${escapeHtml(r.reason)}`).join('<br/>')
         ElMessageBox.alert(`成功 ${d.ok}/${d.total} 条，失败 ${d.results.length} 条：<br/><br/>${detail}`, '导入报告', { dangerouslyUseHTMLString: true })
       } else {
         ElMessage.success(`导入成功 ${d.ok}/${d.total} 条`)

@@ -76,7 +76,9 @@ const AMAP_KEY = process.env.AMAP_KEY || ''
 const TENCENT_LBS_KEY = process.env.TENCENT_LBS_KEY || ''
 const ARK_API_KEY = process.env.ARK_API_KEY || ''
 const SMARTSTEPS_API_KEY = process.env.SMARTSTEPS_API_KEY || ''
-const PURCHASE_SHARE_SECRET = process.env.PURCHASE_SHARE_SECRET || 'Report4biz_share_2026'
+// 分享密钥（v1.13.105 S-H2）：禁止默认回退公开值（原 'Report4biz_share_2026' 源码可见 → 可伪造分享 token）。
+// 未配置时分享功能整体禁用（purchase.js share-token 返回 503），生产须在 backend/.env 配置随机值。
+const PURCHASE_SHARE_SECRET = process.env.PURCHASE_SHARE_SECRET || null
 
 // 启动时提示缺失的第三方密钥（不阻断启动，便于发现漏配）
 const missingKeys = []
@@ -84,6 +86,7 @@ if (!AMAP_KEY) missingKeys.push('AMAP_KEY(高德)')
 if (!TENCENT_LBS_KEY) missingKeys.push('TENCENT_LBS_KEY(腾讯位置)')
 if (!ARK_API_KEY) missingKeys.push('ARK_API_KEY(豆包)')
 if (!SMARTSTEPS_API_KEY) missingKeys.push('SMARTSTEPS_API_KEY(联通智慧足迹)')
+if (!PURCHASE_SHARE_SECRET) missingKeys.push('PURCHASE_SHARE_SECRET(分享链接签名)')
 if (missingKeys.length) {
   console.warn('[config] 未配置第三方密钥: ' + missingKeys.join(', ') + '。请在 backend/.env 或环境变量中配置，否则对应服务将不可用。')
 }

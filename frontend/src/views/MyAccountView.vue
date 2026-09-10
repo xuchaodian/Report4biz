@@ -445,7 +445,7 @@
             </div>
           </div>
           <div v-if="resultData" class="detail-result">
-            <div class="result-grid" v-html="formatResultData(resultData)"></div>
+            <div class="result-grid" v-html="sanitizeHtml(formatResultData(resultData))"></div>
           </div>
           <div v-else class="no-result">
             <p>暂无数据（该订单配额已返还）</p>
@@ -511,6 +511,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
 
