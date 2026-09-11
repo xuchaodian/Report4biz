@@ -213,6 +213,29 @@ export async function initDatabase() {
     // 忽略
   }
 
+  // 创建配额采购履历表（v1.13.115）——「池级」采购事件台账，append-only
+  // ⚠️ 与 quota_history 严格区分：
+  //    quota_history 是「账号级」分配台账（带 user_id），被 purchase.js:86 用
+  //    Σ(change_amount) WHERE user_id=? 当作该账号的「累计分配额」；
+  //    而「向联通采购」是「池级」事件、没有 user_id —— 混写进 quota_history 会污染
+  //    每个账号的累计值，因此必须独立建表。
+  //    另一本账 admin_quota 只保留 initial_quota / remaining_quota 两个「当前值」，
+  //    没有历史明细，本表正是补上这段缺失的采购履历。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quota_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      amount INTEGER NOT NULL,               -- 本次新增次数（恒 > 0，append-only）
+      quota_before INTEGER NOT NULL,         -- 变更前 remaining_quota
+      quota_after INTEGER NOT NULL,          -- 变更后 remaining_quota（= before + amount）
+      note TEXT,                             -- 备注（批次 / 单价 / 采购渠道）
+      created_by INTEGER,                    -- 操作人 users.id
+      created_by_name TEXT,                  -- 操作人用户名快照（防改名后查不到）
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_quota_purchases_created ON quota_purchases(created_at DESC)`)
+
   // 创建点位表 - 门店管理
   db.run(`
     CREATE TABLE IF NOT EXISTS markers (

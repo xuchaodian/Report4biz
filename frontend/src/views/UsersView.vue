@@ -13,6 +13,9 @@
             <el-button type="primary" link size="small" @click="showQuotaDialog">
               <el-icon><Edit /></el-icon>
             </el-button>
+            <el-tooltip content="查看历次向联通采购的明细" placement="top">
+              <el-button type="primary" link size="small" class="purchase-link" @click="showPurchaseDialog">采购履历</el-button>
+            </el-tooltip>
           </div>
           <div class="quota-card remaining">
             <span class="label">当前剩余配额</span>
@@ -188,10 +191,73 @@
           </div>
           <div class="qp-hint">{{ previewHint }}</div>
         </div>
+        <el-form-item label="采购备注" v-if="previewDelta > 0" style="margin-top: 14px;">
+          <el-input v-model="purchaseNote" maxlength="60" show-word-limit placeholder="选填，如「第 2 批 · 2400 次 · 单价 xx 元」" />
+          <div class="quota-tip">本次将记入「采购履历」，便于日后对账</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="quotaDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="quotaSaving" @click="handleSaveQuota">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 配额采购履历对话框（v1.13.115） -->
+    <el-dialog v-model="purchaseDialogVisible" title="配额采购履历" width="760px">
+      <div class="purchase-summary" v-if="purchaseSummary">
+        <div class="ps-item">
+          <span class="ps-label">累计总配额</span>
+          <span class="ps-value">{{ purchaseSummary.initialQuota }}</span>
+        </div>
+        <div class="ps-item">
+          <span class="ps-label">已记录采购</span>
+          <span class="ps-value">{{ purchaseSummary.totalAmount }}</span>
+        </div>
+        <div class="ps-item">
+          <span class="ps-label">采购笔数</span>
+          <span class="ps-value">{{ purchaseSummary.count }}</span>
+        </div>
+        <div class="ps-item baseline" v-if="purchaseSummary.baselineAmount > 0">
+          <el-tooltip content="累计总配额中，早于「采购履历」功能上线、无明细记录的部分" placement="top">
+            <span class="ps-label">上线前已有</span>
+          </el-tooltip>
+          <span class="ps-value">{{ purchaseSummary.baselineAmount }}</span>
+        </div>
+      </div>
+
+      <div class="purchase-table-wrap" v-loading="purchaseLoading">
+        <el-table v-if="purchaseRows.length > 0" :data="purchaseRows" size="small" max-height="380" border>
+          <el-table-column type="index" label="序号" width="60" align="center" />
+          <el-table-column prop="created_at" label="时间" width="160" />
+          <el-table-column prop="amount" label="本次采购" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag type="success">+{{ row.amount }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="剩余变化" width="150" align="center">
+            <template #default="{ row }">
+              <span class="qrange">{{ row.quota_before }}</span>
+              <span class="qarrow">→</span>
+              <span class="qrange after">{{ row.quota_after }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="note" label="备注" min-width="140">
+            <template #default="{ row }">
+              <span v-if="row.note">{{ row.note }}</span>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_by_name" label="操作人" width="110" align="center">
+            <template #default="{ row }">
+              {{ row.created_by_name || '—' }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else :description="purchaseLoading ? '加载中…' : '暂无采购记录（功能上线前的采购无明细）'" style="margin: 24px 0" />
+      </div>
+
+      <template #footer>
+        <el-button @click="purchaseDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -310,6 +376,13 @@ const totalConsumed = computed(() =>
 const quotaDialogVisible = ref(false)
 const quotaSaving = ref(false)
 const editTotalQuota = ref(0)
+const purchaseNote = ref('')
+
+// 采购履历（v1.13.115）—— 池级采购台账 quota_purchases 的只读视图
+const purchaseDialogVisible = ref(false)
+const purchaseLoading = ref(false)
+const purchaseRows = ref([])
+const purchaseSummary = ref(null)
 
 // 弹窗实时预览：与后端 PUT /users/quota 完全同一算法（避免"前端允许提交、后端结果不符"的割裂）
 //   后端 users.js：newRemaining = max(0, currentRemaining + (输入值 − currentInitial))
@@ -467,6 +540,7 @@ const fetchUsers = async () => {
 // 显示编辑总配额对话框
 const showQuotaDialog = () => {
   editTotalQuota.value = quotaInfo.value.initialQuota
+  purchaseNote.value = ''
   quotaDialogVisible.value = true
 }
 
@@ -474,15 +548,43 @@ const showQuotaDialog = () => {
 const handleSaveQuota = async () => {
   quotaSaving.value = true
   try {
-    const data = await api.put('/users/quota', { totalQuota: editTotalQuota.value })
+    const data = await api.put('/users/quota', {
+      totalQuota: editTotalQuota.value,
+      note: purchaseNote.value
+    })
     quotaInfo.value = data.quotaInfo
     quotaDialogVisible.value = false
-    ElMessage.success('总配额已更新')
+    const added = data.purchaseRecorded || 0
+    ElMessage.success(added > 0 ? `总配额已更新，本次采购 ${added} 次已记入履历` : '总配额已更新')
+    // 若弹窗开着，同步刷新履历列表
+    if (purchaseDialogVisible.value) loadPurchases()
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '更新失败')
   } finally {
     quotaSaving.value = false
   }
+}
+
+// 加载采购履历
+const loadPurchases = async () => {
+  purchaseLoading.value = true
+  try {
+    const data = await api.get('/users/quota/purchases')
+    purchaseRows.value = data.purchases || []
+    purchaseSummary.value = data.summary || null
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '获取采购履历失败')
+    purchaseRows.value = []
+    purchaseSummary.value = null
+  } finally {
+    purchaseLoading.value = false
+  }
+}
+
+// 显示采购履历对话框
+const showPurchaseDialog = () => {
+  purchaseDialogVisible.value = true
+  loadPurchases()
 }
 
 const showAddDialog = () => {
@@ -818,5 +920,78 @@ onMounted(() => {
   background: #f3e8ff;
   border-color: #d8b4fe;
   color: #7c3aed;
+}
+
+/* ===== 配额采购履历（v1.13.115）===== */
+.purchase-link {
+  font-size: 12px !important;
+  padding: 0 2px !important;
+  height: auto !important;
+}
+
+.purchase-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.purchase-summary .ps-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+}
+
+.purchase-summary .ps-item.baseline {
+  background: #fdf6ec;
+  border-color: #f3d19e;
+}
+
+.purchase-summary .ps-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.purchase-summary .ps-item.baseline .ps-label {
+  color: #b88230;
+  cursor: help;
+  border-bottom: 1px dashed currentColor;
+}
+
+.purchase-summary .ps-value {
+  font-size: 18px;
+  font-weight: bold;
+  color: #303133;
+}
+
+.purchase-summary .ps-item.baseline .ps-value {
+  color: #b88230;
+}
+
+.purchase-table-wrap {
+  min-height: 120px;
+}
+
+.qrange {
+  color: #909399;
+}
+
+.qrange.after {
+  color: #67c23a;
+  font-weight: 600;
+}
+
+.qarrow {
+  margin: 0 6px;
+  color: #c0c4cc;
+}
+
+.muted {
+  color: #c0c4cc;
 }
 </style>

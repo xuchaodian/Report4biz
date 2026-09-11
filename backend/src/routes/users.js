@@ -105,9 +105,38 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
     const quotaDiff = parseInt(totalQuota) - currentInitial
     const newRemaining = Math.max(0, currentRemaining + quotaDiff)
 
-    // 更新初始总配额和当前剩余配额
-    db.prepare(`UPDATE admin_quota SET initial_quota = ?, remaining_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`)
-      .run(parseInt(totalQuota), newRemaining)
+    // 本次「真实采购量」= 剩余的实际增量（v1.13.115）
+    // 只有 >0 才是采购；≤0（原值重存 / 回调）不记采购履历。
+    // 注意用「剩余增量」而非 quotaDiff：极端情况下 newRemaining 会被 Math.max(0,…) 截断，
+    // 用实际增量才能保证 quota_before + amount === quota_after 自洽。
+    const purchaseAmount = newRemaining - currentRemaining
+
+    // 更新初始总配额和当前剩余配额 + 采购留痕（同事务）
+    db.beginTx()
+    try {
+      db.prepare(`UPDATE admin_quota SET initial_quota = ?, remaining_quota = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`)
+        .run(parseInt(totalQuota), newRemaining)
+
+      if (purchaseAmount > 0) {
+        // ⚠️ 写 quota_purchases，**绝不**写 quota_history（后者是账号级台账，见 database.js 注释）
+        db.prepare(`
+          INSERT INTO quota_purchases (amount, quota_before, quota_after, note, created_by, created_by_name)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          purchaseAmount,
+          currentRemaining,
+          newRemaining,
+          (req.body?.note || '').toString().trim() || null,
+          req.user?.id ?? null,
+          req.user?.username ?? null
+        )
+      }
+
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
 
     // 剩余可分配 = 初始总配额 - 已分配
     const availableQuota = Math.max(0, parseInt(totalQuota) - allocatedQuota)
@@ -118,6 +147,7 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
 
     res.json({
       message: '总配额已更新',
+      purchaseRecorded: purchaseAmount > 0 ? purchaseAmount : 0,   // >0 表示本次记入采购履历
       quotaInfo: {
         initialQuota: parseInt(totalQuota),
         remainingQuota: newRemaining,
@@ -130,6 +160,43 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
   } catch (error) {
     console.error('更新总配额错误:', error)
     res.status(500).json({ message: '更新总配额失败' })
+  }
+})
+
+// 获取配额采购履历（v1.13.115，仅平台 admin）
+// 池级台账：每次「向联通采购 / 上调累计总配额」记一行；纯读接口。
+router.get('/quota/purchases', authenticate, requireAdmin, (req, res) => {
+  try {
+    const db = getDb()
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 200, 1), 500)
+
+    const rows = db.prepare(`
+      SELECT id, amount, quota_before, quota_after, note, created_by, created_by_name, created_at
+      FROM quota_purchases
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(limit)
+
+    const sumRow = db.prepare(`
+      SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total FROM quota_purchases
+    `).get()
+
+    const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
+    const initialQuota = quotaRecord?.initial_quota || 0
+
+    res.json({
+      purchases: rows,
+      summary: {
+        count: sumRow?.cnt || 0,
+        totalAmount: sumRow?.total || 0,
+        initialQuota,
+        // 本表建立之前的采购量（无明细），仅作提示，不参与任何计算
+        baselineAmount: Math.max(0, initialQuota - (sumRow?.total || 0))
+      }
+    })
+  } catch (error) {
+    console.error('获取采购履历错误:', error)
+    res.status(500).json({ message: '获取采购履历失败' })
   }
 })
 
