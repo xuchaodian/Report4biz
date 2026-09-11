@@ -35,6 +35,7 @@ import scoringRoutes from './routes/scoring.js'
 import districtsRoutes from './routes/districts.js'
 import storeScoresRoutes from './routes/store-scores.js'
 import templateRoutes from './routes/template.js'
+import orgsRoutes from './routes/orgs.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -125,6 +126,8 @@ async function start() {
     app.use('/api/districts', districtsRoutes)
     app.use('/api/store-scores', storeScoresRoutes)
     app.use('/api/template', templateRoutes)
+    // 集团/子公司组织管理（v0.9 P0-B）：建集团、绑成员、我的组织（不含 quota 增减）
+    app.use('/api/orgs', orgsRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {

@@ -1,5 +1,9 @@
 <template>
   <div class="users-view">
+    <!-- v0.9 P0-B：顶部 TAB —— 用户列表 / 集团·子公司绑定（本页路由 requiresAdmin，仅平台管理员可达）
+         注意：下方「用户列表」为原有内容，为保持 review diff 最小**未重排缩进**，勿按 TAB 层级重新缩进。 -->
+    <el-tabs v-model="activeTab" class="users-tabs">
+      <el-tab-pane label="用户列表" name="users">
     <div class="users-header">
       <h2>用户管理</h2>
       <div class="header-actions">
@@ -146,6 +150,13 @@
         </el-table-column>
       </el-table>
     </div>
+      </el-tab-pane>
+
+      <!-- 集团 / 子公司绑定（v0.9 P0-B） -->
+      <el-tab-pane label="集团 / 子公司" name="orgs" lazy>
+        <OrgBindingPanel v-if="activeTab === 'orgs'" />
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 添加/编辑对话框 -->
     <el-dialog
@@ -367,8 +378,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, RefreshRight } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
+import OrgBindingPanel from '@/components/org/OrgBindingPanel.vue'
 
 const userStore = useUserStore()
+
+// 顶部 TAB（v0.9 P0-B）：users = 用户列表（原有）/ orgs = 集团·子公司绑定
+const activeTab = ref('users')
 
 const users = ref([])
 const loading = ref(false)
@@ -735,6 +750,19 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+}
+
+/* 顶部 TAB（v0.9 P0-B）：让「用户列表」内容区不被 TAB 头部挤压 */
+.users-tabs {
+  flex: 1;
+  min-height: 0;
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 14px;
+  }
+  :deep(.el-tabs__content) {
+    overflow: visible;
+  }
 }
 
 .users-header {
