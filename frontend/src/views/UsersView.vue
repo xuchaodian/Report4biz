@@ -6,7 +6,9 @@
         <!-- 配额信息卡片 -->
         <div class="quota-cards">
           <div class="quota-card total">
-            <span class="label">初始总配额</span>
+            <el-tooltip content="从联通采购的累计总次数（含历史采购），不是本次/本批采购量" placement="top">
+              <span class="label">累计总配额</span>
+            </el-tooltip>
             <span class="value">{{ quotaInfo.initialQuota }}</span>
             <el-button type="primary" link size="small" @click="showQuotaDialog">
               <el-icon><Edit /></el-icon>
@@ -172,12 +174,20 @@
     </el-dialog>
 
     <!-- 编辑总配额对话框 -->
-    <el-dialog v-model="quotaDialogVisible" title="设置初始总配额" width="400px">
+    <el-dialog v-model="quotaDialogVisible" title="设置累计总配额" width="460px">
       <el-form>
-        <el-form-item label="初始总配额">
+        <el-form-item label="累计总配额">
           <el-input-number v-model="editTotalQuota" :min="0" :max="999999" style="width: 100%" />
-          <div class="quota-tip">从联通公司购买的总配额次数，设置后将同步调整"当前剩余配额"</div>
+          <div class="quota-tip">从联通公司采购的<b>累计</b>总次数（含历史采购）。本次若新买了 N 次，请填「原值 + N」</div>
         </el-form-item>
+        <div class="quota-preview" :class="previewDeltaState">
+          <div class="qp-row">
+            <span class="qp-label">保存后「当前剩余配额」</span>
+            <span class="qp-value">{{ previewRemaining }}</span>
+            <span class="qp-delta">{{ previewDeltaText }}</span>
+          </div>
+          <div class="qp-hint">{{ previewHint }}</div>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="quotaDialogVisible = false">取消</el-button>
@@ -300,6 +310,30 @@ const totalConsumed = computed(() =>
 const quotaDialogVisible = ref(false)
 const quotaSaving = ref(false)
 const editTotalQuota = ref(0)
+
+// 弹窗实时预览：与后端 PUT /users/quota 完全同一算法（避免"前端允许提交、后端结果不符"的割裂）
+//   后端 users.js：newRemaining = max(0, currentRemaining + (输入值 − currentInitial))
+const previewDelta = computed(() =>
+  (Number(editTotalQuota.value) || 0) - (quotaInfo.value.initialQuota || 0)
+)
+const previewRemaining = computed(() =>
+  Math.max(0, (quotaInfo.value.remainingQuota || 0) + previewDelta.value)
+)
+const previewDeltaState = computed(() =>
+  previewDelta.value > 0 ? 'up' : (previewDelta.value < 0 ? 'down' : 'flat')
+)
+const previewDeltaText = computed(() => {
+  const d = previewDelta.value
+  if (d > 0) return `+${d}`
+  if (d < 0) return `${d}`
+  return '不变'
+})
+const previewHint = computed(() => {
+  const d = previewDelta.value
+  if (d > 0) return `本次新增 ${d} 次，剩余同步 +${d}`
+  if (d < 0) return `⚠ 输入值小于当前累计值，保存后剩余将减少 ${Math.abs(d)} 次`
+  return '⚠ 输入值等于当前累计值，保存后剩余不变；若刚采购了新配额，请填「原值 + 本次采购量」'
+})
 
 const form = reactive({
   username: '',
@@ -620,7 +654,7 @@ onMounted(() => {
         border-color: #409eff;
         background: linear-gradient(135deg, #ecf5ff 0%, #f0f7ff 100%);
 
-        .label { color: #409eff; }
+        .label { color: #409eff; cursor: help; border-bottom: 1px dashed currentColor; }
         .value { color: #409eff; font-weight: bold; font-size: 18px; }
       }
 
@@ -724,6 +758,55 @@ onMounted(() => {
   color: #909399;
   margin-top: 4px;
   line-height: 1.4;
+
+  b { color: #606266; }
+}
+
+/* 累计总配额弹窗：保存后的剩余配额实时预览（A+B 改动） */
+.quota-preview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f4f4f5;
+  border: 1px solid #dcdfe6;
+  line-height: 1.5;
+
+  .qp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .qp-label { font-size: 13px; color: #606266; }
+  .qp-value { font-size: 20px; font-weight: bold; color: #303133; }
+  .qp-delta { font-size: 13px; color: #909399; }
+  .qp-hint { margin-top: 4px; font-size: 12px; color: #909399; }
+
+  &.up {
+    background: #f0f9eb;
+    border-color: #67c23a;
+
+    .qp-value { color: #67c23a; }
+    .qp-delta { color: #529b2e; }
+    .qp-hint { color: #529b2e; }
+  }
+
+  &.down {
+    background: #fef0f0;
+    border-color: #f56c6c;
+
+    .qp-value { color: #f56c6c; }
+    .qp-delta { color: #c45656; }
+    .qp-hint { color: #c45656; }
+  }
+
+  &.flat {
+    background: #fdf6ec;
+    border-color: #e6a23c;
+
+    .qp-delta { color: #e6a23c; }
+    .qp-hint { color: #b88230; }
+  }
 }
 
 /* VIP 到期提醒：30 天内橙色，已过期红色 */
