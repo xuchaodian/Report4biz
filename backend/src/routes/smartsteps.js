@@ -4,6 +4,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
+import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 
 const router = express.Router()
 
@@ -452,14 +453,13 @@ router.post('/query', authenticate, async (req, res) => {
       })
     }
     
-    // 无缓存，继续检查配额
-    const quotaRecord = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
-    available = quotaRecord?.remaining_quota || 0
-    
-    if (available < QUOTA_UNIT) {
-      return res.status(400).json({
-        message: `运营商剩余配额不足，需要 ${QUOTA_UNIT} 次，当前剩余 ${available} 次`
-      })
+    // 无缓存，继续检查配额（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度）
+    const gate = checkQuota(db, req.user?.id, QUOTA_UNIT, { role: req.user?.role })
+    available = gate.pool
+
+    if (!gate.ok) {
+      const err = buildGateError(gate)
+      return res.status(err.status).json(err.body)
     }
     
     // Mock 模式：跳过联通API调用，返回模拟数据（不消耗配额，方便测试）

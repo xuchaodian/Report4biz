@@ -236,6 +236,99 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quota_purchases_created ON quota_purchases(created_at DESC)`)
 
+  // ==========================================================================
+  // 集团 / 子公司数据同步（v0.9 P0 · 设计方案 §5.1）
+  // 均为 CREATE TABLE IF NOT EXISTS —— 幂等，生产重启时自动建表，零迁移。
+  // 全仓 93 处 `WHERE user_id = ?` 不因本批改动而修改（方案最大价值点）。
+  // ==========================================================================
+
+  // 集团（组织）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,                    -- 集团名称（展示用）
+      owner_user_id INTEGER NOT NULL,        -- 集团总部账号
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  // 组织成员（子公司账号）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS org_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL UNIQUE,       -- 一个账号只能属于一个集团
+      member_role TEXT DEFAULT 'member',     -- owner | member
+      can_receive INTEGER DEFAULT 1,         -- 是否允许接收集团下发/被拉取
+      allow_group_pull INTEGER DEFAULT 1,    -- 是否允许集团拉取本账号数据（成员可自行关闭）
+      scope_json TEXT,                       -- 管辖范围（集团设定）★只到城市级: {"cities":["上海市"],"brands":[]}
+      scope_updated_at DATETIME,             -- 范围最后修改时间（审计）
+      consented_at DATETIME,                 -- 成员本人知情确认时间（合规留痕）
+      quota_gate_disabled INTEGER DEFAULT 0, -- 【兜底开关】=1 时该成员不启用授权闸门（§3.6 Ⅴ 上线安全阀）
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (org_id) REFERENCES organizations(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_org_members_org ON org_members(org_id)`) } catch (e) { /* 已存在 */ }
+
+  // 同步批次（每次"点一下同步"= 一条；审计 + 回滚依据）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sync_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id INTEGER NOT NULL,
+      direction TEXT NOT NULL,               -- group_to_member | member_to_group | transfer | scope_change
+      source_user_id INTEGER NOT NULL,
+      target_user_id INTEGER NOT NULL,
+      scope TEXT NOT NULL,                   -- 逗号分隔: markers,competitors,purchases；划拨时=城市列表
+      total INTEGER DEFAULT 0,
+      inserted INTEGER DEFAULT 0,
+      updated INTEGER DEFAULT 0,
+      deleted INTEGER DEFAULT 0,
+      skipped INTEGER DEFAULT 0,             -- 含"无变化"与"防回环跳过"
+      failed INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'preview',         -- preview | running | success | partial | failed | rolled_back
+      detail TEXT,                           -- JSON: [{kind,action,rowId,originRowId,fields}]
+      created_by INTEGER,
+      ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      finished_at DATETIME
+    )
+  `)
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_sync_batches_org ON sync_batches(org_id, created_at)`) } catch (e) { /* 已存在 */ }
+
+  // 配额分配台账 ★ 单向、只增、append-only（规则 17）
+  // grant_kind 区分"资金来源"：pool_grant=一级分配(池→成员) / org_move=二级再分配(成员→成员)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quota_grants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id       INTEGER NOT NULL,
+      grant_kind   TEXT NOT NULL DEFAULT 'pool_grant'
+                   CHECK (grant_kind IN ('pool_grant','org_move')),
+      from_user_id INTEGER NOT NULL,          -- pool_grant→发起人(=组织 owner)｜org_move→转出方(恒为调用者,规则 27)
+      to_user_id   INTEGER NOT NULL,          -- 受赠方（必须是本组织成员）
+      amount       INTEGER NOT NULL CHECK (amount > 0), -- ★ 恒正：数据库层物理禁止"扣减"
+      note         TEXT,
+      created_by   INTEGER NOT NULL,          -- 实际操作人（审计）
+      ip           TEXT,
+      quota_before INTEGER,                   -- 受赠方变更前 users.quota（对账用）
+      quota_after  INTEGER,                   -- 受赠方变更后 users.quota
+      from_before  INTEGER,                   -- 出资方变更前 users.quota（仅 org_move）
+      from_after   INTEGER,                   -- 出资方变更后 users.quota（仅 org_move）
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (org_id) REFERENCES organizations(id),
+      FOREIGN KEY (to_user_id) REFERENCES users(id)
+    )
+  `)
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_quota_grants_org ON quota_grants(org_id, created_at)`) } catch (e) { /* 已存在 */ }
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_quota_grants_to  ON quota_grants(to_user_id)`) } catch (e) { /* 已存在 */ }
+  // ★ 刻意不提供任何 UPDATE/DELETE 支撑 —— 台账只追加，历史不可改（规则 17）
+
+  // 既有 quota_history 加来源列（§3.7 F2 / 规则 23）
+  //   新 action 取值：'org_grant'（集团分配）、'member_deleted_release'（删除成员释放）
+  try { db.run(`ALTER TABLE quota_history ADD COLUMN source_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+
   // 创建点位表 - 门店管理
   db.run(`
     CREATE TABLE IF NOT EXISTS markers (
@@ -284,6 +377,25 @@ export async function initDatabase() {
   } catch (e) {
     // 索引可能已存在
   }
+
+  // ===== markers 来源与归属字段（v0.9 P0 · 集团/子公司同步 §5.2）=====
+  // 来源（幂等基石）：origin_user_id 为 NULL ⇒ 本账号自建
+  try { db.run(`ALTER TABLE markers ADD COLUMN origin_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN origin_row_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN origin_owner TEXT`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN sync_batch_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN sync_readonly INTEGER DEFAULT 0`) } catch (e) { /* 列已存在 */ }
+  // 归属与集团批注
+  try { db.run(`ALTER TABLE markers ADD COLUMN belong_member_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN group_note TEXT`) } catch (e) { /* 列已存在 */ }
+  // 城市兜底：导入时 city 为空则按坐标反查补全（否则无法按范围圈定，规则 13）
+  try { db.run(`ALTER TABLE markers ADD COLUMN city_source TEXT`) } catch (e) { /* 列已存在 */ }
+  // 幂等约束：同一目标账号下，(来源账号, 来源行) 唯一（规则 2）
+  try {
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_markers_origin
+            ON markers(user_id, origin_user_id, origin_row_id)
+            WHERE origin_user_id IS NOT NULL`)
+  } catch (e) { /* 索引已存在 */ }
 
   // 创建竞品门店表
   db.run(`
@@ -336,6 +448,23 @@ export async function initDatabase() {
   } catch (e) {
     // 索引可能已存在
   }
+
+  // ===== competitors 来源与归属字段（v0.9 P0 · 与 markers 同构，列名完全一致）=====
+  // ⚠️ 同步进来的行：period = NULL、snapshot_id = NULL（规则 8：以"手工行"身份存在，
+  //    不参与季度快照口径，也不影响开关店监测）
+  try { db.run(`ALTER TABLE competitors ADD COLUMN origin_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN origin_row_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN origin_owner TEXT`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN sync_batch_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN sync_readonly INTEGER DEFAULT 0`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN belong_member_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN group_note TEXT`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitors ADD COLUMN city_source TEXT`) } catch (e) { /* 列已存在 */ }
+  try {
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_competitors_origin
+            ON competitors(user_id, origin_user_id, origin_row_id)
+            WHERE origin_user_id IS NOT NULL`)
+  } catch (e) { /* 索引已存在 */ }
 
   // ===== 竞品季度快照（开关店监测，v1.13.82+）=====
   // competitors 轻量迁移：标记该行所属快照期次与来源快照（NULL=手工/存量基线化前数据）

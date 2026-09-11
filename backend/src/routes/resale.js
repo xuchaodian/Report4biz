@@ -5,6 +5,8 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
+import { getPoolInfo } from '../utils/quotaPool.js'
+import { checkQuota } from '../utils/quotaGate.js'
 
 const router = express.Router()
 
@@ -173,25 +175,10 @@ function maskApiKey(hashed) {
 }
 
 // ===== 单一预算池 =====
-// 用户页分配与 API 开放页共用同一批次上游配额（admin_quota.initial_quota）
-// 池已占用 = Σ(users.quota) + Σ(api_keys.balance，仅真实模式)，池剩余可分配 = 总配额 - 池已占用
-// 注意：测试模式（mock=1）的 key 不调上游、不消耗配额，不计入池占用
-function getPoolInfo(db) {
-  const quotaRecord = db.prepare(`SELECT initial_quota FROM admin_quota WHERE id = 1`).get()
-  const poolTotal = quotaRecord?.initial_quota || 0
-  const allocatedUsers = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()?.total || 0
-  const allocatedApi = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 0`).get()?.total || 0
-  const mockBalance = db.prepare(`SELECT COALESCE(SUM(balance), 0) as total FROM api_keys WHERE COALESCE(mock, 0) = 1`).get()?.total || 0
-  const occupied = allocatedUsers + allocatedApi
-  return {
-    poolTotal,           // 上游总配额（当前批次）
-    allocatedUsers,      // 用户页已分配
-    allocatedApi,        // API 开放页已分配（真实模式余额合计）
-    mockBalance,         // 测试模式余额（不占池）
-    occupied,            // 池已占用
-    available: Math.max(0, poolTotal - occupied)  // 剩余可分配
-  }
-}
+// v0.9 P0：getPoolInfo 已迁至 utils/quotaPool.js（供 quotaGate.js 与本站共用，
+// 规避 resale → quotaGate → resale 的循环依赖）。此处仅沿用 import，
+// 并在文件尾部继续 re-export 以保持既有引用兼容：
+//   routes/users.js:5  →  import { getPoolInfo } from './resale.js'
 
 // ===== 中间件：X-Api-Key 认证 =====
 const requireApiKey = (req, res, next) => {
@@ -654,11 +641,14 @@ router.post('/', requireApiKey, async (req, res) => {
       })
     }
 
-    // 上游真实配额门禁（v1.13.105 A1）：第三方真实调用同样烧同一批联通配额（admin_quota），
-    // 调上游前校验 remaining_quota>=1，不足即拒绝——避免 remaining 恒虚高、超卖内部查询直到上游真实额度耗尽。
+    // 上游真实配额门禁（v1.13.105 A1 → v0.9 P0 收敛为统一闸门）：第三方真实调用同样烧同一批
+    // 联通配额（admin_quota），调上游前校验剩余次数，不足即拒绝——避免 remaining 恒虚高、
+    // 超卖内部查询直到上游真实额度耗尽。
+    // ★ 第三方走 X-Api-Key 认证、**无平台用户身份** → 传 isApiKey:true，只校验物理池，
+    //   不触发「组织成员授权闸门」（成员闸门对它们无意义），行为与改动前逐字一致。
     // 注意：仅真实分支需此门禁；mock（L579-622）/缓存命中（上文）不经上游不消耗，不受影响。
-    const adminQuotaRow = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
-    if ((adminQuotaRow?.remaining_quota || 0) < 1) {
+    const gate = checkQuota(db, null, 1, { isApiKey: true })
+    if (!gate.ok) {
       return res.status(429).json({ code: 429, message: '上游数据配额已耗尽，请联系管理员充值后再试' })
     }
 

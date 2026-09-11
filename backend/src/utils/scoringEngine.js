@@ -2,6 +2,7 @@ import { getDb } from '../models/database.js'
 import { saveToCache, getAuthorization, buildCircleWkt, checkIfDataIsEmpty, initCacheTable } from '../routes/smartsteps.js'
 import { AMAP_KEY } from '../config.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS, DEFAULT_HTTP_TIMEOUT_MS } from './httpTimeout.js'
+import { checkQuota } from './quotaGate.js'
 
 // === 评分引擎配置 ===
 const DEFAULT_WEIGHTS = {
@@ -27,9 +28,10 @@ function getLatestCityMonth() {
 /**
  * 通过联通智慧足迹（1001 人口服务）获取点位人口规模
  * 优先命中缓存（免费），未命中才调上游并扣 1 次配额
+ * @param {Object} [user] 调用者 { id, role }（v0.9 P0：供授权闸门判定组织成员额度）
  * @returns {{ totalPopulation: number, fromCache: boolean, quotaUsed: number } | null} 失败返回 null
  */
-async function queryPointPopulation(db, lng, lat, radiusM) {
+async function queryPointPopulation(db, lng, lat, radiusM, user) {
   const services = ['1001']
   const cityMonth = getLatestCityMonth()
   const servicesStr = '1001'
@@ -54,11 +56,10 @@ async function queryPointPopulation(db, lng, lat, radiusM) {
       }
     }
 
-    // 2. 检查配额
-    const quotaRecord = db.prepare('SELECT remaining_quota FROM admin_quota WHERE id = 1').get()
-    const available = quotaRecord?.remaining_quota || 0
-    if (available < 1) {
-      console.warn('[Scoring] 人口评分跳过：运营商配额不足')
+    // 2. 检查配额（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度）
+    const gate = checkQuota(db, user?.id, 1, { role: user?.role })
+    if (!gate.ok) {
+      console.warn('[Scoring] 人口评分跳过：配额不足', gate.reason)
       return null
     }
 
@@ -116,7 +117,7 @@ export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT
   const isAdmin = (user?.role === 'admin' || userId === 1) ? 1 : 0
 
   // 1. 人口指数
-  const popResult = await queryPointPopulation(db, lng, lat, radius)
+  const popResult = await queryPointPopulation(db, lng, lat, radius, user)
   const popScore = calcPopulationScore(popResult)
   const populationTotal = popResult?.totalPopulation ?? null
 

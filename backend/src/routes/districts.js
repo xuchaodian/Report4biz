@@ -3,6 +3,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getAuthorization } from './smartsteps.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
+import { checkQuota } from '../utils/quotaGate.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
 
@@ -260,11 +261,13 @@ router.post('/refresh', authenticate, async (req, res) => {
       return res.json({ success: true, fromCache: true, quotaUsed: 0, dataMonth: cityMonth, totalPopulation: extractPopulation(JSON.parse(cached.result_data)) })
     }
 
-    // 2. 配额检查（admin_quota，每商圈 1 点）
-    const quota = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
-    const available = quota?.remaining_quota || 0
-    if (available < 1) {
-      return res.status(400).json({ success: false, message: '极目点不足，请联系管理员充值' })
+    // 2. 配额检查（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度；每商圈 1 点）
+    const gate = checkQuota(db, req.user?.id, 1, { role: req.user?.role })
+    if (!gate.ok) {
+      const message = gate.reason === 'own_exhausted'
+        ? `本账号可用「极目点」不足（需要 1 次，当前可用 ${gate.own} 次），请联系集团管理员分配`
+        : '极目点不足，请联系管理员充值'
+      return res.status(400).json({ success: false, message, code: gate.reason })
     }
 
     // 3. 调联通（polygon 直查）
