@@ -26,20 +26,28 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
 
     // 为每个用户计算配额信息
     const usersWithQuota = users.map(user => {
-      // 计算用户已使用的配额（所有用户都计算，包括 admin）
-      const usedResult = db.prepare(`
-        SELECT COALESCE(SUM(quota_used), 0) as used
-        FROM purchases
-        WHERE user_id = ? AND status = 'active'
-      `).get(user.id)
-      const usedQuota = usedResult?.used || 0
+      // 一次查询取三个聚合（避免 N+1 恶化）：
+      //   usedActive  当前消费（仅 active）—— 表格「消费次数」
+      //   usedAll     累计消费（含 inactive）—— 表格「累计使用」
+      //   cumAllocated 累计分配（quota_history 代数和的净购买）—— 表格「累计配额」
+      // 口径与个人中心 GET /purchase/quota（purchase.js:70-88）逐字一致，保证两页对得上
+      const agg = db.prepare(`
+        SELECT
+          COALESCE((SELECT SUM(quota_used) FROM purchases WHERE user_id = ? AND status = 'active'), 0) AS usedActive,
+          COALESCE((SELECT SUM(quota_used) FROM purchases WHERE user_id = ?), 0) AS usedAll,
+          COALESCE((SELECT SUM(change_amount) FROM quota_history WHERE user_id = ?), 0) AS cumAllocated
+      `).get(user.id, user.id, user.id)
+      const usedQuota = agg?.usedActive || 0
+      const cumulativeUsed = agg?.usedAll || 0
+      // 与 purchase.js:88 同口径：Σ 为 0 时回落到 users.quota（老账号无 quota_history 基线记录）
+      const cumulativeTotal = agg?.cumAllocated || (user.quota || 0)
 
       if (user.role === 'admin') {
         // admin 用户不显示剩余配额（由 quotaInfo 统一提供）
-        return { ...user, remainingQuota: null, usedQuota }
+        return { ...user, remainingQuota: null, usedQuota, cumulativeTotal, cumulativeUsed }
       }
       const remainingQuota = Math.max(0, (user.quota || 0) - usedQuota)
-      return { ...user, remainingQuota, usedQuota }
+      return { ...user, remainingQuota, usedQuota, cumulativeTotal, cumulativeUsed }
     })
 
     // 计算已分配的配额总和（不包括管理员）

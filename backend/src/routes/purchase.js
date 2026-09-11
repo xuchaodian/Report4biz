@@ -97,7 +97,7 @@ router.get('/quota', authenticate, (req, res) => {
       cumulativeTotal,  // 累计分配（净购买：购买+，退款-）
       used: usedResult?.used || 0,  // 当前已使用（active）
       cumulativeUsed: cumUsedResult?.used || 0,  // 累计已使用（含软删除）
-      available: (user.quota || 0) - (usedResult?.used || 0),  // 用户剩余次数（仅展示用）
+      available: Math.max(0, (user.quota || 0) - (usedResult?.used || 0)),  // 用户剩余次数（仅展示用；与管理端 users.js:41 同口径加下限，防 quota 被下调后显示负数）
       initialQuota,  // 初始总配额
       remainingQuota  // 运营商当前剩余配额
     })

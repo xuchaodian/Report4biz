@@ -93,6 +93,26 @@
             <el-tag type="info">{{ row.remainingQuota ?? 0 }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="cumulativeTotal" label="累计配额" width="100" align="center">
+          <template #header>
+            <el-tooltip content="该账号累计被分配的配额（净购买：分配 +，退款 −），与个人中心「累计配额」同口径" placement="top">
+              <span class="th-help">累计配额</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <el-tag effect="plain">{{ row.cumulativeTotal ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="cumulativeUsed" label="累计使用" width="100" align="center">
+          <template #header>
+            <el-tooltip content="该账号累计消耗的次数（含已删除的历史记录），与个人中心「累计使用」同口径" placement="top">
+              <span class="th-help">累计使用</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <el-tag type="warning" effect="plain">{{ row.cumulativeUsed ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="110">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
@@ -927,6 +947,12 @@ onMounted(() => {
   font-size: 12px !important;
   padding: 0 2px !important;
   height: auto !important;
+}
+
+/* ===== 表头可悬停提示（v1.13.116：累计配额/累计使用）===== */
+.th-help {
+  cursor: help;
+  border-bottom: 1px dashed currentColor;
 }
 
 .purchase-summary {
