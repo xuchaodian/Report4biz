@@ -89,9 +89,22 @@
         <el-table-column label="管辖范围" min-width="150">
           <template #default="{ row }">
             <el-tooltip v-if="row.scope" :content="row.scope.cities.join('、')" placement="top">
-              <el-tag size="small" type="success" effect="plain">{{ row.scopeCities }} 个城市</el-tag>
+              <el-tag
+                size="small"
+                type="success"
+                effect="plain"
+                class="scope-link"
+                @click="openScope(row)"
+              >{{ row.scopeCities }} 个城市</el-tag>
             </el-tooltip>
-            <el-tag v-else size="small" type="info" effect="plain">未设置</el-tag>
+            <el-tag
+              v-else
+              size="small"
+              type="info"
+              effect="plain"
+              class="scope-link"
+              @click="openScope(row)"
+            >未设置</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="知情确认" width="110" align="center">
@@ -111,11 +124,7 @@
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right" align="center">
           <template #default="{ row }">
-            <el-tooltip content="管辖范围设置随下一批次（ScopeEditor）上线" placement="top">
-              <span>
-                <el-button size="small" text disabled>设置范围</el-button>
-              </span>
-            </el-tooltip>
+            <el-button size="small" text type="primary" @click="openScope(row)">设置范围</el-button>
             <el-button size="small" text type="danger" @click="openUnbind(row)">解绑</el-button>
           </template>
         </el-table-column>
@@ -264,6 +273,14 @@
         >确认解散</el-button>
       </template>
     </el-dialog>
+
+    <!-- 管辖范围设置（批次 C · v0.10）：城市互斥在抽屉内实时预检 + 后端 409 兜底 -->
+    <ScopeEditor
+      v-model="scopeVisible"
+      :org-id="activeOrgId"
+      :member="scopeTarget"
+      @saved="loadOrgs"
+    />
   </div>
 </template>
 
@@ -271,6 +288,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
+import ScopeEditor from './ScopeEditor.vue'
 
 const orgs = ref([])
 const activeOrgId = ref(null)
@@ -284,6 +302,9 @@ const createVisible = ref(false)
 const addVisible = ref(false)
 const unbindVisible = ref(false)
 const dissolveVisible = ref(false)
+// 管辖范围抽屉（批次 C · v0.10）
+const scopeVisible = ref(false)
+const scopeTarget = ref(null)
 const impactLoading = ref(false)
 
 const createForm = ref({ name: '', ownerUserId: null })
@@ -422,6 +443,16 @@ async function toggleField(row, field, value) {
   } finally {
     toggling.value = null
   }
+}
+
+/** 打开管辖范围抽屉（批次 C）：把行数据降成抽屉需要的最小结构 */
+function openScope(row) {
+  scopeTarget.value = {
+    userId: row.userId,
+    username: row.username,
+    company: row.company
+  }
+  scopeVisible.value = true
 }
 
 async function openUnbind(row) {
@@ -601,6 +632,10 @@ defineExpose({ reload: loadOrgs })
 
 .mono {
   font-variant-numeric: tabular-nums;
+}
+
+.scope-link {
+  cursor: pointer;
 }
 
 .form-tip {

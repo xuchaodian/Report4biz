@@ -1,10 +1,11 @@
 // ============================================================================
-// 集团 / 子公司组织管理（v0.9 P0 批次 B）
-// 设计方案 §6「组织管理 + 我的组织」8 个接口 · 规则总表 §8
+// 集团 / 子公司组织管理（v0.9 P0 批次 B → v0.10 批次 C 追加管辖范围）
+// 设计方案 §6「组织管理 + 我的组织 + 管辖范围」接口 · 规则总表 §8
 // ----------------------------------------------------------------------------
-// 本批**只做组织与人**：建集团、绑成员、改开关、解绑、我的组织、成员知情确认。
-// 不涉及：管辖范围 scope 编辑（批次 C）、同步引擎（批次 D）、配额分配（P1.5）。
-// 因此这里**不写任何配额增减**，成员的 users.quota 在本文件中恒为只读展示。
+// 批次 B：组织与人（建集团、绑成员、改开关、解绑、我的组织、成员知情确认）。
+// 批次 C（v0.10）：**管辖范围 scope 增设/读取 + 城市互斥校验**（本文件末 3 个接口）。
+// 仍不含：同步引擎（批次 D）、划拨向导（P2）、配额分配（P1.5）。
+// 本文件**不写任何配额增减**，成员的 users.quota 在本文件中恒为只读展示。
 //
 // ★ 关键设计：集团总部账号（organizations.owner_user_id）**不写入 org_members**。
 //   理由：org_members 是「授权闸门」的启用开关（utils/quotaPool.js::isOrgMember，规则 20）。
@@ -24,11 +25,33 @@
 //   语义：requireOrgOwner（本组织 owner 或平台 admin）+「成员数必须为 0」硬门槛
 //         + ?dryRun=1 先算影响面 + dissolved_at/dissolved_by/dissolve_reason 审计留痕。
 //   详见本文件末 DELETE /:id 路由上方注释。
+//
+// ★ v0.10 批次 C：新增第 10~12 个接口（管辖范围）
+//   GET    /api/orgs/:id/members/:userId/scope   读（集团 / 该成员本人可读）
+//   PATCH  /api/orgs/:id/members/:userId/scope   集团设定 { cities[], brands[] }
+//   GET    /api/orgs/:id/scope-conflicts         组织内城市占用表（UI 预检）
+//   配套：utils/scopeGuard.js（城市互斥，纯函数、无 import，可在生产直接自检）
+//         GET /api/sync/scope-options 在 routes/sync.js（批次 D 的同名文件）
+//   铁律：
+//     · 规则 11 —— 范围**只到城市级**，不细分区县
+//     · 规则 12 —— 保存时**配置期互斥**：城市被本组织其他成员占用 → 409 + 占用方
+//                  运行时不再打认领锁（D6 推论：写权唯一由配置期保证）
+//     · 规则 14 —— scope_json **每次变更写一条 direction='scope_change' 批次**（审计留痕）
+//     · 本接口**不改 users.quota、不动台账**（规则 21 / 17）
+//   ?force=1 出口：仅用于「同城已被两家占用」的历史脏数据解套（否则双方都改不动），
+//                  执行后会写 console.warn 审计并在响应里回传 forcedConflicts。
 // ============================================================================
 
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
+import {
+  findScopeConflicts,
+  describeOccupancy,
+  parseCityList,
+  parseBrandList,
+  normalizeCity
+} from '../utils/scopeGuard.js'
 
 const router = express.Router()
 
@@ -157,6 +180,38 @@ function requireOrgOwner(req, res, next) {
   } catch (error) {
     console.error('组织权限校验失败:', error)
     res.status(500).json({ message: '组织权限校验失败' })
+  }
+}
+
+/**
+ * requireOrgOwnerOrSelf —— 在 requireOrgOwner 基础上额外放行「该成员本人」。
+ * 用途：管辖范围**读取**（§6「集团/本人可读」）。写入一律走 requireOrgOwner。
+ */
+function requireOrgOwnerOrSelf(req, res, next) {
+  try {
+    const db = getDb()
+    const orgId = toId(req.params.id)
+    if (!orgId) return res.status(400).json({ message: '集团 id 无效' })
+
+    const org = findOrg(db, orgId)
+    if (!org) return res.status(404).json({ message: '集团不存在' })
+
+    const userId = toId(req.params.userId)
+    const isPlatformAdmin = req.user?.role === 'admin'
+    const isOwner = org.owner_user_id === req.user?.id
+    const isSelf = !!userId && userId === req.user?.id
+    if (!isPlatformAdmin && !isOwner && !isSelf) {
+      console.warn(
+        `[orgs] 组织边界拒绝(scope读) user=${req.user?.id} org=${orgId} `
+        + `${req.method} ${req.originalUrl} ip=${req.ip}`
+      )
+      return res.status(403).json({ message: '无权限查看该成员管辖范围' })
+    }
+    req.org = org
+    next()
+  } catch (error) {
+    console.error('管辖范围权限校验失败:', error)
+    res.status(500).json({ message: '管辖范围权限校验失败' })
   }
 }
 
@@ -434,6 +489,233 @@ router.patch('/:id/members/:userId', authenticate, requireOrgOwner, (req, res) =
   } catch (error) {
     console.error('修改成员开关失败:', error)
     res.status(500).json({ message: '修改成员开关失败' })
+  }
+})
+
+// ===========================================================================
+// 管辖范围（scope）—— 批次 C · v0.10
+// 规则 11（只到城市级）/ 规则 12（配置期互斥）/ 规则 14（变更留痕）
+// ===========================================================================
+
+/** 城市入参清洗：去空白 → 长度限制 → 按归一化键去重（保留首次出现的原样写法） */
+function cleanCityList(arr) {
+  const out = []
+  const seen = new Set()
+  for (const raw of (Array.isArray(arr) ? arr : [])) {
+    const s = String(raw ?? '').trim()
+    if (!s || s.length > 30) continue
+    const key = normalizeCity(s)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(s)
+  }
+  return out
+}
+
+/** 品牌入参清洗（品牌留空 = 不限；不做大小写/后缀归一，保持用户原样） */
+function cleanBrandList(arr) {
+  const out = []
+  const seen = new Set()
+  for (const raw of (Array.isArray(arr) ? arr : [])) {
+    const s = String(raw ?? '').trim()
+    if (!s || s.length > 40 || seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+  }
+  return out
+}
+
+/** scope_json → 前端结构；**null 表示「未设置」**（与设置为空数组区分，见 §D5） */
+function serializeScope(m) {
+  if (!m || !m.scope_json) return null
+  return { cities: parseCityList(m.scope_json), brands: parseBrandList(m.scope_json) }
+}
+
+/**
+ * 规则 14：scope_json 每次变更写一条 direction='scope_change' 批次。
+ * 划拨（transfer）也走这张表，两者同为「范围类变更」的审计依据。
+ */
+function recordScopeChange(db, { orgId, actorId, targetUserId, before, after, ip }) {
+  const r = db.prepare(`
+    INSERT INTO sync_batches
+      (org_id, direction, source_user_id, target_user_id, scope, total,
+       inserted, updated, deleted, skipped, failed, status, detail, created_by, ip, finished_at)
+    VALUES (?, 'scope_change', ?, ?, ?, ?, 0, 0, 0, 0, 0, 'success', ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    orgId, actorId, targetUserId,
+    after.cities.join(','), after.cities.length,
+    JSON.stringify({ before, after }), actorId, ip || null
+  )
+  return r.lastInsertRowid
+}
+
+/**
+ * GET /api/orgs/:id/members/:userId/scope
+ * 读某成员的管辖范围（§6：集团 / 本人可读）。
+ * 同时回传 conflicts —— 当前范围里**已被本组织其他成员占用**的城市，
+ * 这是唯一能让「历史脏数据」在 UI 上暴露的出口。
+ */
+router.get('/:id/members/:userId/scope', authenticate, requireOrgOwnerOrSelf, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const userId = toId(req.params.userId)
+    if (!userId) return res.status(400).json({ message: '账号 id 无效' })
+
+    const m = findMember(db, org.id, userId)
+    if (!m) return res.status(404).json({ message: '该账号不在本集团中' })
+
+    const scope = serializeScope(m)
+    const set = !!m.scope_json
+    const cities = scope ? scope.cities : []
+    const u = db.prepare(`SELECT username, company FROM users WHERE id = ?`).get(userId) || {}
+
+    res.json({
+      ok: true,
+      orgId: org.id,
+      userId,
+      username: u.username || `(已删除 #${userId})`,
+      company: u.company || null,
+      scope,
+      set,
+      scopeCities: cities.length,
+      scopeUpdatedAt: m.scope_updated_at || null,
+      conflicts: findScopeConflicts(db, org.id, userId, cities)
+    })
+  } catch (error) {
+    console.error('读取管辖范围失败:', error)
+    res.status(500).json({ message: '读取管辖范围失败' })
+  }
+})
+
+/**
+ * PATCH /api/orgs/:id/members/:userId/scope —— 集团设定管辖范围（§7.5）
+ * body { cities?, brands? }（未提供的维度保持原值）
+ *
+ * 四道校验：
+ *   ① 权限 requireOrgOwner（成员本人**不可**改自己的范围 —— D5「集团设定、子公司只读」）
+ *   ② 入参清洗：去空白、限长、按归一化键去重
+ *   ③ ★ 规则 12 配置期互斥：城市被本组织其他成员占用 → 409 + 占用方
+ *      （这是「写权唯一」的保证，运行时因此无需再打认领锁）
+ *   ④ 规则 14：写 direction='scope_change' 审计批次
+ *
+ * ?force=1：仅用于**历史脏数据解套** —— 若同城已被两家占用，双方都会被对方卡住而
+ *   永远改不动任何一方。此时允许显式强制保存，但会 console.warn 留痕并在响应回传
+ *   forcedConflicts。正常流程不应使用。
+ */
+router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const userId = toId(req.params.userId)
+    if (!userId) return res.status(400).json({ message: '账号 id 无效' })
+
+    const m = findMember(db, org.id, userId)
+    if (!m) return res.status(404).json({ message: '该账号不在本集团中' })
+
+    const has = (k) => Object.prototype.hasOwnProperty.call(req.body || {}, k)
+    if (!has('cities') && !has('brands')) {
+      return res.status(400).json({ message: '没有需要修改的管辖范围' })
+    }
+    if (has('cities') && req.body.cities !== null && !Array.isArray(req.body.cities)) {
+      return res.status(400).json({ message: 'cities 必须是数组' })
+    }
+    if (has('brands') && req.body.brands !== null && !Array.isArray(req.body.brands)) {
+      return res.status(400).json({ message: 'brands 必须是数组' })
+    }
+
+    const before = {
+      cities: parseCityList(m.scope_json),
+      brands: parseBrandList(m.scope_json)
+    }
+    const cities = has('cities') ? cleanCityList(req.body.cities) : before.cities
+    const brands = has('brands') ? cleanBrandList(req.body.brands) : before.brands
+    const after = { cities, brands }
+
+    // ③ 配置期互斥（规则 12）
+    const conflicts = findScopeConflicts(db, org.id, userId, cities)
+    const force = req.query?.force === '1' || req.query?.force === 'true'
+    if (conflicts.length && !force) {
+      const c = conflicts[0]
+      const holder = c.company || c.username || `#${c.userId}`
+      return res.status(409).json({
+        code: 'city_conflict',
+        message: `城市「${c.city}」当前归属「${holder}」，请先走划拨流程或改选其他城市`,
+        conflicts
+      })
+    }
+
+    let batchId = null
+    db.beginTx()
+    try {
+      db.prepare(`
+        UPDATE org_members
+           SET scope_json = ?, scope_updated_at = CURRENT_TIMESTAMP
+         WHERE org_id = ? AND user_id = ?
+      `).run(JSON.stringify(after), org.id, userId)
+
+      // ④ 规则 14 变更留痕
+      batchId = recordScopeChange(db, {
+        orgId: org.id,
+        actorId: req.user?.id,
+        targetUserId: userId,
+        before,
+        after,
+        ip: req.ip
+      })
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
+
+    if (conflicts.length) {
+      console.warn(
+        `[orgs] 管辖范围强制保存(force) org=${org.id} member=${userId} by=${req.user?.id} `
+        + `conflicts=${JSON.stringify(conflicts.map(c => c.city))} ip=${req.ip}`
+      )
+    }
+
+    const after_m = findMember(db, org.id, userId)
+    res.json({
+      ok: true,
+      orgId: org.id,
+      userId,
+      scope: after,
+      set: true,
+      scopeCities: cities.length,
+      scopeUpdatedAt: after_m?.scope_updated_at || null,
+      changed: JSON.stringify(before) !== JSON.stringify(after),
+      conflicts: [],
+      forcedConflicts: conflicts,
+      forced: force && conflicts.length > 0,
+      batchId
+    })
+  } catch (error) {
+    console.error('保存管辖范围失败:', error)
+    res.status(500).json({ message: '保存管辖范围失败' })
+  }
+})
+
+/**
+ * GET /api/orgs/:id/scope-conflicts —— 组织内城市占用表（§7.5 UI 预检）
+ * 返回 cities（城市 → 占用方）+ members（人 → 持有哪些城市）。
+ * 只读，不涉及任何写入。
+ */
+router.get('/:id/scope-conflicts', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const occupancy = describeOccupancy(db, org.id)
+    res.json({
+      ok: true,
+      orgId: org.id,
+      ownerUserId: org.owner_user_id,
+      ...occupancy
+    })
+  } catch (error) {
+    console.error('获取城市占用表失败:', error)
+    res.status(500).json({ message: '获取城市占用表失败' })
   }
 })
 

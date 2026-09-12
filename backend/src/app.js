@@ -36,6 +36,7 @@ import districtsRoutes from './routes/districts.js'
 import storeScoresRoutes from './routes/store-scores.js'
 import templateRoutes from './routes/template.js'
 import orgsRoutes from './routes/orgs.js'
+import syncRoutes from './routes/sync.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -127,7 +128,10 @@ async function start() {
     app.use('/api/store-scores', storeScoresRoutes)
     app.use('/api/template', templateRoutes)
     // 集团/子公司组织管理（v0.9 P0-B）：建集团、绑成员、我的组织（不含 quota 增减）
+    // v0.10 批次 C：+ 管辖范围读写 + 城市互斥校验（scopeGuard）
     app.use('/api/orgs', orgsRoutes)
+    // 数据同步（v0.10 批次 C 起：scope-options；批次 D 补 candidates/preview/commit/history）
+    app.use('/api/sync', syncRoutes)
 
     // 健康检查
     app.get('/api/health', (req, res) => {
