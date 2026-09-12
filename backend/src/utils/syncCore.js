@@ -1,8 +1,12 @@
 // ============================================================================
-// 同步内核 syncCore（批次 D · 设计方案 v0.10 §4 / §6 / §8）
+// 同步内核 syncCore（批次 D · 设计方案 v0.10 §4 / §6 / §8；批次 E 扩到 competitors）
 // ----------------------------------------------------------------------------
-// 只服务一个对象：`markers`（§11 实施建议 —— 先把单对象全链路跑通，
-// 确认无误后再横向复用到 competitors / purchases；三者共用本内核）。
+// 服务对象（`SYNC_KINDS`）：
+//   · `markers`     我的门店   （批次 D 跑通全链路）
+//   · `competitors` 竞品门店   （批次 E 横向复用 —— §11 实施建议：
+//                    「先把单对象全链路跑通，确认无误后再横向复用」）
+//   按表名泛化：内核只把 `kind` 当作**表名**使用，字段由 PRAGMA 内省得出
+//   ⇒ 新增对象只需加进 SYNC_KINDS，无需改本文件的同步逻辑。
 //
 // ★ 本模块「零业务 import」：只从 scopeGuard 取纯函数（其自身零 import）。
 //   目的与 quotaGate/scopeGuard 相同 —— 可在生产直接 `import()` 做自检，
@@ -11,7 +15,7 @@
 //
 // 实现的规则（§8 规则总表）：
 //   规则 1  组织边界：调用方（routes/sync.js）负责，本模块只认 source/target 两个 userId
-//   规则 2  幂等：靠唯一索引 ux_markers_origin(user_id, origin_user_id, origin_row_id)
+//   规则 2  幂等：靠唯一索引 ux_<table>_origin(user_id, origin_user_id, origin_row_id)
 //   规则 3  防回环：跳过 origin_user_id === 目标账号 的源行（否则 A→B→A 无限膨胀）
 //   规则 4  写权唯一：目标侧镜像行 sync_readonly=1，只由本内核改写
 //   规则 6  删除传播：源侧行消失 → 目标侧镜像列为 deleted，**必须走预览确认**
@@ -21,15 +25,39 @@
 //   规则 13 城市兜底：city 为空的行不参与范围圈定（只能靠 belong 显式归属）
 //   规则 15 原子性：commit 的全部写入在**单事务**内，任一步失败整体回滚
 //
-// ⚠️ 本批**不迁移 store_sales**：同步是「复制行」，不是「划拨」。
-//   划拨（P2 / 批次 E）才需要在同一事务里改 store_sales.user_id（规则 15）。
+// ⚠️ 本内核**不迁移 store_sales**：同步是「复制行」，不是「划拨」。
+//   划拨才需要在同一事务里改 store_sales.user_id（规则 15）。
 //   因此镜像门店在目标账号下**没有销售历史** —— 这是刻意的边界，
 //   不要为了「看起来完整」而顺手复制 store_sales（会让同一份历史被两个账号各持一份）。
 // ============================================================================
 
 import { normalizeCity, parseCityList, parseBrandList } from './scopeGuard.js'
 
-export const SYNC_KINDS = ['markers']
+/** 可同步对象 = 目标表名白名单（顺序即 UI 展示顺序） */
+export const SYNC_KINDS = ['markers', 'competitors']
+
+/**
+ * 对象元数据（前端展示用；`GET /api/sync/scope-options` 会回传给 UI）。
+ * 新增对象时这里与 SYNC_KINDS 一起加。
+ */
+export const KIND_META = {
+  markers: { label: '我的门店', short: '门店', field: 'markers', table: 'markers' },
+  competitors: { label: '竞品门店', short: '竞品', field: 'competitors', table: 'competitors' }
+}
+
+/** kind → 中文标签（未知 kind 原样返回，便于排查） */
+export function kindLabel(kind) {
+  return KIND_META[kind]?.label || String(kind || '')
+}
+
+/** 规范化调用方传来的 kinds（去非法值；空 → 默认第一个对象，保持批次 D 的旧行为） */
+export function normalizeKinds(input) {
+  const arr = Array.isArray(input)
+    ? input.map(s => String(s).trim())
+    : String(input || '').split(',').map(s => s.trim())
+  const valid = arr.filter(k => SYNC_KINDS.includes(k))
+  return valid.length ? [...new Set(valid)] : [SYNC_KINDS[0]]
+}
 
 export const DIRECTIONS = {
   GROUP_TO_MEMBER: 'group_to_member',   // 集团下发（源=集团账号，目标=成员）
@@ -52,6 +80,9 @@ const BLACKLIST = new Set([
   // 来源与归属（目标侧自己维护，绝不由源侧覆盖）
   'origin_user_id', 'origin_row_id', 'origin_owner', 'sync_batch_id',
   'sync_readonly', 'belong_member_user_id', 'group_note',
+  // 城市兜底来源（「本行 city 是怎么来的」属**本地派生信息**，不是业务字段 ——
+  //  源侧写着 geocoded 不代表镜像这一份也是反查来的）
+  'city_source',
   // 竞品期次隔离（规则 8）
   'period', 'snapshot_id'
 ])
@@ -179,7 +210,14 @@ export function checkMemberSwitch(member, direction) {
 // 5. 候选 / 计划
 // ---------------------------------------------------------------------------
 
-const KEY_ATTRS = ['name', 'store_code', 'brand', 'city', 'district', 'address', 'store_status', 'area']
+/**
+ * 预览/候选列表要回传给前端的展示字段（**只挑两边都常见的**，缺失的自动跳过）。
+ * 多出来的字段不会进 SQL —— 它只影响 UI 表格列。
+ */
+const KEY_ATTRS = [
+  'name', 'store_code', 'brand', 'city', 'district', 'address',
+  'store_type', 'store_status', 'status', 'area', 'trading_area'
+]
 
 function pickAttrs(row) {
   const out = {}
@@ -300,6 +338,60 @@ export function buildPlan(db, opts) {
 }
 
 /**
+ * 多对象计划（批次 E）：对每个 kind 各跑一次 `buildPlan` 后**合并**。
+ *
+ * 为什么需要它：UI 的「数据范围」是复选框（`[✓]我的门店 [✓]竞品门店`），
+ * 用户在**一次**预览/确认里跨对象同步 ⇒ 内核必须能表达「一个批次 = 多个对象」。
+ * 每个 item 自带 `kind`，`applyPlan` 据此取各自表的字段与 INSERT 语句。
+ *
+ * ★ 为什么不把 kinds 塞进 buildPlan 内部、循环写进同一份 items：
+ *   单对象路径（批次 D 已验证）保持**逐字不变**，回归风险最小 ——
+ *   `buildPlan` 仍是唯一真源，本函数只做编排与合并。
+ *
+ * @returns 与 buildPlan 同构，另加：
+ *   kinds         string[]                 实际参与的对象
+ *   fieldsByKind  { [kind]: string[] }     各对象的可同步字段
+ *   counts.byKind { [kind]: counts }       各对象的计数明细
+ */
+export function buildPlanForKinds(db, opts) {
+  const kinds = normalizeKinds(opts?.kinds ?? opts?.kind)
+  const { direction, sourceUserId, targetUserId, scopeJson = null, belongUserId = null, keyword = '', targetLabel = '' } = opts || {}
+
+  const parts = kinds.map(kind => buildPlan(db, {
+    kind, direction, sourceUserId, targetUserId, scopeJson, belongUserId, keyword, targetLabel
+  }))
+
+  const fieldsByKind = {}
+  const byKind = {}
+  const items = { added: [], updated: [], deleted: [], skipped: [] }
+  const counts = {
+    added: 0, updated: 0, deleted: 0, skipped: 0,
+    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0, byKind
+  }
+
+  for (const p of parts) {
+    fieldsByKind[p.kind] = p.fields
+    byKind[p.kind] = p.counts
+    for (const bucket of ['added', 'updated', 'deleted', 'skipped']) items[bucket].push(...p.items[bucket])
+    for (const k of ['added', 'updated', 'deleted', 'skipped', 'outOfScope', 'outOfFilter', 'selfOrigin', 'noChange', 'total']) {
+      counts[k] += p.counts[k] || 0
+    }
+  }
+
+  return {
+    kind: kinds[0],           // 向下兼容：单对象读者仍可用
+    kinds,
+    direction,
+    sourceUserId,
+    targetUserId,
+    fields: fieldsByKind[kinds[0]] || [],
+    fieldsByKind,
+    items,
+    counts
+  }
+}
+
+/**
  * 候选列表（UI「本次筛选 → 候选 N 家」）。
  * 与 buildPlan 同源判定，避免「候选数」和「预览数」对不上。
  */
@@ -331,6 +423,7 @@ export function listCandidates(db, opts) {
     `).get(targetUserId, sourceUserId, row.id)
 
     inScope.push({
+      kind,                       // 多对象批次下前端据此标注「门店 / 竞品」
       rowId: row.id,
       mirrorRowId: mirror ? mirror.id : null,
       mirrorState: mirror ? 'synced' : 'new',
@@ -339,6 +432,36 @@ export function listCandidates(db, opts) {
   }
 
   return { kind, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin }
+}
+
+/**
+ * 多对象候选（批次 E）—— 与 `buildPlanForKinds` 对称，供 UI 的「候选 N 家」使用。
+ * 每个候选项带 `kind`，计数按对象拆开（byKind）便于前端分行展示。
+ */
+export function listCandidatesForKinds(db, opts) {
+  const kinds = normalizeKinds(opts?.kinds ?? opts?.kind)
+  const base = {
+    sourceUserId: opts?.sourceUserId,
+    targetUserId: opts?.targetUserId,
+    scopeJson: opts?.scopeJson ?? null,
+    belongUserId: opts?.belongUserId ?? null,
+    keyword: opts?.keyword || ''
+  }
+  const parts = kinds.map(kind => listCandidates(db, { kind, ...base }))
+
+  const out = { kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, byKind: {} }
+  for (const p of parts) {
+    out.byKind[p.kind] = {
+      total: p.total, inScope: p.inScope.length,
+      outOfScope: p.outOfScope, outOfFilter: p.outOfFilter, selfOrigin: p.selfOrigin
+    }
+    out.total += p.total
+    out.inScope.push(...p.inScope)
+    out.outOfScope += p.outOfScope
+    out.outOfFilter += p.outOfFilter
+    out.selfOrigin += p.selfOrigin
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -353,74 +476,94 @@ function mirrorMeta({ batchId, sourceUserId, sourceLabel }) {
 /**
  * 把计划写入目标账号（**单事务**）。
  *
+ * ★ 支持多对象（批次 E）：每个 item 自带 `kind`，据此取**该表**的
+ *   `fieldsByKind[kind]` 与 INSERT/UPDATE 语句。单对象计划（批次 D 路径）
+ *   没有 `fieldsByKind` 时回落到 `plan.fields`，行为逐字不变。
+ *
  * ★ 提交时**重新读源行**，不用预览时快照下来的值：
  *   预览到确认之间源侧可能被改过，重新读才不会写入过期数据。
  *   源行在此期间被删 → 计入 failed（不是静默跳过），让用户看得见。
  *
- * @param plan      buildPlan 的返回值
+ * @param plan      buildPlan / buildPlanForKinds 的返回值
  * @param excluded  string[]  用户在预览里取消勾选的 item.key
  * @returns {{inserted,updated,deleted,skipped,failed,status,detail}}
  */
 export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }) {
   const ex = new Set(excluded || [])
-  const { kind, sourceUserId, targetUserId, fields } = plan
+  const { kind, sourceUserId, targetUserId } = plan
 
   const result = { inserted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0, detail: [] }
   const push = (row) => { if (result.detail.length < DETAIL_SAMPLE_LIMIT) result.detail.push(row) }
 
-  const insertCols = [...fields, 'origin_user_id', 'origin_row_id', 'origin_owner', 'sync_batch_id', 'sync_readonly', 'user_id']
-  const insertSql = `INSERT INTO ${kind} (${insertCols.join(',')}) VALUES (${insertCols.map(() => '?').join(',')})`
+  // ---- 按对象缓存字段与 INSERT 语句（多对象批次下每张表各一份）----
+  const fieldsFor = (k) => (plan.fieldsByKind && plan.fieldsByKind[k]) || plan.fields || []
+  const insertCache = new Map()
+  const insertSqlFor = (k) => {
+    if (!insertCache.has(k)) {
+      const f = fieldsFor(k)
+      const cols = [...f, 'origin_user_id', 'origin_row_id', 'origin_owner', 'sync_batch_id', 'sync_readonly', 'user_id']
+      insertCache.set(k, { cols, sql: `INSERT INTO ${k} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})` })
+    }
+    return insertCache.get(k)
+  }
+  const kindOf = (it) => it.kind || kind
 
   db.beginTx()
   try {
     for (const it of plan.items.added) {
-      if (ex.has(it.key)) { result.skipped++; push({ kind, action: 'skip', rowId: it.rowId, reason: 'user_excluded' }); continue }
-      const src = db.prepare(`SELECT * FROM ${kind} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
-      if (!src) { result.failed++; push({ kind, action: 'insert', rowId: it.rowId, reason: 'source_gone' }); continue }
+      const k = kindOf(it)
+      if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', rowId: it.rowId, reason: 'user_excluded' }); continue }
+      const src = db.prepare(`SELECT * FROM ${k} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
+      if (!src) { result.failed++; push({ kind: k, action: 'insert', rowId: it.rowId, reason: 'source_gone' }); continue }
 
+      const fields = fieldsFor(k)
+      const { sql } = insertSqlFor(k)
       const meta = mirrorMeta({ batchId, sourceUserId, sourceLabel })
       const vals = fields.map(f => src[f] ?? null).concat([
         meta.origin_user_id, src.id, meta.origin_owner, meta.sync_batch_id, meta.sync_readonly, targetUserId
       ])
-      const r = db.prepare(insertSql).run(...vals)
+      const r = db.prepare(sql).run(...vals)
       result.inserted++
-      push({ kind, action: 'insert', rowId: src.id, mirrorRowId: r.lastInsertRowid, name: src.name })
+      push({ kind: k, action: 'insert', rowId: src.id, mirrorRowId: r.lastInsertRowid, name: src.name })
     }
 
     for (const it of plan.items.updated) {
-      if (ex.has(it.key)) { result.skipped++; push({ kind, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
-      const src = db.prepare(`SELECT * FROM ${kind} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
-      if (!src) { result.failed++; push({ kind, action: 'update', mirrorRowId: it.mirrorRowId, reason: 'source_gone' }); continue }
+      const k = kindOf(it)
+      if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
+      const src = db.prepare(`SELECT * FROM ${k} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
+      if (!src) { result.failed++; push({ kind: k, action: 'update', mirrorRowId: it.mirrorRowId, reason: 'source_gone' }); continue }
 
+      const fields = fieldsFor(k)
       const sets = fields.map(f => `${f} = ?`).join(', ')
       const vals = fields.map(f => src[f] ?? null).concat([batchId, it.mirrorRowId, targetUserId])
       const r = db.prepare(`
-        UPDATE ${kind} SET ${sets}, sync_batch_id = ?, updated_at = datetime('now')
+        UPDATE ${k} SET ${sets}, sync_batch_id = ?, updated_at = datetime('now')
          WHERE id = ? AND user_id = ? AND sync_readonly = 1
       `).run(...vals)
 
       if (!r || r.changes === 0) {
         result.failed++
-        push({ kind, action: 'update', mirrorRowId: it.mirrorRowId, reason: 'mirror_locked_or_missing' })
+        push({ kind: k, action: 'update', mirrorRowId: it.mirrorRowId, reason: 'mirror_locked_or_missing' })
       } else {
         result.updated++
-        push({ kind, action: 'update', mirrorRowId: it.mirrorRowId, rowId: src.id, changes: it.changes })
+        push({ kind: k, action: 'update', mirrorRowId: it.mirrorRowId, rowId: src.id, changes: it.changes })
       }
     }
 
     for (const it of plan.items.deleted) {
-      if (ex.has(it.key)) { result.skipped++; push({ kind, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
+      const k = kindOf(it)
+      if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
       // 再确认一次：只删「仍是本批次来源的只读镜像」，绝不误删用户已脱离同步的自有行
       const r = db.prepare(`
-        DELETE FROM ${kind}
+        DELETE FROM ${k}
          WHERE id = ? AND user_id = ? AND origin_user_id = ? AND sync_readonly = 1
       `).run(it.mirrorRowId, targetUserId, sourceUserId)
       if (!r || r.changes === 0) {
         result.failed++
-        push({ kind, action: 'delete', mirrorRowId: it.mirrorRowId, reason: 'mirror_locked_or_missing' })
+        push({ kind: k, action: 'delete', mirrorRowId: it.mirrorRowId, reason: 'mirror_locked_or_missing' })
       } else {
         result.deleted++
-        push({ kind, action: 'delete', mirrorRowId: it.mirrorRowId, name: it.name })
+        push({ kind: k, action: 'delete', mirrorRowId: it.mirrorRowId, name: it.name })
       }
     }
 

@@ -695,3 +695,204 @@ describe('⑤ 只读锁与城市兜底（markers 路由）', () => {
     expect(r.body.direction).toBe('member_to_group')
   })
 })
+
+// ===========================================================================
+// 批次 E：competitors 多对象 + 配额一级分配
+// ===========================================================================
+
+describe('⑦ competitors + 多类型单批次（批次 E）', () => {
+  const cpIds = {}
+  beforeAll(() => {
+    const db = getDb()
+    // 清掉 subA 名下可能存在的竞品镜像，保证断言可确定
+    db.prepare(`DELETE FROM competitors WHERE user_id = ? AND origin_user_id IS NOT NULL`).run(ids.subA)
+    const cp = (name, city, period = '2026Q3') => db.prepare(
+      `INSERT INTO competitors (name, city, brand, latitude, longitude, user_id, period, snapshot_id)
+       VALUES (?, ?, '老乡鸡', ?, ?, ?, ?, 99)`
+    ).run(name, city, CD.lat, CD.lng, ids.hq, period).lastInsertRowid
+    cpIds.c1 = cp('集团竞品成都1', '成都市')
+    cpIds.c2 = cp('集团竞品成都2', '成都')
+    cpIds.c3 = cp('集团竞品上海1', '上海市')
+  })
+
+  it('syncableFields(competitors)：排除 period/snapshot_id（规则 8 期次隔离）', () => {
+    const f = core.syncableFields(getDb(), 'competitors')
+    expect(f).toContain('name')
+    expect(f).toContain('city')
+    expect(f).not.toContain('period')
+    expect(f).not.toContain('snapshot_id')
+    expect(f).not.toContain('origin_user_id')
+  })
+
+  it('buildPlan(kind=competitors)：范围圈定 + 越界丢弃与 markers 同源', () => {
+    const p = core.buildPlan(getDb(), {
+      kind: 'competitors', direction: core.DIRECTIONS.GROUP_TO_MEMBER,
+      sourceUserId: ids.hq, targetUserId: ids.subA,
+      scopeJson: JSON.stringify({ cities: ['成都市'], brands: [] }), belongUserId: ids.subA, keyword: ''
+    })
+    expect(p.counts.added).toBe(2)
+    expect(p.counts.outOfScope).toBe(1)   // 上海竞品越界
+    expect(p.items.added.map(i => i.name)).not.toContain('集团竞品上海1')
+  })
+
+  it('buildPlanForKinds / listCandidatesForKinds：合并多对象 + item 自带 kind + byKind 拆账', () => {
+    const db = getDb()
+    const p = core.buildPlanForKinds(db, {
+      kinds: ['markers', 'competitors'], direction: core.DIRECTIONS.GROUP_TO_MEMBER,
+      sourceUserId: ids.hq, targetUserId: ids.subA,
+      scopeJson: JSON.stringify({ cities: ['成都市'], brands: [] }), belongUserId: ids.subA, keyword: ''
+    })
+    expect(p.kinds).toEqual(['markers', 'competitors'])
+    expect(p.fieldsByKind.competitors).toBeTruthy()
+    expect(p.fieldsByKind.markers).toBeTruthy()
+    // competitors 成都 2 条独立可确定（markers 依赖前序状态，不断言精确值）
+    expect(p.counts.byKind.competitors.added).toBe(2)
+    expect(p.items.added.some(i => i.kind === 'competitors' && i.name === '集团竞品成都1')).toBe(true)
+
+    const c = core.listCandidatesForKinds(db, {
+      kinds: ['markers', 'competitors'], sourceUserId: ids.hq, targetUserId: ids.subA,
+      scopeJson: JSON.stringify({ cities: ['成都市'], brands: [] }), belongUserId: ids.subA
+    })
+    expect(c.kinds).toEqual(['markers', 'competitors'])
+    expect(c.byKind.competitors.inScope).toBe(2)
+    expect(c.inScope.some(r => r.kind === 'competitors')).toBe(true)
+  })
+
+  it('applyPlan：多对象批次按 item.kind 写各自表，镜像带 origin_* 且期次不复制', () => {
+    const db = getDb()
+    const plan = core.buildPlanForKinds(db, {
+      kinds: ['competitors'], direction: core.DIRECTIONS.GROUP_TO_MEMBER,
+      sourceUserId: ids.hq, targetUserId: ids.subA,
+      scopeJson: JSON.stringify({ cities: ['成都市'], brands: [] }), belongUserId: ids.subA, keyword: '',
+      targetLabel: '批次E集团'
+    })
+    expect(plan.counts.added).toBe(2)
+    const batchId = core.createBatch(db, {
+      orgId: ids.org, direction: core.DIRECTIONS.GROUP_TO_MEMBER,
+      sourceUserId: ids.hq, targetUserId: ids.subA, kinds: ['competitors'],
+      plan, params: {}, createdBy: ids.hq, ip: '127.0.0.1'
+    })
+    const r = core.applyPlan(db, { plan, excluded: [], batchId, sourceLabel: '批次E集团' })
+    expect(r.status).toBe('success')
+    expect(r.inserted).toBe(2)
+
+    const mirrors = db.prepare(`
+      SELECT * FROM competitors WHERE user_id = ? AND origin_user_id = ?
+    `).all(ids.subA, ids.hq)
+    expect(mirrors.length).toBe(2)
+    for (const m of mirrors) {
+      expect(m.sync_readonly).toBe(1)
+      expect(m.origin_owner).toBe('批次E集团')
+      expect(m.period).toBeNull()       // 期次不复制（规则 8）
+      expect(m.snapshot_id).toBeNull()
+    }
+  })
+
+  it('幂等：competitors 重复预览 → no_change（规则 2 对竞品同样生效）', () => {
+    const p = core.buildPlan(getDb(), {
+      kind: 'competitors', direction: core.DIRECTIONS.GROUP_TO_MEMBER,
+      sourceUserId: ids.hq, targetUserId: ids.subA,
+      scopeJson: JSON.stringify({ cities: ['成都市'], brands: [] }), belongUserId: ids.subA
+    })
+    expect(p.counts.added).toBe(0)
+    expect(p.counts.noChange).toBe(2)
+  })
+})
+
+describe('⑧ mirrors kind=all + 配额一级分配（批次 E）', () => {
+  it('GET /mirrors?kind=all：合并 markers + competitors，每行带 kind', async () => {
+    const r = await call('GET', '/api/sync/mirrors?kind=all&limit=500', { token: tokens.subA })
+    expect(r.status).toBe(200)
+    expect(r.body.kinds).toEqual(['markers', 'competitors'])
+    const kinds = new Set(r.body.mirrors.map(m => m.kind))
+    expect(kinds.has('markers')).toBe(true)
+    expect(kinds.has('competitors')).toBe(true)
+    expect(r.body.mirrors.every(m => m.kind)).toBe(true)
+  })
+
+  it('GET /quota/summary：返回池概览 + 成员明细（含 grantedTotal）', async () => {
+    const db = getDb()
+    db.prepare(`UPDATE admin_quota SET initial_quota = 1000, remaining_quota = 800 WHERE id = 1`).run()
+    const r = await call('GET', `/api/orgs/${ids.org}/quota/summary`, { token: tokens.hq })
+    expect(r.status).toBe(200)
+    expect(r.body.poolTotal).toBe(1000)
+    expect(r.body.remaining).toBe(800)
+    expect(r.body.allocatable).toBeGreaterThan(0)
+    expect(Array.isArray(r.body.members)).toBe(true)
+    const m = r.body.members.find(x => x.userId === ids.subA)
+    expect(m).toBeTruthy()
+    expect(m.grantedTotal).toBe(0)
+  })
+
+  it('POST /quota/allocate：一级分配成功，双写台账 + users.quota 增 + 不动物理池', async () => {
+    const db = getDb()
+    const before = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(ids.subA).quota
+    const remainBefore = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get().remaining_quota
+    const grantsBefore = db.prepare(`SELECT COUNT(*) AS n FROM quota_grants`).get().n
+    const histBefore = db.prepare(`SELECT COUNT(*) AS n FROM quota_history WHERE action = 'org_grant'`).get().n
+
+    const r = await call('POST', `/api/orgs/${ids.org}/quota/allocate`, {
+      token: tokens.hq, body: { toUserId: ids.subA, amount: 50, note: '测试分配' }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.ok).toBe(true)
+    expect(r.body.amount).toBe(50)
+    expect(r.body.quotaBefore).toBe(before)
+    expect(r.body.quotaAfter).toBe(before + 50)
+
+    // users.quota 增（规则 21：成员额度只由分配而来）
+    const after = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(ids.subA).quota
+    expect(after).toBe(before + 50)
+
+    // 双写台账：quota_grants（pool_grant，from=owner）+ quota_history（action=org_grant）
+    const g = db.prepare(`SELECT * FROM quota_grants WHERE to_user_id = ? ORDER BY id DESC LIMIT 1`).get(ids.subA)
+    expect(g.grant_kind).toBe('pool_grant')
+    expect(g.from_user_id).toBe(ids.hq)
+    expect(g.amount).toBe(50)
+    expect(g.quota_before).toBe(before)
+    expect(g.quota_after).toBe(before + 50)
+
+    const h = db.prepare(`SELECT * FROM quota_history WHERE user_id = ? AND action = 'org_grant' ORDER BY id DESC LIMIT 1`).get(ids.subA)
+    expect(h.change_amount).toBe(50)
+    expect(h.source_user_id).toBe(ids.hq)
+
+    // 物理池不变（规则 19：分配是「额度转移」不是「配额增加」）
+    const remainAfter = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get().remaining_quota
+    expect(remainAfter).toBe(remainBefore)
+
+    // 台账只增不删
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM quota_grants`).get().n).toBe(grantsBefore + 1)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM quota_history WHERE action = 'org_grant'`).get().n).toBe(histBefore + 1)
+  })
+
+  it('POST /quota/allocate：amount 非正整数 → 400', async () => {
+    for (const amount of [0, -5, 2.5, 'abc']) {
+      const r = await call('POST', `/api/orgs/${ids.org}/quota/allocate`, {
+        token: tokens.hq, body: { toUserId: ids.subA, amount }
+      })
+      expect(r.status).toBe(400)
+    }
+  })
+
+  it('POST /quota/allocate：受赠方不是本集团成员 → 404', async () => {
+    const r = await call('POST', `/api/orgs/${ids.org}/quota/allocate`, {
+      token: tokens.hq, body: { toUserId: ids.outsider, amount: 10 }
+    })
+    expect(r.status).toBe(404)
+  })
+
+  it('POST /quota/allocate：超出可分配 → 400 allocatable_insufficient', async () => {
+    const r = await call('POST', `/api/orgs/${ids.org}/quota/allocate`, {
+      token: tokens.hq, body: { toUserId: ids.subA, amount: 999999 }
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('allocatable_insufficient')
+  })
+
+  it('POST /quota/allocate：非 owner（成员本人）→ 403（规则 24）', async () => {
+    const r = await call('POST', `/api/orgs/${ids.org}/quota/allocate`, {
+      token: tokens.subA, body: { toUserId: ids.subA, amount: 10 }
+    })
+    expect(r.status).toBe(403)
+  })
+})

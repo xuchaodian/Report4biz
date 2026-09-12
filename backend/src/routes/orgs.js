@@ -4,8 +4,11 @@
 // ----------------------------------------------------------------------------
 // 批次 B：组织与人（建集团、绑成员、改开关、解绑、我的组织、成员知情确认）。
 // 批次 C（v0.10）：**管辖范围 scope 增设/读取 + 城市互斥校验**（本文件末 3 个接口）。
-// 仍不含：同步引擎（批次 D）、划拨向导（P2）、配额分配（P1.5）。
-// 本文件**不写任何配额增减**，成员的 users.quota 在本文件中恒为只读展示。
+// 批次 E（v0.12）：**配额一级分配收口**（summary 总览 + allocate 分配 + 双写台账）——
+//   这是「最小可用出口」，补齐批次 A 闸门已上线但分配 UI 未做的半成品状态；
+//   二级再分配（reallocate）与跨组织总览（F4）仍待 P1.5 完整版。
+// 仍不含：同步引擎（批次 D 已落 routes/sync.js）、划拨向导（P2）。
+// 成员 users.quota 的**增减只由本文件末尾的分配接口**完成；其余组织接口恒为只读展示。
 //
 // ★ 关键设计：集团总部账号（organizations.owner_user_id）**不写入 org_members**。
 //   理由：org_members 是「授权闸门」的启用开关（utils/quotaPool.js::isOrgMember，规则 20）。
@@ -52,6 +55,7 @@ import {
   parseBrandList,
   normalizeCity
 } from '../utils/scopeGuard.js'
+import { getPoolInfo, getPoolRemaining, getOwnQuota, getAllocatable } from '../utils/quotaPool.js'
 
 const router = express.Router()
 
@@ -948,13 +952,184 @@ router.delete('/:id', authenticate, requireOrgOwner, (req, res) => {
 })
 
 // ===========================================================================
+// 配额分配（P1.5 · 批次 E「最小可用一级分配出口」）
+// ---------------------------------------------------------------------------
+// 为什么「最小可用」也要先做：批次 A 已上线授权闸门（quotaGate），但正式 P1.5
+// 分配 UI 未做 → 一旦把真子公司绑成成员，该账号立即被闸门拦下且系统内无分配入口。
+// 本批先补「一级分配」收口（summary 总览 + allocate 分配 + 双写台账），
+// 二级再分配（reallocate）与跨组织总览（F4）留待 P1.5 完整版。
+//
+// 一级分配（pool_grant）四条铁律（设计方案 §3.6）：
+//   ① from 恒 = 本组织 owner（不可由入参指定）—— 结构上杜绝「指定出资方」
+//   ② amount 必须 > 0 整数，只累加 —— quota_grants 有 CHECK(amount>0) 兜底
+//   ③ 扣「全池可分配」getAllocatable()，不动任何人的已持额度、不动物理池 remaining
+//   ④ 双写台账：quota_grants（append-only）+ quota_history(action='org_grant')
+//      —— 缺任一条，purchase.js:86 的「累计配额」会对不上账（规则 22/23）
+// ===========================================================================
+
+/**
+ * GET /api/orgs/:id/quota/summary —— 集团视角配额总览（§6）
+ * 返回池概览 + 各成员「已分配 / 已消耗 / 剩余 / 累计获赠」。
+ * 只读；仅组织 owner 或平台 admin。
+ */
+router.get('/:id/quota/summary', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const pool = getPoolInfo(db)
+    const remaining = getPoolRemaining(db)
+    const allocatable = getAllocatable(db)
+
+    const memberRows = db.prepare(`
+      SELECT m.user_id, u.username, u.company, u.quota,
+             COALESCE(pu.used, 0) AS used,
+             COALESCE(g.granted, 0) AS granted
+        FROM org_members m
+        JOIN users u ON u.id = m.user_id
+        LEFT JOIN (SELECT user_id, SUM(quota_used) AS used FROM purchases
+                    WHERE status = 'active' GROUP BY user_id) pu ON pu.user_id = m.user_id
+        LEFT JOIN (SELECT to_user_id, SUM(amount) AS granted FROM quota_grants
+                    WHERE org_id = ? GROUP BY to_user_id) g ON g.to_user_id = m.user_id
+       WHERE m.org_id = ? AND m.member_role != 'owner'
+       ORDER BY m.joined_at ASC, m.id ASC
+    `).all(org.id, org.id) || []
+
+    const members = memberRows.map(x => {
+      const quota = x.quota || 0
+      const used = x.used || 0
+      return {
+        userId: x.user_id,
+        name: x.company || x.username || `#${x.user_id}`,
+        username: x.username || null,
+        company: x.company || null,
+        quota,
+        used,
+        remain: Math.max(0, quota - used),
+        grantedTotal: x.granted || 0
+      }
+    })
+
+    res.json({
+      ok: true,
+      orgId: org.id,
+      poolTotal: pool.poolTotal,
+      occupied: pool.occupied,
+      allocatedUsers: pool.allocatedUsers,
+      allocatedApi: pool.allocatedApi,
+      remaining,
+      allocatable,
+      members
+    })
+  } catch (error) {
+    console.error('获取配额总览失败:', error)
+    res.status(500).json({ message: '获取配额总览失败' })
+  }
+})
+
+/**
+ * POST /api/orgs/:id/quota/allocate —— 一级分配（池 → 成员，§6 / §3.6）
+ * body { toUserId, amount, note? }
+ *
+ * 校验链（顺序即优先级）：
+ *   ① requireOrgOwner（仅本组织 owner / 平台 admin）
+ *   ② toUserId ∈ 本组织成员（排除总部账号，总部不写 org_members）
+ *   ③ amount 正整数（只增；quota_grants 的 CHECK(amount>0) 做最后兜底）
+ *   ④ amount ≤ getAllocatable()（防超卖不变量 Ⅰ）
+ * 写入（单事务，任一步失败整体回滚）：
+ *   · users.quota += amount
+ *   · quota_grants  +1 行（pool_grant，from=owner，quota_before/after 对账）
+ *   · quota_history +1 行（action='org_grant'，source_user_id=owner）
+ * ★ 不动 admin_quota.remaining_quota（物理池），不动 owner 自己 users.quota。
+ */
+router.post('/:id/quota/allocate', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const toUserId = toId(req.body?.toUserId)
+    const amount = Number(req.body?.amount)
+
+    if (!toUserId) return res.status(400).json({ message: '缺少受赠成员 toUserId' })
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return res.status(400).json({ message: '分配额度必须是正整数' })
+    }
+
+    const m = findMember(db, org.id, toUserId)
+    if (!m) return res.status(404).json({ message: '该账号不是本集团成员' })
+
+    const allocatable = getAllocatable(db)
+    if (amount > allocatable) {
+      return res.status(400).json({
+        code: 'allocatable_insufficient',
+        message: `可分配余额不足：可分配 ${allocatable}，本次 ${amount}`,
+        allocatable
+      })
+    }
+
+    const note = String(req.body?.note || '').trim().slice(0, 200) || null
+    const ownerId = org.owner_user_id
+
+    let quotaBefore = 0
+    let quotaAfter = 0
+    let grantId = null
+
+    db.beginTx()
+    try {
+      quotaBefore = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(toUserId)?.quota || 0
+      quotaAfter = quotaBefore + amount
+
+      db.prepare(`UPDATE users SET quota = quota + ? WHERE id = ?`).run(amount, toUserId)
+
+      const g = db.prepare(`
+        INSERT INTO quota_grants
+          (org_id, grant_kind, from_user_id, to_user_id, amount, note, created_by, ip,
+           quota_before, quota_after)
+        VALUES (?, 'pool_grant', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(org.id, ownerId, toUserId, amount, note, req.user?.id, req.ip || null, quotaBefore, quotaAfter)
+      grantId = g.lastInsertRowid
+
+      db.prepare(`
+        INSERT INTO quota_history
+          (user_id, old_quota, new_quota, change_amount, action, source_user_id)
+        VALUES (?, ?, ?, ?, 'org_grant', ?)
+      `).run(toUserId, quotaBefore, quotaAfter, amount, ownerId)
+
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
+
+    console.warn(
+      `[orgs] 配额一级分配 org=${org.id} owner=${ownerId} to=${toUserId} `
+      + `amount=${amount} by=${req.user?.id} ip=${req.ip}`
+    )
+
+    res.json({
+      ok: true,
+      grantId,
+      orgId: org.id,
+      toUserId,
+      amount,
+      quotaBefore,
+      quotaAfter,
+      allocatable: Math.max(0, allocatable - amount),
+      note
+    })
+  } catch (error) {
+    console.error('分配配额失败:', error)
+    res.status(500).json({ message: '分配配额失败' })
+  }
+})
+
+// ===========================================================================
 // ⛔ 以下接口「刻意不实现」（设计方案 §6 末段；勿"补全"）：
 //   POST   /api/orgs/:id/quota/revoke            收回已分配配额        → 违反铁律 ②
 //   PUT    /api/orgs/:id/quota                   设置式覆盖（可调低）   → 违反铁律 ②
 //   POST   /api/orgs/:id/quota/reallocate-from   带 fromUserId 的再分配 → 扣他人额度后门
+//   POST   /api/orgs/:id/quota/reallocate        二级再分配            → P1.5 完整版（本批最小出口未含）
 //   POST   /api/orgs/:id/quota/transfer          横向转调 A→B          → 违反铁律 ③
 //   DELETE /api/orgs/:id/quota/ledger/:grantId   删台账              → 台账 append-only
-// 另：本文件不提供"改成员 users.quota"的任何入口（规则 21：成员额度只由分配而来）。
+// 另：本文件不提供"改成员 users.quota"的 set 入口（规则 21：成员额度只由分配而来）。
 // ===========================================================================
 
 export default router

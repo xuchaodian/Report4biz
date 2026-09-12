@@ -6,26 +6,10 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
+// 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
+import { blockedBySyncLock } from '../utils/syncLock.js'
 
 const router = express.Router()
-
-/**
- * 只读锁（集团/子公司同步 §7.3 · 规则 4 写权唯一）。
- * 镜像行（sync_readonly=1）由源账号维护，本账号只能「脱离同步」后才能改/删。
- * 返回 true 表示已拦下（响应已发出）。
- */
-function blockedBySyncLock(res, marker) {
-  if (!marker || Number(marker.sync_readonly) !== 1) return false
-  const owner = String(marker.origin_owner || '').trim() || `账号 #${marker.origin_user_id}`
-  res.status(403).json({
-    code: 'sync_readonly',
-    message: `该门店由「${owner}」同步维护，不能在此修改。如需本地改动，请先「脱离同步」。`,
-    originUserId: marker.origin_user_id,
-    originOwner: marker.origin_owner,
-    readonly: true
-  })
-  return true
-}
 const upload = multer({ dest: 'uploads/' })
 
 // 获取所有门店（只看自己的数据）

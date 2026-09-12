@@ -70,10 +70,8 @@
           <template v-else>
             <div class="ds-filter">
               <span class="ds-label">数据范围</span>
-              <el-checkbox v-model="kinds.markers" disabled>我的门店</el-checkbox>
-              <el-tooltip content="竞品门店同步属 P1 批次，本批次仅开放「我的门店」" placement="top">
-                <el-checkbox :model-value="false" disabled>竞品门店（P1）</el-checkbox>
-              </el-tooltip>
+              <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
+              <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
 
               <span class="ds-label" style="margin-left:16px;">本次筛选</span>
               <el-select
@@ -160,10 +158,8 @@
                 />
               </el-select>
               <span class="ds-label" style="margin-left:16px;">数据范围</span>
-              <el-checkbox v-model="kinds.markers" disabled>我的门店</el-checkbox>
-              <el-tooltip content="竞品门店 / 联通购买数据同步属 P1 批次" placement="top">
-                <el-checkbox :model-value="false" disabled>竞品门店（P1）</el-checkbox>
-              </el-tooltip>
+              <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
+              <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
             </div>
 
             <el-alert
@@ -246,6 +242,9 @@
                 <el-tag :type="actionTagType(row.action)" size="small" effect="plain">{{ actionLabel(row.action) }}</el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="类型" width="90">
+              <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
+            </el-table-column>
             <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
             <el-table-column prop="store_code" label="门店编号" width="100" show-overflow-tooltip />
             <el-table-column prop="city" label="城市" width="90" show-overflow-tooltip />
@@ -288,6 +287,9 @@
               <span v-for="g in mirrorBySource" :key="g.name" class="ds-muted">· {{ g.name }} {{ g.count }}</span>
             </div>
             <el-table :data="mirrors" size="small" max-height="240" style="width:100%">
+              <el-table-column label="类型" width="90">
+                <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
+              </el-table-column>
               <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
               <el-table-column prop="city" label="城市" width="90" show-overflow-tooltip />
               <el-table-column prop="origin_owner" label="来源账号" width="150" show-overflow-tooltip />
@@ -338,8 +340,84 @@
             </el-table-column>
           </el-table>
         </div>
+
+        <!-- ⑥ 配额分配（仅集团总部） -->
+        <div v-if="!isMember" class="ds-block">
+          <div class="ds-block-head">
+            <span class="ds-block-title">⑥ 配额分配</span>
+            <span class="ds-block-note">从「全池可分配」向子公司分配联通配额（只增不减 · 双写台账 · 不动物理池）</span>
+          </div>
+          <div v-if="loadingQuota" class="ds-muted" style="padding:6px 0;">正在读取配额…</div>
+          <template v-else-if="quota">
+            <div class="ds-quota-pool">
+              <div class="ds-quota-card">
+                <span class="ds-quota-label">上游总配额</span>
+                <b class="ds-quota-num">{{ quota.poolTotal }}</b>
+              </div>
+              <div class="ds-quota-card">
+                <span class="ds-quota-label">当前剩余</span>
+                <b class="ds-quota-num">{{ quota.remaining }}</b>
+              </div>
+              <div class="ds-quota-card ds-quota-hl">
+                <span class="ds-quota-label">可分配</span>
+                <b class="ds-quota-num">{{ quota.allocatable }}</b>
+              </div>
+              <div class="ds-quota-card">
+                <span class="ds-quota-label">已占用</span>
+                <b class="ds-quota-num">{{ quota.occupied }}</b>
+              </div>
+            </div>
+            <div v-if="!quota.members.length" class="ds-muted" style="padding:6px 0;">
+              本集团还没有成员，无法分配。请先在「用户管理 → 集团 / 子公司」绑定子公司账号。
+            </div>
+            <el-table v-else :data="quota.members" size="small" max-height="300" style="width:100%; margin-top:10px;">
+              <el-table-column prop="name" label="子公司" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="quota" label="当前配额" width="90" />
+              <el-table-column prop="used" label="已消耗" width="80" />
+              <el-table-column prop="remain" label="剩余" width="80" />
+              <el-table-column prop="grantedTotal" label="累计获赠" width="90" />
+              <el-table-column label="操作" width="80">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="openAllocate(row)">分配</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+          <div v-else class="ds-muted" style="padding:6px 0;">暂无配额信息。</div>
+        </div>
       </template>
     </el-card>
+
+    <!-- 配额分配弹窗（一级分配 · 只增不减） -->
+    <el-dialog v-model="allocateDialog.visible" title="分配配额" width="440px" append-to-body>
+      <div class="ds-allocate-head">
+        向 <b>{{ allocateDialog.memberName }}</b> 分配联通配额
+        <span class="ds-muted">（一级分配 · 只增不减 · 双写台账）</span>
+      </div>
+      <el-form label-width="86px" style="margin-top:14px;">
+        <el-form-item label="可分配余额">
+          <b class="ds-quota-num">{{ quota?.allocatable ?? 0 }}</b>
+          <span class="ds-muted" style="margin-left:8px;">全池可分配上限</span>
+        </el-form-item>
+        <el-form-item label="分配额度">
+          <el-input-number
+            v-model="allocateDialog.amount"
+            :min="1"
+            :max="Math.max(1, quota?.allocatable ?? 1)"
+            :step="1"
+            step-strictly
+            controls-position="right"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="allocateDialog.note" placeholder="可选，如「华东区 Q3 配额」" maxlength="200" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="allocateDialog.visible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="allocating" @click="doAllocate">确认分配</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -361,7 +439,9 @@ const cityOptions = ref([])     // [{name, key, count}]
 const brandOptions = ref([])
 
 const filter = ref({ cities: [], brands: [], keyword: '' })
-const kinds = ref({ markers: true })
+const kinds = ref({ markers: true, competitors: false })
+const selectedKinds = computed(() => Object.keys(kinds.value).filter(k => kinds.value[k]))
+const kindsParam = computed(() => selectedKinds.value.join(','))
 const candidateSummary = ref({ inScope: 0, outOfScope: 0, outOfFilter: 0, selfOrigin: 0 })
 const targetMember = ref(null)
 const targetScopeCities = ref([])
@@ -376,6 +456,11 @@ const mirrors = ref([])
 const mirrorBySource = ref([])
 const history = ref([])
 const lastSync = ref('')
+
+const quota = ref(null)
+const loadingQuota = ref(false)
+const allocateDialog = ref({ visible: false, userId: null, memberName: '', amount: 1, note: '' })
+const allocating = ref(false)
 
 const isMember = computed(() => role.value === 'member')
 const canReceive = computed(() => Number(myMember.value?.canReceive ?? 1) !== 0)
@@ -430,6 +515,8 @@ const statusLabel = (s) => ({
   success: '成功', partial: '部分成功', failed: '失败', preview: '预览', rolled_back: '已回滚'
 }[s] || s)
 const statusTagType = (s) => ({ success: 'success', partial: 'warning', failed: 'danger' }[s] || 'info')
+const KIND_LABEL = { markers: '我的门店', competitors: '竞品门店' }
+const kindLabel = (k) => KIND_LABEL[k] || '未知'
 
 // ⚠️ utils/api.js 的响应拦截器已经返回 `response.data`，
 //    所以 api.get/post 的返回值**就是响应体**，不能再取 `.data`（曾因此整页空态）
@@ -467,6 +554,7 @@ async function loadAll () {
 
     if (isMember.value) await loadCandidates()
     await Promise.all([loadMirrors(), loadHistory()])
+    if (!isMember.value) await loadQuota()
   } catch (e) {
     console.error('读取组织信息失败:', e)
     ElMessage.error('读取组织信息失败')
@@ -478,7 +566,7 @@ async function loadAll () {
 async function loadCandidates () {
   if (isMember.value) {
     try {
-      const d = await safeGet('/sync/candidates', { kind: 'markers', direction: 'group_to_member', cities: filter.value.cities.join(','), brands: filter.value.brands.join(','), keyword: filter.value.keyword })
+      const d = await safeGet('/sync/candidates', { kind: kindsParam.value, direction: 'group_to_member', cities: filter.value.cities.join(','), brands: filter.value.brands.join(','), keyword: filter.value.keyword })
       candidateSummary.value = {
         inScope: d.inScope.length, outOfScope: d.outOfScope, outOfFilter: d.outOfFilter, selfOrigin: d.selfOrigin
       }
@@ -503,8 +591,8 @@ async function doPreview () {
   previewing.value = true
   try {
     const body = isMember.value
-      ? { userId: myMember.value.userId, direction: 'group_to_member', kind: 'markers', filter: filter.value }
-      : { userId: targetMember.value, direction: 'member_to_group', kind: 'markers', filter: { keyword: '' } }
+      ? { userId: myMember.value.userId, direction: 'group_to_member', kinds: selectedKinds.value, filter: filter.value }
+      : { userId: targetMember.value, direction: 'member_to_group', kinds: selectedKinds.value, filter: { keyword: '' } }
     const d = await api.post('/sync/preview', body)
     preview.value = d
     checkedKeys.value = [
@@ -569,7 +657,7 @@ async function refreshAndReload () {
 
 async function loadMirrors () {
   try {
-    const d = await safeGet('/sync/mirrors', { kind: 'markers', limit: 500 })
+    const d = await safeGet('/sync/mirrors', { kind: 'all', limit: 500 })
     mirrors.value = d.mirrors || []
     mirrorBySource.value = d.bySource || []
   } catch (e) {
@@ -598,7 +686,7 @@ async function doDetach (row) {
     )
   } catch (e) { return }
   try {
-    const d = await api.post('/sync/detach', { kind: 'markers', ids: [row.id] })
+    const d = await api.post('/sync/detach', { kind: row.kind || 'markers', ids: [row.id] })
     ElMessage.success(d.message || '已脱离同步')
     await Promise.all([loadMirrors(), loadHistory()])
   } catch (e) {
@@ -614,7 +702,7 @@ async function doRemoveForeign (row) {
     )
   } catch (e) { return }
   try {
-    const d = await api.post('/sync/foreign/remove', { kind: 'markers', ids: [row.id] })
+    const d = await api.post('/sync/foreign/remove', { kind: row.kind || 'markers', ids: [row.id] })
     ElMessage.success(d.message || '已移除')
     await loadMirrors()
   } catch (e) {
@@ -639,6 +727,65 @@ async function showBatch (row) {
     await ElMessageBox.alert(lines.join('<br>'), '批次详情', { dangerouslyUseHTMLString: true })
   } catch (e) {
     ElMessage.error('读取批次详情失败')
+  }
+}
+
+// ---- 配额分配（仅集团总部）----
+async function loadQuota () {
+  if (isMember.value) return
+  loadingQuota.value = true
+  try {
+    quota.value = await safeGet(`/orgs/${orgId.value}/quota/summary`)
+  } catch (e) {
+    console.error('读取配额总览失败:', e)
+    quota.value = null
+  } finally {
+    loadingQuota.value = false
+  }
+}
+
+function openAllocate (m) {
+  allocateDialog.value = {
+    visible: true,
+    userId: m.userId,
+    memberName: m.name,
+    amount: 1,
+    note: ''
+  }
+}
+
+async function doAllocate () {
+  const amount = Number(allocateDialog.value.amount)
+  const allocatable = quota.value?.allocatable ?? 0
+  if (!Number.isInteger(amount) || amount <= 0) {
+    ElMessage.warning('分配额度必须是正整数')
+    return
+  }
+  if (amount > allocatable) {
+    ElMessage.warning(`可分配余额不足：当前可分配 ${allocatable} 次`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `向「${allocateDialog.value.memberName}」分配 ${amount} 次配额（只增不减 · 双写台账 · 不动物理池）。确认？`,
+      '确认分配', { type: 'warning' }
+    )
+  } catch (e) { return }   // 用户取消
+
+  allocating.value = true
+  try {
+    const d = await api.post(`/orgs/${orgId.value}/quota/allocate`, {
+      toUserId: allocateDialog.value.userId,
+      amount,
+      note: allocateDialog.value.note || undefined
+    })
+    ElMessage.success(`已向「${allocateDialog.value.memberName}」分配 ${d.amount} 次配额`)
+    allocateDialog.value.visible = false
+    await loadQuota()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '分配配额失败')
+  } finally {
+    allocating.value = false
   }
 }
 
@@ -684,4 +831,17 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .ds-preview { background: #fafcff; border-radius: 8px; padding: 14px 12px; }
 .ds-counts { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+
+.ds-quota-pool { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.ds-quota-card {
+  flex: 1; min-width: 120px; padding: 12px 14px;
+  background: #f5f7fa; border-radius: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ds-quota-card.ds-quota-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
+.ds-quota-label { font-size: 12px; color: #909399; }
+.ds-quota-num { font-size: 20px; color: #303133; font-weight: 600; }
+.ds-quota-hl .ds-quota-num { color: #409eff; }
+.ds-allocate-head { font-size: 14px; color: #303133; }
+
 </style>

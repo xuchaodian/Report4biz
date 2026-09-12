@@ -45,6 +45,32 @@ export function getPoolRemaining(db) {
 }
 
 /**
+ * 集团「可分配余额」—— 防超卖的不变量 Ⅰ（设计方案 §3.6 Ⅳ）：
+ *   allocatable = max(0, min(
+ *     poolTotal − occupied,                ← 现有口径（「发了多少」）
+ *     remaining − Σ非admin未消耗授权         ← 物理口径（「池里还剩多少」）
+ *   ))
+ * 其中「未消耗授权」= max(0, users.quota − Σ active quota_used)，按非 admin 账号合计。
+ * ★ 一级分配（pool_grant）只允许扣这个数 —— 从结构上杜绝超卖，而不是靠接口层 if。
+ *   两个口径取 min()：未消耗时两式相等、无行为变化；已消耗后物理口径更严。
+ */
+export function getAllocatable(db) {
+  const pool = getPoolInfo(db)
+  const remaining = getPoolRemaining(db)
+  const unconsumed = db.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN u.quota > COALESCE(pu.used, 0)
+           THEN u.quota - COALESCE(pu.used, 0) ELSE 0 END
+    ), 0) AS n
+      FROM users u
+      LEFT JOIN (SELECT user_id, SUM(quota_used) AS used FROM purchases
+                  WHERE status = 'active' GROUP BY user_id) pu ON pu.user_id = u.id
+     WHERE u.role != 'admin'
+  `).get()?.n || 0
+  return Math.max(0, Math.min(pool.available, remaining - unconsumed))
+}
+
+/**
  * 账号「未消耗授权余额」= max(0, users.quota − Σ(active 的 quota_used))
  * ★ 与个人中心「剩余次数」(routes/purchase.js) 及管理员页「剩余次数」(routes/users.js)
  *   同一口径（v1.13.116 起两页已对齐）。

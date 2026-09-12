@@ -13,6 +13,12 @@
 //   POST /api/sync/detach              脱离同步（镜像行 → 自有行）
 //   POST /api/sync/foreign/remove      移除本账号的外来副本（不动源）
 //
+// 批次 E（v0.12）把同步对象从 markers 扩到 competitors，并支持「一次批次多对象」：
+//   · candidates / preview / commit 的 kinds 入参支持逗号分隔（`markers,competitors`）
+//   · mirrors 支持 `kind=all` 合并两表（每行带 kind）
+//   · scope-options 回传 kinds 元数据（前端不再硬编码对象清单）
+//   ⚠️ 对象清单的唯一真源是 syncCore.SYNC_KINDS —— 加对象只改那里 + KIND_META。
+//
 // ★ 分文件而不是塞进 orgs.js 的原因：路径前缀就是 /api/sync（设计方案 §6），
 //   而 orgs.js 挂在 /api/orgs 上；把 /scope-options 放进 orgs.js 会与 /:id 抢段位。
 //
@@ -29,9 +35,11 @@ import { normalizeCity, parseCityList, parseBrandList } from '../utils/scopeGuar
 import {
   DIRECTIONS,
   SYNC_KINDS,
-  buildPlan,
+  KIND_META,
+  normalizeKinds,
+  buildPlanForKinds,
   applyPlan,
-  listCandidates,
+  listCandidatesForKinds,
   createBatch,
   findBatch,
   serializeBatch,
@@ -167,10 +175,13 @@ function displayName(db, userId) {
   return String(u.company || '').trim() || String(u.username || `#${userId}`).trim()
 }
 
+/**
+ * 解析请求里的 kinds（批次 E：一个批次可含多个对象）。
+ * 委派给 syncCore.normalizeKinds —— 保证「非法/缺省」的回落口径与内核**同源**，
+ * 不会出现「路由认为是 markers、内核认为是 competitors」的错位。
+ */
 function kindsFromQuery(v) {
-  const arr = String(v || 'markers').split(',').map(s => s.trim()).filter(Boolean)
-  const valid = arr.filter(k => SYNC_KINDS.includes(k))
-  return valid.length ? valid : SYNC_KINDS.slice()
+  return normalizeKinds(v)
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +292,8 @@ router.get('/scope-options', authenticate, (req, res) => {
       ok: true,
       orgId: org ? org.id : null,
       sourceUserId,
+      // 可同步对象元数据（批次 E：前端据「数据范围」复选框渲染，避免前端硬编码）
+      kinds: SYNC_KINDS.map(k => ({ kind: k, ...KIND_META[k] })),
       cities,
       brands,
       totalMarkers: cities.reduce((s, c) => s + c.count, 0),
@@ -312,13 +325,13 @@ router.get('/candidates', authenticate, (req, res) => {
     })
     if (tr.error) return res.status(tr.error.status).json(tr.error.body)
 
-    const kind = kindsFromQuery(req.query?.kind)[0]
+    const kinds = kindsFromQuery(req.query?.kind || req.query?.kinds)
     const citiesRaw = String(req.query?.cities || '').split(',').map(s => s.trim()).filter(Boolean)
     const brandsRaw = String(req.query?.brands || '').split(',').map(s => s.trim()).filter(Boolean)
     const merged = mergeScopeWithFilter(tr.member.scope_json, { cities: citiesRaw, brands: brandsRaw })
 
-    const out = listCandidates(db, {
-      kind,
+    const out = listCandidatesForKinds(db, {
+      kinds,
       sourceUserId: tr.sourceUserId,
       targetUserId: tr.targetUserId,
       scopeJson: merged.scopeJson,
@@ -329,7 +342,9 @@ router.get('/candidates', authenticate, (req, res) => {
     res.json({
       ok: true,
       direction: tr.direction,
-      kind,
+      kinds,
+      kind: kinds[0],          // 向下兼容单对象读者
+      kindMeta: KIND_META,
       memberUserId: tr.memberUserId,
       scope: { cities: merged.cities, brands: merged.brands },
       scopeCities: parseCityList(tr.member.scope_json),
@@ -379,9 +394,8 @@ router.post('/preview', authenticate, (req, res) => {
     const merged = mergeScopeWithFilter(tr.member.scope_json, body.filter || {})
     const keyword = String(body.filter?.keyword || '')
 
-    const kind = kinds[0]
-    const plan = buildPlan(db, {
-      kind,
+    const plan = buildPlanForKinds(db, {
+      kinds,
       direction: tr.direction,
       sourceUserId: tr.sourceUserId,
       targetUserId: tr.targetUserId,
@@ -417,7 +431,9 @@ router.post('/preview', authenticate, (req, res) => {
       ok: true,
       batchId,
       direction: tr.direction,
-      kind,
+      kinds,
+      kind: kinds[0],          // 向下兼容单对象读者
+      kindMeta: KIND_META,
       memberUserId: tr.memberUserId,
       sourceUserId: tr.sourceUserId,
       targetUserId: tr.targetUserId,
@@ -479,8 +495,8 @@ router.post('/commit', authenticate, (req, res) => {
     const params = detail?.params
     if (!params) return res.status(409).json({ message: '批次参数缺失，请重新预览' })
 
-    const plan = buildPlan(db, {
-      kind: (params.kinds && params.kinds[0]) || 'markers',
+    const plan = buildPlanForKinds(db, {
+      kinds: params.kinds || (params.kind ? [params.kind] : ['markers']),
       direction: params.direction,
       sourceUserId: params.sourceUserId,
       targetUserId: params.targetUserId,
@@ -669,36 +685,48 @@ router.post('/foreign/remove', authenticate, (req, res) => {
 })
 
 /**
- * GET /api/sync/mirrors?kind=markers&limit=200
+ * GET /api/sync/mirrors?kind=markers|competitors|all&limit=200
  * 本账号名下的**外来副本**（镜像行）—— 这是只读锁的「出口」页面用得上的数据：
  * 用户看到某行改不了时，需要能在这里「脱离同步」或「移除副本」。
  * 只查自己（user_id = 我），不跨账号（规则 10）。
+ *
+ * ★ 批次 E：`kind=all` 合并 markers + competitors（每行带 `kind`），
+ *   否则 ② 选了「竞品门店」的用户在 ④ 看不到自己刚同步来的竞品镜像。
+ *   `limit` 在 all 模式下**按对象各自生效**（避免一个对象把页额吃光）。
  */
 router.get('/mirrors', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const kind = SYNC_KINDS.includes(req.query?.kind) ? req.query.kind : 'markers'
+    const raw = String(req.query?.kind || '').trim()
+    const kinds = raw === 'all' ? SYNC_KINDS.slice() : [SYNC_KINDS.includes(raw) ? raw : 'markers']
     const limit = Math.min(Math.max(Number.parseInt(req.query?.limit, 10) || 200, 1), 1000)
 
-    const rows = db.prepare(`
-      SELECT id, name, store_code, brand, city, district, address,
-             origin_user_id, origin_row_id, origin_owner, sync_batch_id, sync_readonly
-        FROM ${kind}
-       WHERE user_id = ? AND origin_user_id IS NOT NULL
-       ORDER BY origin_owner, id
-       LIMIT ?
-    `).all(req.user.id, limit) || []
+    const rows = []
+    for (const kind of kinds) {
+      const part = db.prepare(`
+        SELECT id, name, store_code, brand, city, district, address,
+               origin_user_id, origin_row_id, origin_owner, sync_batch_id, sync_readonly
+          FROM ${kind}
+         WHERE user_id = ? AND origin_user_id IS NOT NULL
+         ORDER BY origin_owner, id
+         LIMIT ?
+      `).all(req.user.id, limit) || []
+      for (const r of part) rows.push({ ...r, kind })
+    }
 
     const grouped = {}
     for (const r of rows) {
       const key = String(r.origin_owner || `#${r.origin_user_id}`)
       grouped[key] = (grouped[key] || 0) + 1
     }
+    const byKind = {}
+    for (const r of rows) byKind[r.kind] = (byKind[r.kind] || 0) + 1
 
     res.json({
       ok: true,
-      kind,
+      kinds,
       count: rows.length,
+      byKind,
       bySource: Object.entries(grouped).map(([name, n]) => ({ name, count: n })),
       mirrors: rows,
       hint: '镜像行由来源账号维护，本账号不能直接改/删；如需本地修改请「脱离同步」（转为自有行），或「移除副本」（只删本账号这份）。'

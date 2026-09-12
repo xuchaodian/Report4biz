@@ -5,6 +5,9 @@ import fs from 'fs'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
+// 只读锁（规则 4 写权唯一）：批次 E 起 competitors 也成为同步对象，
+// 同步来的竞品镜像是只读的 —— 与 markers 共用同一把锁，避免单写者模型被绕过。
+import { blockedBySyncLock } from '../utils/syncLock.js'
 
 const router = express.Router()
 // 竞品导入限制：单文件最大 5MB（约1万+行），防止超大 CSV 阻塞服务
@@ -123,6 +126,9 @@ router.put('/:id', authenticate, (req, res) => {
       return res.status(404).json({ message: '竞品门店不存在' })
     }
 
+    // 只读锁（规则 4）：镜像行由源账号维护，本账号须先「脱离同步」
+    if (blockedBySyncLock(res, existingCompetitor, { kind: 'competitors' })) return
+
     db.prepare(`
       UPDATE competitors SET
         store_code = ?, brand = ?, name = ?, store_type = ?, store_category = ?,
@@ -173,8 +179,17 @@ router.put('/:id', authenticate, (req, res) => {
 router.delete('/clear-all', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const result = db.prepare('DELETE FROM competitors WHERE user_id = ?').run(req.user.id)
-    res.json({ message: `已清空 ${result.changes} 条竞品数据`, count: result.changes })
+    // 只读锁（规则 4）：同步镜像不参与「清空」，保留并单独回报
+    const kept = db.prepare('SELECT COUNT(*) AS n FROM competitors WHERE user_id = ? AND sync_readonly = 1').get(req.user.id)
+    const result = db.prepare('DELETE FROM competitors WHERE user_id = ? AND (sync_readonly IS NULL OR sync_readonly != 1)').run(req.user.id)
+    const keptN = (kept && kept.n) || 0
+    res.json({
+      message: keptN > 0
+        ? `已清空 ${result.changes} 条自有竞品；保留了 ${keptN} 条同步镜像（如需清除请用「移除外来副本」）`
+        : `已清空 ${result.changes} 条竞品数据`,
+      count: result.changes,
+      keptSynced: keptN
+    })
   } catch (error) {
     console.error('清空竞品错误:', error)
     res.status(500).json({ message: '清空失败' })
@@ -197,6 +212,9 @@ router.delete('/:id', authenticate, (req, res) => {
       return res.status(403).json({ message: '无权删除该竞品门店' })
     }
 
+    // 只读锁（规则 4）
+    if (blockedBySyncLock(res, existingCompetitor, { kind: 'competitors', action: '删除' })) return
+
     db.prepare('DELETE FROM competitors WHERE id = ?').run(req.params.id)
 
     res.json({ message: '删除成功' })
@@ -217,14 +235,28 @@ router.post('/batch-delete', authenticate, (req, res) => {
     const db = getDb()
     const placeholders = ids.map(() => '?').join(',')
 
+    // 只读锁（规则 4）：镜像行不参与批量删除，单独统计提示
+    const locked = db.prepare(`
+      SELECT COUNT(*) AS n FROM competitors
+       WHERE id IN (${placeholders}) AND sync_readonly = 1
+         ${req.user.role !== 'admin' ? 'AND user_id = ?' : ''}
+    `).get(...(req.user.role !== 'admin' ? [...ids, req.user.id] : ids))
+
     // 普通用户只能删除自己的竞品门店数据
     if (req.user.role !== 'admin') {
-      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders}) AND user_id = ?`).run(...ids, req.user.id)
+      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders}) AND user_id = ? AND (sync_readonly IS NULL OR sync_readonly != 1)`).run(...ids, req.user.id)
     } else {
-      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM competitors WHERE id IN (${placeholders}) AND (sync_readonly IS NULL OR sync_readonly != 1)`).run(...ids)
     }
 
-    res.json({ message: '批量删除成功', count: ids.length })
+    const lockedN = (locked && locked.n) || 0
+    res.json({
+      message: lockedN > 0
+        ? `批量删除成功；其中 ${lockedN} 条为同步镜像已跳过（需先「脱离同步」）`
+        : '批量删除成功',
+      count: ids.length - lockedN,
+      skippedSynced: lockedN
+    })
   } catch (error) {
     console.error('批量删除竞品错误:', error)
     res.status(500).json({ message: '批量删除失败' })
