@@ -386,6 +386,19 @@ export async function initDatabase() {
     // 索引可能已存在
   }
 
+  // ===== markers 建表语句漂移补齐（v1.13.121 · 批次 D）=====
+  // ⚠️ 生产 markers 有 41 列，而上面的 CREATE TABLE 只列了 36 列 ——
+  //    frontage / store_area / store_status / mall_type / trade_area_type 是历史上
+  //    用 ALTER 加上去的，但那段 ALTER 后来从代码里丢了（只留在生产库里）。
+  //    后果：**新建的库**（本地测试 / 全新部署）缺这 5 列，而
+  //    routes/markers.js 的 INSERT/UPDATE 显式引用了它们 → 一添加门店就 500。
+  //    这里补回来，保持「代码 DDL == 生产真库」。
+  try { db.run(`ALTER TABLE markers ADD COLUMN frontage REAL`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN store_area REAL`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN store_status TEXT DEFAULT ''`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN mall_type TEXT DEFAULT ''`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN trade_area_type TEXT DEFAULT ''`) } catch (e) { /* 列已存在 */ }
+
   // ===== markers 来源与归属字段（v0.9 P0 · 集团/子公司同步 §5.2）=====
   // 来源（幂等基石）：origin_user_id 为 NULL ⇒ 本账号自建
   try { db.run(`ALTER TABLE markers ADD COLUMN origin_user_id INTEGER`) } catch (e) { /* 列已存在 */ }

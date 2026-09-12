@@ -108,6 +108,13 @@ const routes = [
         path: 'city-data',
         name: 'CityData',
         component: () => import('@/views/CityDataView.vue')
+      },
+      {
+        // 数据同步（集团/子公司）—— 入口在右上角个人下拉；不属于任何组织的账号
+        // 也能进（页面给空态引导），因此不加 requiresAdmin
+        path: 'data-sync',
+        name: 'DataSync',
+        component: () => import('@/views/DataSyncView.vue')
       }
     ]
   }

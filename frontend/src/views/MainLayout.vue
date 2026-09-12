@@ -90,6 +90,9 @@
               <el-dropdown-item command="export">
                 <el-icon><Download /></el-icon>导出报表
               </el-dropdown-item>
+              <el-dropdown-item command="dataSync">
+                <el-icon><RefreshRight /></el-icon>数据同步
+              </el-dropdown-item>
               <li class="quota-dropdown-item" @click.stop>
                 <div class="quota-dropdown-row">
                   <el-icon style="color:#409eff;"><Odometer /></el-icon>
@@ -207,7 +210,7 @@
 import { ref, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, TrendCharts } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
@@ -310,6 +313,8 @@ const handleCommand = async (command) => {
     router.push('/account?openHistory=true')
   } else if (command === 'export') {
     openExportDialog()
+  } else if (command === 'dataSync') {
+    router.push('/data-sync')
   } else if (command === 'logout') {
     await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
       type: 'warning'

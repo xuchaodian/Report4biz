@@ -5,8 +5,27 @@ import fs from 'fs'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
+import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 
 const router = express.Router()
+
+/**
+ * 只读锁（集团/子公司同步 §7.3 · 规则 4 写权唯一）。
+ * 镜像行（sync_readonly=1）由源账号维护，本账号只能「脱离同步」后才能改/删。
+ * 返回 true 表示已拦下（响应已发出）。
+ */
+function blockedBySyncLock(res, marker) {
+  if (!marker || Number(marker.sync_readonly) !== 1) return false
+  const owner = String(marker.origin_owner || '').trim() || `账号 #${marker.origin_user_id}`
+  res.status(403).json({
+    code: 'sync_readonly',
+    message: `该门店由「${owner}」同步维护，不能在此修改。如需本地改动，请先「脱离同步」。`,
+    originUserId: marker.origin_user_id,
+    originOwner: marker.origin_owner,
+    readonly: true
+  })
+  return true
+}
 const upload = multer({ dest: 'uploads/' })
 
 // 获取所有门店（只看自己的数据）
@@ -70,21 +89,25 @@ router.post('/', authenticate, (req, res) => {
     }
 
     const db = getDb()
+
+    // 城市兜底（规则 13）：city 留空 → 按坐标反查补全，否则该行无法被管辖范围圈定
+    const cityFix = fillCityFallback(db, { city, latitude, longitude })
+
     const result = db.prepare(`
       INSERT INTO markers (
         store_code, brand, name, store_type,
         city, district, address,
         open_date, business_hours, store_area, seats, frontage,
         store_category, store_status, mall_type, trade_area_type, description,
-        latitude, longitude, status, icon_color, user_id,
+        latitude, longitude, status, icon_color, user_id, city_source,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       store_code || '', brand || '', name, store_type || '已开业',
-      city || '', district || '', address || '',
+      cityFix.city || '', district || '', address || '',
       open_date || '', business_hours || '', store_area || null, seats || null, frontage || null,
       store_category || '', store_status || '', mall_type || '', trade_area_type || '', description || '',
-      latitude, longitude, '正常', icon_color || '#409eff', req.user.id
+      latitude, longitude, '正常', icon_color || '#409eff', req.user.id, cityFix.city_source || null
     )
 
     const marker = db.prepare('SELECT * FROM markers WHERE id = ?').get(result.lastInsertRowid)
@@ -118,13 +141,23 @@ router.put('/:id', authenticate, (req, res) => {
       return res.status(404).json({ message: '门店不存在' })
     }
 
+    // 只读锁（规则 4）：镜像行由源账号维护，本账号须先「脱离同步」
+    if (blockedBySyncLock(res, existingMarker)) return
+
+    // 城市兜底（规则 13）：改了坐标却没给 city（或把 city 清空）→ 重新反查补全
+    const nextLat = latitude ?? existingMarker.latitude
+    const nextLng = longitude ?? existingMarker.longitude
+    const rawCity = (city === undefined || city === null) ? existingMarker.city : city
+    const cityFix = fillCityFallback(db, { city: rawCity, latitude: nextLat, longitude: nextLng })
+    const citySource = cityFix.city_source || existingMarker.city_source || null
+
     db.prepare(`
       UPDATE markers SET
         store_code = ?, brand = ?, name = ?, store_type = ?,
         city = ?, district = ?, address = ?, 
         open_date = ?, business_hours = ?, store_area = ?, seats = ?, frontage = ?,
         store_category = ?, store_status = ?, mall_type = ?, trade_area_type = ?, description = ?,
-        latitude = ?, longitude = ?, icon_color = ?,
+        latitude = ?, longitude = ?, icon_color = ?, city_source = ?,
         updated_at = datetime('now')
       WHERE id = ?
     `).run(
@@ -132,7 +165,7 @@ router.put('/:id', authenticate, (req, res) => {
       brand ?? existingMarker.brand,
       name ?? existingMarker.name,
       store_type ?? existingMarker.store_type,
-      city ?? existingMarker.city,
+      cityFix.city ?? existingMarker.city,
       district ?? existingMarker.district,
       
       address ?? existingMarker.address,
@@ -149,6 +182,7 @@ router.put('/:id', authenticate, (req, res) => {
       latitude ?? existingMarker.latitude,
       longitude ?? existingMarker.longitude,
       icon_color ?? existingMarker.icon_color,
+      citySource,
       req.params.id
     )
 
@@ -165,11 +199,21 @@ router.put('/:id', authenticate, (req, res) => {
 })
 
 // 清空所有门店（必须放在 /:id 之前，避免 clear-all 被 :id 捕获）
+// ★ 保留镜像行（sync_readonly=1）：它们由源账号维护，清空本账号自有门店不应
+//   连带销毁「集团下发给我的门店」。要一并清掉请走「移除外来副本」。
 router.delete('/clear-all', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const result = db.prepare('DELETE FROM markers WHERE user_id = ?').run(req.user.id)
-    res.json({ message: `已清空 ${result.changes} 条门店数据`, count: result.changes })
+    const kept = db.prepare('SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND sync_readonly = 1').get(req.user.id)
+    const result = db.prepare('DELETE FROM markers WHERE user_id = ? AND (sync_readonly IS NULL OR sync_readonly != 1)').run(req.user.id)
+    const keptN = (kept && kept.n) || 0
+    res.json({
+      message: keptN > 0
+        ? `已清空 ${result.changes} 条自有门店；保留了 ${keptN} 条同步镜像（如需清除请用「移除外来副本」）`
+        : `已清空 ${result.changes} 条门店数据`,
+      count: result.changes,
+      keptSynced: keptN
+    })
   } catch (error) {
     console.error('清空门店错误:', error)
     res.status(500).json({ message: '清空失败' })
@@ -192,6 +236,9 @@ router.delete('/:id', authenticate, (req, res) => {
       return res.status(403).json({ message: '无权删除该门店' })
     }
 
+    // 只读锁（规则 4）
+    if (blockedBySyncLock(res, existingMarker)) return
+
     db.prepare('DELETE FROM markers WHERE id = ?').run(req.params.id)
 
     res.json({ message: '删除成功' })
@@ -212,14 +259,28 @@ router.post('/batch-delete', authenticate, (req, res) => {
     const db = getDb()
     const placeholders = ids.map(() => '?').join(',')
 
+    // 只读锁（规则 4）：镜像行不参与批量删除，单独统计提示
+    const locked = db.prepare(`
+      SELECT COUNT(*) AS n FROM markers
+       WHERE id IN (${placeholders}) AND sync_readonly = 1
+         ${req.user.role !== 'admin' ? 'AND user_id = ?' : ''}
+    `).get(...(req.user.role !== 'admin' ? [...ids, req.user.id] : ids))
+
     // 普通用户只能删除自己的门店数据
     if (req.user.role !== 'admin') {
-      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders}) AND user_id = ?`).run(...ids, req.user.id)
+      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders}) AND user_id = ? AND (sync_readonly IS NULL OR sync_readonly != 1)`).run(...ids, req.user.id)
     } else {
-      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM markers WHERE id IN (${placeholders}) AND (sync_readonly IS NULL OR sync_readonly != 1)`).run(...ids)
     }
 
-    res.json({ message: '批量删除成功', count: ids.length })
+    const lockedN = (locked && locked.n) || 0
+    res.json({
+      message: lockedN > 0
+        ? `批量删除成功；其中 ${lockedN} 条为同步镜像已跳过（需先「脱离同步」）`
+        : '批量删除成功',
+      count: ids.length - lockedN,
+      skippedSynced: lockedN
+    })
   } catch (error) {
     console.error('批量删除门店错误:', error)
     res.status(500).json({ message: '批量删除失败' })
@@ -241,6 +302,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       complete: (results) => {
         const db = getDb()
         let imported = 0
+        let geocoded = 0
+        let cityPool = null   // 懒加载：只有真的出现空 city 才建参照池（规则 13）
 
         // H3/S1-A（v1.13.106）：裸 exec BEGIN/COMMIT 收编为 wrapper 事务原语，
         // 任一行失败 ROLLBACK 整体回滚（原实现中途异常会悬挂 BEGIN、不落盘即丢半截数据）
@@ -250,9 +313,18 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 
           for (const row of results.data) {
             if (!row.name || !row.latitude || !row.longitude) continue
+            let cityVal = String(row.city || '').trim()
+            let citySource = cityVal ? 'manual' : null
+            if (!cityVal) {
+              if (!cityPool) cityPool = loadCityReferencePool(db)
+              const fix = fillCityFallback(db, {
+                city: '', latitude: parseFloat(row.latitude), longitude: parseFloat(row.longitude)
+              }, cityPool)
+              if (fix.city) { cityVal = fix.city; citySource = fix.city_source; geocoded++ }
+            }
             const vals = [
               esc(row.store_code || ''), esc(row.brand || ''), esc(row.name), esc(row.store_type || '已开业'),
-              esc(row.city || ''), esc(row.district || ''), esc(row.address || ''),
+              esc(cityVal), esc(row.district || ''), esc(row.address || ''),
               esc(row.open_date || ''), esc(row.business_hours || ''),
               row.store_area ? esc(parseFloat(row.store_area)) : 'NULL',
               row.seats ? esc(parseInt(row.seats)) : 'NULL',
@@ -262,9 +334,10 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               "'正常'",
               esc(row.icon_color || '#409eff'),
               String(req.user.id),
+              esc(citySource),
               "datetime('now')", "datetime('now')"
             ].join(',')
-            db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,created_at,updated_at) VALUES (' + vals + ')')
+            db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,city_source,created_at,updated_at) VALUES (' + vals + ')')
             imported++
           }
           db.commitTx() // 内含统一落盘
@@ -277,8 +350,11 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         try { fs.unlinkSync(req.file.path) } catch (e) { console.warn('[Markers] 清理上传临时文件失败:', e.message) }
 
         res.json({
-          message: `成功导入 ${imported} 条数据`,
-          count: imported
+          message: geocoded > 0
+            ? `成功导入 ${imported} 条数据（其中 ${geocoded} 条城市由坐标反查补全）`
+            : `成功导入 ${imported} 条数据`,
+          count: imported,
+          geocodedCities: geocoded
         })
       }
     })
