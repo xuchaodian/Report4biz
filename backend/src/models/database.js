@@ -253,6 +253,14 @@ export async function initDatabase() {
     )
   `)
 
+  // ★ v0.9 补：解散集团 = 软删除（立碑），而非物理删除。
+  //   理由：quota_grants（配额台账）与 sync_batches（同步审计）都是 append-only 且引用 org_id，
+  //   物理删 organizations 行会让台账留下悬空 org_id（本库未开 PRAGMA foreign_keys，不会报错，
+  //   只会静默脏掉）。改用墓碑列后：台账引用始终有效、解散留痕（谁/何时/为何）、同名集团可重建。
+  try { db.run(`ALTER TABLE organizations ADD COLUMN dissolved_at DATETIME`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE organizations ADD COLUMN dissolved_by INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE organizations ADD COLUMN dissolve_reason TEXT`) } catch (e) { /* 列已存在 */ }
+
   // 组织成员（子公司账号）
   db.run(`
     CREATE TABLE IF NOT EXISTS org_members (

@@ -26,6 +26,17 @@
         <el-tag size="small" effect="plain">子公司 {{ activeOrg.memberCount }}</el-tag>
         <span class="dim">创建于 {{ fmtTime(activeOrg.createdAt) }}</span>
       </span>
+
+      <!-- 解散集团：刻意推到工具条最右、用纯文字危险色，与「新建集团」拉开距离防误点 -->
+      <el-button
+        v-if="activeOrg"
+        class="org-dissolve"
+        text
+        type="danger"
+        @click="openDissolve"
+      >
+        <el-icon><Delete /></el-icon> 解散集团
+      </el-button>
     </div>
 
     <!-- 空态 -->
@@ -205,6 +216,54 @@
         <el-button type="danger" :loading="saving" @click="submitUnbind">确认解绑</el-button>
       </template>
     </el-dialog>
+
+    <!-- 解散集团（先算影响面再确认；v0.9 补丁） -->
+    <el-dialog v-model="dissolveVisible" title="解散集团" width="580px" append-to-body :close-on-click-modal="false">
+      <div v-loading="impactLoading">
+        <p class="unbind-lead">
+          即将解散集团 <b>{{ activeOrg?.name }}</b>（总部 <b>{{ activeOrg?.ownerName }}</b>）。
+          解散后该集团会从列表中消失，界面<b>无法撤销</b>（如需重建请再走一次「新建集团」）。
+        </p>
+
+        <el-alert
+          v-if="dissolveImpact.memberCount > 0"
+          type="error"
+          :closable="false"
+          show-icon
+          class="unbind-note"
+          title="集团下还有子公司，不能解散"
+          :description="`请先在成员表里逐个解绑这些账号，再回来解散：${dissolveMemberNames}`"
+        />
+        <el-alert
+          v-else
+          type="info"
+          :closable="false"
+          show-icon
+          class="unbind-note"
+          title="解散不删除任何门店 / 竞品数据"
+          description="平台配额台账与同步审计按 append-only 规则完整保留；总部账号的已分配额度也不会在解散时被清算。"
+        />
+
+        <template v-if="dissolveImpact.memberCount === 0">
+          <el-checkbox v-model="dissolveForm.purgeGroupMirrors" :disabled="!dissolveImpact.ownerMirrors.total">
+            改为<b>删除</b>总部账号中由子公司同步来的镜像
+            （门店 {{ dissolveImpact.ownerMirrors.markers }} 条 / 竞品 {{ dissolveImpact.ownerMirrors.competitors }} 条）
+          </el-checkbox>
+          <div class="form-tip">
+            默认<b>保留</b>这些数据：解除只读锁并转为总部账号的自有行 —— 不丢数据，且不会留下删不掉的行。
+          </div>
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="dissolveVisible = false">取消</el-button>
+        <el-button
+          type="danger"
+          :loading="saving"
+          :disabled="dissolveImpact.memberCount > 0"
+          @click="submitDissolve"
+        >确认解散</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -224,6 +283,7 @@ const toggling = ref(null)
 const createVisible = ref(false)
 const addVisible = ref(false)
 const unbindVisible = ref(false)
+const dissolveVisible = ref(false)
 const impactLoading = ref(false)
 
 const createForm = ref({ name: '', ownerUserId: null })
@@ -235,7 +295,22 @@ const impact = ref({
   groupMirrors: { markers: 0, competitors: 0, total: 0 }
 })
 
+// 解散集团（v0.9 补丁）：dryRun 影响面
+const dissolveForm = ref({ purgeGroupMirrors: false })
+const dissolveImpact = ref({
+  memberCount: 0,
+  members: [],
+  ownerMirrors: { markers: 0, competitors: 0, total: 0 },
+  ledgerRows: 0,
+  syncBatches: 0
+})
+
 const activeOrg = computed(() => orgs.value.find(o => o.id === activeOrgId.value) || null)
+
+/** 解散被拦下时提示「还需要先解绑哪些账号」 */
+const dissolveMemberNames = computed(() =>
+  (dissolveImpact.value.members || []).map(m => m.username).join('、')
+)
 
 /** 总部候选：排除平台 admin、已是他家总部 / 已属其他集团的账号 */
 const orgOwnerIds = computed(() => new Set(orgs.value.map(o => o.ownerUserId)))
@@ -390,6 +465,68 @@ async function submitUnbind() {
   }
 }
 
+/**
+ * 解散集团（v0.9 补丁）—— 先 dryRun 算影响面，再让用户确认。
+ * 后端有「成员数必须为 0」硬门槛，这里提前把结果摆出来并把确认按钮置灰，
+ * 避免用户填完才吃 409（同时也解释了"为什么不能解散"）。
+ */
+async function openDissolve() {
+  dissolveForm.value = { purgeGroupMirrors: false }
+  dissolveImpact.value = {
+    memberCount: 0,
+    members: [],
+    ownerMirrors: { markers: 0, competitors: 0, total: 0 },
+    ledgerRows: 0,
+    syncBatches: 0
+  }
+  dissolveVisible.value = true
+  impactLoading.value = true
+  try {
+    const res = await api.delete(`/orgs/${activeOrgId.value}`, { params: { dryRun: 1 } })
+    const imp = res.impact || {}
+    const om = imp.ownerMirrors || {}
+    dissolveImpact.value = {
+      memberCount: imp.memberCount || 0,
+      members: imp.members || [],
+      ownerMirrors: {
+        markers: om.markers || 0,
+        competitors: om.competitors || 0,
+        total: (om.markers || 0) + (om.competitors || 0)
+      },
+      ledgerRows: imp.ledgerRows || 0,
+      syncBatches: imp.syncBatches || 0
+    }
+  } catch (e) {
+    ElMessage.error(errMsg(e, '计算解散影响失败'))
+    dissolveVisible.value = false
+  } finally {
+    impactLoading.value = false
+  }
+}
+
+async function submitDissolve() {
+  const name = activeOrg.value?.name
+  saving.value = true
+  try {
+    const res = await api.delete(`/orgs/${activeOrgId.value}`, {
+      params: { purgeGroupMirrors: dissolveForm.value.purgeGroupMirrors ? 1 : 0 }
+    })
+    const handled = res.released
+      ? (res.released.markers || 0) + (res.released.competitors || 0)
+      : (res.purged ? (res.purged.markers || 0) + (res.purged.competitors || 0) : 0)
+    ElMessage.success(
+      `集团「${name}」已解散` + (handled ? `（已处理 ${handled} 条镜像数据）` : '')
+    )
+    dissolveVisible.value = false
+    await loadOrgs(false)
+  } catch (e) {
+    ElMessage.error(errMsg(e, '解散集团失败'))
+    await loadOrgs()
+  } finally {
+    saving.value = false
+  }
+}
+
 onMounted(loadOrgs)
 
 defineExpose({ reload: loadOrgs })
@@ -413,6 +550,10 @@ defineExpose({ reload: loadOrgs })
   align-items: center;
   gap: 8px;
   margin-left: 4px;
+}
+
+.org-dissolve {
+  margin-left: auto;
 }
 
 .opt-dim {

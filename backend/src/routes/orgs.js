@@ -17,6 +17,13 @@
 //                          POST /api/orgs/:id/members · PATCH · DELETE
 //   我的组织（集团/成员）：GET /api/orgs/me · POST /api/orgs/me/consent
 //                          PATCH /api/orgs/me/settings
+//
+// ★ v0.9 补丁：新增第 9 个接口 DELETE /api/orgs/:id（解散集团，软删除「立碑」）。
+//   起因：设计方案 §6 / §7.1 从未设计集团级撤销 —— 建错集团（选错总部账号、写错名字）
+//         在批次 B 上线后**没有任何出口**，只能改库。生产 0 集团时未暴露，但一旦建真集团即锁死。
+//   语义：requireOrgOwner（本组织 owner 或平台 admin）+「成员数必须为 0」硬门槛
+//         + ?dryRun=1 先算影响面 + dissolved_at/dissolved_by/dissolve_reason 审计留痕。
+//   详见本文件末 DELETE /:id 路由上方注释。
 // ============================================================================
 
 import express from 'express'
@@ -95,12 +102,31 @@ function serializeOrg(db, o, { withMembers = false } = {}) {
   }
 }
 
+/**
+ * 取组织（**只认未解散的**）。
+ * 解散 = 软删除立碑（organizations.dissolved_at），因此所有按 id 取组织的地方
+ * 都天然把已解散集团当作「不存在」—— requireOrgOwner 会对它返回 404，
+ * 已解散集团因此无法再被绑成员/改开关/解绑，也不会出现在 GET /api/orgs 列表里。
+ */
 function findOrg(db, id) {
-  return db.prepare(`SELECT * FROM organizations WHERE id = ?`).get(id) || null
+  return db.prepare(`SELECT * FROM organizations WHERE id = ? AND dissolved_at IS NULL`).get(id) || null
 }
 
 function findMember(db, orgId, userId) {
   return db.prepare(`SELECT * FROM org_members WHERE org_id = ? AND user_id = ?`).get(orgId, userId) || null
+}
+
+/**
+ * 统计某账号名下「由同步而来」的外来行（markers / competitors）。
+ * 用于解散集团时算影响面 / 释放 / 清理。
+ */
+function countForeignRows(db, userId) {
+  const r = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM markers     WHERE user_id = ? AND origin_user_id IS NOT NULL) AS markers,
+      (SELECT COUNT(*) FROM competitors WHERE user_id = ? AND origin_user_id IS NOT NULL) AS competitors
+  `).get(userId, userId)
+  return { markers: (r && r.markers) || 0, competitors: (r && r.competitors) || 0 }
 }
 
 /**
@@ -149,7 +175,9 @@ router.get('/me', authenticate, (req, res) => {
     const db = getDb()
     const uid = req.user?.id
 
-    const owned = db.prepare(`SELECT * FROM organizations WHERE owner_user_id = ? ORDER BY id LIMIT 1`).get(uid)
+    const owned = db.prepare(`
+      SELECT * FROM organizations WHERE owner_user_id = ? AND dissolved_at IS NULL ORDER BY id LIMIT 1
+    `).get(uid)
     if (owned) {
       return res.json({ role: 'owner', org: serializeOrg(db, owned, { withMembers: true }), member: null })
     }
@@ -245,12 +273,13 @@ router.patch('/me/settings', authenticate, (req, res) => {
 /**
  * GET /api/orgs —— 集团列表（含成员明细）
  * 成员规模为个位数~几十，直接内联返回，省一次往返（不再单开 /api/orgs/:id/members）。
+ * 已解散（dissolved_at 非空）的集团不在列表中 —— 解散即从 UI 消失，审计留痕在库里。
  */
 router.get('/', authenticate, requireAdmin, (req, res) => {
   try {
     const db = getDb()
     const rows = db.prepare(`
-      SELECT * FROM organizations ORDER BY created_at DESC, id DESC
+      SELECT * FROM organizations WHERE dissolved_at IS NULL ORDER BY created_at DESC, id DESC
     `).all()
     res.json({ orgs: rows.map(o => serializeOrg(db, o, { withMembers: true })) })
   } catch (error) {
@@ -274,7 +303,8 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
     if (!name) return res.status(400).json({ message: '请填写集团名称' })
     if (name.length > 60) return res.status(400).json({ message: '集团名称过长（≤60 字）' })
 
-    const dup = db.prepare(`SELECT id FROM organizations WHERE name = ?`).get(name)
+    // 同名检查只看「未解散」的 —— 已解散集团的名字可被新集团重新使用
+    const dup = db.prepare(`SELECT id FROM organizations WHERE name = ? AND dissolved_at IS NULL`).get(name)
     if (dup) return res.status(409).json({ message: '同名集团已存在' })
 
     // 总部账号：优先 ownerUserId，其次 ownerUsername
@@ -289,7 +319,8 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
     }
     if (!owner) return res.status(404).json({ message: '总部账号不存在' })
 
-    const asOwner = db.prepare(`SELECT id, name FROM organizations WHERE owner_user_id = ?`).get(owner.id)
+    // 只拦「未解散」的集团：解散后该账号可再次出任新集团总部
+    const asOwner = db.prepare(`SELECT id, name FROM organizations WHERE owner_user_id = ? AND dissolved_at IS NULL`).get(owner.id)
     if (asOwner) return res.status(409).json({ message: `该账号已是集团「${asOwner.name}」的总部` })
     const asMember = db.prepare(`SELECT org_id FROM org_members WHERE user_id = ?`).get(owner.id)
     if (asMember) return res.status(409).json({ message: '该账号已是其他集团的成员，不能作为总部账号' })
@@ -330,7 +361,7 @@ router.post('/:id/members', authenticate, requireOrgOwner, (req, res) => {
       return res.status(400).json({ message: '平台管理员账号不能绑定为子公司' })
     }
 
-    const asOwner = db.prepare(`SELECT id, name FROM organizations WHERE owner_user_id = ?`).get(target.id)
+    const asOwner = db.prepare(`SELECT id, name FROM organizations WHERE owner_user_id = ? AND dissolved_at IS NULL`).get(target.id)
     if (asOwner) {
       return res.status(409).json({ message: `该账号是集团「${asOwner.name}」的总部账号，不能作为子公司` })
     }
@@ -479,6 +510,158 @@ router.delete('/:id/members/:userId', authenticate, requireOrgOwner, (req, res) 
   } catch (error) {
     console.error('解绑子公司失败:', error)
     res.status(500).json({ message: '解绑子公司失败' })
+  }
+})
+
+/**
+ * DELETE /api/orgs/:id —— 解散集团（**软删除 / 立碑**，v0.9 补丁）
+ * ----------------------------------------------------------------------------
+ * 为什么要有它：设计方案 §6 与 §7.1 只设计了「建集团 / 绑成员 / 解绑成员」，
+ * **没有集团级撤销**。批次 B 上线后，选错总部账号或写错集团名的集团无法从 UI 撤销，
+ * 只能改库 —— 本接口补上这个出口。
+ *
+ * 四道闸：
+ *   ① 权限：requireOrgOwner（本组织 owner 或平台 admin），与解绑成员同一把锁
+ *   ② 硬门槛：**成员数必须为 0**。仍有子公司时返回 409 + 成员清单，强制「先逐个解绑」。
+ *      理由：每个成员都牵涉「他带来的数据保留还是清理」的决策（规则 7 删除不级联），
+ *      级联解绑会把决定权从用户手里拿走；逐个解绑时每个都能单独看 dryRun 影响面。
+ *   ③ ?dryRun=1：只算影响面、不写库（UI 先展示后确认）
+ *   ④ 软删除：写 dissolved_at / dissolved_by / dissolve_reason，**不物理删行**
+ *      —— quota_grants 与 sync_batches 是 append-only 台账且引用 org_id，
+ *         物理删会留下悬空 org_id（本库未开 PRAGMA foreign_keys，不报错但会静默脏掉）。
+ *      软删除后：台账引用始终有效、解散可追溯、同名集团可重建、总部账号可再次出任总部。
+ *
+ * 总部账号名下「外来行」的处理（user_id=总部 且 origin_user_id IS NOT NULL）：
+ *   · 默认 **释放（release）**：清 origin_user_id/origin_row_id/origin_owner/sync_batch_id 且
+ *     置 sync_readonly=0 → 这些行变回总部账号可自由编辑/删除的自有行（**不丢数据**）。
+ *     ⚠️ 为什么不像解绑成员那样默认「保留锁定」：解绑时集团还在、成员可能再绑回来；
+ *        解散后集团**永久不存在**，再留 sync_readonly=1 就等于给用户留下
+ *        一批「删不掉也改不了」的死行。**勿改成默认保留。**
+ *   · ?purgeGroupMirrors=1 → 改为物理删除这些行（用户明确要清掉时用）。
+ *
+ * 绝不触碰：
+ *   · quota_grants / quota_history / sync_batches —— 台账只增不删（规则 17）
+ *   · 别人的账号里的副本 —— 那是别人的数据，解散本组织无权处置
+ *   · users.quota —— 额度回收属于配额分配范畴（P1.5），本文件恒不写配额
+ */
+router.delete('/:id', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const q = req.query || {}
+    const dryRun = q.dryRun === '1' || q.dryRun === 'true'
+    const purgeGroupMirrors = q.purgeGroupMirrors === '1' || q.purgeGroupMirrors === 'true'
+    const reason = String(req.body?.reason ?? q.reason ?? '').trim().slice(0, 200) || null
+
+    // ---- 影响面（dryRun 与实际执行共用同一套统计，避免"预览与执行不一致"）----
+    const memberRows = db.prepare(`
+      SELECT m.user_id, u.username, u.company
+      FROM org_members m
+      LEFT JOIN users u ON u.id = m.user_id
+      WHERE m.org_id = ? AND m.member_role != 'owner'
+      ORDER BY m.joined_at ASC, m.id ASC
+    `).all(org.id)
+
+    const ownerMirrors = countForeignRows(db, org.owner_user_id)
+    const ledgerRows = (db.prepare(`SELECT COUNT(*) AS n FROM quota_grants  WHERE org_id = ?`).get(org.id) || {}).n || 0
+    const batchRows = (db.prepare(`SELECT COUNT(*) AS n FROM sync_batches WHERE org_id = ?`).get(org.id) || {}).n || 0
+
+    const impact = {
+      orgId: org.id,
+      orgName: org.name,
+      ownerUserId: org.owner_user_id,
+      memberCount: memberRows.length,
+      members: memberRows.map(m => ({
+        userId: m.user_id,
+        username: m.username || `(已删除 #${m.user_id})`,
+        company: m.company || null
+      })),
+      // 默认释放 / 可改为清除；两个数量都会原样回给 UI
+      ownerMirrors,
+      // 以下台账**保留不删**，仅告知规模（append-only）
+      ledgerRows,
+      syncBatches: batchRows
+    }
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true, impact })
+    }
+
+    // ---- 硬门槛：成员必须已清空 ----
+    if (memberRows.length > 0) {
+      return res.status(409).json({
+        code: 'org_has_members',
+        message: `集团下仍有 ${memberRows.length} 个子公司，请先逐个解绑后再解散`,
+        impact
+      })
+    }
+
+    // ---- 执行 ----
+    let released = null
+    let purged = null
+
+    db.beginTx()
+    try {
+      if (purgeGroupMirrors) {
+        const a = db.prepare(`DELETE FROM markers     WHERE user_id = ? AND origin_user_id IS NOT NULL`).run(org.owner_user_id)
+        const b = db.prepare(`DELETE FROM competitors WHERE user_id = ? AND origin_user_id IS NOT NULL`).run(org.owner_user_id)
+        purged = { markers: a.changes, competitors: b.changes }
+      } else if (ownerMirrors.markers > 0 || ownerMirrors.competitors > 0) {
+        const a = db.prepare(`
+          UPDATE markers
+             SET origin_user_id = NULL, origin_row_id = NULL, origin_owner = NULL,
+                 sync_batch_id = NULL, sync_readonly = 0
+           WHERE user_id = ? AND origin_user_id IS NOT NULL
+        `).run(org.owner_user_id)
+        const b = db.prepare(`
+          UPDATE competitors
+             SET origin_user_id = NULL, origin_row_id = NULL, origin_owner = NULL,
+                 sync_batch_id = NULL, sync_readonly = 0
+           WHERE user_id = ? AND origin_user_id IS NOT NULL
+        `).run(org.owner_user_id)
+        released = { markers: a.changes, competitors: b.changes }
+      }
+
+      // 防御性清成员（正常已为 0；总部账号本就不在 org_members 中）
+      db.prepare(`DELETE FROM org_members WHERE org_id = ? AND member_role != 'owner'`).run(org.id)
+
+      db.prepare(`
+        UPDATE organizations
+           SET dissolved_at = CURRENT_TIMESTAMP, dissolved_by = ?, dissolve_reason = ?,
+               updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND dissolved_at IS NULL
+      `).run(req.user?.id ?? null, reason, org.id)
+
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
+
+    const after = db.prepare(`SELECT dissolved_at FROM organizations WHERE id = ?`).get(org.id) || {}
+
+    // 审计：解散是最重的一次组织操作，必须留痕（谁 / 何时 / 哪个集团 / 外来行怎么处理的 / 为什么）
+    const mirrorAction = released
+      ? `released=${JSON.stringify(released)}`
+      : (purged ? `purged=${JSON.stringify(purged)}` : 'mirrors=none')
+    console.warn(
+      `[orgs] 集团解散 org=${org.id}「${org.name}」owner=${org.owner_user_id} by=${req.user?.id} `
+      + `${mirrorAction} reason=${reason || '-'} ip=${req.ip}`
+    )
+
+    res.json({
+      ok: true,
+      dryRun: false,
+      dissolvedAt: after.dissolved_at || null,
+      impact,
+      released,
+      purged,
+      ledgerKept: true,
+      message: '集团已解散（配额台账与同步审计按 append-only 规则保留）'
+    })
+  } catch (error) {
+    console.error('解散集团失败:', error)
+    res.status(500).json({ message: '解散集团失败' })
   }
 })
 

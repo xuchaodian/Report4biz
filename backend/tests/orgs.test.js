@@ -1,7 +1,7 @@
 /**
- * 集团 / 子公司组织管理测试（v0.9 P0 批次 B）
+ * 集团 / 子公司组织管理测试（v0.9 P0 批次 B + 解散补丁）
  *
- * 被测：src/routes/orgs.js 的 8 个接口 + requireOrgOwner 中间件
+ * 被测：src/routes/orgs.js 的 9 个接口 + requireOrgOwner 中间件
  * 方式：真起一个 express 实例（端口 0 随机）→ 用 fetch 打真实 HTTP，
  *       覆盖「权限 / 参数校验 / 冲突分支 / 事务落地」——比只测纯函数可信得多。
  *       不引入 supertest（生产未装该依赖，禁止 npm install）。
@@ -17,6 +17,9 @@
  *   G. /me 三种视角（总部 / 成员 / 无关账号）
  *   H. 知情确认只写一次且不可代签（合规留痕）
  *   I. ⛔ 刻意不实现的配额接口确实不存在（防后人"补全"违反铁律）
+ *   J. 解散集团 = **软删除立碑**：成员未清空 → 409；解散后不可再操作、名称可复用、
+ *      总部账号可再任总部、**台账（quota_grants / sync_batches）只增不删**、
+ *      总部账号外来行默认「释放」而非删除（规则 7 / 17 / 21）
  *
  * 通过 R4B_DB_PATH 指向 /tmp 临时库，绝不触碰真实库。
  */
@@ -396,5 +399,177 @@ describe('⑩ ⛔ 刻意不实现的配额接口确实不存在（铁律 ②③ 
       const r = await call(m, p.replace('{{ID}}', String(ids.org)), { token: tokens.admin, body: { amount: 1 } })
       expect(`${m} ${p} → ${r.status}`).toBe(`${m} ${p} → 404`)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// v0.9 补丁：解散集团（软删除立碑）
+// 全部使用**本次新建的可抛弃账号/集团**，不干扰 ①~⑩ 的共享状态。
+// ---------------------------------------------------------------------------
+
+describe('⑪ 解散集团 DELETE /api/orgs/:id（软删除「立碑」）', () => {
+  /** 就地造一个测试账号（不污染 beforeAll 的种子） */
+  const mkUser = (username) => getDb().prepare(
+    `INSERT INTO users (username, email, password, role, quota) VALUES (?, ?, 'x', 'user', 0)`
+  ).run(username, `${username}@test.local`).lastInsertRowid
+
+  let ownX, memX, ownY, tOwnX, tMemX, orgX, orgY
+
+  it('准备：orgX（带 1 成员）/ orgY（无成员），总部账号各有一条「外来行」且带只读锁', async () => {
+    ownX = mkUser('dis_ownX_t')
+    memX = mkUser('dis_memX_t')
+    ownY = mkUser('dis_ownY_t')
+    tOwnX = makeToken({ id: ownX, username: 'dis_ownX_t', role: 'user' })
+    tMemX = makeToken({ id: memX, username: 'dis_memX_t', role: 'user' })
+
+    const a = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '待解散A', ownerUserId: ownX } })
+    expect(a.status).toBe(200)
+    orgX = a.body.org.id
+    expect((await call('POST', `/api/orgs/${orgX}/members`, { token: tokens.admin, body: { username: 'dis_memX_t' } })).status).toBe(200)
+
+    const b = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '待解散B', ownerUserId: ownY } })
+    expect(b.status).toBe(200)
+    orgY = b.body.org.id
+
+    const db = getDb()
+    const ins = db.prepare(`
+      INSERT INTO markers (name, latitude, longitude, user_id, origin_user_id, origin_row_id, sync_readonly)
+      VALUES (?, 31.23, 121.47, ?, ?, ?, 1)
+    `)
+    ins.run('前成员带入的店', ownX, memX, 1)
+    ins.run('前成员带入的店B', ownY, memX, 2)
+    // 总部账号的自有行：解散时绝不能被误伤
+    db.prepare(`INSERT INTO markers (name, latitude, longitude, user_id) VALUES (?, 31.23, 121.47, ?)`)
+      .run('总部自有店', ownX)
+  })
+
+  it('权限与参数：成员（非总部）→ 403；别的组织成员 → 403；不存在 → 404；非法 id → 400', async () => {
+    expect((await call('DELETE', `/api/orgs/${orgX}`, { token: tMemX })).status).toBe(403)
+    expect((await call('DELETE', `/api/orgs/${orgX}`, { token: tokens.subB })).status).toBe(403)
+    expect((await call('DELETE', '/api/orgs/99999', { token: tokens.admin })).status).toBe(404)
+    expect((await call('DELETE', '/api/orgs/abc', { token: tokens.admin })).status).toBe(400)
+  })
+
+  it('★ 仍有成员 → 409 + 成员清单，且集团原封不动（规则 7：删除不级联）', async () => {
+    const r = await call('DELETE', `/api/orgs/${orgX}`, { token: tokens.admin })
+    expect(r.status).toBe(409)
+    expect(r.body.code).toBe('org_has_members')
+    expect(r.body.impact.memberCount).toBe(1)
+    expect(r.body.impact.members[0].username).toBe('dis_memX_t')
+
+    const db = getDb()
+    expect(db.prepare(`SELECT dissolved_at FROM organizations WHERE id = ?`).get(orgX).dissolved_at).toBe(null)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM org_members WHERE org_id = ?`).get(orgX).n).toBe(1)
+  })
+
+  it('?dryRun=1 只统计不写库，且报出成员 / 外来行 / 台账规模', async () => {
+    const r = await call('DELETE', `/api/orgs/${orgX}?dryRun=1`, { token: tokens.admin })
+    expect(r.status).toBe(200)
+    expect(r.body.dryRun).toBe(true)
+    expect(r.body.impact.orgName).toBe('待解散A')
+    expect(r.body.impact.memberCount).toBe(1)
+    expect(r.body.impact.ownerMirrors.markers).toBe(1)
+
+    const db = getDb()
+    expect(db.prepare(`SELECT dissolved_at FROM organizations WHERE id = ?`).get(orgX).dissolved_at).toBe(null)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM org_members WHERE org_id = ?`).get(orgX).n).toBe(1)
+  })
+
+  it('★ 解绑成员后可由总部本人解散；默认**释放**外来行（清 origin_* + 解除只读），不删数据', async () => {
+    expect((await call('DELETE', `/api/orgs/${orgX}/members/${memX}`, { token: tokens.admin })).status).toBe(200)
+
+    const r = await call('DELETE', `/api/orgs/${orgX}?reason=${encodeURIComponent('建错了，撤销重来')}`, { token: tOwnX })
+    expect(r.status).toBe(200)
+    expect(r.body.dissolvedAt).toBeTruthy()
+    expect(r.body.released.markers).toBe(1)
+    expect(r.body.purged).toBe(null)
+    expect(r.body.ledgerKept).toBe(true)
+
+    const db = getDb()
+    const org = db.prepare(`SELECT * FROM organizations WHERE id = ?`).get(orgX)
+    expect(org.dissolved_at).toBeTruthy()
+    expect(org.dissolved_by).toBe(ownX)
+    expect(org.dissolve_reason).toBe('建错了，撤销重来')
+
+    // 外来行：行还在，但已变回可自由编辑的自有行
+    const m = db.prepare(`SELECT * FROM markers WHERE user_id = ? AND name = ?`).get(ownX, '前成员带入的店')
+    expect(m).toBeTruthy()
+    expect(m.origin_user_id).toBe(null)
+    expect(m.sync_readonly).toBe(0)
+    // 总部自有行纹丝不动：解散后仍是 2 条
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM markers WHERE user_id = ?`).get(ownX).n).toBe(2)
+    // 成员关系已清空
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM org_members WHERE org_id = ?`).get(orgX).n).toBe(0)
+  })
+
+  it('解散后：不在列表、/me 归零、且不可再被任何接口操作（404，立碑生效）', async () => {
+    const list = await call('GET', '/api/orgs', { token: tokens.admin })
+    expect(list.body.orgs.some(o => o.id === orgX)).toBe(false)
+
+    const me = await call('GET', '/api/orgs/me', { token: tOwnX })
+    expect(me.status).toBe(200)
+    expect(me.body.role).toBe(null)
+    expect(me.body.org).toBe(null)
+
+    // findOrg 只认未解散 → requireOrgOwner 404
+    expect((await call('POST', `/api/orgs/${orgX}/members`, { token: tokens.admin, body: { username: 'subB_t' } })).status).toBe(404)
+    expect((await call('DELETE', `/api/orgs/${orgX}`, { token: tokens.admin })).status).toBe(404)
+    // 总部账号本人也不再是任何组织视角
+    expect((await call('GET', '/api/orgs/me', { token: tOwnX })).body.role).toBe(null)
+  })
+
+  it('★ 解散后名称可复用、原总部账号可再任新集团总部（真正"撤销重来"）', async () => {
+    const r = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '待解散A', ownerUserId: ownX } })
+    expect(r.status).toBe(200)
+    expect(r.body.org.id).not.toBe(orgX)
+    ids.rebuilt = r.body.org.id
+  })
+
+  it('?purgeGroupMirrors=1 → 改为物理删除总部账号里的外来行（用户明确要清掉）', async () => {
+    const r = await call('DELETE', `/api/orgs/${orgY}?purgeGroupMirrors=1`, { token: tokens.admin })
+    expect(r.status).toBe(200)
+    expect(r.body.purged.markers).toBe(1)
+    expect(r.body.released).toBe(null)
+    expect((await call('GET', '/api/orgs', { token: tokens.admin })).body.orgs.some(o => o.id === orgY)).toBe(false)
+    expect(getDb().prepare(`SELECT COUNT(*) AS n FROM markers WHERE user_id = ?`).get(ownY).n).toBe(0)
+  })
+
+  it('★ 台账只增不删：解散不动 quota_grants / sync_batches，且不留悬空 org_id（规则 17）', async () => {
+    const db = getDb()
+    const u = mkUser('dis_ledger_t')
+    const g = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '台账集团', ownerUserId: u } })
+    expect(g.status).toBe(200)
+    const gid = g.body.org.id
+
+    db.prepare(`
+      INSERT INTO quota_grants (org_id, grant_kind, from_user_id, to_user_id, amount, created_by)
+      VALUES (?, 'pool_grant', ?, ?, 10, ?)
+    `).run(gid, u, u, ids.admin)
+    db.prepare(`
+      INSERT INTO sync_batches (org_id, direction, source_user_id, target_user_id, scope)
+      VALUES (?, 'group_to_member', ?, ?, 'markers')
+    `).run(gid, u, u)
+
+    const dry = await call('DELETE', `/api/orgs/${gid}?dryRun=1`, { token: tokens.admin })
+    expect(dry.body.impact.ledgerRows).toBe(1)
+    expect(dry.body.impact.syncBatches).toBe(1)
+
+    expect((await call('DELETE', `/api/orgs/${gid}`, { token: tokens.admin })).status).toBe(200)
+
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM quota_grants  WHERE org_id = ?`).get(gid).n).toBe(1)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM sync_batches WHERE org_id = ?`).get(gid).n).toBe(1)
+    // 软删除的价值：org_id 仍指向一条真实存在的 organizations 记录（不会悬空）
+    expect(db.prepare(`SELECT id FROM organizations WHERE id = ?`).get(gid)).toBeTruthy()
+  })
+
+  it('★ 解散不动 users.quota（额度回收属 P1.5，本文件恒不写配额）', async () => {
+    const db = getDb()
+    const u = mkUser('dis_quota_t')
+    db.prepare(`UPDATE users SET quota = 77 WHERE id = ?`).run(u)
+    const g = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '额度集团', ownerUserId: u } })
+    expect(g.status).toBe(200)
+
+    expect((await call('DELETE', `/api/orgs/${g.body.org.id}`, { token: tokens.admin })).status).toBe(200)
+    expect(db.prepare(`SELECT quota FROM users WHERE id = ?`).get(u).quota).toBe(77)
   })
 })
