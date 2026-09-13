@@ -555,7 +555,10 @@ const handleAiAdvice = async () => {
       aiAdvice.value = j.reply || '（AI 未返回内容）'
     } else {
       // SSE 流式解析：逐块 append（打字机效果）
-      aiAdvice.value = ''
+      // ★ 关键：不要一进入流式就清空 aiAdvice —— 那会让区块 v-if 变 false、整段消失，
+      //   用户会误以为「AI 建议中断了 / 没在执行」。保留「思考中」占位，
+      //   直到首个增量真正到达再清空替换，保证弹窗内全程连续显示。
+      let gotFirst = false
       const reader = res.body.getReader()
       const decoder = new TextDecoder('utf-8')
       let buf = ''
@@ -573,16 +576,22 @@ const handleAiAdvice = async () => {
             try {
               const chunk = JSON.parse(payload)
               const delta = chunk.choices?.[0]?.delta?.content
-              if (delta) aiAdvice.value += delta
+              if (delta) {
+                if (!gotFirst) { gotFirst = true; aiAdvice.value = '' }
+                aiAdvice.value += delta
+              }
             } catch (e) { /* 忽略解析失败 */ }
           }
         }
       }
-      if (!aiAdvice.value) aiAdvice.value = '（AI 未返回内容）'
+      if (!gotFirst) aiAdvice.value = '（AI 未返回内容）'
     }
   } catch (e) {
     console.error('AI 选址建议失败:', e)
-    ElMessage.error('AI 选址建议失败：' + (e.message || '请稍后重试'))
+    const failMsg = e.message || '请稍后重试'
+    // 失败时给出明确反馈：否则区块会一直停在「思考中」，同样让人误以为仍在进行
+    aiAdvice.value = '⚠️ AI 建议生成失败：' + failMsg
+    ElMessage.error('AI 选址建议失败：' + failMsg)
   } finally {
     aiAdviceLoading.value = false
   }
