@@ -58,11 +58,12 @@
           >
             <div v-for="c in localConflicts" :key="c.cityKey" class="conflict-row">
               城市 <b>{{ c.city }}</b> 当前归属「{{ c.company || c.username }}」
-              <el-tooltip content="划拨向导随 P2 批次上线" placement="top">
-                <span><el-button size="small" text type="primary" disabled>发起划拨</el-button></span>
-              </el-tooltip>
+              <el-button size="small" text type="primary" @click="openTransfer(c)">发起划拨</el-button>
             </div>
-            <div class="conflict-foot">请改选其他城市，或先走划拨流程把该城市转给本子公司。</div>
+            <div class="conflict-foot">
+              请改选其他城市，或先走划拨流程把「{{ localConflicts[0].city }}」转给本子公司
+              （划拨会自动完成存量迁移与双方范围互调）。
+            </div>
           </el-alert>
         </el-form-item>
 
@@ -99,12 +100,23 @@
       <el-button type="primary" :loading="saving" @click="submit">保存范围</el-button>
     </template>
   </el-drawer>
+
+  <!-- 辖区划拨向导（P2）：把冲突城市从占用方改判给本成员 -->
+  <TransferWizard
+    v-model="transfer.open"
+    :org-id="orgId"
+    :to-member="member"
+    :from-user-id="transfer.fromUserId"
+    :cities="transfer.cities"
+    @done="onTransferDone"
+  />
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
+import TransferWizard from './TransferWizard.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -240,6 +252,36 @@ function submit() {
     '所选城市已被其他成员占用',
     { type: 'warning', confirmButtonText: '强制保存', cancelButtonText: '返回修改' }
   ).then(() => doSave(true)).catch(() => { /* 用户取消 */ })
+}
+
+/**
+ * 辖区划拨向导（P2 · §3.5 Ⅱ / §7.7）
+ * 入口 = 冲突行上的「发起划拨」：把该城市从占用方改判给本成员（受让方）。
+ */
+const transfer = ref({ open: false, fromUserId: null, cities: [] })
+
+function openTransfer(conflict) {
+  if (!conflict?.userId) return
+  transfer.value = { open: true, fromUserId: conflict.userId, cities: [conflict.city] }
+}
+
+/**
+ * 划拨完成回调。
+ * ★ 后端在 commit 里已把该城市从原持有方 scope 移除、并入本成员 scope
+ *   ⇒ 必须重新拉取（覆盖本地编辑态），否则界面仍显示「冲突」而用户会再点一次保存。
+ *   同时把用户**尚未保存的其他选择**保留下来（排除刚被划拨的城市 —— 它在 reload 后
+ *   会自然出现在本成员的范围里）。
+ */
+async function onTransferDone() {
+  const pending = [...cities.value].filter(
+    c => !localConflicts.value.some(x => x.cityKey === normCity(c))
+  )
+  await load()
+  for (const c of pending) {
+    if (!cities.value.some(x => normCity(x) === normCity(c))) cities.value.push(c)
+  }
+  ElMessage.success('划拨完成：该城市已转给本子公司，双方管辖范围已自动更新')
+  emit('saved')
 }
 
 async function doSave(force) {

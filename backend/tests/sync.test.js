@@ -896,3 +896,349 @@ describe('⑧ mirrors kind=all + 配额一级分配（批次 E）', () => {
     expect(r.status).toBe(403)
   })
 })
+
+// ===========================================================================
+// ⑨ 辖区划拨 + 回滚（P2 · v0.13 · 规则 14 / 15）
+// ---------------------------------------------------------------------------
+// 场景：苏州市 由 A 负责 → 新公司 B 接管。
+// 断言的核心是 §3.5 Ⅱ 表里的「三处不一致」被一次性消除，外加 v0.12 补的第四处（scope）：
+//   ① A 名下苏州门店副本 user_id 改判 B
+//   ② store_sales.user_id 跟随（⛔ 漏了销售预测断链 —— 风险 P0）
+//   ③ 集团侧镜像 origin_user_id / belong_member_user_id 改指 B
+//   ④ A 的 scope 去掉苏州 / B 的 scope 并入苏州（否则 A 再同步会凭空重建重复副本）
+// 以及：行 id 不变、A 自建行不误伤、购买履历不迁、回滚完整可逆。
+// ===========================================================================
+describe('⑨ 辖区划拨 + 回滚（P2）', () => {
+  const T = {}
+
+  beforeAll(async () => {
+    const db = getDb()
+    const seed = (username) => db.prepare(
+      `INSERT INTO users (username, email, password, role, quota) VALUES (?, ?, ?, 'user', 0)`
+    ).run(username, `${username}@t.local`, 'x').lastInsertRowid
+
+    T.hq = seed('tf_hq')
+    T.a = seed('tf_a')
+    T.b = seed('tf_b')
+    T.tokHq = makeToken({ id: T.hq, username: 'tf_hq', role: 'user' })
+    T.tokA = makeToken({ id: T.a, username: 'tf_a', role: 'user' })
+    T.tokB = makeToken({ id: T.b, username: 'tf_b', role: 'user' })
+
+    const r = await call('POST', '/api/orgs', {
+      token: tokens.admin, body: { name: '划拨集团', ownerUserId: T.hq }
+    })
+    T.org = r.body.org.id
+    await call('POST', `/api/orgs/${T.org}/members`, { token: T.tokHq, body: { username: 'tf_a' } })
+    await call('POST', `/api/orgs/${T.org}/members`, { token: T.tokHq, body: { username: 'tf_b' } })
+
+    const mk = (name, city, uid, brand = '萨莉亚') => db.prepare(
+      `INSERT INTO markers (name, city, brand, latitude, longitude, user_id) VALUES (?, ?, ?, 31.3, 120.6, ?)`
+    ).run(name, city, brand, uid).lastInsertRowid
+
+    // 集团名下：苏州 3 家 + 杭州 1 家
+    T.hSz1 = mk('集团苏州店1', '苏州市', T.hq)
+    T.hSz2 = mk('集团苏州店2', '苏州', T.hq)
+    T.hSz3 = mk('集团苏州店3', '苏州市', T.hq)
+    T.hHz = mk('集团杭州店', '杭州市', T.hq)
+
+    // A 的 scope = 苏州市 → A 从集团同步（得到 3 条镜像）
+    await call('PATCH', `/api/orgs/${T.org}/members/${T.a}/scope`, {
+      token: T.tokHq, body: { cities: ['苏州市'], brands: [] }
+    })
+    const pv = await call('POST', '/api/sync/preview', {
+      token: T.tokA, body: { direction: 'group_to_member', kind: 'markers', filter: {} }
+    })
+    await call('POST', '/api/sync/commit', { token: T.tokA, body: { batchId: pv.body.batchId } })
+    T.aMirrors = db.prepare(`
+      SELECT id FROM markers WHERE user_id = ? AND origin_user_id = ? ORDER BY id
+    `).all(T.a, T.hq).map(x => x.id)
+
+    // A 维护的销售历史（风险 P0 的载体：store_sales.store_id → 上面这些行）
+    for (const id of T.aMirrors.slice(0, 2)) {
+      db.prepare(`
+        INSERT INTO store_sales (user_id, store_id, store_name, year, month, sales_amount)
+        VALUES (?, ?, ?, 2026, 8, 1234.5)
+      `).run(T.a, id, `销售行${id}`)
+    }
+
+    // A 在苏州市**自建**的门店（不属于集团下发 → 划拨不得搬走它）
+    T.aOwn = mk('A自建苏州店', '苏州市', T.a)
+
+    // 集团侧镜像：A 回推给集团的行（origin 指向 A）
+    //   ⚠️ 唯一索引 ux_markers_origin(user_id, origin_user_id, origin_row_id) ⇒ origin_row_id 须各异
+    const mkMirror = (name, originRowId) => db.prepare(`
+      INSERT INTO markers (name, city, latitude, longitude, user_id,
+                           origin_user_id, origin_row_id, origin_owner, sync_readonly)
+      VALUES (?, '苏州市', 31.3, 120.6, ?, ?, ?, 'A公司', 1)
+    `).run(name, T.hq, T.a, originRowId).lastInsertRowid
+    T.gMirror1 = mkMirror('回流镜像1', T.aOwn)
+    T.gMirror2 = mkMirror('回流镜像2', T.aMirrors[0])
+
+    // B 的 scope 先只持杭州市（与 A 的苏州市不冲突）
+    await call('PATCH', `/api/orgs/${T.org}/members/${T.b}/scope`, {
+      token: T.tokHq, body: { cities: ['杭州市'], brands: [] }
+    })
+    void T.hHz
+  })
+
+  it('transfer/preview：只圈「集团下发」的行，不误伤成员自建行；store_sales 与集团镜像分别计数', async () => {
+    const r = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokHq,
+      body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'], kinds: ['markers'] }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.counts.markers).toBe(3)              // 只算 origin=集团 的 3 条
+    expect(r.body.counts.storeSales).toBe(2)           // 关联销售记录
+    expect(r.body.counts.groupMirrors).toBe(2)         // 集团侧 origin=A 的 2 行
+    expect(r.body.counts.purchases).toBe(0)
+    T.previewBatchId = r.body.batchId
+
+    const db = getDb()
+    expect(String(db.prepare(`SELECT status FROM sync_batches WHERE id = ?`).get(r.body.batchId).status)).toBe('preview')
+    // 「只建 preview 批次」的结构性保证：业务行一行都没动
+    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aMirrors[0]).user_id).toBe(T.a)
+    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aOwn).user_id).toBe(T.a)
+  })
+
+  it('transfer/commit：单事务三步 + scope 互调；★ 行 id 不变、A 自建行不搬、store_sales 无残留', async () => {
+    const db = getDb()
+    const r = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: T.previewBatchId, mode: 'transfer' }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.moved.markers).toBe(3)
+    expect(r.body.storeSales).toBe(2)
+    expect(r.body.groupMirrors).toBe(2)
+
+    // ① 门店归属改判 —— 行 id 一个都没变（引用连续）
+    for (const id of T.aMirrors) {
+      const row = db.prepare(`SELECT id, user_id, origin_user_id FROM markers WHERE id = ?`).get(id)
+      expect(row.user_id).toBe(T.b)
+      expect(row.origin_user_id).toBe(T.hq)           // 来源仍是集团，只是写权人换了
+    }
+    // A 自建行不搬
+    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aOwn).user_id).toBe(T.a)
+
+    // ② store_sales 跟随（★ 风险 P0 的显式断言：旧 user_id 零残留）
+    const restOld = db.prepare(`
+      SELECT COUNT(*) AS n FROM store_sales WHERE user_id = ? AND store_id IN (${T.aMirrors.map(() => '?').join(',')})
+    `).get(T.a, ...T.aMirrors).n
+    expect(restOld).toBe(0)
+    const restNew = db.prepare(`
+      SELECT COUNT(*) AS n FROM store_sales WHERE user_id = ? AND store_id IN (${T.aMirrors.map(() => '?').join(',')})
+    `).get(T.b, ...T.aMirrors).n
+    expect(restNew).toBe(2)
+
+    // ③ 集团侧镜像改指新写权人（否则旧主编辑仍会覆盖集团数据）
+    for (const id of [T.gMirror1, T.gMirror2]) {
+      const m = db.prepare(`SELECT origin_user_id, belong_member_user_id FROM markers WHERE id = ?`).get(id)
+      expect(m.origin_user_id).toBe(T.b)
+      expect(m.belong_member_user_id).toBe(T.b)
+    }
+
+    // ④ scope 互调
+    const scopeOf = (uid) => {
+      const raw = db.prepare(`SELECT scope_json FROM org_members WHERE org_id = ? AND user_id = ?`).get(T.org, uid)
+      return JSON.parse(raw.scope_json)
+    }
+    expect(scopeOf(T.a).cities).not.toContain('苏州市')
+    expect(scopeOf(T.b).cities).toContain('苏州市')
+    expect(scopeOf(T.b).cities).toContain('杭州市')    // 原有城市保留
+
+    // 批次：direction=transfer + success，且写入 2 条 scope_change 审计
+    const batch = db.prepare(`SELECT direction, status, source_user_id, target_user_id FROM sync_batches WHERE id = ?`).get(r.body.batchId)
+    expect(batch.direction).toBe('transfer')
+    expect(batch.status).toBe('success')
+    expect(batch.source_user_id).toBe(T.a)
+    expect(batch.target_user_id).toBe(T.b)
+    const scCount = db.prepare(`
+      SELECT COUNT(*) AS n FROM sync_batches WHERE org_id = ? AND direction = 'scope_change'
+    `).get(T.org).n
+    expect(scCount).toBeGreaterThanOrEqual(2)
+    T.transferBatchId = r.body.batchId
+  })
+
+  it('transfer 批次出现在同步历史里（direction 白名单已放开）', async () => {
+    const r = await call('GET', `/api/sync/batches?limit=50`, { token: T.tokHq })
+    expect(r.status).toBe(200)
+    const hit = (r.body.batches || []).find(b => b.id === T.transferBatchId)
+    expect(hit).toBeTruthy()
+    expect(hit.direction).toBe('transfer')
+  })
+
+  it('transfer/commit：重复提交 → 409（批次已不是 preview）', async () => {
+    const r = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: T.transferBatchId }
+    })
+    expect(r.status).toBe(409)
+    expect(r.body.code).toBe('batch_not_preview')
+  })
+
+  it('transfer/commit：mode 非 transfer → 400（共存/清理刻意未实现）', async () => {
+    const pv = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokHq, body: { fromUserId: T.b, toUserId: T.a, cities: ['苏州市'], kinds: ['markers'] }
+    })
+    const r = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: pv.body.batchId, mode: 'coexist' }
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('mode_unsupported')
+  })
+
+  it('transfer/preview：同账号 / 总部当 from / 非成员 / 空城市 → 400·400·404·400', async () => {
+    const P = (body) => call('POST', `/api/orgs/${T.org}/transfer/preview`, { token: T.tokHq, body })
+    expect((await P({ fromUserId: T.a, toUserId: T.a, cities: ['苏州市'] })).status).toBe(400)
+    expect((await P({ fromUserId: T.hq, toUserId: T.a, cities: ['苏州市'] })).status).toBe(400)
+    expect((await P({ fromUserId: T.a, toUserId: ids.outsider, cities: ['苏州市'] })).status).toBe(404)
+    expect((await P({ fromUserId: T.a, toUserId: T.b, cities: [] })).status).toBe(400)
+    // 成员本人不能发起划拨（requireOrgOwner）
+    const r = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokA, body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'] }
+    })
+    expect(r.status).toBe(403)
+  })
+
+  it('rollback（transfer）：完整可逆 —— 归属 + 销售 + 集团镜像 + 双方 scope 全部还原', async () => {
+    const db = getDb()
+    const r = await call('POST', `/api/sync/batches/${T.transferBatchId}/rollback`, {
+      token: T.tokHq, body: {}
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.restored.markers).toBe(3)
+    expect(r.body.restored.storeSales).toBe(2)
+    expect(r.body.restored.groupMirrors).toBe(2)
+
+    for (const id of T.aMirrors) {
+      expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(id).user_id).toBe(T.a)
+    }
+    const backOld = db.prepare(`
+      SELECT COUNT(*) AS n FROM store_sales WHERE user_id = ? AND store_id IN (${T.aMirrors.map(() => '?').join(',')})
+    `).get(T.a, ...T.aMirrors).n
+    expect(backOld).toBe(2)
+    for (const id of [T.gMirror1, T.gMirror2]) {
+      expect(db.prepare(`SELECT origin_user_id FROM markers WHERE id = ?`).get(id).origin_user_id).toBe(T.a)
+    }
+
+    const scopeOf = (uid) => JSON.parse(
+      db.prepare(`SELECT scope_json FROM org_members WHERE org_id = ? AND user_id = ?`).get(T.org, uid).scope_json
+    )
+    expect(scopeOf(T.a).cities).toContain('苏州市')
+    expect(scopeOf(T.b).cities).not.toContain('苏州市')
+
+    expect(String(db.prepare(`SELECT status FROM sync_batches WHERE id = ?`).get(T.transferBatchId).status)).toBe('rolled_back')
+  })
+
+  it('rollback：目标方已编辑 → 409 target_edited；force 后可回滚（设计 §3.5 Ⅱ-c）', async () => {
+    const db = getDb()
+    const pv = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokHq, body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'], kinds: ['markers'] }
+    })
+    const cm = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: pv.body.batchId }
+    })
+    expect(cm.status).toBe(200)
+
+    // 模拟新持有方改过其中一行
+    db.prepare(`UPDATE markers SET updated_at = datetime('now', '+1 hour') WHERE id = ?`).run(T.aMirrors[0])
+
+    const blocked = await call('POST', `/api/sync/batches/${cm.body.batchId}/rollback`, {
+      token: T.tokHq, body: {}
+    })
+    expect(blocked.status).toBe(409)
+    expect(blocked.body.code).toBe('target_edited')
+    expect(blocked.body.edited).toBeGreaterThanOrEqual(1)
+
+    const forced = await call('POST', `/api/sync/batches/${cm.body.batchId}/rollback`, {
+      token: T.tokHq, body: { force: true }
+    })
+    expect(forced.status).toBe(200)
+    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aMirrors[0]).user_id).toBe(T.a)
+  })
+
+  it('rollback（回归）：preview 与 commit 跨秒也不误判 target_edited（基准线用 appliedAt）', async () => {
+    const db = getDb()
+    const pv = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokHq, body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'], kinds: ['markers'] }
+    })
+    expect(pv.status).toBe(200)
+
+    // 复刻真实 UI 场景：preview 批次在预演时就已落库，用户在确认框上停留若干秒才点执行，
+    // 于是 commit 时刻 > 批次 created_at。若无 appliedAt 基准线，countEditedSince 会把
+    // 本次迁移**自己**写入的 updated_at（commit 时刻）当成「目标方已编辑」→ 假阳性 409。
+    // smoke 脚本因 preview/commit 同秒完成而恰好绕过，本地全栈 UI 验证才暴露。
+    db.prepare(`UPDATE sync_batches SET created_at = datetime('now', '-30 seconds') WHERE id = ?`)
+      .run(pv.body.batchId)
+
+    const cm = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: pv.body.batchId }
+    })
+    expect(cm.status).toBe(200)
+
+    const rb = await call('POST', `/api/sync/batches/${cm.body.batchId}/rollback`, {
+      token: T.tokHq, body: {}
+    })
+    expect(rb.status).toBe(200)          // 修复前：409 target_edited（edited=3）
+    expect(rb.body.edited).toBe(0)
+    expect(rb.body.restored.markers).toBe(3)
+    for (const id of T.aMirrors) {
+      expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(id).user_id).toBe(T.a)
+    }
+  })
+
+  it('rollback（回归·legacy）：旧批次 detail 无 appliedAt 时，兜底用 finished_at 而非 created_at', async () => {
+    const db = getDb()
+    const pv = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
+      token: T.tokHq, body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'], kinds: ['markers'] }
+    })
+    const cm = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
+      token: T.tokHq, body: { batchId: pv.body.batchId }
+    })
+    expect(cm.status).toBe(200)
+
+    // 模拟「P2 上线前就已存在」的批次：detail 里没有 appliedAt，且 created_at 早于 commit。
+    const d = JSON.parse(db.prepare(`SELECT detail FROM sync_batches WHERE id = ?`).get(cm.body.batchId).detail)
+    delete d.transfer.appliedAt
+    db.prepare(`UPDATE sync_batches SET detail = ?, created_at = datetime('now','-30 seconds') WHERE id = ?`)
+      .run(JSON.stringify(d), cm.body.batchId)
+
+    const rb = await call('POST', `/api/sync/batches/${cm.body.batchId}/rollback`, {
+      token: T.tokHq, body: {}
+    })
+    expect(rb.status).toBe(200)          // finished_at 兜底 → 不再假阳性
+    expect(rb.body.edited).toBe(0)
+  })
+
+  it('rollback：非 owner（成员本人）→ 403；scope_change 批次不可回滚 → 400', async () => {
+    const db = getDb()
+    const scId = db.prepare(`
+      SELECT id FROM sync_batches WHERE org_id = ? AND direction = 'scope_change' ORDER BY id DESC LIMIT 1
+    `).get(T.org).id
+    expect((await call('POST', `/api/sync/batches/${scId}/rollback`, { token: T.tokA, body: {} })).status).toBe(403)
+    const r = await call('POST', `/api/sync/batches/${scId}/rollback`, { token: T.tokHq, body: {} })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('not_rollbackable')
+  })
+
+  it('rollback（普通同步批次）：删除本批新增镜像；更新/删除无快照 → notRestorable 诚实告知', async () => {
+    const db = getDb()
+    // 让 B 从集团同步杭州门店（1 条新增）
+    const pv = await call('POST', '/api/sync/preview', {
+      token: T.tokB, body: { direction: 'group_to_member', kind: 'markers', filter: { cities: ['杭州市'] } }
+    })
+    expect(pv.status).toBe(200)
+    const cm = await call('POST', '/api/sync/commit', { token: T.tokB, body: { batchId: pv.body.batchId } })
+    expect(cm.status).toBe(200)
+    const before = db.prepare(`
+      SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND origin_user_id = ? AND sync_batch_id = ?
+    `).get(T.b, T.hq, pv.body.batchId).n
+    expect(before).toBe(1)
+
+    const rb = await call('POST', `/api/sync/batches/${pv.body.batchId}/rollback`, { token: T.tokHq, body: {} })
+    expect(rb.status).toBe(200)
+    expect(rb.body.restored.inserted).toBe(1)
+    expect(rb.body.partial).toBe(false)
+    expect(db.prepare(`
+      SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND origin_user_id = ? AND sync_batch_id = ?
+    `).get(T.b, T.hq, pv.body.batchId).n).toBe(0)
+  })
+})

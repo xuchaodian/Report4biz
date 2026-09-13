@@ -19,6 +19,12 @@
 //   · scope-options 回传 kinds 元数据（前端不再硬编码对象清单）
 //   ⚠️ 对象清单的唯一真源是 syncCore.SYNC_KINDS —— 加对象只改那里 + KIND_META。
 //
+// P2（v0.13）回滚 + 历史方向放开：
+//   POST /api/sync/batches/:id/rollback   回滚批次（transfer 完整可逆；普通批次只可逆「新增」那半）
+//   GET  /api/sync/batches                方向白名单加入 `transfer`（辖区划拨也进历史，可回滚）
+//   ★ 划拨本身不在这里 —— 它挂 /api/orgs/:id/transfer/*（见 routes/orgs.js），
+//     因为它需要组织级鉴权（requireOrgOwner）与 scope 调整。
+//
 // ★ 分文件而不是塞进 orgs.js 的原因：路径前缀就是 /api/sync（设计方案 §6），
 //   而 orgs.js 挂在 /api/orgs 上；把 /scope-options 放进 orgs.js 会与 /:id 抢段位。
 //
@@ -26,6 +32,8 @@
 //   - 反向同步（子公司 → 集团 的**自动**推送）：本方案是「集团主动拉」，规则 5
 //   - 跨组织同步：集团只能看到本组织成员（规则 10 / 24 的不跨组织红线）
 //   - 冲突合并 UI：单写者模型下结构上不存在冲突（规则 4），合并 UI 是伪需求
+//   - 普通批次的「内容级」回滚：内核**不存 before-image**（1904 行 × 全字段 ≈ 数百 KB，
+//     每次 preview 都写盘会撑爆 sql.js 的整库导出），故只能还原「新增」那一半。
 // ============================================================================
 
 import express from 'express'
@@ -44,7 +52,8 @@ import {
   findBatch,
   serializeBatch,
   checkMemberSwitch,
-  parseBatchDetail
+  parseBatchDetail,
+  rollbackBatch
 } from '../utils/syncCore.js'
 
 const router = express.Router()
@@ -553,10 +562,15 @@ router.get('/batches', authenticate, (req, res) => {
 
     const limit = Math.min(Math.max(Number.parseInt(req.query?.limit, 10) || 50, 1), 200)
     const includePreview = String(req.query?.includePreview || '') === '1'
+    // scope_change（范围变更留痕）默认不进历史：集团给 N 个成员配范围就会刷 N 条，
+    // 会把「数据动了哪些」淹没。需要审计范围变更时显式 `?includeScope=1`。
+    const includeScope = String(req.query?.includeScope || '') === '1'
 
     // 成员只看与自己相关的批次；集团/管理员看本组织全部
     const args = [ctx.org.id]
-    let where = `org_id = ? AND direction IN ('group_to_member','member_to_group')`
+    const directions = ["'group_to_member'", "'member_to_group'", "'transfer'"]
+    if (includeScope) directions.push("'scope_change'")
+    let where = `org_id = ? AND direction IN (${directions.join(',')})`
     if (!includePreview) where += ` AND status != 'preview'`
     if (ctx.view === 'member') {
       where += ` AND (source_user_id = ? OR target_user_id = ?)`
@@ -606,6 +620,71 @@ router.get('/batches/:id', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取批次详情失败:', error)
     res.status(500).json({ message: '获取批次详情失败' })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 回滚批次（P2 · §3.5 Ⅱ-c / §7.2 ④）
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/sync/batches/:id/rollback   { force? }
+ *
+ * 权限：**仅本集团总部账号或平台管理员**（回滚是撤回别人已经看到的数据，
+ * 不能让被同步的一方自己决定—— 成员视角只在历史里看到行，不给他按钮）。
+ *
+ * 两类批次语义不同（见 syncCore.rollbackBatch 注释）：
+ *   · transfer            完整可逆（moved ids 在 detail 里）→ 改回 user_id + store_sales + 镜像 + scope
+ *                         目标方已编辑过 → 409 `target_edited`，须 `force` 重试（会覆盖其修改）
+ *   · 普通同步批次        只可逆「新增」那半（删除本批镜像）；更新/删除无 before-image → notRestorable
+ *   · scope_change        不可回滚（配置留痕）→ 400
+ */
+router.post('/batches/:id/rollback', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const id = toId(req.params.id)
+    if (!id) return res.status(400).json({ message: '批次 id 无效' })
+
+    const batch = findBatch(db, id)
+    if (!batch) return res.status(404).json({ message: '批次不存在' })
+
+    const org = findOrg(db, batch.org_id)
+    if (!org) return res.status(404).json({ message: '集团不存在或已解散' })
+
+    const isAdmin = req.user?.role === 'admin'
+    const isOwner = org.owner_user_id === req.user?.id
+    if (!isAdmin && !isOwner) {
+      console.warn(
+        `[sync] 组织边界拒绝(rollback) user=${req.user?.id} org=${org.id} batch=${id} `
+        + `${req.method} ${req.originalUrl} ip=${req.ip}`
+      )
+      return res.status(403).json({ message: '仅集团总部账号或平台管理员可回滚批次' })
+    }
+
+    const force = req.body?.force === true
+      || req.query?.force === '1' || req.query?.force === 'true'
+
+    const r = rollbackBatch(db, { batch, force, actorId: req.user?.id })
+    if (!r.ok) {
+      const status = r.code === 'not_found' ? 404
+        : (r.code === 'target_edited' || r.code === 'no_snapshot') ? 409
+          : 400
+      return res.status(status).json(r)
+    }
+
+    const msg = r.direction === 'transfer'
+      ? `已回滚划拨：${r.restored.markers} 家门店及其 ${r.restored.storeSales} 条销售记录改回原持有方，`
+        + `集团侧镜像与双方管辖范围已一并还原。`
+      : `已回滚：删除本批新增的 ${r.restored.inserted} 行镜像。`
+        + (r.partial
+          ? `另有 ${r.notRestorable.updated} 行更新 / ${r.notRestorable.deleted} 行删除无快照可还原，`
+            + '如需恢复请让源账号重新发起同步。'
+          : '')
+
+    res.json({ ok: true, ...r, message: msg })
+  } catch (error) {
+    console.error('回滚批次失败:', error)
+    res.status(500).json({ message: '回滚批次失败（已整体回滚）' })
   }
 })
 

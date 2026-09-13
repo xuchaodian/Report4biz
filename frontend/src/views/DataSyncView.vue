@@ -310,21 +310,26 @@
         <div class="ds-block">
           <div class="ds-block-head">
             <span class="ds-block-title">⑤ 同步历史</span>
-            <span class="ds-block-note">每次确认同步都会留痕（含操作人 / IP / 逐行明细）</span>
+            <span class="ds-block-note">每次确认同步 / 辖区划拨都会留痕（含操作人 / IP / 逐行明细），成功批次可回滚</span>
           </div>
           <div v-if="!history.length" class="ds-muted" style="padding:6px 0;">暂无同步记录。</div>
           <el-table v-else :data="history" size="small" max-height="300" style="width:100%">
             <el-table-column prop="createdAt" label="时间" width="160" />
-            <el-table-column label="方向" width="130">
+            <el-table-column label="方向" width="120">
               <template #default="{ row }">
-                {{ row.direction === 'group_to_member' ? '集团 → 子公司' : '子公司 → 集团' }}
+                <el-tag v-if="row.direction === 'transfer'" type="warning" size="small" effect="plain">辖区划拨</el-tag>
+                <el-tag v-else-if="row.direction === 'scope_change'" type="info" size="small" effect="plain">范围变更</el-tag>
+                <span v-else>{{ directionLabel(row.direction) }}</span>
               </template>
             </el-table-column>
             <el-table-column label="增 / 改 / 删" width="130">
               <template #default="{ row }">
-                <span class="ds-ok">+{{ row.inserted }}</span> /
-                <span class="ds-warn">{{ row.updated }}</span> /
-                <span class="ds-danger">-{{ row.deleted }}</span>
+                <span v-if="row.direction === 'transfer'" class="ds-warn">迁移 {{ row.inserted }} 行</span>
+                <template v-else>
+                  <span class="ds-ok">+{{ row.inserted }}</span> /
+                  <span class="ds-warn">{{ row.updated }}</span> /
+                  <span class="ds-danger">-{{ row.deleted }}</span>
+                </template>
               </template>
             </el-table-column>
             <el-table-column prop="skipped" label="跳过" width="70" />
@@ -333,9 +338,18 @@
                 <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="90">
+            <el-table-column label="操作" min-width="130">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="showBatch(row)">详情</el-button>
+                <el-button
+                  v-if="canRollback(row)"
+                  link
+                  type="danger"
+                  size="small"
+                  @click="doRollback(row)"
+                >
+                  回滚
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -613,6 +627,20 @@ const statusLabel = (s) => ({
 const statusTagType = (s) => ({ success: 'success', partial: 'warning', failed: 'danger' }[s] || 'info')
 const KIND_LABEL = { markers: '我的门店', competitors: '竞品门店' }
 const kindLabel = (k) => KIND_LABEL[k] || '未知'
+const directionLabel = (d) => ({
+  group_to_member: '集团 → 子公司',
+  member_to_group: '子公司 → 集团',
+  transfer: '辖区划拨',
+  scope_change: '范围变更'
+}[d] || d)
+
+/**
+ * 可回滚的批次：仅数据类批次（transfer / 双向同步）且已成功。
+ * 范围变更（scope_change）是配置留痕，不可回滚；preview 批次没写过数据，无需回滚。
+ */
+const canRollback = (row) => !!row
+  && ['transfer', 'group_to_member', 'member_to_group'].includes(row.direction)
+  && ['success', 'partial'].includes(row.status)
 
 // ⚠️ utils/api.js 的响应拦截器已经返回 `response.data`，
 //    所以 api.get/post 的返回值**就是响应体**，不能再取 `.data`（曾因此整页空态）
@@ -810,19 +838,73 @@ async function showBatch (row) {
   try {
     const d = await safeGet(`/sync/batches/${row.id}`)
     const p = d.batch?.planned
+    const isTransfer = d.batch?.direction === 'transfer'
     const lines = [
       `批次 #${d.batch.id}`,
-      `方向：${d.batch.direction === 'group_to_member' ? '集团 → 子公司' : '子公司 → 集团'}`,
+      `方向：${directionLabel(d.batch.direction)}`,
       `${d.sourceName} → ${d.targetName}`,
       `状态：${statusLabel(d.batch.status)}`,
       p ? `计划：新增 ${p.added} / 更新 ${p.updated} / 删除 ${p.deleted} / 跳过 ${p.skipped}` : '',
-      `结果：新增 ${d.batch.inserted} / 更新 ${d.batch.updated} / 删除 ${d.batch.deleted} / 失败 ${d.batch.failed}`,
+      isTransfer
+        ? `迁移：门店 ${d.batch.inserted} 行（行 ID 不变，销售记录同事务跟随）`
+        : `结果：新增 ${d.batch.inserted} / 更新 ${d.batch.updated} / 删除 ${d.batch.deleted} / 失败 ${d.batch.failed}`,
+      d.batch.applied?.length ? `明细样本：${d.batch.applied.length} 条` : '',
       `操作人 ID：${d.batch.createdBy}　IP：${d.batch.ip || '-'}`,
       `时间：${d.batch.createdAt} → ${d.batch.finishedAt || '-'}`
     ].filter(Boolean)
     await ElMessageBox.alert(lines.join('<br>'), '批次详情', { dangerouslyUseHTMLString: true })
   } catch (e) {
     ElMessage.error('读取批次详情失败')
+  }
+}
+
+/**
+ * 回滚批次（P2）。
+ *   · 划拨批次：完整可逆（归属 + 销售 + 集团镜像 + 双方 scope 一并还原）。
+ *     若新持有方已维护过这批数据，后端返回 409 `target_edited` → 二次确认后再 force 重试。
+ *   · 普通同步批次：只删除本批新增的镜像；「更新/删除」无历史快照，后端会在 message 里说明。
+ */
+async function doRollback (row) {
+  const isTransfer = row.direction === 'transfer'
+  const tip = isTransfer
+    ? `将把本批划拨的 ${row.inserted} 行门店及其销售记录的所有权改回原持有方，并还原双方管辖范围。<br>`
+      + '<b>若新持有方已开始维护这批数据，回滚会覆盖其修改。</b>'
+    : `将删除本批新增的 ${row.inserted} 行镜像（源账号的数据不受影响）。<br>`
+      + '本批的「更新 / 删除」没有历史快照，无法一并还原（需让源账号重新同步）。'
+  try {
+    await ElMessageBox.confirm(tip, isTransfer ? '回滚划拨' : '回滚同步批次', {
+      type: 'warning',
+      dangerouslyUseHTMLString: true,
+      confirmButtonText: '确认回滚',
+      cancelButtonText: '取消'
+    })
+  } catch (e) { return }
+
+  try {
+    const d = await api.post(`/sync/batches/${row.id}/rollback`)
+    ElMessage.success(d.message || '已回滚')
+    await loadHistory()
+    await loadMirrors()
+  } catch (e) {
+    const res = e?.response
+    const body = res?.data
+    if (res?.status === 409 && body?.code === 'target_edited') {
+      try {
+        await ElMessageBox.confirm(body.message || '新持有方已修改过这批数据，回滚会覆盖其修改。', '新持有方已编辑', {
+          type: 'error', confirmButtonText: '仍然回滚', cancelButtonText: '取消'
+        })
+      } catch (e2) { return }
+      try {
+        const d2 = await api.post(`/sync/batches/${row.id}/rollback`, { force: true })
+        ElMessage.success(d2.message || '已回滚')
+        await loadHistory()
+        await loadMirrors()
+      } catch (e3) {
+        ElMessage.error(e3?.response?.data?.message || '回滚失败')
+      }
+      return
+    }
+    ElMessage.error(body?.message || '回滚失败')
   }
 }
 

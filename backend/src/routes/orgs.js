@@ -56,6 +56,14 @@ import {
   normalizeCity
 } from '../utils/scopeGuard.js'
 import { getPoolInfo, getPoolRemaining, getOwnQuota, getOwnQuotaDetail, getAllocatable } from '../utils/quotaPool.js'
+import {
+  SYNC_KINDS,
+  TRANSFER_DIRECTION,
+  normalizeKinds,
+  buildTransferPlan,
+  applyTransfer,
+  parseBatchDetail
+} from '../utils/syncCore.js'
 
 const router = express.Router()
 
@@ -141,6 +149,13 @@ function findOrg(db, id) {
 
 function findMember(db, orgId, userId) {
   return db.prepare(`SELECT * FROM org_members WHERE org_id = ? AND user_id = ?`).get(orgId, userId) || null
+}
+
+/** 账号展示名（写进集团侧镜像 origin_owner，免 JOIN —— §5.2） */
+function accountName(db, userId) {
+  const u = db.prepare(`SELECT username, company FROM users WHERE id = ?`).get(userId)
+  if (!u) return `#${userId}`
+  return String(u.company || '').trim() || String(u.username || `#${userId}`).trim()
 }
 
 /**
@@ -897,6 +912,196 @@ router.get('/:id/scope-conflicts', authenticate, requireOrgOwner, (req, res) => 
   }
 })
 
+// ===========================================================================
+// 辖区划拨（v0.12 · P2 · §3.5 Ⅱ / §7.7 · 规则 15）
+// ---------------------------------------------------------------------------
+// 场景：上海市 → 苏州公司。**不能只改 scope** —— 会留下三处不一致（越界存量 /
+//   归属错 / 旧主仍能覆盖集团数据）。必须一次性把三方一起搬：
+//     ① 原持有方名下门店副本 user_id 改判    ② store_sales.user_id 跟随（⛔ 漏则销售预测断链）
+//     ③ 集团侧镜像 origin_* 改指新主        ④ 双方 scope_json 互调（v0.12 补的必需动作）
+//   ★ 全程**门店行 id 不变** → store_sales.store_id / origin_row_id 引用无需改动。
+//   ★ 只搬「集团下发」的行（origin_user_id = 集团账号）：原持有方自建的行是他的资产，不划走。
+//
+//   preview = 纯读影响面 + 建 1 条 preview 批次；commit 必带 batchId（默认 dry-run 的结构性保证）。
+//   购买履历**不迁**（§3.5 Ⅱ-d：购买单归属购买方账号），只在预览里提示。
+// ===========================================================================
+
+/** 划拨批次（preview）—— 与同步主链路同构：只建 preview 行，不写业务数据 */
+function createTransferPreviewBatch(db, { orgId, fromUserId, toUserId, cities, kinds, counts, actorId, ip }) {
+  const r = db.prepare(`
+    INSERT INTO sync_batches
+      (org_id, direction, source_user_id, target_user_id, scope, total,
+       inserted, updated, deleted, skipped, failed, status, detail, created_by, ip)
+    VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'preview', ?, ?, ?)
+  `).run(
+    orgId, TRANSFER_DIRECTION, fromUserId, toUserId,
+    cities.join(','), counts.total,
+    JSON.stringify({ params: { fromUserId, toUserId, cities, kinds }, planned: counts }),
+    actorId, ip || null
+  )
+  return r.lastInsertRowid
+}
+
+/**
+ * POST /api/orgs/:id/transfer/preview —— 划拨影响面（§7.7 ① 只读预览）
+ * body { fromUserId, toUserId, cities[], kinds? }
+ * 纯读业务行；只额外建一条 status='preview' 的 transfer 批次（commit 的凭据）。
+ */
+router.post('/:id/transfer/preview', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const body = req.body || {}
+
+    const fromUserId = toId(body.fromUserId)
+    const toUserId = toId(body.toUserId)
+    if (!fromUserId || !toUserId) return res.status(400).json({ message: '缺少原持有方 / 受让方账号' })
+    if (fromUserId === toUserId) {
+      return res.status(400).json({ code: 'same_member', message: '原持有方与受让方不能是同一个账号' })
+    }
+    if (fromUserId === org.owner_user_id) {
+      return res.status(400).json({ code: 'from_is_owner', message: '原持有方是集团总部账号，无需划拨（总部额度/数据不通过划拨转移）' })
+    }
+    if (!findMember(db, org.id, fromUserId)) return res.status(404).json({ message: '原持有方不是本集团成员' })
+    if (!findMember(db, org.id, toUserId)) return res.status(404).json({ message: '受让方不是本集团成员' })
+
+    const cities = cleanCityList(body.cities)
+    if (!cities.length) return res.status(400).json({ message: '请选择要划拨的城市' })
+    if (cities.length > 200) return res.status(400).json({ message: '一次最多划拨 200 个城市' })
+
+    const kinds = normalizeKinds(body.kinds)
+    const plan = buildTransferPlan(db, {
+      orgId: org.id,
+      ownerUserId: org.owner_user_id,
+      fromUserId,
+      toUserId,
+      cities,
+      kinds
+    })
+    plan.fromName = accountName(db, fromUserId)
+    plan.toName = accountName(db, toUserId)
+
+    if (!plan.counts.total) {
+      return res.status(409).json({
+        code: 'nothing_to_transfer',
+        message: `「${plan.fromName}」名下没有可划拨的门店/竞品`
+          + `（该城市下不存在由集团下发的副本；原持有方自建的行不随划拨转移）`,
+        counts: plan.counts
+      })
+    }
+
+    const batchId = createTransferPreviewBatch(db, {
+      orgId: org.id,
+      fromUserId,
+      toUserId,
+      cities,
+      kinds,
+      counts: plan.counts,
+      actorId: req.user?.id,
+      ip: req.ip
+    })
+
+    res.json({
+      ok: true,
+      batchId,
+      orgId: org.id,
+      fromUserId,
+      toUserId,
+      fromName: plan.fromName,
+      toName: plan.toName,
+      cities,
+      kinds,
+      counts: plan.counts,
+      byKind: plan.byKind,
+      sample: plan.sample,
+      modes: [{ value: 'transfer', label: '迁移（已定案）', enabled: true }],
+      purchasesNote: '联通购买履历不随城迁移：购买单归属购买方账号（如需可后续做手动批量迁移）。'
+    })
+  } catch (error) {
+    console.error('划拨预览失败:', error)
+    res.status(500).json({ message: '划拨预览失败' })
+  }
+})
+
+/**
+ * POST /api/orgs/:id/transfer/commit —— 执行划拨（单事务）
+ * body { batchId, mode? = 'transfer' }（mode 的 coexist / purge 未实现，传入即 400）
+ * ★ **重建计划**而不是回放预览快照（与 POST /api/sync/commit 同原则）。
+ */
+router.post('/:id/transfer/commit', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const batchId = toId(req.body?.batchId)
+    if (!batchId) return res.status(400).json({ message: '缺少 batchId（必须先预览）' })
+
+    const mode = String(req.body?.mode || 'transfer').trim() || 'transfer'
+    if (mode !== 'transfer') {
+      return res.status(400).json({
+        code: 'mode_unsupported',
+        message: `本批仅实现「迁移」模式（传入 mode=${mode}）—— 共存/清理由设计定案为不采用`
+      })
+    }
+
+    const batch = db.prepare(`SELECT * FROM sync_batches WHERE id = ?`).get(batchId)
+    if (!batch) return res.status(404).json({ message: '批次不存在' })
+    if (batch.direction !== TRANSFER_DIRECTION) {
+      return res.status(400).json({ message: '该批次不是划拨批次' })
+    }
+    if (Number(batch.org_id) !== Number(org.id)) {
+      return res.status(403).json({ message: '该批次不属于本集团' })
+    }
+    if (String(batch.status) !== 'preview') {
+      return res.status(409).json({
+        code: 'batch_not_preview',
+        message: `批次状态为「${batch.status}」，不可重复执行（如需撤销请到「同步历史」回滚）`
+      })
+    }
+
+    const params = (parseBatchDetail(batch.detail) || {}).params || {}
+    const plan = buildTransferPlan(db, {
+      orgId: org.id,
+      ownerUserId: org.owner_user_id,
+      fromUserId: Number(params.fromUserId),
+      toUserId: Number(params.toUserId),
+      cities: params.cities || [],
+      kinds: params.kinds || SYNC_KINDS
+    })
+    plan.fromName = accountName(db, Number(params.fromUserId))
+    plan.toName = accountName(db, Number(params.toUserId))
+
+    if (!plan.counts.total) {
+      return res.status(409).json({
+        code: 'nothing_to_transfer',
+        message: '这批数据在预览之后已发生变化，当前没有可划拨的行'
+      })
+    }
+
+    const r = applyTransfer(db, { plan, batchId, actorId: req.user?.id, ip: req.ip })
+
+    res.json({
+      ok: true,
+      batchId: r.batchId,
+      mode,
+      direction: TRANSFER_DIRECTION,
+      fromUserId: plan.fromUserId,
+      fromName: plan.fromName,
+      toUserId: plan.toUserId,
+      toName: plan.toName,
+      cities: plan.cities,
+      moved: { markers: r.markers, competitors: r.competitors },
+      storeSales: r.storeSales,
+      groupMirrors: r.groupMirrors,
+      scopeAdjusted: r.scopeAdjusted,
+      message: `已将 ${r.markers} 家门店${r.competitors ? ` / ${r.competitors} 条竞品` : ''}及其 ${r.storeSales} 条销售记录`
+        + `从「${plan.fromName}」划拨给「${plan.toName}」；「${plan.toName}」无需再执行同步。`
+    })
+  } catch (error) {
+    console.error('执行划拨失败:', error)
+    res.status(500).json({ message: '执行划拨失败（已整体回滚）' })
+  }
+})
+
 /**
  * DELETE /api/orgs/:id/members/:userId —— 解绑子公司
  * 规则 7（删除不级联）：**默认保留**已同步的行（变独立副本）；清理必须显式指定。
@@ -1452,6 +1657,10 @@ router.post('/:id/quota/reallocate', authenticate, requireOrgOwner, (req, res) =
 // 另：本文件不提供"改成员 users.quota"的 set 入口（规则 21：成员额度只由分配而来）。
 // ★ P1.5 已实现「二级再分配」：POST /:id/quota/reallocate（出资方恒为调用者，见上）。
 //   注意它与上面的 reallocate-from **不是同一个东西** —— 后者带 fromUserId 可扣他人，永久禁止。
+// ★★ 名词消歧（P2 起更重要）：本文件里的 `transfer` 有**两个完全不同的语义**，勿混 ——
+//   · `POST /:id/transfer/*`（已实现 · P2）  = **辖区划拨**：搬 markers/competitors 归属 +
+//     store_sales 跟随 + 集团镜像改指 + 双方 scope 互调。**不涉及任何配额**。
+//   · `POST /:id/quota/transfer`（⛔ 永久不实现） = **配额横向转调** A→B：违反铁律 ③。
 // ===========================================================================
 
 export default router
