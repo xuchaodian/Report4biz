@@ -126,15 +126,22 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
+
+  // 已登录但用户信息尚未加载（刷新页面 / 直接输入 URL）时先补齐：
+  // 否则 isAdmin 仍为 false，管理页会被误判为无权限而弹回首页
+  if (userStore.isLoggedIn && !userStore.user) {
+    await userStore.fetchUser()
+  }
   
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
     next('/login')
   } else if (to.meta.requiresAdmin && !userStore.isAdmin) {
     next('/')
   } else if ((to.path === '/login' || to.path === '/register') && userStore.isLoggedIn) {
-    next('/')
+    // 与登录后落点保持一致：管理员直接进「用户管理」
+    next(userStore.isAdmin ? '/users' : '/')
   } else {
     next()
   }

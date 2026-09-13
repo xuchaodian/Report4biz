@@ -144,7 +144,8 @@ const handleLogin = async () => {
   const result = await userStore.login(form.username, form.password)
   if (result.success) {
     ElMessage.success(t('login.success'))
-    router.push('/')
+    // 管理员账号定位为运维入口（用户管理），登录后直接落地「用户管理」
+    router.push(userStore.isAdmin ? '/users' : '/')
   } else {
     ElMessage.error(result.message)
   }
