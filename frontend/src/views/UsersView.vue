@@ -41,6 +41,9 @@
         <el-button type="info" @click="showMonthlyStatsDialog">
           📊 月度统计
         </el-button>
+        <el-button type="info" plain @click="showOverviewDialog">
+          🧮 配额总览
+        </el-button>
         <el-select
           v-model="filterCompany"
           placeholder="按公司筛选"
@@ -369,6 +372,82 @@
       </el-table>
       <el-empty v-else-if="!statsLoading" description="请选择月份后点击查询" style="margin: 40px 0" />
     </el-dialog>
+
+    <!-- 配额总览（跨组织 · 仅平台管理员）—— v0.11 P1.5 F4 -->
+    <el-drawer v-model="overviewVisible" title="配额总览（全平台）" size="760px" append-to-body>
+      <div v-loading="overviewLoading" class="ov-wrap">
+        <template v-if="overview">
+          <div class="ov-cards">
+            <div class="ov-card">
+              <span class="ov-label">上游总配额</span>
+              <b class="ov-num">{{ overview.pool.poolTotal }}</b>
+            </div>
+            <div class="ov-card">
+              <span class="ov-label">当前剩余</span>
+              <b class="ov-num">{{ overview.pool.remaining }}</b>
+            </div>
+            <div class="ov-card ov-hl">
+              <span class="ov-label">已分配未消耗</span>
+              <b class="ov-num">{{ overview.pool.unconsumedTotal }}</b>
+            </div>
+            <div class="ov-card">
+              <span class="ov-label">全池剩余可分配</span>
+              <b class="ov-num">{{ overview.pool.allocatable }}</b>
+            </div>
+          </div>
+          <div class="ov-note">
+            ⓘ「当前剩余」= 与联通结算的真实余额，<b>不因分配而变化</b>；「已占用」= 用户页已分配
+            {{ overview.pool.allocatedUsers }} + API开放页已占 {{ overview.pool.allocatedApi }} = {{ overview.pool.occupied }}。
+          </div>
+
+          <el-table
+            :data="overviewRows"
+            row-key="rowKey"
+            :tree-props="{ children: 'children' }"
+            default-expand-all
+            size="small"
+            border
+            style="width: 100%; margin-top: 12px;"
+          >
+            <el-table-column prop="label" label="组织 / 账号" min-width="210">
+              <template #default="{ row }">
+                <span :class="{ 'ov-org': row.level === 0, 'ov-member': row.level === 1 }">{{ row.label }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="quota" label="已分配" width="82" align="right" />
+            <el-table-column prop="used" label="已消耗" width="82" align="right" />
+            <el-table-column prop="unconsumed" label="未消耗" width="82" align="right" />
+            <el-table-column label="台账分配" width="118" align="right">
+              <template #default="{ row }">
+                <span v-if="row.level === 0">{{ row.grantedTotal }}</span>
+                <span v-else>
+                  <el-tooltip content="一级分配（池 → 成员）" placement="top">
+                    <span class="ov-g-pool">{{ row.grantedPool }}</span>
+                  </el-tooltip>
+                  <span class="ov-g-sep">/</span>
+                  <el-tooltip content="二级再分配（成员 → 成员）" placement="top">
+                    <span class="ov-g-move">{{ row.grantedMove }}</span>
+                  </el-tooltip>
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="lastGrantAt" label="最近分配" width="140" />
+          </el-table>
+
+          <div class="ov-reconcile" :class="overview.reconcile.ok ? 'ov-ok' : 'ov-bad'">
+            恒等式自检：已分配 {{ overview.reconcile.allocatedUsers }} = Σ组织 {{ overview.reconcile.sumOrgQuota }}
+            + 平台直配 {{ overview.reconcile.directAllocated }}
+            <span v-if="overview.reconcile.ok">✅ 通过</span>
+            <span v-else>❌ 差额 {{ overview.reconcile.diff }}（数据异常，需排查）</span>
+          </div>
+          <div class="ov-tip">
+            ⓘ 本页<b>只读</b>：不提供「调低 / 收回」入口（避免绕过「只增不减」铁律）。
+            真需兜底请走「用户列表 → 编辑 → 累计总配额」（有独立审计）。
+          </div>
+        </template>
+        <el-empty v-else-if="!overviewLoading" description="暂无数据" style="margin: 60px 0" />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -492,6 +571,66 @@ const statsSummary = ref({
   totalUsers: 0,
   totalMonthlyUsed: 0
 })
+
+// ---- 配额总览（跨组织 · 仅平台管理员）—— P1.5 F4 ----
+const overviewVisible = ref(false)
+const overviewLoading = ref(false)
+const overview = ref(null)
+
+/** 展平成 el-table 树：组织(level0) → 账号(level1)，末尾追加「平台直配」行 */
+const overviewRows = computed(() => {
+  if (!overview.value) return []
+  const fmt = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '—')
+  const rows = (overview.value.orgs || []).map(o => ({
+    rowKey: `org-${o.orgId}`,
+    level: 0,
+    label: o.name,
+    quota: o.quotaTotal,
+    used: o.consumed,
+    unconsumed: o.unconsumed,
+    grantedTotal: o.grantedTotal,
+    lastGrantAt: fmt(o.lastGrantAt),
+    children: (o.members || []).map(m => ({
+      rowKey: `m-${o.orgId}-${m.userId}`,
+      level: 1,
+      label: m.isOwner ? `🏢 ${m.name}（总部）` : `　${m.name}`,
+      quota: m.quota,
+      used: m.used,
+      unconsumed: m.unconsumed,
+      grantedTotal: m.grantedTotal,
+      grantedPool: m.grantedPool,
+      grantedMove: m.grantedMove,
+      lastGrantAt: ''
+    }))
+  }))
+  const d = overview.value.direct || {}
+  rows.push({
+    rowKey: 'direct',
+    level: 0,
+    label: '平台直配（非组织账号）',
+    quota: d.allocated || 0,
+    used: d.consumed || 0,
+    unconsumed: d.unconsumed || 0,
+    grantedTotal: 0,
+    lastGrantAt: '—'
+  })
+  return rows
+})
+
+// 打开配额总览抽屉
+const showOverviewDialog = async () => {
+  overviewVisible.value = true
+  overviewLoading.value = true
+  try {
+    overview.value = await api.get('/orgs/quota/overview')
+  } catch (e) {
+    console.error('读取跨组织配额总览失败:', e)
+    ElMessage.error(e?.response?.data?.message || '读取配额总览失败')
+    overview.value = null
+  } finally {
+    overviewLoading.value = false
+  }
+}
 
 const handleFilterChange = () => {
   fetchUsers()
@@ -1048,4 +1187,34 @@ onMounted(() => {
 .muted {
   color: #c0c4cc;
 }
+
+/* ---- 配额总览抽屉（P1.5 F4）---- */
+.ov-wrap { min-height: 200px; }
+.ov-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+.ov-card {
+  flex: 1; min-width: 130px; padding: 12px 14px;
+  background: #f5f7fa; border-radius: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.ov-card.ov-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
+.ov-label { font-size: 12px; color: #909399; }
+.ov-num { font-size: 20px; color: #303133; font-weight: 600; }
+.ov-hl .ov-num { color: #409eff; }
+.ov-note {
+  font-size: 12px; color: #606266; line-height: 1.8;
+  margin-top: 10px; padding: 8px 12px;
+  background: #fafafa; border-radius: 6px;
+}
+.ov-org { font-weight: 600; color: #303133; }
+.ov-member { color: #606266; }
+.ov-g-pool { color: #409eff; }
+.ov-g-move { color: #e6a23c; }
+.ov-g-sep { color: #c0c4cc; margin: 0 4px; }
+.ov-reconcile {
+  margin-top: 14px; padding: 10px 12px; border-radius: 6px;
+  font-size: 12px; line-height: 1.8;
+}
+.ov-reconcile.ov-ok { background: #f0f9eb; color: #529b2e; border: 1px solid #e1f3d8; }
+.ov-reconcile.ov-bad { background: #fef0f0; color: #f56c6c; border: 1px solid #fbc4c4; }
+.ov-tip { margin-top: 10px; font-size: 12px; color: #909399; line-height: 1.8; }
 </style>

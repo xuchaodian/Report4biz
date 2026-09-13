@@ -76,13 +76,27 @@ export function getAllocatable(db) {
  *   同一口径（v1.13.116 起两页已对齐）。
  */
 export function getOwnQuota(db, userId) {
-  if (!userId) return 0
-  const own = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(userId)?.quota || 0
+  return getOwnQuotaDetail(db, userId).transferable
+}
+
+/**
+ * 账号额度的**三分量明细** —— 二级再分配（§3.8 P10 / 规则 30）的唯一权威口径入口。
+ *   quota        = users.quota（授权额度）
+ *   used         = Σ active 的 quota_used（已消耗）
+ *   transferable = max(0, quota − used)（可转出上限）
+ *
+ * ★ 为什么单独抽这个：规则 30 明确「前后端必须用同一口径，禁止前端直接用 users.quota
+ *   当上限」——把 quota/used/transferable 三个数**一次性从后端算好**返回给前端，
+ *   前端只做展示与禁用，不再自行推导。app.js 的 reallocate 与 summary.self 共用本函数。
+ */
+export function getOwnQuotaDetail(db, userId) {
+  if (!userId) return { quota: 0, used: 0, transferable: 0 }
+  const quota = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(userId)?.quota || 0
   const used = db.prepare(`
     SELECT COALESCE(SUM(quota_used), 0) AS u FROM purchases
     WHERE user_id = ? AND status = 'active'
   `).get(userId)?.u || 0
-  return Math.max(0, own - used)
+  return { quota, used, transferable: Math.max(0, quota - used) }
 }
 
 /**

@@ -345,7 +345,25 @@
         <div v-if="!isMember" class="ds-block">
           <div class="ds-block-head">
             <span class="ds-block-title">⑥ 配额分配</span>
-            <span class="ds-block-note">从「全池可分配」向子公司分配联通配额（只增不减 · 双写台账 · 不动物理池）</span>
+            <span class="ds-block-note">一级分配：从「全池可分配」分给子公司（不扣自己的额度）</span>
+            <el-tooltip
+              :content="canReallocate ? '把你名下已持有的额度转给子公司（二级再分配，不占用全池可分配）' : '你当前没有可转出的额度（= 额度 − 已消耗）'"
+              placement="top"
+            >
+              <span class="ds-block-btn-wrap">
+                <el-button
+                  size="small" type="warning" plain
+                  :disabled="!canReallocate"
+                  @click="openReallocate"
+                >我的额度转给子公司</el-button>
+              </span>
+            </el-tooltip>
+          </div>
+          <div v-if="quota && quota.self" class="ds-mine-line">
+            <span class="ds-muted">我的额度</span> <b>{{ quota.self.quota }}</b>
+            <span class="ds-muted">· 已消耗</span> <b>{{ quota.self.used }}</b>
+            <span class="ds-muted">· 可转出上限</span> <b class="ds-ok">{{ quota.self.transferable }}</b>
+            <span class="ds-muted">（二级再分配不占用「全池可分配」、不动组织总授权）</span>
           </div>
           <div v-if="loadingQuota" class="ds-muted" style="padding:6px 0;">正在读取配额…</div>
           <template v-else-if="quota">
@@ -375,7 +393,16 @@
               <el-table-column prop="quota" label="当前配额" width="90" />
               <el-table-column prop="used" label="已消耗" width="80" />
               <el-table-column prop="remain" label="剩余" width="80" />
-              <el-table-column prop="grantedTotal" label="累计获赠" width="90" />
+              <el-table-column label="累计获赠" width="120">
+                <template #default="{ row }">
+                  <el-tooltip content="一级分配（池 → 成员）" placement="top">
+                    <span class="ds-tag-pool">{{ row.grantedPool }}</span>
+                  </el-tooltip>
+                  <el-tooltip content="二级再分配（成员 → 成员）" placement="top">
+                    <span class="ds-tag-move">{{ row.grantedMove }}</span>
+                  </el-tooltip>
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="80">
                 <template #default="{ row }">
                   <el-button link type="primary" size="small" @click="openAllocate(row)">分配</el-button>
@@ -416,6 +443,63 @@
       <template #footer>
         <el-button size="small" @click="allocateDialog.visible = false">取消</el-button>
         <el-button size="small" type="primary" :loading="allocating" @click="doAllocate">确认分配</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 二级再分配弹窗（我的额度 → 子公司 · 不占用全池可分配） -->
+    <el-dialog v-model="reallocateDialog.visible" title="我的额度 · 转给子公司" width="470px" append-to-body>
+      <div class="ds-allocate-head">
+        把<b>我名下已持有</b>的额度转给本集团子公司
+        <span class="ds-muted">（二级再分配）</span>
+      </div>
+      <el-form label-width="100px" style="margin-top:14px;">
+        <el-form-item label="我的额度">
+          <b class="ds-quota-num">{{ quota?.self?.quota ?? 0 }}</b>
+          <span class="ds-muted" style="margin-left:8px;">已消耗 {{ quota?.self?.used ?? 0 }}</span>
+        </el-form-item>
+        <el-form-item label="可转出上限">
+          <b class="ds-quota-num ds-ok">{{ quota?.self?.transferable ?? 0 }}</b>
+          <span class="ds-muted" style="margin-left:8px;">= 额度 − 已消耗（已花掉的不算）</span>
+        </el-form-item>
+        <el-form-item label="转入方">
+          <el-select v-model="reallocateDialog.toUserId" placeholder="请选择子公司" style="width: 100%;">
+            <el-option
+              v-for="m in (quota?.members || [])"
+              :key="m.userId"
+              :label="m.name"
+              :value="m.userId"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="转出数量">
+          <el-input-number
+            v-model="reallocateDialog.amount"
+            :min="1"
+            :max="reallocatableMax"
+            :step="1"
+            step-strictly
+            controls-position="right"
+          />
+          <span class="ds-muted" style="margin-left:8px;">上限 {{ reallocatableMax }}</span>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="reallocateDialog.note" placeholder="可选，如「Q3 一线补充」" maxlength="200" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <div class="ds-move-tip">
+        <div>· 额度来自<b>你自己名下</b>，<b>不占用</b>「全池可分配」</div>
+        <div>· 只在你与所选子公司之间移动，<b>组织总授权额度不变</b></div>
+        <div>· 出资方恒为你本人 —— 无法从其他子公司扣额度</div>
+        <div v-if="isSelfEmptying" class="ds-danger">⚠ 转出后你的可用额度为 0，将无法发起查询</div>
+      </div>
+      <template #footer>
+        <el-button size="small" @click="reallocateDialog.visible = false">取消</el-button>
+        <el-button
+          size="small"
+          :type="isSelfEmptying ? 'danger' : 'primary'"
+          :loading="reallocating"
+          @click="doReallocate"
+        >确认转出</el-button>
       </template>
     </el-dialog>
   </div>
@@ -461,6 +545,18 @@ const quota = ref(null)
 const loadingQuota = ref(false)
 const allocateDialog = ref({ visible: false, userId: null, memberName: '', amount: 1, note: '' })
 const allocating = ref(false)
+
+// 二级再分配（我的额度 → 子公司）
+const reallocateDialog = ref({ visible: false, toUserId: null, amount: 1, note: '' })
+const reallocating = ref(false)
+// ★ 上限一律取后端 summary.self.transferable（= 额度 − 已消耗），前端**不自行推导**（规则 30 同口径）
+const reallocatableMax = computed(() => Math.max(1, quota.value?.self?.transferable ?? 1))
+const canReallocate = computed(() => Number(quota.value?.self?.transferable ?? 0) > 0)
+// 转后为 0 → 危险态提示（P11 / 规则 31：允许转空，仅提示不设限）
+const isSelfEmptying = computed(() => {
+  const limit = Number(quota.value?.self?.transferable ?? 0)
+  return limit > 0 && Number(reallocateDialog.value.amount) >= limit
+})
 
 const isMember = computed(() => role.value === 'member')
 const canReceive = computed(() => Number(myMember.value?.canReceive ?? 1) !== 0)
@@ -789,6 +885,63 @@ async function doAllocate () {
   }
 }
 
+// ---- 二级再分配（我的额度 → 子公司）----
+function openReallocate () {
+  reallocateDialog.value = {
+    visible: true,
+    toUserId: (quota.value?.members || [])[0]?.userId ?? null,
+    amount: 1,
+    note: ''
+  }
+}
+
+async function doReallocate () {
+  const toUserId = reallocateDialog.value.toUserId
+  if (!toUserId) {
+    ElMessage.warning('请选择转入的子公司')
+    return
+  }
+  const amount = Number(reallocateDialog.value.amount)
+  // ★ 与后端同口径：上限 = summary.self.transferable
+  const limit = Number(quota.value?.self?.transferable ?? 0)
+  if (!Number.isInteger(amount) || amount <= 0) {
+    ElMessage.warning('转出额度必须是正整数')
+    return
+  }
+  if (amount > limit) {
+    ElMessage.warning(`超出可转出上限：当前可转 ${limit} 次（= 额度 − 已消耗）`)
+    return
+  }
+  const target = (quota.value?.members || []).find(m => m.userId === toUserId)
+  const name = target?.name || `#${toUserId}`
+  const emptying = amount >= limit
+  try {
+    await ElMessageBox.confirm(
+      emptying
+        ? `将你名下 ${amount} 次额度转给「${name}」。转出后你的可用额度为 0，将无法发起查询。确认？`
+        : `把你名下 ${amount} 次额度转给「${name}」（二级再分配 · 不占用「全池可分配」· 组织总授权不变）。确认？`,
+      emptying ? '⚠ 转空自己的额度' : '确认转出',
+      { type: emptying ? 'error' : 'warning' }
+    )
+  } catch (e) { return }   // 用户取消
+
+  reallocating.value = true
+  try {
+    const d = await api.post(`/orgs/${orgId.value}/quota/reallocate`, {
+      toUserId,
+      amount,
+      note: reallocateDialog.value.note || undefined
+    })
+    ElMessage.success(`已把 ${d.amount} 次额度转给「${name}」（你现有 ${d.from.after} 次）`)
+    reallocateDialog.value.visible = false
+    await loadQuota()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '组内再分配失败')
+  } finally {
+    reallocating.value = false
+  }
+}
+
 onMounted(loadAll)
 
 // 切换子公司 → 读它的管辖范围（决定「可拉取范围」提示与越界丢弃口径）
@@ -843,5 +996,26 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-quota-num { font-size: 20px; color: #303133; font-weight: 600; }
 .ds-quota-hl .ds-quota-num { color: #409eff; }
 .ds-allocate-head { font-size: 14px; color: #303133; }
+
+/* 二级再分配：⑥ 区块头部按钮 + 我的额度一行 */
+.ds-block-btn-wrap { margin-left: auto; display: inline-flex; }
+.ds-mine-line {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: 12px; color: #303133;
+  padding: 8px 12px; margin-bottom: 10px;
+  background: #fdf6ec; border: 1px solid #faecd8; border-radius: 6px;
+}
+.ds-mine-line b { font-size: 13px; }
+.ds-tag-pool,
+.ds-tag-move {
+  display: inline-block; min-width: 34px; padding: 1px 6px; margin-right: 4px;
+  border-radius: 4px; font-size: 12px; text-align: center;
+}
+.ds-tag-pool { background: #ecf5ff; color: #409eff; border: 1px solid #d9ecff; }
+.ds-tag-move { background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
+.ds-move-tip {
+  font-size: 12px; color: #606266; line-height: 1.9;
+  background: #f5f7fa; border-radius: 6px; padding: 8px 12px;
+}
 
 </style>

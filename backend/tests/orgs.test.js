@@ -35,6 +35,7 @@ process.env.R4B_DB_PATH = tmpDb
 let getDb, JWT_SECRET, isOrgMember, server, base
 const tokens = {}
 const ids = {}
+const p15 = {}   // P1.5 专用共享状态（二级再分配 / F4 总览），不污染 ids
 
 /** 造一个带 id/username/role 的 JWT（authenticate 只看 payload） */
 function makeToken(user) {
@@ -571,5 +572,234 @@ describe('⑪ 解散集团 DELETE /api/orgs/:id（软删除「立碑」）', () 
 
     expect((await call('DELETE', `/api/orgs/${g.body.org.id}`, { token: tokens.admin })).status).toBe(200)
     expect(db.prepare(`SELECT quota FROM users WHERE id = ?`).get(u).quota).toBe(77)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// P1.5：二级再分配（§3.8 · 规则 26~31）+ 跨组织总览（§7.9 F4 · 规则 24）
+// 全部用本次新建的可抛弃账号/集团，不干扰 ①~⑪ 的共享状态。
+// ---------------------------------------------------------------------------
+
+describe('⑫ 二级再分配 POST /api/orgs/:id/quota/reallocate（§3.8 · 规则 26~31）', () => {
+  const mkUser = (username, quota = 0) => getDb().prepare(
+    `INSERT INTO users (username, email, password, role, quota) VALUES (?, ?, 'x', 'user', ?)`
+  ).run(username, `${username}@test.local`, quota).lastInsertRowid
+  const tok = (u, name) => makeToken({ id: u, username: name, role: 'user' })
+  const sumQuota = (db, us) => us.reduce(
+    (s, u) => s + (db.prepare(`SELECT quota FROM users WHERE id = ?`).get(u)?.quota || 0), 0
+  )
+  const sumChange = (db, u) => db.prepare(
+    `SELECT COALESCE(SUM(change_amount), 0) AS n FROM quota_history WHERE user_id = ?`
+  ).get(u).n
+
+  it('准备：orgA(总部300·无消耗, 2成员) / orgB(总部300·已消耗80, 1成员)', async () => {
+    const db = getDb()
+    p15.ownA = mkUser('re_ownA_t', 300); p15.mA1 = mkUser('re_mA1_t', 0); p15.mA2 = mkUser('re_mA2_t', 0)
+    p15.ownB = mkUser('re_ownB_t', 300); p15.mB1 = mkUser('re_mB1_t', 0)
+    p15.tOwnA = tok(p15.ownA, 're_ownA_t'); p15.tMA1 = tok(p15.mA1, 're_mA1_t')
+    p15.tMA2 = tok(p15.mA2, 're_mA2_t'); p15.tOwnB = tok(p15.ownB, 're_ownB_t')
+
+    const a = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '再分配集团A', ownerUserId: p15.ownA } })
+    expect(a.status).toBe(200); p15.orgA = a.body.org.id
+    expect((await call('POST', `/api/orgs/${p15.orgA}/members`, { token: tokens.admin, body: { username: 're_mA1_t' } })).status).toBe(200)
+    expect((await call('POST', `/api/orgs/${p15.orgA}/members`, { token: tokens.admin, body: { username: 're_mA2_t' } })).status).toBe(200)
+
+    const b = await call('POST', '/api/orgs', { token: tokens.admin, body: { name: '再分配集团B', ownerUserId: p15.ownB } })
+    expect(b.status).toBe(200); p15.orgB = b.body.org.id
+    expect((await call('POST', `/api/orgs/${p15.orgB}/members`, { token: tokens.admin, body: { username: 're_mB1_t' } })).status).toBe(200)
+
+    // ownB 已消耗 80 → 可转上限 = 300 − 80 = 220（规则 30：已花掉的不许转走）
+    db.prepare(`INSERT INTO purchases (user_id, quota_used, status) VALUES (?, 80, 'active')`).run(p15.ownB)
+  })
+
+  it('toUserId === 自己 → 400 self_move_forbidden（规则 27）', async () => {
+    const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+      token: p15.tOwnA, body: { toUserId: p15.ownA, amount: 10 }
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('self_move_forbidden')
+  })
+
+  it('toUserId 非本组织成员 → 404', async () => {
+    const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+      token: p15.tOwnA, body: { toUserId: p15.mB1, amount: 10 }   // mB1 属 orgB
+    })
+    expect(r.status).toBe(404)
+  })
+
+  it('amount 非正整数 → 400', async () => {
+    for (const amount of [0, -5, 1.5, 'x']) {
+      const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+        token: p15.tOwnA, body: { toUserId: p15.mA1, amount }
+      })
+      expect(`amount=${amount} → ${r.status}`).toBe(`amount=${amount} → 400`)
+    }
+  })
+
+  it('★ 转出额 > 自己未消耗余额 → 400 insufficient_own_quota（附 额度/已消耗/可转 明细，规则 30）', async () => {
+    const r = await call('POST', `/api/orgs/${p15.orgB}/quota/reallocate`, {
+      token: p15.tOwnB, body: { toUserId: p15.mB1, amount: 221 }
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('insufficient_own_quota')
+    expect(r.body.quota).toBe(300)
+    expect(r.body.used).toBe(80)
+    expect(r.body.transferable).toBe(220)
+    // 边界：正好 220 应放行（本轮不改额度，仅验不被 400 拦）—— 见下一例
+    const ok = await call('POST', `/api/orgs/${p15.orgB}/quota/reallocate`, {
+      token: p15.tOwnB, body: { toUserId: p15.mB1, amount: 220 }
+    })
+    expect(ok.status).toBe(200)
+    expect(ok.body.from).toEqual({ userId: p15.ownB, before: 300, after: 80 })
+    expect(ok.body.to).toEqual({ userId: p15.mB1, before: 0, after: 220 })
+  })
+
+  it('★ 成功（orgA 转 100）：两方额度一增一减，且**不改变**组织总额 / 物理池 / 全池可分配（规则 28）', async () => {
+    const db = getDb()
+    const { getAllocatable, getPoolRemaining } = await import('../src/utils/quotaPool.js')
+    const orgTotalBefore = sumQuota(db, [p15.ownA, p15.mA1, p15.mA2])
+    const physBefore = getPoolRemaining(db)
+    const allocBefore = getAllocatable(db)
+    const fromSumBefore = sumChange(db, p15.ownA)
+    const toSumBefore = sumChange(db, p15.mA1)
+
+    const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+      token: p15.tOwnA, body: { toUserId: p15.mA1, amount: 100, note: 'Q3 一线补充' }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.ok).toBe(true)
+    expect(r.body.grantKind).toBe('org_move')
+    expect(r.body.from).toEqual({ userId: p15.ownA, before: 300, after: 200 })
+    expect(r.body.to).toEqual({ userId: p15.mA1, before: 0, after: 100 })
+    expect(r.body.orgTotalUnchanged).toBe(true)
+    expect(r.body.allocatableUnchanged).toBe(true)
+
+    // 恒等式 ③：组织总授权额度不变（§3.8 Ⅲ）
+    expect(sumQuota(db, [p15.ownA, p15.mA1, p15.mA2])).toBe(orgTotalBefore)
+    // 恒等式 ④：物理池 / 全池可分配不变
+    expect(getPoolRemaining(db)).toBe(physBefore)
+    expect(getAllocatable(db)).toBe(allocBefore)
+    // 逐账号对账：Σ(change_amount) 的增量 === users.quota 的增量（两侧都成立）
+    expect(sumChange(db, p15.ownA) - fromSumBefore).toBe(-100)
+    expect(sumChange(db, p15.mA1) - toSumBefore).toBe(100)
+  })
+
+  it('★ 双写：1 行 quota_grants(org_move) + 2 行 quota_history(org_move_out / org_move_in)（规则 29）', async () => {
+    const db = getDb()
+    const g = db.prepare(
+      `SELECT * FROM quota_grants WHERE org_id = ? AND grant_kind = 'org_move' ORDER BY id DESC LIMIT 1`
+    ).get(p15.orgA)
+    expect(g).toBeTruthy()
+    expect(g.from_user_id).toBe(p15.ownA)
+    expect(g.to_user_id).toBe(p15.mA1)
+    expect(g.amount).toBe(100)
+    expect(g.from_before).toBe(300)
+    expect(g.from_after).toBe(200)
+    expect(g.quota_before).toBe(0)
+    expect(g.quota_after).toBe(100)
+    expect(g.note).toBe('Q3 一线补充')
+
+    const out = db.prepare(
+      `SELECT * FROM quota_history WHERE user_id = ? AND action = 'org_move_out' ORDER BY id DESC LIMIT 1`
+    ).get(p15.ownA)
+    const inn = db.prepare(
+      `SELECT * FROM quota_history WHERE user_id = ? AND action = 'org_move_in' ORDER BY id DESC LIMIT 1`
+    ).get(p15.mA1)
+    expect(out.change_amount).toBe(-100)          // 负数流水允许（台账 CHECK 只约束 grants）
+    expect(out.source_user_id).toBe(p15.ownA)
+    expect(inn.change_amount).toBe(100)
+    expect(inn.source_user_id).toBe(p15.ownA)     // 受赠方记「出资方」
+  })
+
+  it('非 owner（成员本人）→ 403（铁律 ③：子公司之间天然无法互转）', async () => {
+    const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+      token: p15.tMA1, body: { toUserId: p15.mA2, amount: 10 }
+    })
+    expect(r.status).toBe(403)
+  })
+
+  it('★ 允许把自己转空（P11 · 规则 31）：再转 200 给 mA2 → 总部 users.quota 归 0', async () => {
+    const db = getDb()
+    const r = await call('POST', `/api/orgs/${p15.orgA}/quota/reallocate`, {
+      token: p15.tOwnA, body: { toUserId: p15.mA2, amount: 200 }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.from).toEqual({ userId: p15.ownA, before: 200, after: 0 })
+    expect(db.prepare(`SELECT quota FROM users WHERE id = ?`).get(p15.ownA).quota).toBe(0)
+    // 转空后组织总授权仍为 300（0 + 100 + 200）
+    expect(sumQuota(db, [p15.ownA, p15.mA1, p15.mA2])).toBe(300)
+  })
+})
+
+describe('⑬ 跨组织配额总览 GET /api/orgs/quota/overview（§7.9 F4 · 规则 24）', () => {
+  it('非 admin → 403（跨组织可见性边界：集团 owner 也不可见）', async () => {
+    expect((await call('GET', '/api/orgs/quota/overview', { token: tokens.hq })).status).toBe(403)
+    expect((await call('GET', '/api/orgs/quota/overview', { token: p15.tOwnA })).status).toBe(403)
+  })
+
+  it('未登录 → 401', async () => {
+    expect((await call('GET', '/api/orgs/quota/overview')).status).toBe(401)
+  })
+
+  it('admin → 200，返回 pool / orgs / direct / reconcile', async () => {
+    const r = await call('GET', '/api/orgs/quota/overview', { token: tokens.admin })
+    expect(r.status).toBe(200)
+    expect(r.body.ok).toBe(true)
+    expect(r.body.pool.poolTotal).toBeGreaterThanOrEqual(0)
+    expect(typeof r.body.pool.remaining).toBe('number')
+    expect(typeof r.body.pool.allocatable).toBe('number')
+    expect(Array.isArray(r.body.orgs)).toBe(true)
+    expect(r.body.direct).toBeTruthy()
+    expect(r.body.reconcile).toBeTruthy()
+  })
+
+  it('★ 恒等式自检：allocatedUsers === Σ组织 quotaTotal + 平台直配（reconcile.ok）', async () => {
+    const r = await call('GET', '/api/orgs/quota/overview', { token: tokens.admin })
+    const { reconcile, pool } = r.body
+    expect(reconcile.allocatedUsers).toBe(pool.allocatedUsers)
+    expect(reconcile.expected).toBe(reconcile.sumOrgQuota + reconcile.directAllocated)
+    expect(reconcile.diff).toBe(0)
+    expect(reconcile.ok).toBe(true)
+  })
+
+  it('★ 再分配集团A 出现在总览：已分配 300 / 台账拆 一级0 + 二级300 / 总部为第一行', async () => {
+    const r = await call('GET', '/api/orgs/quota/overview', { token: tokens.admin })
+    const o = r.body.orgs.find(x => x.orgId === p15.orgA)
+    expect(o).toBeTruthy()
+    expect(o.quotaTotal).toBe(300)                  // ⑫ 转出 300 后：0 + 100 + 200
+    expect(o.grantedMove).toBe(300)                 // 全部来自二级再分配
+    expect(o.grantedPool).toBe(0)                   // 无一级分配
+    expect(o.grantedTotal).toBe(300)
+    expect(o.grantCount).toBe(2)                    // ⑫ 两次 org_move
+    expect(o.lastGrantAt).toBeTruthy()
+    expect(o.members[0].isOwner).toBe(true)
+    expect(o.members[0].userId).toBe(p15.ownA)
+    // 组织级 = Σ(总部 + 成员)
+    const sumQuota = o.members.reduce((s, m) => s + m.quota, 0)
+    expect(o.quotaTotal).toBe(sumQuota)
+  })
+
+  it('★ 组织成员行带 quota / used / unconsumed（未消耗 = max(0, 额度 − 已消耗)）', async () => {
+    const r = await call('GET', '/api/orgs/quota/overview', { token: tokens.admin })
+    const o = r.body.orgs.find(x => x.orgId === p15.orgB)
+    expect(o).toBeTruthy()
+    const ownerRow = o.members.find(m => m.isOwner)
+    expect(ownerRow.quota).toBe(80)                 // 300 − 220 已转出
+    expect(ownerRow.used).toBe(80)                  // 已消耗
+    expect(ownerRow.unconsumed).toBe(0)             // max(0, 80 − 80)
+    const m1 = o.members.find(m => m.userId === p15.mB1)
+    expect(m1.quota).toBe(220)
+    expect(m1.used).toBe(0)
+    expect(m1.unconsumed).toBe(220)
+    expect(o.quotaTotal).toBe(300)
+    expect(o.consumed).toBe(80)
+    expect(o.unconsumed).toBe(220)
+  })
+
+  it('★ 只读：不提供任何"调低/收回"入口（规则 24 的接口层体现）', async () => {
+    const r = await call('PUT', `/api/orgs/${p15.orgA}/quota`, { token: tokens.admin, body: { amount: 1 } })
+    expect(r.status).toBe(404)
+    const r2 = await call('POST', `/api/orgs/${p15.orgA}/quota/revoke`, { token: tokens.admin, body: { amount: 1 } })
+    expect(r2.status).toBe(404)
   })
 })

@@ -55,7 +55,7 @@ import {
   parseBrandList,
   normalizeCity
 } from '../utils/scopeGuard.js'
-import { getPoolInfo, getPoolRemaining, getOwnQuota, getAllocatable } from '../utils/quotaPool.js'
+import { getPoolInfo, getPoolRemaining, getOwnQuota, getOwnQuotaDetail, getAllocatable } from '../utils/quotaPool.js'
 
 const router = express.Router()
 
@@ -344,6 +344,180 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
   } catch (error) {
     console.error('获取集团列表失败:', error)
     res.status(500).json({ message: '获取集团列表失败' })
+  }
+})
+
+/**
+ * GET /api/orgs/quota/overview —— 管理员跨组织配额总览（§7.9 F4）
+ * ★ 仅平台 admin（规则 24：跨组织可见性边界；集团 owner 只看本组织）
+ * ★ 只读：**不提供**任何"调低/收回"入口 —— 避免成为绕过铁律 ② 的后门
+ *   （真要兜底走 PUT /api/users/:id + force，那有独立审计）
+ *
+ * 三层聚合：组织 → 总部/成员 → 台账。解决 §3.7 的盲区 ②（"分配出去了多少 vs 池子还剩多少"分不清）。
+ *
+ * 口径说明（实施期补齐，原文档树未单列总部）：
+ *   · 组织级「已分配」= Σ 该组织各账号 users.quota（**含总部**）——
+ *     设计文档的 ASCII 树只画了成员，但总部额度若不纳入聚合，`poolTotal` 恒等式会凭空少一块。
+ *     因此把总部作为组织第一行（isOwner=true）纳入，组织级 = Σ(总部 + 成员)。
+ *   · 「已消耗」= Σ active 的 quota_used；「未消耗」= Σ max(0, quota − used)（§7.9 口径）
+ *   · 「台账分配」= Σ quota_grants.amount（append-only 台账口径，可与 users.quota 交叉对账）
+ *   · 平台直配 = 既非任何未解散组织的总部、也非其成员的账号
+ *   · reconcile 自检：allocatedUsers == Σ组织quotaTotal + direct.allocated（不等即数据异常）
+ *
+ * ⚠️ 路由必须注册在 /:id 之前，否则 '/quota/overview' 会被 /:id 前缀吞掉。
+ */
+router.get('/quota/overview', authenticate, requireAdmin, (req, res) => {
+  try {
+    const db = getDb()
+    const pool = getPoolInfo(db)
+    const remaining = getPoolRemaining(db)
+    const allocatable = getAllocatable(db)
+
+    // 一次性取全量非 admin 账号的额度与消耗（避免逐组织 N+1）
+    const acctRows = db.prepare(`
+      SELECT u.id, u.username, u.company, u.role, u.quota,
+             COALESCE(pu.used, 0) AS used
+        FROM users u
+        LEFT JOIN (SELECT user_id, SUM(quota_used) AS used FROM purchases
+                    WHERE status = 'active' GROUP BY user_id) pu ON pu.user_id = u.id
+       WHERE u.role != 'admin'
+    `).all() || []
+    const acctById = new Map(acctRows.map(r => [r.id, r]))
+
+    // 台账聚合：按 (org, to_user) 拆分一级/二级
+    const grantRows = db.prepare(`
+      SELECT org_id, to_user_id,
+             SUM(amount) AS granted,
+             SUM(CASE WHEN grant_kind = 'pool_grant' THEN amount ELSE 0 END) AS granted_pool,
+             SUM(CASE WHEN grant_kind = 'org_move'   THEN amount ELSE 0 END) AS granted_move
+        FROM quota_grants GROUP BY org_id, to_user_id
+    `).all() || []
+    const grantByOrgTo = new Map(grantRows.map(g => [`${g.org_id}:${g.to_user_id}`, g]))
+    const lastGrantRows = db.prepare(`
+      SELECT org_id, MAX(created_at) AS last_at, COUNT(*) AS cnt
+        FROM quota_grants GROUP BY org_id
+    `).all() || []
+    const lastGrantByOrg = new Map(lastGrantRows.map(r => [r.org_id, r]))
+
+    // 成员行（按组织归组，保持绑定顺序）
+    const memberRows = db.prepare(`
+      SELECT org_id, user_id FROM org_members ORDER BY org_id, joined_at ASC, id ASC
+    `).all() || []
+    const membersByOrg = new Map()
+    for (const m of memberRows) {
+      if (!membersByOrg.has(m.org_id)) membersByOrg.set(m.org_id, [])
+      membersByOrg.get(m.org_id).push(m.user_id)
+    }
+
+    const orgRows = db.prepare(`
+      SELECT * FROM organizations WHERE dissolved_at IS NULL ORDER BY created_at ASC, id ASC
+    `).all() || []
+
+    // 防御性去重：同一账号理论上不会被两个组织占用（创建/绑定均有拦截），
+    // 但历史脏数据下若出现，只计入首个组织，避免 Σ 双计破坏恒等式。
+    const claimed = new Set()
+    let duplicates = 0
+
+    const orgs = orgRows.map(o => {
+      const owner = acctById.get(o.owner_user_id)
+      const rows = []
+
+      const pushRow = (uid, displayName, isOwner) => {
+        const counted = !claimed.has(uid)
+        if (counted) claimed.add(uid)
+        else duplicates += 1
+
+        const a = acctById.get(uid) || {}
+        const g = grantByOrgTo.get(`${o.id}:${uid}`) || {}
+        const quota = a.quota || 0
+        const used = a.used || 0
+        rows.push({
+          userId: uid,
+          name: displayName,
+          isOwner: !!isOwner,
+          counted,
+          quota,
+          used,
+          unconsumed: Math.max(0, quota - used),
+          grantedTotal: g.granted || 0,
+          grantedPool: g.granted_pool || 0,
+          grantedMove: g.granted_move || 0
+        })
+      }
+
+      pushRow(
+        o.owner_user_id,
+        owner?.company || owner?.username || `(已删除 #${o.owner_user_id})`,
+        true
+      )
+      for (const uid of (membersByOrg.get(o.id) || [])) {
+        const a = acctById.get(uid)
+        pushRow(uid, a?.company || a?.username || `(已删除 #${uid})`, false)
+      }
+
+      const sum = (k) => rows.reduce((s, r) => s + (r.counted ? (r[k] || 0) : 0), 0)
+      const lg = lastGrantByOrg.get(o.id)
+
+      return {
+        orgId: o.id,
+        name: o.name,
+        ownerUserId: o.owner_user_id,
+        ownerName: owner?.username || `(已删除 #${o.owner_user_id})`,
+        memberCount: rows.length - 1,
+        quotaTotal: sum('quota'),
+        consumed: sum('used'),
+        unconsumed: sum('unconsumed'),
+        grantedTotal: sum('grantedTotal'),
+        grantedPool: sum('grantedPool'),
+        grantedMove: sum('grantedMove'),
+        lastGrantAt: lg?.last_at || null,
+        grantCount: lg?.cnt || 0,
+        members: rows
+      }
+    })
+
+    // 平台直配：未被任何未解散组织认领的账号
+    const direct = { allocated: 0, consumed: 0, unconsumed: 0, accountCount: 0 }
+    for (const a of acctRows) {
+      if (claimed.has(a.id)) continue
+      direct.allocated += a.quota || 0
+      direct.consumed += a.used || 0
+      direct.unconsumed += Math.max(0, (a.quota || 0) - (a.used || 0))
+      direct.accountCount += 1
+    }
+
+    const sumOrgQuota = orgs.reduce((s, o) => s + o.quotaTotal, 0)
+    const expected = sumOrgQuota + direct.allocated
+
+    res.json({
+      ok: true,
+      pool: {
+        poolTotal: pool.poolTotal,
+        remaining,
+        occupied: pool.occupied,
+        allocatedUsers: pool.allocatedUsers,
+        allocatedApi: pool.allocatedApi,
+        allocatable,
+        // 「已分配未消耗」全平台口径（§7.9 顶部卡片）
+        unconsumedTotal: orgs.reduce((s, o) => s + o.unconsumed, 0) + direct.unconsumed
+      },
+      orgs,
+      direct,
+      // 自检：全池 allocatedUsers 必须 == Σ组织 + 平台直配
+      reconcile: {
+        allocatedUsers: pool.allocatedUsers,
+        sumOrgQuota,
+        directAllocated: direct.allocated,
+        expected,
+        diff: pool.allocatedUsers - expected,
+        duplicates,
+        ok: pool.allocatedUsers === expected
+      },
+      generatedAt: new Date().toISOString()
+    })
+  } catch (error) {
+    console.error('获取跨组织配额总览失败:', error)
+    res.status(500).json({ message: '获取跨组织配额总览失败' })
   }
 })
 
@@ -969,8 +1143,11 @@ router.delete('/:id', authenticate, requireOrgOwner, (req, res) => {
 
 /**
  * GET /api/orgs/:id/quota/summary —— 集团视角配额总览（§6）
- * 返回池概览 + 各成员「已分配 / 已消耗 / 剩余 / 累计获赠」。
+ * 返回池概览 + 各成员「已分配 / 已消耗 / 剩余 / 累计获赠」+ 调用者自己的额度三分量。
  * 只读；仅组织 owner 或平台 admin。
+ *
+ * ★ self 字段（P1.5）：调用者自己的 {quota,used,transferable} —— 二级再分配
+ *   「我的额度转给子公司」弹窗的上限直接取它，**不由前端自算**（规则 30 前后端同口径）。
  */
 router.get('/:id/quota/summary', authenticate, requireOrgOwner, (req, res) => {
   try {
@@ -983,13 +1160,20 @@ router.get('/:id/quota/summary', authenticate, requireOrgOwner, (req, res) => {
     const memberRows = db.prepare(`
       SELECT m.user_id, u.username, u.company, u.quota,
              COALESCE(pu.used, 0) AS used,
-             COALESCE(g.granted, 0) AS granted
+             COALESCE(g.granted, 0) AS granted,
+             COALESCE(g.granted_pool, 0) AS granted_pool,
+             COALESCE(g.granted_move, 0) AS granted_move
         FROM org_members m
         JOIN users u ON u.id = m.user_id
         LEFT JOIN (SELECT user_id, SUM(quota_used) AS used FROM purchases
                     WHERE status = 'active' GROUP BY user_id) pu ON pu.user_id = m.user_id
-        LEFT JOIN (SELECT to_user_id, SUM(amount) AS granted FROM quota_grants
-                    WHERE org_id = ? GROUP BY to_user_id) g ON g.to_user_id = m.user_id
+        LEFT JOIN (
+          SELECT to_user_id,
+                 SUM(amount) AS granted,
+                 SUM(CASE WHEN grant_kind = 'pool_grant' THEN amount ELSE 0 END) AS granted_pool,
+                 SUM(CASE WHEN grant_kind = 'org_move'   THEN amount ELSE 0 END) AS granted_move
+            FROM quota_grants WHERE org_id = ? GROUP BY to_user_id
+        ) g ON g.to_user_id = m.user_id
        WHERE m.org_id = ? AND m.member_role != 'owner'
        ORDER BY m.joined_at ASC, m.id ASC
     `).all(org.id, org.id) || []
@@ -1005,19 +1189,28 @@ router.get('/:id/quota/summary', authenticate, requireOrgOwner, (req, res) => {
         quota,
         used,
         remain: Math.max(0, quota - used),
-        grantedTotal: x.granted || 0
+        // 累计获赠（台账口径）：一级池分配 / 二级组内再分配，分开列便于台账对账（§7.8）
+        grantedTotal: x.granted || 0,
+        grantedPool: x.granted_pool || 0,
+        grantedMove: x.granted_move || 0
       }
     })
+
+    // 调用者（owner/admin）自己的额度三分量 —— 二级再分配上限的唯一来源
+    const self = getOwnQuotaDetail(db, req.user?.id)
 
     res.json({
       ok: true,
       orgId: org.id,
+      ownerUserId: org.owner_user_id,
+      isOwner: org.owner_user_id === req.user?.id,
       poolTotal: pool.poolTotal,
       occupied: pool.occupied,
       allocatedUsers: pool.allocatedUsers,
       allocatedApi: pool.allocatedApi,
       remaining,
       allocatable,
+      self,
       members
     })
   } catch (error) {
@@ -1121,15 +1314,144 @@ router.post('/:id/quota/allocate', authenticate, requireOrgOwner, (req, res) => 
   }
 })
 
+/**
+ * POST /api/orgs/:id/quota/reallocate —— 二级再分配（成员 → 成员，§3.8 / §6）
+ * body { toUserId, amount, note? }        ★ 签名里【没有 fromUserId】
+ *
+ * 语义：把**自己已持有**的额度转一点给本组织某个子公司。
+ *   与一级分配（allocate）的本质差异（§3.8 Ⅰ）：
+ *     一级 = 把池子里"还没发出去"的钱发下去 → 扣「全池可分配」、发起人自己的额度不变
+ *     二级 = 把"已经发到我手里"的钱再分出去 → **不扣**「全池可分配」，只扣出资方自己的额度
+ *
+ * 结构性保证（能用签名/约束表达的绝不靠 if，§3.8 Ⅳ）：
+ *   ① 出资方恒 = req.user.id —— 请求体无 fromUserId，想扣别人必须先改签名（可 review 发现）
+ *   ② requireOrgOwner —— 非 owner 连进门资格都没有 ⇒ 子公司之间天然无法互转（铁律 ③）
+ *   ③ toUserId === 自己 → 400 self_move_forbidden
+ *   ④ 转出上限 = 未消耗余额 max(0, users.quota − Σquota_used)（规则 30 · P10 已定案）
+ *      —— 已花掉的次数不可转走；超额 400 insufficient_own_quota 并回传明细
+ *   ⑤ 保留 CHECK(amount > 0)：记账用**一条 org_move（正数）**，不写 −N/+N 两条
+ *      —— 一旦允许负数，"不可扣减"就只剩接口层 if 了（§3.8 Ⅳ 末段）
+ *
+ * 写入（单事务）：from.quota −= amount、to.quota += amount、
+ *   quota_grants +1 行（org_move，含 from_before/from_after）、
+ *   quota_history +2 行（出资方 org_move_out −N / 受赠方 org_move_in +N）（规则 29）
+ * ★ 不扣「全池可分配」、不动 physical remaining_quota、不动组织总授权额度 Σusers.quota（规则 28）
+ * ★ 不设最低保留值：允许把自己转空（P11 · 规则 31），仅前端升级危险态提示。
+ */
+router.post('/:id/quota/reallocate', authenticate, requireOrgOwner, (req, res) => {
+  try {
+    const db = getDb()
+    const org = req.org
+    const fromUserId = req.user?.id               // ★ 恒为调用者
+    const toUserId = toId(req.body?.toUserId)
+    const amount = Number(req.body?.amount)
+
+    if (!toUserId) return res.status(400).json({ message: '缺少转入成员 toUserId' })
+    if (toUserId === fromUserId) {
+      return res.status(400).json({
+        code: 'self_move_forbidden',
+        message: '不能转给自己'
+      })
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return res.status(400).json({ message: '转出额度必须是正整数' })
+    }
+
+    const m = findMember(db, org.id, toUserId)
+    if (!m) return res.status(404).json({ message: '该账号不是本集团成员' })
+
+    // 转出上限 = 出资方未消耗余额（规则 30）。已花掉的次数不可转走。
+    const detail = getOwnQuotaDetail(db, fromUserId)
+    if (amount > detail.transferable) {
+      return res.status(400).json({
+        code: 'insufficient_own_quota',
+        message: `可转出余额不足：额度 ${detail.quota} − 已消耗 ${detail.used} = 可转 ${detail.transferable}，本次 ${amount}`,
+        quota: detail.quota,
+        used: detail.used,
+        transferable: detail.transferable
+      })
+    }
+
+    const note = String(req.body?.note || '').trim().slice(0, 200) || null
+
+    let fromBefore = 0
+    let fromAfter = 0
+    let toBefore = 0
+    let toAfter = 0
+    let grantId = null
+
+    db.beginTx()
+    try {
+      fromBefore = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(fromUserId)?.quota || 0
+      toBefore = db.prepare(`SELECT quota FROM users WHERE id = ?`).get(toUserId)?.quota || 0
+      fromAfter = fromBefore - amount
+      toAfter = toBefore + amount
+
+      db.prepare(`UPDATE users SET quota = quota - ? WHERE id = ?`).run(amount, fromUserId)
+      db.prepare(`UPDATE users SET quota = quota + ? WHERE id = ?`).run(amount, toUserId)
+
+      const g = db.prepare(`
+        INSERT INTO quota_grants
+          (org_id, grant_kind, from_user_id, to_user_id, amount, note, created_by, ip,
+           quota_before, quota_after, from_before, from_after)
+        VALUES (?, 'org_move', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(org.id, fromUserId, toUserId, amount, note, req.user?.id, req.ip || null,
+             toBefore, toAfter, fromBefore, fromAfter)
+      grantId = g.lastInsertRowid
+
+      // 双写流水：两条，使两侧的 cumulativeTotal = Σ(change_amount) 都与 users.quota 对账通过
+      db.prepare(`
+        INSERT INTO quota_history
+          (user_id, old_quota, new_quota, change_amount, action, source_user_id)
+        VALUES (?, ?, ?, ?, 'org_move_out', ?)
+      `).run(fromUserId, fromBefore, fromAfter, -amount, fromUserId)
+
+      db.prepare(`
+        INSERT INTO quota_history
+          (user_id, old_quota, new_quota, change_amount, action, source_user_id)
+        VALUES (?, ?, ?, ?, 'org_move_in', ?)
+      `).run(toUserId, toBefore, toAfter, amount, fromUserId)
+
+      db.commitTx()
+    } catch (txError) {
+      try { db.rollbackTx() } catch (e) { /* 忽略 */ }
+      throw txError
+    }
+
+    console.warn(
+      `[orgs] 配额二级再分配 org=${org.id} from=${fromUserId} to=${toUserId} `
+      + `amount=${amount} (${fromBefore}->${fromAfter} / ${toBefore}->${toAfter}) by=${req.user?.id} ip=${req.ip}`
+    )
+
+    res.json({
+      ok: true,
+      grantId,
+      orgId: org.id,
+      grantKind: 'org_move',
+      from: { userId: fromUserId, before: fromBefore, after: fromAfter },
+      to: { userId: toUserId, before: toBefore, after: toAfter },
+      amount,
+      note,
+      // 恒等式：再分配不改变组织总授权额度、不改变全池可分配（§3.8 Ⅲ 恒等式 ③④）
+      orgTotalUnchanged: true,
+      allocatableUnchanged: true
+    })
+  } catch (error) {
+    console.error('组内再分配失败:', error)
+    res.status(500).json({ message: '组内再分配失败' })
+  }
+})
+
 // ===========================================================================
 // ⛔ 以下接口「刻意不实现」（设计方案 §6 末段；勿"补全"）：
 //   POST   /api/orgs/:id/quota/revoke            收回已分配配额        → 违反铁律 ②
 //   PUT    /api/orgs/:id/quota                   设置式覆盖（可调低）   → 违反铁律 ②
 //   POST   /api/orgs/:id/quota/reallocate-from   带 fromUserId 的再分配 → 扣他人额度后门
-//   POST   /api/orgs/:id/quota/reallocate        二级再分配            → P1.5 完整版（本批最小出口未含）
 //   POST   /api/orgs/:id/quota/transfer          横向转调 A→B          → 违反铁律 ③
 //   DELETE /api/orgs/:id/quota/ledger/:grantId   删台账              → 台账 append-only
 // 另：本文件不提供"改成员 users.quota"的 set 入口（规则 21：成员额度只由分配而来）。
+// ★ P1.5 已实现「二级再分配」：POST /:id/quota/reallocate（出资方恒为调用者，见上）。
+//   注意它与上面的 reallocate-from **不是同一个东西** —— 后者带 fromUserId 可扣他人，永久禁止。
 // ===========================================================================
 
 export default router
