@@ -211,6 +211,28 @@
 
         <el-row :gutter="20">
           <el-col :span="12">
+            <el-form-item label="商圈" prop="trading_area">
+              <el-input v-model="form.trading_area" placeholder="如: 人民广场商圈/徐家汇商圈" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="门店分类" prop="store_category">
+              <el-select
+                v-model="form.store_category"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="如: 快餐 / 火锅 / 茶饮"
+                style="width: 100%"
+              >
+                <el-option v-for="c in categoryOptions" :key="c" :label="c" :value="c" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
+          <el-col :span="12">
             <el-form-item label="纬度" prop="latitude">
               <el-input-number v-model="form.latitude" :precision="6" :step="0.001" :min="-90" :max="90" style="width: 100%" />
             </el-form-item>
@@ -226,29 +248,20 @@
 
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="商圈" prop="trading_area">
-              <el-input v-model="form.trading_area" placeholder="如: 人民广场商圈/徐家汇商圈" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
             <el-form-item label="价格(元)" prop="price">
               <el-input-number v-model="form.price" :min="0" :max="99999" :precision="2" style="width: 100%" />
             </el-form-item>
           </el-col>
-        </el-row>
-
-        <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="星级" prop="rating">
               <el-input-number v-model="form.rating" :min="0" :max="5" :step="0.1" :precision="1" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="评论数" prop="reviews">
-              <el-input-number v-model="form.reviews" :min="0" :max="999999" style="width: 100%" />
-            </el-form-item>
-          </el-col>
         </el-row>
+
+        <el-form-item label="评论数" prop="reviews">
+          <el-input-number v-model="form.reviews" :min="0" :max="999999" style="width: 200px" />
+        </el-form-item>
 
         <el-form-item label="备注" prop="description">
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="备注信息" />
@@ -405,6 +418,7 @@ const form = reactive({
   city: '',
   district: '',
   address: '',
+  store_category: '',
   description: '',
   latitude: 39.9042,
   longitude: 116.4074,
@@ -463,6 +477,11 @@ watch(filterDistrict, (newDistrict) => {
 // 品牌列表
 const brandList = computed(() => {
   return [...new Set(competitorStore.competitors.map(c => c.brand).filter(Boolean))].sort()
+})
+
+// 门店分类列表（动态取自现有竞品，供「添加/编辑竞品」弹窗的门店分类下拉，兼容上传模板的自由文本分类如「快餐」）
+const categoryOptions = computed(() => {
+  return [...new Set(competitorStore.competitors.map(c => c.store_category).filter(Boolean))].sort()
 })
 
 // 筛选后的数据
@@ -528,7 +547,7 @@ const showAddDialog = () => {
   Object.assign(form, {
     store_code: '', brand: '', name: '',
     status: '正常营业', city: '', district: '', address: '',
-    description: '', latitude: 39.9042, longitude: 116.4074,
+    store_category: '', description: '', latitude: 39.9042, longitude: 116.4074,
     trading_area: '', price: 0, rating: 0, reviews: 0
   })
   dialogVisible.value = true
@@ -545,6 +564,7 @@ const handleEdit = (row) => {
     city: row.city || '',
     district: row.district || '',
     address: row.address || '',
+    store_category: row.store_category || '',
     description: row.description || '',
     latitude: row.latitude,
     longitude: row.longitude,
