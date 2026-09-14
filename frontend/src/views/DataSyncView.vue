@@ -1031,7 +1031,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 </script>
 
 <style scoped>
-.data-sync-view { padding: 16px; }
+.data-sync-view { padding: 16px; height: 100%; overflow-y: auto; box-sizing: border-box; }
 .ds-card { max-width: 1180px; margin: 0 auto; }
 .ds-header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .ds-title { font-size: 16px; font-weight: 500; }

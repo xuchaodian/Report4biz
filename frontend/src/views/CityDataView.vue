@@ -196,7 +196,7 @@ const onSortChange = ({ prop, order }) => {
 </script>
 
 <style scoped>
-.city-data-page { padding: 20px 24px; height: 100%; background: #f5f7fa; }
+.city-data-page { padding: 20px 24px; height: 100%; overflow-y: auto; background: #f5f7fa; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0; font-size: 18px; color: #303133; }
 .header-actions { display: flex; gap: 8px; }

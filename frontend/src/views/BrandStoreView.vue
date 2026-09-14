@@ -641,6 +641,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+  overflow-y: auto;
 }
 .data-header {
   display: flex;

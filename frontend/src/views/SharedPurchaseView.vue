@@ -81,7 +81,7 @@ onMounted(async () => {
 
 <style>
 body { margin: 0; font-family: 'PingFang SC','Microsoft YaHei',sans-serif; background: #f5f7fa; }
-.shared-purchase { max-width: 600px; margin: 0 auto; padding: 20px; }
+.shared-purchase { max-width: 600px; margin: 0 auto; padding: 20px; height: 100%; overflow-y: auto; box-sizing: border-box; }
 .header { text-align: center; margin-bottom: 20px; }
 .header h2 { margin: 0 0 4px; color: #333; font-size: 18px; }
 .subtitle { margin: 0; color: #999; font-size: 13px; }

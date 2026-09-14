@@ -1369,6 +1369,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+  overflow-y: auto;
 }
 .sc-tabs {
   flex: 1;
