@@ -889,11 +889,18 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
+  /* ★ 修复（v1.13.127）：本页原先缺 overflow-y:auto，而父级 .main-content 是 overflow:hidden
+     ⇒ 内容一旦超出视口就被裁掉，全页无法上下滚动。
+     补上后与 ShapefileView / MarketMapView / MyAccountView 等 7 个页面的根容器惯例一致。 */
+  overflow-y: auto;
 }
 
 /* 顶部 TAB（v0.9 P0-B）：让「用户列表」内容区不被 TAB 头部挤压 */
 .users-tabs {
-  flex: 1;
+  /* ★ 修复（v1.13.127）：原为 flex:1（=1 1 0%），会被压成外层可视高度，
+     导致内容从被压瘪的盒子里外溢、TAB 背景与白卡片高度对不上。
+     改 flex-shrink:0，让 TAB 按内容自然增高，由外层 .users-view 统一滚动。 */
+  flex: 1 0 auto;
   min-height: 0;
 
   :deep(.el-tabs__header) {
