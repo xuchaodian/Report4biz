@@ -236,6 +236,26 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quota_purchases_created ON quota_purchases(created_at DESC)`)
 
+  // 密码重置令牌表（v1.13.130）—— 支撑「忘记密码」邮件自助重置
+  // ⚠️ 只存令牌的 sha256 哈希，明文令牌仅存在于邮件链接里；即使本表泄露也无法直接使用。
+  // ⚠️ expires_at 用 epoch 毫秒（INTEGER）而非 DATETIME：
+  //    sql.js 的 CURRENT_TIMESTAMP 是 'YYYY-MM-DD HH:MM:SS' 的 UTC 串、无时区标记，
+  //    与 JS 的 ISO 串混用会产生隐式时区错位；直接用 epoch 毫秒可完全规避，比较无歧义。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL,              -- sha256(明文令牌) 的十六进制
+      expires_at INTEGER NOT NULL,           -- epoch 毫秒，签发时间 + 30 分钟
+      used_at INTEGER,                       -- epoch 毫秒；非空 = 已使用/已作废（一次性）
+      requested_ip TEXT,                     -- 申请来源 IP（限流与审计）
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, used_at)`)
+
   // ==========================================================================
   // 集团 / 子公司数据同步（v0.9 P0 · 设计方案 §5.1）
   // 均为 CREATE TABLE IF NOT EXISTS —— 幂等，生产重启时自动建表，零迁移。

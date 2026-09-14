@@ -28,6 +28,7 @@ export default {
     noAccount: '还没有账号？',
     register: '立即注册',
     success: '登录成功',
+    forgot: '忘记密码？',
     lang: '语言'
   },
   // ===== 城市洞察 =====

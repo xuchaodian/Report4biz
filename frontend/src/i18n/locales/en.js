@@ -28,6 +28,7 @@ export default {
     noAccount: 'Don\u2019t have an account?',
     register: 'Register Now',
     success: 'Login successful',
+    forgot: 'Forgot password?',
     lang: 'Language'
   },
   // ===== City Insight =====

@@ -80,6 +80,22 @@ const SMARTSTEPS_API_KEY = process.env.SMARTSTEPS_API_KEY || ''
 // 未配置时分享功能整体禁用（purchase.js share-token 返回 503），生产须在 backend/.env 配置随机值。
 const PURCHASE_SHARE_SECRET = process.env.PURCHASE_SHARE_SECRET || null
 
+// ---- 邮件推送（阿里云 DirectMail SMTP）----
+// 用途：用户「忘记密码」自助重置（发送一次性重置链接）。
+// ⚠️ 阿里云 ECS 默认封禁 TCP 25 端口出方向 ⇒ 必须走 465(SSL)，不能用 25。
+// SMTP_PASS 是控制台「发信地址 → 设置 SMTP 密码」里设的专用密码，不是阿里云账号密码。
+// 未配置（SMTP_USER / SMTP_PASS 任一为空）时：邮件功能整体禁用，
+// /api/auth/forgot-password 返回 503，其余功能不受影响。
+const SMTP_HOST = process.env.SMTP_HOST || 'smtpdm.aliyun.com'
+const SMTP_PORT = Number(process.env.SMTP_PORT || 465)
+const SMTP_USER = process.env.SMTP_USER || ''
+const SMTP_PASS = process.env.SMTP_PASS || ''
+const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || '选址赢家Online'
+const MAIL_ENABLED = !!(SMTP_USER && SMTP_PASS)
+// 邮件里重置链接的前缀（后端拼 href 用）。生产为 https://mka-online.cn，
+// 本地验证时可指向本地静态服务，例如 http://127.0.0.1:4173
+const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://mka-online.cn').replace(/\/+$/, '')
+
 // 启动时提示缺失的第三方密钥（不阻断启动，便于发现漏配）
 const missingKeys = []
 if (!AMAP_KEY) missingKeys.push('AMAP_KEY(高德)')
@@ -90,6 +106,12 @@ if (!PURCHASE_SHARE_SECRET) missingKeys.push('PURCHASE_SHARE_SECRET(分享链接
 if (missingKeys.length) {
   console.warn('[config] 未配置第三方密钥: ' + missingKeys.join(', ') + '。请在 backend/.env 或环境变量中配置，否则对应服务将不可用。')
 }
+if (!MAIL_ENABLED) {
+  console.warn('[config] 未配置邮件推送(SMTP_USER/SMTP_PASS)，「忘记密码」功能将不可用（接口返回 503）。')
+}
 
-export { JWT_SECRET, AMAP_KEY, TENCENT_LBS_KEY, ARK_API_KEY, SMARTSTEPS_API_KEY, PURCHASE_SHARE_SECRET }
+export {
+  JWT_SECRET, AMAP_KEY, TENCENT_LBS_KEY, ARK_API_KEY, SMARTSTEPS_API_KEY, PURCHASE_SHARE_SECRET,
+  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM_NAME, MAIL_ENABLED, APP_BASE_URL
+}
 

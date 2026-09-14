@@ -63,6 +63,10 @@
             @keyup.enter="handleLogin"
           />
         </el-form-item>
+
+        <div class="login-forgot">
+          <router-link to="/forgot-password">{{ $t('login.forgot') }}</router-link>
+        </div>
         
         <el-form-item>
           <el-button
@@ -256,6 +260,21 @@ const handleLogin = async () => {
     height: 44px;
     font-size: 16px;
     letter-spacing: 4px;
+  }
+}
+
+.login-forgot {
+  text-align: right;
+  margin: -6px 0 14px;
+
+  a {
+    color: #409eff;
+    font-size: 13px;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 }
 

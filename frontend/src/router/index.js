@@ -15,6 +15,20 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    // 忘记密码：提交邮箱 → 后端发重置链接（不透露邮箱是否已注册）
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/ForgotPasswordView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    // 重置密码：邮件链接带着 ?token= 进入（一次性、30 分钟有效）
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/views/ResetPasswordView.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/shared/purchase',
     name: 'SharedPurchase',
     component: () => import('@/views/SharedPurchaseView.vue'),

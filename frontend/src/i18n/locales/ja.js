@@ -28,6 +28,7 @@ export default {
     noAccount: 'アカウントをお持ちでない方',
     register: '新規登録',
     success: 'ログイン成功',
+    forgot: 'パスワードをお忘れですか？',
     lang: '言語'
   },
   // ===== 都市インサイト =====
