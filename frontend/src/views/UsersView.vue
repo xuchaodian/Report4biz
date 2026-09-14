@@ -44,12 +44,17 @@
         <el-button type="info" plain @click="showOverviewDialog">
           🧮 配额总览
         </el-button>
+        <!-- 公司筛选：下拉可浏览现有公司，也可直接输入关键词做模糊匹配
+             （后端 GET /users 的 company 参数本就是 LIKE '%关键词%'，
+              故输入「泉盛」可一次筛出全部泉盛系公司 —— 勿改成精确匹配） -->
         <el-select
           v-model="filterCompany"
-          placeholder="按公司筛选"
+          placeholder="按公司筛选（可输入关键词，如：泉盛）"
           clearable
           filterable
-          style="width: 200px; margin-right: 12px"
+          allow-create
+          :reserve-keyword="false"
+          style="width: 260px; margin-right: 12px"
           @change="handleFilterChange"
         >
           <el-option
@@ -82,7 +87,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="email" label="邮箱" min-width="180" />
-        <el-table-column prop="company" label="公司" min-width="150" />
+        <!-- 公司列：可点表头按拼音升/降序（同一前缀的公司会相邻，如「泉盛」系）；
+             空公司名固定排最后（默认码位排序会把空值顶到最前，故用 sort-method 兜住） -->
+        <el-table-column prop="company" label="公司" min-width="150" sortable :sort-method="sortByCompany" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : row.role === 'trial' ? 'primary' : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' }">
@@ -558,8 +565,30 @@ const companyList = computed(() => {
   const companies = users.value
     .map(u => u.company)
     .filter(c => c && c.trim())
-  return [...new Set(companies)]
+  const set = new Set(companies)
+  // 关键词模糊筛选（如输入「泉盛」）后，结果集里已不含该关键词本身，
+  // 会导致 el-select 选中项回显为空 ⇒ 把当前筛选值补回选项，保证回显正常。
+  // 注意：用 users 而非依赖整个列表，筛选后列表缩窄也不会把选中词冲掉。
+  if (filterCompany.value && !set.has(filterCompany.value)) {
+    set.add(filterCompany.value)
+  }
+  return [...set]
 })
+
+// 公司列排序（el-table sortable 的 sort-method）
+// ① 用 localeCompare('zh-Hans-CN') 走**拼音**序（Element Plus 默认是按 UTF-16 码位排，
+//    顺序与直觉不符：MKA → 北京 → 泉盛 → 波司登 → 阿里巴巴）；
+//    同一前缀的公司无论哪种排法都会相邻，配拼音后整体顺序才自然。
+// ② 空公司名恒排最后 —— 默认码位排序会把空字符串排到最前，顶掉有名字的公司。
+const sortByCompany = (a, b) => {
+  const pick = (v) => String((v && typeof v === 'object' ? v.company : v) ?? '').trim()
+  const x = pick(a)
+  const y = pick(b)
+  if (!x && !y) return 0
+  if (!x) return 1
+  if (!y) return -1
+  return x.localeCompare(y, 'zh-Hans-CN')
+}
 
 // 月度统计相关
 const monthlyStatsDialogVisible = ref(false)
