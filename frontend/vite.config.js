@@ -42,13 +42,26 @@ export default defineConfig({
       output: {
         // 手动代码分割
         manualChunks: (id) => {
-          // L（v1.13.109）：Vite 的 __vitePreload 助手是虚拟模块 `\0vite/preload-helper.js`，
-          // 所有做动态 import 的 chunk 都要静态引用它。若不显式归组，Rollup 会把它塞进
-          // 某个 vendor chunk（实测为 vendor-pdf）→ 于是每个含动态 import 的 chunk 都静态
-          // 依赖 vendor-pdf，index.html 被迫预加载 539KB 的 jspdf/html2canvas。
-          // 归入始终预加载的 vendor-core，可彻底消除这一「假依赖」。
-          if (id.includes('preload-helper')) {
-            return 'vendor-core'
+          // 纯虚拟模块（id 中不含 node_modules 路径）—— Vite / 插件注入的全局助手：
+          //   `\0commonjsHelpers.js`（CJS 互操作）、`\0plugin-vue:export-helper`（SFC 包装）、
+          //   `\0vite/preload-helper.js`、`\0vite/modulepreload-polyfill.js`
+          // 它们被「几乎每个 chunk」静态引用。若不显式归组，Rollup 会把它们塞进某个业务
+          // chunk —— 即「假依赖/共享桶」：
+          //   ① preload-helper 曾被塞进 vendor-pdf ⇒ index.html 被迫预加载 539KB 的
+          //      jspdf/html2canvas（v1.13.109 修）
+          //   ② export-helper 被塞进 smartsteps-panel ⇒ 23 个路由 chunk + 登录页全部静态
+          //      依赖该 chunk，连带白载其 leaflet 依赖（vendor-maps 52KB gz）—— 登录页
+          //      凭空多出 ~61KB gz（v1.13.138 修）
+          // ⚠️ 必须独立成块，不可并入任何 vendor-*：这些助手被 vendor-other / vendor-maps
+          //    自身引用，并入 vendor-core 会形成 `vendor-core ⇄ vendor-other` 循环 chunk
+          //    依赖，运行时抛 `TypeError: Cannot set properties of undefined (setting
+          //    'exports')`（2026-09-15 实测：整站白屏、app 不挂载）。
+          // ⚠️ 必须排除带 node_modules 路径的虚拟模块 —— CJS 包会为内部模块生成大量
+          //    `?commonjs-proxy / ?commonjs-module / ?commonjs-exports` 代理（实测数百个，
+          //    如 core-js、dayjs、leaflet），它们必须跟随宿主包归属；一旦被一并归入本 chunk，
+          //    会把宿主包本体也拖进来，反而再次形成循环。
+          if (id.startsWith('\0') && !id.includes('node_modules')) {
+            return 'vite-runtime'
           }
           // 第三方库分组
           if (id.includes('node_modules')) {
@@ -87,6 +100,17 @@ export default defineConfig({
           // 异步组件懒加载失效。显式分组后 stores 独立成块，动态组件才真正按需加载。
           if (id.includes('/src/stores/')) {
             return 'app-stores'
+          }
+          // S（v1.13.138）：被 3~5 个不同路由共用的工具模块（合计仅 8KB 源码）。
+          // 不显式分组时 Rollup 会把它们塞进 smartsteps-panel chunk（实测如此），
+          // 而该 chunk 又静态依赖 leaflet ⇒ store-dialog / SharedPurchaseView 等
+          // 无地图页面反向把这 8KB 工具连同 52KB gz 的地图库一起拖进首屏。
+          if (
+            id.includes('/src/utils/smartsteps1001') ||
+            id.includes('/src/utils/smartstepsMonths') ||
+            id.includes('/src/utils/sanitizeHtml')
+          ) {
+            return 'app-shared'
           }
           if (id.includes('StoreSmartstepsDialog')) {
             return 'store-dialog'
