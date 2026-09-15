@@ -142,6 +142,7 @@ export default {
     confirm: 'Confirm',
     total: 'Total',
     showPassword: 'Show password',
-    hidePassword: 'Hide password'
+    hidePassword: 'Hide password',
+    switchLanguage: 'Switch language'
   }
 }

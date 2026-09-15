@@ -15,7 +15,7 @@
     <!-- 语言切换（右上角） -->
     <div class="login-lang">
       <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)">
-        <span class="login-lang-trigger">
+        <span class="login-lang-trigger" :aria-label="$t('common.switchLanguage')">
           <el-icon><ChatLineRound /></el-icon>
           <span>{{ langShort }}</span>
         </span>

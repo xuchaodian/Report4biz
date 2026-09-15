@@ -16,7 +16,7 @@
       <div class="ds-header-right">
         <span class="ds-updated">{{ $t('dashboard.updatedAt') }} {{ updatedTime }}</span>
         <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ds-lang">
-          <span class="ds-lang-trigger">
+          <span class="ds-lang-trigger" :aria-label="$t('common.switchLanguage')">
             <span>{{ langShort }}</span>
           </span>
           <template #dropdown>

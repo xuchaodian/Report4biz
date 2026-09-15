@@ -142,6 +142,7 @@ export default {
     confirm: '確定',
     total: '合計',
     showPassword: 'パスワードを表示',
-    hidePassword: 'パスワードを隠す'
+    hidePassword: 'パスワードを隠す',
+    switchLanguage: '言語を切り替え'
   }
 }

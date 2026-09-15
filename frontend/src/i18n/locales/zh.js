@@ -142,6 +142,7 @@ export default {
     confirm: '确定',
     total: '总计',
     showPassword: '显示密码',
-    hidePassword: '隐藏密码'
+    hidePassword: '隐藏密码',
+    switchLanguage: '切换语言'
   }
 }

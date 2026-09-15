@@ -8,7 +8,7 @@
 
   <!-- 语言切换（AI 按钮下方，圆形参照 AI 按钮） -->
   <el-dropdown trigger="click" @command="(lang) => setAppLocale(lang)" class="ai-lang">
-    <div class="ai-lang-fab" :title="langTitle">
+    <div class="ai-lang-fab" :title="langTitle" :aria-label="$t('common.switchLanguage')">
       <span class="fab-label">{{ langShort }}</span>
     </div>
     <template #dropdown>
