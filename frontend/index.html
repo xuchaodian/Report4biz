@@ -6,9 +6,15 @@
     <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>选址赢家Online</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <!-- v1.13.137：移除 unpkg CDN 外链（3 个 <link>）。Leaflet 与 MarkerCluster 样式改由使用方
+         以 ESM 方式引入，随路由 chunk 自动注入：
+           - leaflet/dist/leaflet.css        → MapView / DashboardView / SiteEvaluationView /
+                                                DistrictInsightView / SmartstepsPanel
+           - markercluster 的 2 个 css        → MapView（唯一使用 L.markerClusterGroup 的页面）
+         收益：① 去掉对 unpkg 的硬依赖（外网 CDN 慢/挂会直接毁掉地图样式）
+               ② 登录页/注册/重置密码不再加载 15KB 地图样式（login 首屏更干净）
+         注意：新增使用 Leaflet 的页面时必须自行 import 'leaflet/dist/leaflet.css'。 -->
+
   </head>
   <body>
     <div id="app"></div>

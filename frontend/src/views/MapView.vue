@@ -3676,10 +3676,11 @@ const analyzePopulationDistribution = async () => {
       console.log('临时标记（图钉图标）已转移到图层组中')
     } else {
       // 创建图钉图标作为圆心标记（使用与临时标记相同的样式）
+      // v1.13.137：图钉资源本地化（原为 unpkg CDN，外网抖动会导致图钉裂图）
       const pinIcon = L.icon({
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        iconUrl: '/vendor/leaflet/images/marker-icon.png',
+        iconRetinaUrl: '/vendor/leaflet/images/marker-icon-2x.png',
+        shadowUrl: '/vendor/leaflet/images/marker-shadow.png',
         iconSize: [25, 41],
         iconAnchor: [12, 41],
         popupAnchor: [1, -34],

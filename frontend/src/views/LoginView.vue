@@ -3,11 +3,11 @@
     <!-- 背景轮播：合作公司 GIS 人流分析可视化截图 -->
     <div class="bg-slideshow">
       <div
-        v-for="(img, i) in bgImages"
+        v-for="(_, i) in bgImages"
         :key="i"
         class="bg-slide"
         :class="{ active: currentBg === i }"
-        :style="{ backgroundImage: `url(${img})` }"
+        :style="bgStyle(i)"
       />
     </div>
     <div class="bg-overlay" />
@@ -142,25 +142,39 @@ const form = reactive({
   password: ''
 })
 
-// 登录页背景图
+// 登录页背景图（v1.13.137：jpg → webp，5 张合计 1949KB → 531KB）
 const bgImages = [
-  '/bg1.jpg',
-  '/bg2.jpg',
-  '/bg3.jpg',
-  '/bg4.jpg',
-  '/bg5.jpg',
+  '/bg1.webp',
+  '/bg2.webp',
+  '/bg3.webp',
+  '/bg4.webp',
+  '/bg5.webp',
 ]
 const currentBg = ref(0)
+// v1.13.137：惰性加载。原先 5 张 background-image 全部写在 DOM 上，浏览器首屏就把 1.9MB
+// 全量拉下来；而轮播 6s 才切一张，后 4 张纯属浪费带宽（实测首屏图片占登录页载荷 76%）。
+// 改为只解锁「当前帧 + 下一帧」：首屏仅下载 1 张（~131KB），1.5s 后再补下一帧，
+// 之后每轮转时解锁更下一帧 → 切换时刻永远提前就绪，不闪白。
+const loadedBg = ref([0])
+const unlockBg = (i) => {
+  if (!loadedBg.value.includes(i)) loadedBg.value = [...loadedBg.value, i]
+}
+const bgStyle = (i) => (loadedBg.value.includes(i) ? { backgroundImage: `url(${bgImages[i]})` } : {})
 let bgTimer = null
+let bgWarmTimer = null
 
 onMounted(() => {
+  // 首帧渲染稳定后再预热下一帧，避免与首屏关键资源抢带宽
+  bgWarmTimer = setTimeout(() => unlockBg(1 % bgImages.length), 1500)
   bgTimer = setInterval(() => {
     currentBg.value = (currentBg.value + 1) % bgImages.length
+    unlockBg((currentBg.value + 1) % bgImages.length)
   }, 6000)
 })
 
 onUnmounted(() => {
   if (bgTimer) clearInterval(bgTimer)
+  if (bgWarmTimer) clearTimeout(bgWarmTimer)
 })
 
 const handleLogin = async () => {
