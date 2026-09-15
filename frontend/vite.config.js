@@ -25,6 +25,17 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  // C（v1.13.139）：vue-i18n 消息编译默认走 AOT —— 生成代码字符串后 `new Function('return ' + code)()`。
+  // 这与严格 CSP（script-src 'self'，无 'unsafe-eval'）冲突：浏览器抛 EvalError，
+  // 而首屏每次 `$t()` 都要编译 ⇒ render 抛错 ⇒ 页面渲染成 <!----> 空白（实测整站白屏）。
+  // 开启 JIT 编译后，message compiler 输出 AST 解释执行，不再使用 new Function，
+  // 从而保住最严格的 script-src 'self'（无需为 i18n 妥协加 'unsafe-eval'）。
+  // 注：__INTLIFY_DROP_MESSAGE_COMPILER__ 必须一并显式定义为 false —— JIT 分支条件里会读它，
+  //     若留作裸标识符会在运行时 ReferenceError。
+  define: {
+    __INTLIFY_JIT_COMPILATION__: 'true',
+    __INTLIFY_DROP_MESSAGE_COMPILER__: 'false',
+  },
   build: {
     // 启用压缩和摇树优化
     minify: 'terser',
