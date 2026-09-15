@@ -29,6 +29,9 @@ export default {
     register: '立即注册',
     success: '登录成功',
     forgot: '忘记密码？',
+    // 无障碍标签（aria-label 用；与 placeholder 分开，读屏不会念成「请输入用户名」）
+    usernameLabel: '用户名',
+    passwordLabel: '密码',
     lang: '语言'
   },
   // ===== 城市洞察 =====

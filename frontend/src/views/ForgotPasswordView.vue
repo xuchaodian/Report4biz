@@ -20,6 +20,9 @@
           <el-input
             v-model="form.email"
             placeholder="请输入注册邮箱"
+            aria-label="注册邮箱"
+            name="email"
+            autocomplete="email"
             size="large"
             :prefix-icon="Message"
             @keyup.enter="handleSubmit"

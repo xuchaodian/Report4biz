@@ -35,6 +35,9 @@
             v-model="form.password"
             type="password"
             placeholder="请输入新密码（至少 6 位）"
+            aria-label="新密码（至少 6 位）"
+            name="password"
+            autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
             show-password
@@ -46,6 +49,9 @@
             v-model="form.confirmPassword"
             type="password"
             placeholder="请再次输入新密码"
+            aria-label="确认新密码"
+            name="confirmPassword"
+            autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
             show-password

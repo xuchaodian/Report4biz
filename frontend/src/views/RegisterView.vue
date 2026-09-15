@@ -18,6 +18,9 @@
           <el-input
             v-model="form.username"
             placeholder="请输入用户名"
+            aria-label="用户名"
+            name="username"
+            autocomplete="username"
             size="large"
             :prefix-icon="User"
           />
@@ -27,6 +30,9 @@
           <el-input
             v-model="form.email"
             placeholder="请输入邮箱"
+            aria-label="邮箱"
+            name="email"
+            autocomplete="email"
             size="large"
             :prefix-icon="Message"
           />
@@ -37,6 +43,9 @@
             v-model="form.password"
             type="password"
             placeholder="请输入密码"
+            aria-label="密码（至少 6 位）"
+            name="password"
+            autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
             show-password
@@ -48,6 +57,9 @@
             v-model="form.confirmPassword"
             type="password"
             placeholder="请确认密码"
+            aria-label="确认密码"
+            name="confirmPassword"
+            autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
             show-password

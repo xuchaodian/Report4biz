@@ -47,6 +47,9 @@
           <el-input
             v-model="form.username"
             :placeholder="$t('login.username')"
+            :aria-label="$t('login.usernameLabel')"
+            name="username"
+            autocomplete="username"
             size="large"
             :prefix-icon="User"
           />
@@ -57,6 +60,9 @@
             v-model="form.password"
             type="password"
             :placeholder="$t('login.password')"
+            :aria-label="$t('login.passwordLabel')"
+            name="password"
+            autocomplete="current-password"
             size="large"
             :prefix-icon="Lock"
             show-password

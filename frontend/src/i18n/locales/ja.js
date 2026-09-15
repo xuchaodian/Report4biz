@@ -29,6 +29,9 @@ export default {
     register: '新規登録',
     success: 'ログイン成功',
     forgot: 'パスワードをお忘れですか？',
+    // アクセシビリティ用ラベル（aria-label 用）
+    usernameLabel: 'ユーザー名',
+    passwordLabel: 'パスワード',
     lang: '言語'
   },
   // ===== 都市インサイト =====

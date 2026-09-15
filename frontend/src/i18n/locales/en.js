@@ -29,6 +29,9 @@ export default {
     register: 'Register Now',
     success: 'Login successful',
     forgot: 'Forgot password?',
+    // Accessibility labels for aria-label (kept separate from placeholder)
+    usernameLabel: 'Username',
+    passwordLabel: 'Password',
     lang: 'Language'
   },
   // ===== City Insight =====
