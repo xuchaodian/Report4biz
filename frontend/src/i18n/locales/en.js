@@ -140,6 +140,8 @@ export default {
   common: {
     loading: 'Loading...',
     confirm: 'Confirm',
-    total: 'Total'
+    total: 'Total',
+    showPassword: 'Show password',
+    hidePassword: 'Hide password'
   }
 }

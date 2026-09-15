@@ -58,16 +58,28 @@
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
-            type="password"
+            :type="pwdShow.password ? 'text' : 'password'"
             :placeholder="$t('login.password')"
             :aria-label="$t('login.passwordLabel')"
             name="password"
             autocomplete="current-password"
             size="large"
             :prefix-icon="Lock"
-            show-password
             @keyup.enter="handleLogin"
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.password"
+                :title="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.password = !pwdShow.password"
+              >
+                <el-icon><View v-if="!pwdShow.password" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <div class="login-forgot">
@@ -120,6 +132,10 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
+
+// v1.13.133：密码显隐开关状态 —— 替代 EP 自带的 show-password（其开关是 <i>，无 role/
+// tabindex/aria-label，键盘不可达）。详见 assets/main.scss 的 .pwd-toggle 注释。
+const pwdShow = reactive({ password: false })
 
 const form = reactive({
   username: '',

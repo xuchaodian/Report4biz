@@ -185,7 +185,20 @@
           <el-input v-model="form.company" placeholder="请输入公司名称" />
         </el-form-item>
         <el-form-item v-if="!isEdit" label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password />
+          <el-input v-model="form.password" :type="pwdShow.password ? 'text' : 'password'" placeholder="请输入密码">
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.password"
+                :title="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.password = !pwdShow.password"
+              >
+                <el-icon><View v-if="!pwdShow.password" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
@@ -529,6 +542,9 @@ const previewHint = computed(() => {
   return '⚠ 输入值等于当前累计值，保存后剩余不变；若刚采购了新配额，请填「原值 + 本次采购量」'
 })
 
+// v1.13.133：新建用户弹窗的密码显隐开关状态（替代 EP 的 show-password，详见 main.scss .pwd-toggle）
+const pwdShow = reactive({ password: false })
+
 const form = reactive({
   username: '',
   email: '',
@@ -793,6 +809,7 @@ const showPurchaseDialog = () => {
 const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
+  pwdShow.password = false   // 每次开弹窗把密码开关复位为「隐藏」
   Object.assign(form, {
     username: '',
     email: '',
@@ -807,6 +824,7 @@ const showAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   editingId.value = row.id
+  pwdShow.password = false   // 每次开弹窗把密码开关复位为「隐藏」
   // 显示剩余次数（admin 显示 0）
   const editRemaining = row.role === 'admin' ? 0 : (row.remainingQuota ?? 0)
   Object.assign(form, {

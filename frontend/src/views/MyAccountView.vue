@@ -51,19 +51,43 @@
         <el-form-item label="新密码" prop="newPassword">
           <el-input
             v-model="form.newPassword"
-            type="password"
+            :type="pwdShow.newPassword ? 'text' : 'password'"
             placeholder="请输入新密码（不修改请留空）"
-            show-password
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.newPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.newPassword"
+                :title="pwdShow.newPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.newPassword = !pwdShow.newPassword"
+              >
+                <el-icon><View v-if="!pwdShow.newPassword" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item label="确认密码" prop="confirmPassword">
           <el-input
             v-model="form.confirmPassword"
-            type="password"
+            :type="pwdShow.confirmPassword ? 'text' : 'password'"
             placeholder="请再次输入新密码"
-            show-password
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.confirmPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.confirmPassword"
+                :title="pwdShow.confirmPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.confirmPassword = !pwdShow.confirmPassword"
+              >
+                <el-icon><View v-if="!pwdShow.confirmPassword" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item>
@@ -1147,6 +1171,9 @@ const registerChartEl = (el, serviceCode) => {
     chartElMap.value[serviceCode] = el
   }
 }
+
+// v1.13.133：密码显隐开关状态（替代 EP 的 show-password，详见 assets/main.scss .pwd-toggle）
+const pwdShow = reactive({ newPassword: false, confirmPassword: false })
 
 const form = reactive({
   email: '',

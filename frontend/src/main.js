@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 // L3（v1.13.108）：图标改为按需命名导入（原为 `import *` 全量 293 个遍历注册 → 无法 tree-shake）。
-// 白名单由脚本扫描全部 .vue/.js（含 <el-icon> 跨行写法、:icon 绑定、字符串 icon）生成，共 57 个。
+// 白名单由脚本扫描全部 .vue/.js（含 <el-icon> 跨行写法、:icon 绑定、字符串 icon）生成，共 58 个。
 // 注意：命名导入 + 本包 sideEffects:false → Rollup 可剔除未用图标；新增图标时须补入下方白名单。
 import {
   Aim, ArrowDown, ArrowLeft, ArrowRight,
@@ -11,6 +11,7 @@ import {
   Edit, EditPen,
   Flag, FolderAdd, FolderOpened, FullScreen,
   Grid,
+  Hide,
   InfoFilled,
   Key,
   Loading, Location, LocationFilled, LocationInformation, Lock,
@@ -48,6 +49,7 @@ const usedIcons = {
   Edit, EditPen,
   Flag, FolderAdd, FolderOpened, FullScreen,
   Grid,
+  Hide,
   InfoFilled,
   Key,
   Loading, Location, LocationFilled, LocationInformation, Lock,

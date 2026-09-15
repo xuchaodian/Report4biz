@@ -41,29 +41,53 @@
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
-            type="password"
+            :type="pwdShow.password ? 'text' : 'password'"
             placeholder="请输入密码"
             aria-label="密码（至少 6 位）"
             name="password"
             autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
-            show-password
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.password"
+                :title="pwdShow.password ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.password = !pwdShow.password"
+              >
+                <el-icon><View v-if="!pwdShow.password" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item prop="confirmPassword">
           <el-input
             v-model="form.confirmPassword"
-            type="password"
+            :type="pwdShow.confirmPassword ? 'text' : 'password'"
             placeholder="请确认密码"
             aria-label="确认密码"
             name="confirmPassword"
             autocomplete="new-password"
             size="large"
             :prefix-icon="Lock"
-            show-password
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="pwd-toggle"
+                :aria-label="pwdShow.confirmPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                :aria-pressed="pwdShow.confirmPassword"
+                :title="pwdShow.confirmPassword ? $t('common.hidePassword') : $t('common.showPassword')"
+                @click="pwdShow.confirmPassword = !pwdShow.confirmPassword"
+              >
+                <el-icon><View v-if="!pwdShow.confirmPassword" /><Hide v-else /></el-icon>
+              </button>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item>
@@ -97,6 +121,9 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
+
+// v1.13.133：密码显隐开关状态（替代 EP 的 show-password，详见 assets/main.scss .pwd-toggle）
+const pwdShow = reactive({ password: false, confirmPassword: false })
 
 const form = reactive({
   username: '',

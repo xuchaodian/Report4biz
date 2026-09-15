@@ -140,6 +140,8 @@ export default {
   common: {
     loading: '読み込み中...',
     confirm: '確定',
-    total: '合計'
+    total: '合計',
+    showPassword: 'パスワードを表示',
+    hidePassword: 'パスワードを隠す'
   }
 }

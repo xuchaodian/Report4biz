@@ -365,3 +365,41 @@ body {
 .el-dropdown-menu__item.dd-admin-item .el-icon {
   color: #409eff;
 }
+
+/* ===== 密码显隐开关：可键盘操作的按钮（v1.13.133） =====
+   Element Plus 自带的 show-password 把开关渲染成 <i class="el-input__icon
+   el-input__password">，只绑了 onClick，无 role / tabindex / aria-label，键盘不可达
+   （WCAG 2.1.1 键盘可达 + 4.1.2 名称角色值），且 EP 的 #password-icon 插槽只替换图标
+   图形本身、外层 <i> 仍然存在，救不了这个问题。故改用 #suffix 自绘真实
+   <button type="button">：天然进 Tab 链、可用 Enter/Space 触发，并用 aria-pressed
+   播报当前状态。
+   ⚠️ 必须显式 pointer-events:auto —— EP 的 .el-input__suffix 是 pointer-events:none
+   （靠 .el-input__suffix-inner 恢复），自绘元素不能再依赖那层。
+   ⚠️ 必须显式 type="button" —— 认证页表单是 <form @submit>，默认 type 会误提交。
+   ⚠️ 样式写在全局而非各页 scoped：8 个密码框跨 6 个组件，避免重复定义。 */
+.pwd-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--el-input-icon-color, var(--el-text-color-placeholder));
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color var(--el-transition-duration);
+}
+.pwd-toggle:hover {
+  color: var(--el-input-clear-hover-color, var(--el-text-color-regular));
+}
+.pwd-toggle:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.pwd-toggle .el-icon {
+  font-size: inherit;
+}
