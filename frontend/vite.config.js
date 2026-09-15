@@ -100,6 +100,34 @@ export default defineConfig({
             if (id.includes('axios') || id.includes('pinia') || id.includes('vue-router')) {
               return 'vendor-core'
             }
+            // ===== v1.13.141：把「登录页根本用不到」的包移出兜底桶 =====
+            // 兜底桶 vendor-other 被 20+ 个路由 chunk 静态引用（含 Login / Register / Forgot /
+            // Reset / SharedPurchase —— 全是无地图无图表的轻页面），而 vendor-other 自身又被
+            // Element Plus 传递依赖（dayjs / lodash-es / async-validator / @popperjs/core …）拖进
+            // 登录页首屏 ⇒ 一旦它混装「只有懒加载页面才用」的库，这些库就被登录页整块吞下。
+            // 实测：vendor-other = 186.7KB gz，占登录页 JS 37.5%。
+            // 下面四组包经「逐包拆块诊断构建 + 静态闭包分析」证实【登录页闭包完全不需要】，
+            // 且其引用者全部是 canvg / jspdf / fast-png / zrender / echarts / DataView ——
+            // 对登录页不存在回边 ⇒ 归入语义正确的桶后跟随真正使用者懒加载。
+            const inPkg = (...names) => names.some((n) => id.includes(`/node_modules/${n}/`))
+            // ① ECharts 渲染引擎：zrender 不含 'echarts' 子串，此前漏进兜底桶（白载 53.1KB gz）
+            if (inPkg('zrender', 'tslib')) {
+              return 'vendor-echarts'
+            }
+            // ② PDF/Canvas 导出家族 = jspdf / html2canvas / canvg 的传递依赖（合计 ~66KB gz）
+            if (inPkg('canvg', 'svg-pathdata', 'rgbcolor', 'stackblur-canvas', 'fast-png', 'fflate',
+                      'pako', 'iobuffer', 'raf', 'performance-now', 'core-js', '@babel/runtime')) {
+              return 'vendor-pdf'
+            }
+            // ③ CSV 解析：全项目只有 views/DataView.vue 引用（6.9KB gz）
+            if (inPkg('papaparse')) {
+              return 'vendor-csv'
+            }
+            // ④ HTML 消毒：只被 utils/sanitizeHtml.js 引用 ⇒ 与 app-shared 同生命周期
+            //    （使用者：SharedPurchaseView / MyAccountView / SmartstepsPanel / StoreSmartstepsDialog）
+            if (inPkg('dompurify')) {
+              return 'app-shared'
+            }
             // 其他第三方库
             return 'vendor-other'
           }
