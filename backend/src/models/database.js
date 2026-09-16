@@ -983,12 +983,44 @@ export async function initDatabase() {
 
 export function saveDatabase() {
   if (db) {
+    // 诊断开关（v1.13.142）：R4B_TRACE_SAVE=1 时打印每次整库落盘的调用栈。
+    // 用于定位「一次请求触发几次全库写盘」——本库 166MB，写放大会直接推高
+    // 高阶内存分配，是内核 kcompactd 卡死/整机冻结的触发器。关闭时零开销。
+    if (process.env.R4B_TRACE_SAVE) {
+      const st = new Error().stack.split('\n').slice(2, 6).map(s => s.trim().replace(/^at /, '')).join('  ←  ')
+      console.error('[SAVE-TRACE]', st)
+    }
     const data = db.export()
-    const buffer = Buffer.from(data)
     // R4B_DB_PATH 指向不存在目录时兜底创建（S4 测试用临时库路径）
     const dir = dirname(dbPath)
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(dbPath, buffer)
+
+    // ── v1.13.142 两项硬化 ────────────────────────────────────────────────
+    // ① 零拷贝：原实现 `Buffer.from(data)` 会把整库再复制一份。实测 166MB 库
+    //    每次多分配 166MB（process.memoryUsage().external +166MB），而
+    //    `Buffer.from(ab, off, len)` 是视图、不复制（实测 +0MB）。
+    //    本机（2C/1.6G）上这种反复的大额高阶分配会触发内核 proactive
+    //    compaction，已多次导致 kcompactd0 进入 D 状态 240s+ ⇒ 整机冻结、
+    //    连 sshd/nginx 都无法完成握手，只能硬重启。砍掉这次拷贝等于砍掉
+    //    一半的高阶分配压力。
+    // ② 原子写：原实现 `writeFileSync(dbPath, ...)` 直接覆盖生产库文件，
+    //    写到一半被中断（OOM/强杀/断电）会留下截断的库。改为先写同目录
+    //    临时文件 → fsync → rename（同一文件系统内 rename 是原子操作），
+    //    任何时刻 dbPath 要么是旧版本、要么是新版本，不存在中间态。
+    const view = Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+    const tmpPath = dbPath + '.tmp'
+    const fd = fs.openSync(tmpPath, 'w')
+    try {
+      // writeSync 可能短写（信号中断/磁盘将满），必须循环写满
+      let written = 0
+      while (written < view.length) {
+        written += fs.writeSync(fd, view, written, view.length - written)
+      }
+      fs.fsyncSync(fd)   // 落盘后再 rename，避免 rename 先于数据落盘导致空库
+    } finally {
+      fs.closeSync(fd)
+    }
+    fs.renameSync(tmpPath, dbPath)
   }
 }
 

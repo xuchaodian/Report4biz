@@ -330,23 +330,26 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     // 如果要更新配额，检查配额限制（设定模式）
-    if (quota !== undefined) {
-      const newQuota = parseInt(quota) || 0
-      const currentUserQuota = existingUser.quota || 0
-      const diff = newQuota - currentUserQuota  // 正=追加，负=减少
+    // v1.13.142：区分「配额真的变了」与「前端原值回填」。编辑弹窗会把当前剩余次数
+    // 一并提交，值未变时不应产生任何配额写入 —— 否则每改一次角色/邮箱/VIP 都会多写
+    // 一条 0→0 的 quota_history，并多付一次整库落盘（见下方事务化写入说明）。
+    const quotaProvided = quota !== undefined
+    const newQuota = quotaProvided ? (parseInt(quota) || 0) : 0
+    const currentUserQuota = existingUser.quota || 0
+    const quotaDiff = newQuota - currentUserQuota  // 正=追加，负=减少
+    const quotaChanged = quotaProvided && quotaDiff !== 0
 
-      // 只有在增加时才需要检查可用配额
-      if (diff > 0) {
-        // v1.13.103 B2-C：与 resale.js 同一单一预算池口径（getPoolInfo）——
-        // 池剩余 = 总配额 − Σ(users.quota, 非admin) − Σ(api_keys.balance, mock=0)。
-        // 原校验只减用户页已分配、漏减 API 开放页占用 → 用户页可超额分配，
-        // 两页总和可超买入批次总额（超额部分实际无上游额度支撑）
-        const pool = getPoolInfo(db)
-        if (diff > pool.available) {
-          return res.status(400).json({
-            message: `分配失败：超出可用配额。需追加 ${diff} 次，当前可用 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 开放页已分配 ${pool.allocatedApi}）`
-          })
-        }
+    // 只有在增加时才需要检查可用配额
+    if (quotaChanged && quotaDiff > 0) {
+      // v1.13.103 B2-C：与 resale.js 同一单一预算池口径（getPoolInfo）——
+      // 池剩余 = 总配额 − Σ(users.quota, 非admin) − Σ(api_keys.balance, mock=0)。
+      // 原校验只减用户页已分配、漏减 API 开放页占用 → 用户页可超额分配，
+      // 两页总和可超买入批次总额（超额部分实际无上游额度支撑）
+      const pool = getPoolInfo(db)
+      if (quotaDiff > pool.available) {
+        return res.status(400).json({
+          message: `分配失败：超出可用配额。需追加 ${quotaDiff} 次，当前可用 ${pool.available} 次（总配额 ${pool.poolTotal}，用户页已分配 ${pool.allocatedUsers}，API 开放页已分配 ${pool.allocatedApi}）`
+        })
       }
     }
 
@@ -392,22 +395,10 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(null)
     }
 
-    if (quota !== undefined) {
-      // 设定模式：直接设为输入值
-      const newQuota = parseInt(quota) || 0
-      const oldQuota = existingUser.quota || 0
-      const changeAmount = newQuota - oldQuota
+    if (quotaChanged) {
+      // 设定模式：直接设为输入值（仅在值真的变化时写入，见上方 v1.13.142 说明）
       updates.push('quota = ?')
       params.push(newQuota)
-      // 记录配额变更历史（用于累计配额统计）
-      try {
-        db.prepare(`
-          INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(userId, oldQuota, newQuota, changeAmount, changeAmount >= 0 ? 'increase' : 'decrease')
-      } catch (e) {
-        console.error('写入配额历史失败:', e)
-      }
     }
 
     if (updates.length === 0) {
@@ -415,7 +406,32 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     params.push(userId)
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    // v1.13.142：容器化写入 —— 原先 UPDATE users 与 quota_history INSERT 各自
+    // prepare().run()，而 database.js 的 run() 在非事务态下每次都会触发一次
+    // 「db.export() 全库导出 + 整文件写盘」。本库 166MB（其中 141MB 是不可变的
+    // 人口网格 geojson 静态数据），一次「编辑用户」要付两份 166MB 内存拷贝 +
+    // 两次整库落盘。这种高阶内存分配会直接触发内核 proactive compaction，
+    // 本机已多次因 kcompactd0 卡死（D 状态 240s+）导致整机冻结、只能重启。
+    // 包进事务后：多次写合并为一次落盘（commitTx 内含统一保存），且避免半截状态落盘。
+    db.beginTx()
+    try {
+      if (quotaChanged) {
+        // 记录配额变更历史（用于累计配额统计）
+        try {
+          db.prepare(`
+            INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action)
+            VALUES (?, ?, ?, ?, ?)
+          `).run(userId, currentUserQuota, newQuota, quotaDiff, quotaDiff >= 0 ? 'increase' : 'decrease')
+        } catch (e) {
+          console.error('写入配额历史失败:', e)
+        }
+      }
+      db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+      db.commitTx()   // 内含统一落盘
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw e
+    }
 
     // 返回更新后的配额信息（含 API 页占用与全池口径，前端整体赋值需全字段）
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
