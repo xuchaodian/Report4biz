@@ -224,6 +224,13 @@ describe('resale.js 计费路径：4 写点合并为单事务（v1.13.144）', (
 })
 
 describe('ai.js 去重复落盘（v1.13.144）', () => {
+  it('单写点记账：仅 run() 落盘 1 次（改动前 run + saveNow = 2 次）', () => {
+    commitSpy.mockClear()
+    dbMod.getDb().prepare(`INSERT INTO ai_usage (user_id, tokens_used) VALUES (?, ?)`).run(1, 100)
+    // run() 在非事务态自动落盘 ⇒ 删掉 saveNow() 既省一次整库写、也不会丢记账
+    expect(dbWrites()).toBe(1)
+  })
+
   it('不再出现 db.saveNow() 调用（run() 已在非事务态自动落盘）', () => {
     const src = fs.readFileSync(new URL('../src/routes/ai.js', import.meta.url), 'utf8')
     const calls = src.split('\n').filter((l) => l.includes('db.saveNow()') && !l.trim().startsWith('//'))
