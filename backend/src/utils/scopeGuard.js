@@ -125,6 +125,46 @@ export function collectConflicts(members, cities, excludeUserId = null) {
 }
 
 /**
+ * 城市候选聚合 —— 「集团账号实际有门店的城市」（规则 11：只到城市级）。
+ * 按归一化键合并（「上海市 / 上海 / ' 上海 市 '」视为同城），`count` 为该键下门店总数，
+ * `name` 保留**首次出现**的原样写法。
+ *
+ * ★ 为什么必须抽成单一事实来源：
+ *   v0.13 R1 起「子公司自助设范围」写入前要校验**新增城市 ∈ 候选集**（规则 34），
+ *   而 `GET /api/sync/scope-options` 的下拉候选正是同一个集合。两处若各写一份 SQL，
+ *   迟早出现「下拉里能选、保存却被 400」或反之（前端 `ScopeEditor` 的城市候选
+ *   也直接消费 options 接口）⇒ 两边都调用本函数。
+ *
+ * ★ 为什么候选取「集团账号的门店城市」而不是行政区划全集：
+ *   scope 的语义是「集团能同步给子公司哪些城市」（§D4 两层圈定）。集团根本没有门店的
+ *   城市，设了也不会有任何行可同步（`inAllowedScope` 恒 false），反而把下拉撑到几千项。
+ *
+ * ★ 收 db 参数而不 import database.js —— 本模块因此可被独立单测与生产自检（见文件头）。
+ *
+ * @param {object} db
+ * @param {number} ownerUserId 集团总部账号 id
+ * @returns {Array<{name:string,key:string,count:number}>} 按门店数降序
+ */
+export function aggregateMarkersCities(db, ownerUserId) {
+  const rows = db.prepare(`
+    SELECT city, COUNT(*) AS n
+      FROM markers
+     WHERE user_id = ? AND city IS NOT NULL AND TRIM(city) != ''
+     GROUP BY city
+  `).all(ownerUserId) || []
+
+  const map = new Map()
+  for (const r of rows) {
+    const key = normalizeCity(r.city)
+    if (!key) continue
+    const hit = map.get(key)
+    if (hit) hit.count += r.n
+    else map.set(key, { name: String(r.city).trim(), key, count: r.n })
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count)
+}
+
+/**
  * 门面：直接按 orgId 查库后做互斥校验（供 routes/orgs.js 调用）。
  * 保持「收 db 参数」而不 import database.js —— 本模块因此可被独立单测与生产自检。
  * @returns {Array} 同 collectConflicts

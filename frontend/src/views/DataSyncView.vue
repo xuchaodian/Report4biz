@@ -6,7 +6,7 @@
           <span class="ds-title">🔗 数据同步</span>
           <span class="ds-sub">
             集团 ↔ 子公司「按需手动同步」：先预览、后确认，每次留痕可审计。
-            管辖范围由集团设定，同步过来的门店为只读镜像。
+            管辖范围由各子公司自行设置（集团亦可代设或改派），同步过来的门店为只读镜像。
           </span>
         </div>
       </template>
@@ -43,6 +43,15 @@
           <div class="ds-block-head">
             <span class="ds-block-title">① 从集团同步</span>
             <span class="ds-block-note">把集团授权给你的门店同步到本账号（只读镜像，由集团维护）</span>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              style="margin-left:auto;"
+              @click="selfScope.open = true"
+            >
+              设置我的管辖范围
+            </el-button>
           </div>
 
           <el-alert
@@ -53,7 +62,8 @@
             style="margin-bottom:12px;"
           >
             <template #title>
-              尚未为你设置管辖范围 —— 没有任何数据可同步。请联系集团管理员在「用户管理 → 集团 / 子公司 → 设置范围」里勾选城市。
+              尚未设置管辖范围 —— 没有任何数据可同步。点右上角「设置我的管辖范围」自选城市即可
+              （城市只能选集团确有门店的城市；一城一家、先到先得）。
             </template>
           </el-alert>
 
@@ -516,6 +526,20 @@
         >确认转出</el-button>
       </template>
     </el-dialog>
+
+    <!--
+      子公司「自助设置管辖范围」（v0.13 R1）
+      ★ 传 self-mode：隐藏划拨入口与「强制保存」，并把冲突提示改为「先到先得，请改选」——
+        成员没有 force 权限（后端 403 force_not_allowed），也不是划拨发起方（仅集团 owner）。
+    -->
+    <ScopeEditor
+      v-if="isMember && myMember"
+      v-model="selfScope.open"
+      :org-id="orgId"
+      :member="selfMember"
+      self-mode
+      @saved="onSelfScopeSaved"
+    />
   </div>
 </template>
 
@@ -523,6 +547,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
+import ScopeEditor from '@/components/org/ScopeEditor.vue'
 
 const loadingOrg = ref(true)
 const role = ref(null)          // 'owner' | 'member' | null
@@ -575,6 +600,23 @@ const isSelfEmptying = computed(() => {
 const isMember = computed(() => role.value === 'member')
 const canReceive = computed(() => Number(myMember.value?.canReceive ?? 1) !== 0)
 const canPull = (m) => Number(m?.allowGroupPull ?? 1) !== 0
+
+/**
+ * 子公司自助设管辖范围（v0.13 R1）
+ * 复用组件 `components/org/ScopeEditor.vue` —— 集团侧（UsersView）已用它做「代设」，
+ * 这里以 `self-mode` 挂载同一组件（隐藏划拨入口 / 强制保存，只改自己的城市）。
+ */
+const selfScope = ref({ open: false })
+const selfMember = computed(() => ({
+  userId: myMember.value?.userId ?? null,
+  username: myMember.value?.username || '本账号',
+  company: myMember.value?.company || null
+}))
+
+/** 范围保存后必须整页重载：候选数 / 城市下拉 / 预计可同步都会随之变化 */
+async function onSelfScopeSaved () {
+  await loadAll()
+}
 
 const filterCityOptions = computed(() => {
   const allow = new Set(scopeCities.value)

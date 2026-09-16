@@ -39,7 +39,12 @@
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
-import { normalizeCity, parseCityList, parseBrandList } from '../utils/scopeGuard.js'
+import {
+  normalizeCity,
+  parseCityList,
+  parseBrandList,
+  aggregateMarkersCities
+} from '../utils/scopeGuard.js'
 import {
   DIRECTIONS,
   SYNC_KINDS,
@@ -232,7 +237,7 @@ router.get('/scope-options', authenticate, (req, res) => {
       const isAdmin = req.user?.role === 'admin'
       const isOwner = org.owner_user_id === req.user?.id
       // ★ 成员本人也要能读：他需要知道「集团授权给我的城市有哪些」才能做本次筛选
-      //   （§D5 读权限 = 集团或本人；写权限仍仅 owner）。缺了这条，子公司页面会
+      //   （§D5 读写权限 = 集团或本人；v0.13 R1 起本人亦可**自设**范围）。缺了这条，子公司页面会
       //   因为 403 而拿不到城市下拉（UI 验证时实际踩到）。
       const mine = db.prepare(`
         SELECT user_id FROM org_members WHERE org_id = ? AND user_id = ?
@@ -248,26 +253,10 @@ router.get('/scope-options', authenticate, (req, res) => {
     }
 
     // ---- 城市候选：按归一化键聚合（「上海市 / 上海」视为同城）----
-    const cityRows = db.prepare(`
-      SELECT city, COUNT(*) AS n
-        FROM markers
-       WHERE user_id = ? AND city IS NOT NULL AND TRIM(city) != ''
-       GROUP BY city
-       ORDER BY n DESC
-    `).all(sourceUserId)
-
-    const cityMap = new Map()
-    for (const r of cityRows) {
-      const key = normalizeCity(r.city)
-      if (!key) continue
-      const hit = cityMap.get(key)
-      if (hit) {
-        hit.count += r.n
-      } else {
-        cityMap.set(key, { name: String(r.city).trim(), key, count: r.n })
-      }
-    }
-    const cities = [...cityMap.values()].sort((a, b) => b.count - a.count)
+    // ★ 抽到 scopeGuard.aggregateMarkersCities —— 与 PATCH scope 的
+    //   「成员新增城市必须 ∈ 候选集」校验（规则 34）**共用同一函数**，
+    //   否则会出现「下拉里能选、保存却被 400」（v0.13 R1 起的硬要求）。
+    const cities = aggregateMarkersCities(db, sourceUserId)
 
     // ---- 品牌候选：自家门店 ∪ 竞品门店 ----
     const brandSet = new Set()

@@ -31,7 +31,7 @@
 //
 // ★ v0.10 批次 C：新增第 10~12 个接口（管辖范围）
 //   GET    /api/orgs/:id/members/:userId/scope   读（集团 / 该成员本人可读）
-//   PATCH  /api/orgs/:id/members/:userId/scope   集团设定 { cities[], brands[] }
+//   PATCH  /api/orgs/:id/members/:userId/scope   集团设定 / 成员自设 { cities[], brands[] }
 //   GET    /api/orgs/:id/scope-conflicts         组织内城市占用表（UI 预检）
 //   配套：utils/scopeGuard.js（城市互斥，纯函数、无 import，可在生产直接自检）
 //         GET /api/sync/scope-options 在 routes/sync.js（批次 D 的同名文件）
@@ -53,7 +53,8 @@ import {
   describeOccupancy,
   parseCityList,
   parseBrandList,
-  normalizeCity
+  normalizeCity,
+  aggregateMarkersCities
 } from '../utils/scopeGuard.js'
 import { getPoolInfo, getPoolRemaining, getOwnQuota, getOwnQuotaDetail, getAllocatable } from '../utils/quotaPool.js'
 import {
@@ -204,7 +205,8 @@ function requireOrgOwner(req, res, next) {
 
 /**
  * requireOrgOwnerOrSelf —— 在 requireOrgOwner 基础上额外放行「该成员本人」。
- * 用途：管辖范围**读取**（§6「集团/本人可读」）。写入一律走 requireOrgOwner。
+ * 用途：管辖范围**读与写**（§6「集团/本人」；v0.13 R1 起本人也可**自设**范围，
+ *   不再限定「写入一律走 requireOrgOwner」—— 见 PATCH scope 的注释）。
  */
 function requireOrgOwnerOrSelf(req, res, next) {
   try {
@@ -221,16 +223,52 @@ function requireOrgOwnerOrSelf(req, res, next) {
     const isSelf = !!userId && userId === req.user?.id
     if (!isPlatformAdmin && !isOwner && !isSelf) {
       console.warn(
-        `[orgs] 组织边界拒绝(scope读) user=${req.user?.id} org=${orgId} `
+        `[orgs] 组织边界拒绝(scope) user=${req.user?.id} org=${orgId} `
         + `${req.method} ${req.originalUrl} ip=${req.ip}`
       )
-      return res.status(403).json({ message: '无权限查看该成员管辖范围' })
+      return res.status(403).json({ message: '无权限操作该成员的管辖范围' })
     }
     req.org = org
     next()
   } catch (error) {
     console.error('管辖范围权限校验失败:', error)
     res.status(500).json({ message: '管辖范围权限校验失败' })
+  }
+}
+
+/**
+ * requireOrgMember —— 本组织**任一成员**（含总部、平台 admin）可读的组织内只读视图。
+ * 用途：城市占用表 `GET /:id/scope-conflicts`（§7.5 UI 预检）。
+ *   v0.13 R1 起子公司可自设范围，就必须先看到「哪些城市已被同组织其他成员占用」，
+ *   否则「一城一家、先到先得」变成**盲选**（点了保存才知道冲突）。
+ * ★ 只放开**读**：占用表内容限于同组织内的账号名 / 公司名与其持城，无跨组织暴露。
+ */
+function requireOrgMember(req, res, next) {
+  try {
+    const db = getDb()
+    const orgId = toId(req.params.id)
+    if (!orgId) return res.status(400).json({ message: '集团 id 无效' })
+
+    const org = findOrg(db, orgId)
+    if (!org) return res.status(404).json({ message: '集团不存在' })
+
+    const isPlatformAdmin = req.user?.role === 'admin'
+    const isOwner = org.owner_user_id === req.user?.id
+    const mine = db.prepare(`
+      SELECT user_id FROM org_members WHERE org_id = ? AND user_id = ?
+    `).get(org.id, req.user?.id)
+    if (!isPlatformAdmin && !isOwner && !mine) {
+      console.warn(
+        `[orgs] 组织边界拒绝(成员只读) user=${req.user?.id} org=${orgId} `
+        + `${req.method} ${req.originalUrl} ip=${req.ip}`
+      )
+      return res.status(403).json({ message: '无权限查看该集团的城市占用情况' })
+    }
+    req.org = org
+    next()
+  } catch (error) {
+    console.error('组织成员权限校验失败:', error)
+    res.status(500).json({ message: '组织成员权限校验失败' })
   }
 }
 
@@ -305,8 +343,9 @@ router.post('/me/consent', authenticate, (req, res) => {
 
 /**
  * PATCH /api/orgs/me/settings
- * 成员自行调整「可接收集团下发 / 可被集团拉取」。注意：成员**不能**改管辖范围
- * （范围由集团设定，规则：D5 集团设定子公司只读）。
+ * 成员自行调整「可接收集团下发 / 可被集团拉取」。
+ * 注意：管辖范围**不在此接口** —— v0.13 R1 起成员可自设，但走
+ *   `PATCH /:id/members/:userId/scope`（需带 orgId 与自己的 userId，且受规则 34 候选校验）。
  */
 router.patch('/me/settings', authenticate, (req, res) => {
   try {
@@ -782,21 +821,33 @@ router.get('/:id/members/:userId/scope', authenticate, requireOrgOwnerOrSelf, (r
 })
 
 /**
- * PATCH /api/orgs/:id/members/:userId/scope —— 集团设定管辖范围（§7.5）
+ * PATCH /api/orgs/:id/members/:userId/scope —— 设定管辖范围（§7.5 · v0.13 R1）
  * body { cities?, brands? }（未提供的维度保持原值）
  *
- * 四道校验：
- *   ① 权限 requireOrgOwner（成员本人**不可**改自己的范围 —— D5「集团设定、子公司只读」）
+ * 五道校验：
+ *   ① 权限 `requireOrgOwnerOrSelf` —— 集团 owner / 平台 admin **可代设**；
+ *      成员本人**也可自设**（v0.13 R1 由 D5「集团设定、子公司只读」放开）。
+ *      原因：正式启用流程是「集团先导入全国数据 → 各子公司自助圈定辖区」（§15.1），
+ *      若只允许集团代设，N 家子公司的范围都压到集团一个人身上，必然成为运营瓶颈。
  *   ② 入参清洗：去空白、限长、按归一化键去重
- *   ③ ★ 规则 12 配置期互斥：城市被本组织其他成员占用 → 409 + 占用方
- *      （这是「写权唯一」的保证，运行时因此无需再打认领锁）
- *   ④ 规则 14：写 direction='scope_change' 审计批次
+ *   ③ ★ 规则 34 城市候选校验（**仅「成员自设」生效**）：新增城市必须 ∈ 集团账号门店城市
+ *      （= `GET /api/sync/scope-options` 的下拉候选，**同一函数** `aggregateMarkersCities`
+ *      算出 —— 两处各写一份 SQL 迟早出现「下拉能选、保存 400」）。
+ *      · **只校验新增**：原 scope 里已有的城市一律放行 —— 否则集团数据变动后，
+ *        成员的旧城市会突然"非法"，连改别的城市都被 400 卡死（没出口）。
+ *      · 集团 owner / admin 不校验：启用初期集团尚未导入数据时，代设范围不能被拦。
+ *      · ⚠️ `cleanCityList` 只做清洗、**从不校验候选** —— 这正是本项要补的洞：
+ *        此前写权仅 owner，绕过 UI 直调 API 写任意城市没被当回事；放开写权后即成漏洞。
+ *   ④ ★ 规则 12 配置期互斥：城市被本组织其他成员占用 → 409 + 占用方
+ *      （「一城一家」的保证，运行时因此无需再打认领锁）。
+ *      v0.13 起写权从"一家写"变为"多家写" ⇒ 语义即**先到先得**，文案据此改写。
+ *   ⑤ 规则 14：写 direction='scope_change' 审计批次
  *
- * ?force=1：仅用于**历史脏数据解套** —— 若同城已被两家占用，双方都会被对方卡住而
- *   永远改不动任何一方。此时允许显式强制保存，但会 console.warn 留痕并在响应回传
- *   forcedConflicts。正常流程不应使用。
+ * ?force=1：仅用于**历史脏数据解套**（同城已被两家占用 ⇒ 双方都被对方卡住，永远改不动
+ *   任何一方）。**仅集团 owner / 平台 admin 可用** —— 成员若能用 force，等于可以抢注
+ *   别人已占的城市，与「先到先得」直接矛盾（v0.13 R1 新增此限制）。
  */
-router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, res) => {
+router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwnerOrSelf, (req, res) => {
   try {
     const db = getDb()
     const org = req.org
@@ -805,6 +856,11 @@ router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, 
 
     const m = findMember(db, org.id, userId)
     if (!m) return res.status(404).json({ message: '该账号不在本集团中' })
+
+    // v0.13 R1：区分「集团代设」与「成员自设」两种视角（中间件已保证只有这两种可能）
+    const isPlatformAdmin = req.user?.role === 'admin'
+    const isOwner = org.owner_user_id === req.user?.id
+    const isSelfWrite = !isPlatformAdmin && !isOwner
 
     const has = (k) => Object.prototype.hasOwnProperty.call(req.body || {}, k)
     if (!has('cities') && !has('brands')) {
@@ -825,17 +881,45 @@ router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, 
     const brands = has('brands') ? cleanBrandList(req.body.brands) : before.brands
     const after = { cities, brands }
 
-    // ③ 配置期互斥（规则 12）
+    // ③ 规则 34：成员自设时，**新增**城市必须落在候选集内
+    if (isSelfWrite && has('cities')) {
+      const heldKeys = new Set(before.cities.map(normalizeCity).filter(Boolean))
+      const candidate = aggregateMarkersCities(db, org.owner_user_id)
+      const allowedKeys = new Set(candidate.map(c => c.key))
+      const rejected = cities.filter(c => {
+        const k = normalizeCity(c)
+        return k && !allowedKeys.has(k) && !heldKeys.has(k)
+      })
+      if (rejected.length) {
+        return res.status(400).json({
+          code: 'city_not_available',
+          message: `城市「${rejected[0]}」暂无集团门店数据，无法加入管辖范围`
+            + `（可同步的城市见下拉候选，共 ${allowedKeys.size} 个；`
+            + '如该城市确需纳入，请联系集团总部先导入门店数据）',
+          rejected,
+          availableCount: allowedKeys.size
+        })
+      }
+    }
+
+    // ④ 配置期互斥（规则 12）
     const conflicts = findScopeConflicts(db, org.id, userId, cities)
-    const force = req.query?.force === '1' || req.query?.force === 'true'
+    const forceWanted = req.query?.force === '1' || req.query?.force === 'true'
+    if (forceWanted && isSelfWrite) {
+      return res.status(403).json({
+        code: 'force_not_allowed',
+        message: '仅集团总部账号可强制保存管辖范围（强制保存用于修正「同城两家」的历史数据）'
+      })
+    }
+    const force = forceWanted
     if (conflicts.length && !force) {
       const c = conflicts[0]
       const holder = c.company || c.username || `#${c.userId}`
-      return res.status(409).json({
-        code: 'city_conflict',
-        message: `城市「${c.city}」当前归属「${holder}」，请先走划拨流程或改选其他城市`,
-        conflicts
-      })
+      const message = isSelfWrite
+        ? `城市「${c.city}」已被「${holder}」占用，请改选其他城市（一城一家、先到先得；`
+          + '如该城市确应由你管辖，请联系集团总部发起辖区划拨）'
+        : `城市「${c.city}」当前归属「${holder}」，请先走划拨流程或改选其他城市`
+      return res.status(409).json({ code: 'city_conflict', message, conflicts })
     }
 
     let batchId = null
@@ -862,6 +946,7 @@ router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, 
       throw txError
     }
 
+    // 能走到这里的 conflicts 只可能是 force 路径（未 force 时上面已 409 返回）
     if (conflicts.length) {
       console.warn(
         `[orgs] 管辖范围强制保存(force) org=${org.id} member=${userId} by=${req.user?.id} `
@@ -882,6 +967,9 @@ router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, 
       conflicts: [],
       forcedConflicts: conflicts,
       forced: force && conflicts.length > 0,
+      // v0.13 R1：本次是「成员本人自设」还是「集团代设」——
+      // 前端据此切换文案（自设时不该提示「请联系集团管理员」）
+      selfWrite: isSelfWrite,
       batchId
     })
   } catch (error) {
@@ -894,8 +982,11 @@ router.patch('/:id/members/:userId/scope', authenticate, requireOrgOwner, (req, 
  * GET /api/orgs/:id/scope-conflicts —— 组织内城市占用表（§7.5 UI 预检）
  * 返回 cities（城市 → 占用方）+ members（人 → 持有哪些城市）。
  * 只读，不涉及任何写入。
+ *
+ * v0.13 R1：读权限由 `requireOrgOwner` 放开为**本组织任一成员** ——
+ *   子公司自设范围前必须能看到占用情况（否则"先到先得"变盲选）。
  */
-router.get('/:id/scope-conflicts', authenticate, requireOrgOwner, (req, res) => {
+router.get('/:id/scope-conflicts', authenticate, requireOrgMember, (req, res) => {
   try {
     const db = getDb()
     const org = req.org

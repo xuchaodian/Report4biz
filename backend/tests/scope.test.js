@@ -16,7 +16,10 @@
  *   · 规则 12 —— **配置期互斥**：城市被本组织其他成员占用 → 409 + 占用方；
  *                归一化后比较（「上海市 / 上海 / 上海 市」视为同城）
  *   · 规则 14 —— scope_json 每次变更写 direction='scope_change' 审计批次
- *   · D5 集团设定、子公司只读 —— 成员本人**不可**写自己的范围（403）
+ *   · D5 集团设定、子公司只读 —— **v0.13 R1 已放开**：成员本人可写自己的范围（⑥ 块）
+ *   · 规则 34（v0.13 R1）—— 成员自设时「新增城市必须 ∈ 集团账号门店城市」；
+ *                只校验新增（原有城市可保留），集团 owner 不受此限；
+ *                `?force=1` 收紧为仅 owner / admin（成员能用 force = 可抢注他人城市）
  *   · 本批恒不写 users.quota（规则 21）
  *
  * 通过 R4B_DB_PATH 指向 /tmp 临时库，绝不触碰真实库。
@@ -32,6 +35,7 @@ process.env.R4B_DB_PATH = tmpDb
 
 let normalizeCity, parseCityList, parseBrandList
 let buildOccupancyMap, collectConflicts, findScopeConflicts, describeOccupancy
+let aggregateMarkersCities
 
 let getDb, server, base, jwtSign
 const tokens = {}
@@ -70,6 +74,7 @@ beforeAll(async () => {
   collectConflicts = guard.collectConflicts
   findScopeConflicts = guard.findScopeConflicts
   describeOccupancy = guard.describeOccupancy
+  aggregateMarkersCities = guard.aggregateMarkersCities
 
   const orgsRouter = (await import('../src/routes/orgs.js')).default
   const syncRouter = (await import('../src/routes/sync.js')).default
@@ -212,6 +217,20 @@ describe('① scopeGuard 纯函数', () => {
     expect(occ.cities.map(c => c.cityKey).sort()).toEqual(['上海', '杭州'])
     expect(occ.members.find(m => m.userId === 2).count).toBe(1)
   })
+
+  it('★ aggregateMarkersCities（v0.13 R1）：按归一化键聚合、计数合并、门店数降序', async () => {
+    const { getDb: g } = await import('../src/models/database.js')
+    const agg = aggregateMarkersCities(g(), ids.hq)
+    const byKey = Object.fromEntries(agg.map(c => [c.key, c.count]))
+    // beforeAll 里集团账号造了 上海市 / 上海 / ' 上海市 ' 三条 + 杭州两条 + 苏州 + 北京
+    expect(byKey['上海']).toBe(3)
+    expect(byKey['杭州']).toBe(2)
+    expect(byKey['苏州']).toBe(1)
+    expect(byKey['北京']).toBe(1)
+    expect(agg[0].key).toBe('上海')            // 降序：上海(3) 在杭州(2) 之前
+    expect(agg[0].name).toBe('上海市')          // name 保留首次出现的原样写法
+    expect(agg.length).toBe(4)                 // 归一化后只剩 4 个城市
+  })
 })
 
 describe('② 管辖范围读写（GET / PATCH /api/orgs/:id/members/:userId/scope）', () => {
@@ -296,11 +315,13 @@ describe('② 管辖范围读写（GET / PATCH /api/orgs/:id/members/:userId/sco
     expect(r.body.scope.cities).toEqual(['苏州市'])
   })
 
-  it('D5：成员本人写自己的范围 → 403（子公司只读）', async () => {
-    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subA}/scope`, {
-      token: tokens.subA, body: { cities: ['合肥市'] }
+  it('★ v0.13 R1：成员本人写**别人**的范围 → 403（只能改自己）', async () => {
+    // 由 ⑥ 块接手「成员可自设自己范围」的完整覆盖（原 D5「子公司只读」已按 R1 放开）
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subA, body: { cities: ['北京市'] }
     })
     expect(r.status).toBe(403)
+    expect(r.body.message).toContain('无权限操作该成员的管辖范围')
   })
 
   it('入参校验：没有维度 / 非数组 → 400', async () => {
@@ -446,5 +467,108 @@ describe('⑤ ?force=1 历史脏数据解套出口（最后执行，跑完清场
     const m = g().prepare(`SELECT scope_json FROM org_members WHERE org_id = ? AND user_id = ?`)
       .get(ids.org, ids.subB)
     expect(m.scope_json).toBe('{"cities":[],"brands":[]}')
+  })
+})
+
+// ===========================================================================
+// v0.13 R1（2026-09-16）：子公司**自助**设管辖范围
+//   · 写权由「仅集团 owner」放开为「owner 或本人」
+//   · 新增城市必须 ∈ 集团账号门店城市（规则 34）—— 补 `cleanCityList` 只管清洗、
+//     从不校验候选的洞；放开的写权若不补校验，绕过 UI 直调 API 可写入任意城市
+//   · ?force=1 收紧为**仅 owner / admin**（成员可用 force 就等于可以抢注别人城市）
+//   · 规则 12 语义由「配置期互斥」变为**先到先得**，文案随之改写
+// 前置状态：⑤ 结束时 subA=['上海市','杭州市']、subB=[]
+// ===========================================================================
+describe('⑥ ★ v0.13 R1：子公司自助设范围（写权放开 + 规则 34 候选校验）', () => {
+  it('成员本人可自设（候选内且未被占用的城市）→ 200，且审计 actor = 本人', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subB, body: { cities: ['北京市'] }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.selfWrite).toBe(true)
+    expect(r.body.scope.cities).toEqual(['北京市'])
+
+    const { getDb: g } = await import('../src/models/database.js')
+    const row = g().prepare(`
+      SELECT * FROM sync_batches WHERE org_id = ? AND target_user_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(ids.org, ids.subB)
+    expect(row.direction).toBe('scope_change')
+    expect(row.created_by).toBe(ids.subB)      // 留痕记本人，不是集团代设
+  })
+
+  it('★ 规则 34：新增城市不在候选集（集团无门店）→ 400 city_not_available，且范围不变', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subB, body: { cities: ['北京市', '合肥市'] }
+    })
+    expect(r.status).toBe(400)
+    expect(r.body.code).toBe('city_not_available')
+    expect(r.body.rejected).toEqual(['合肥市'])
+    expect(r.body.availableCount).toBe(4)      // 上海 / 杭州 / 苏州 / 北京
+
+    const back = await call('GET', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, { token: tokens.subB })
+    expect(back.body.scope.cities).toEqual(['北京市'])   // 整体拒绝，未半写
+  })
+
+  it('★ 只校验「新增」：原范围里已有的（集团已无数据）城市可保留，不被 400 卡死', async () => {
+    // 集团代设一个集团没有的城市（owner 不受候选校验 —— 启用初期集团尚未导入数据的兜底）
+    const pre = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.hq, body: { cities: ['芜湖市'] }
+    })
+    expect(pre.status).toBe(200)
+
+    // 成员在此基础上加一个候选内的城市 → 芜湖（原持有）保留 + 北京（候选内）新增
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subB, body: { cities: ['芜湖市', '北京市'] }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.scope.cities).toEqual(['芜湖市', '北京市'])
+  })
+
+  it('★ 成员抢注已被占用的城市 → 409，文案为「先到先得」（不再让他去走划拨）', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subB, body: { cities: ['上海市'] }
+    })
+    expect(r.status).toBe(409)
+    expect(r.body.code).toBe('city_conflict')
+    expect(r.body.conflicts[0].userId).toBe(ids.subA)
+    expect(r.body.message).toContain('先到先得')
+    expect(r.body.message).not.toContain('请先走划拨流程')
+  })
+
+  it('★ 成员传 ?force=1 → 403 force_not_allowed', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope?force=1`, {
+      token: tokens.subB, body: { cities: ['上海市'] }
+    })
+    expect(r.status).toBe(403)
+    expect(r.body.code).toBe('force_not_allowed')
+  })
+
+  it('★ 集团 owner 仍可 ?force=1（历史脏数据解套出口未被误伤），随后清场', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope?force=1`, {
+      token: tokens.hq, body: { cities: ['上海市'] }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.forced).toBe(true)
+    expect(r.body.selfWrite).toBe(false)
+
+    const clear = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.hq, body: { cities: [] }
+    })
+    expect(clear.status).toBe(200)
+  })
+
+  it('★ 成员可读组织内城市占用表（自设前必须先看得见，否则是盲选）', async () => {
+    const r = await call('GET', `/api/orgs/${ids.org}/scope-conflicts`, { token: tokens.subB })
+    expect(r.status).toBe(200)
+    expect(r.body.cities.find(c => c.cityKey === '上海').userId).toBe(ids.subA)
+  })
+
+  it('成员自设空数组 = 退回无范围（可自救，不必求集团）', async () => {
+    const r = await call('PATCH', `/api/orgs/${ids.org}/members/${ids.subB}/scope`, {
+      token: tokens.subB, body: { cities: [] }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.scope.cities).toEqual([])
   })
 })

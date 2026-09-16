@@ -11,8 +11,22 @@
         type="info"
         :closable="false"
         show-icon
-        title="管辖范围 = 该子公司可同步的「上限」"
-        description="子公司只能同步落在本范围内的门店；范围之外的行不会出现在候选里。只到城市级，不细分区县。保存后立即生效（下次同步即按新范围计算候选）。"
+        :title="alertTitle"
+        :description="alertDesc"
+      />
+
+      <!--
+        候选为空 = 集团账号还没导入门店 ⇒ 下拉空、且（成员自设时）任何城市都会被
+        规则 34 判 400。这是「正式启用前的过渡态」，必须明说，否则用户只会看到
+        「一个城市都选不了」而不知道为什么（v0.13 R1）。
+      -->
+      <el-alert
+        v-if="!loading && !(options.cities || []).length"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-top:12px;"
+        :title="emptyCandidateTitle"
       />
 
       <el-form label-position="top" class="scope-form">
@@ -58,11 +72,24 @@
           >
             <div v-for="c in localConflicts" :key="c.cityKey" class="conflict-row">
               城市 <b>{{ c.city }}</b> 当前归属「{{ c.company || c.username }}」
-              <el-button size="small" text type="primary" @click="openTransfer(c)">发起划拨</el-button>
+              <!-- 划拨仅集团 owner 可发起；成员自设模式下不展示这个入口 -->
+              <el-button
+                v-if="!selfMode"
+                size="small"
+                text
+                type="primary"
+                @click="openTransfer(c)"
+              >发起划拨</el-button>
             </div>
             <div class="conflict-foot">
-              请改选其他城市，或先走划拨流程把「{{ localConflicts[0].city }}」转给本子公司
-              （划拨会自动完成存量迁移与双方范围互调）。
+              <template v-if="selfMode">
+                一城一家、先到先得 —— 请改选其他城市。若该城市确应由你管辖，
+                请联系集团总部发起「辖区划拨」。
+              </template>
+              <template v-else>
+                请改选其他城市，或先走划拨流程把「{{ localConflicts[0].city }}」转给本子公司
+                （划拨会自动完成存量迁移与双方范围互调）。
+              </template>
             </div>
           </el-alert>
         </el-form-item>
@@ -122,7 +149,16 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   orgId: { type: [Number, String], default: null },
   // { userId, username, company }
-  member: { type: Object, default: null }
+  member: { type: Object, default: null },
+  /**
+   * v0.13 R1：`true` = 子公司**自助**设置自己的范围。
+   * 差异（三处，全部因写权限边界不同）：
+   *   ① 不再展示「发起划拨」—— 划拨仅集团 owner 可发起（`requireOrgOwner`）
+   *   ② 冲突时没有「强制保存」出口 —— 成员传 `?force=1` 后端直接 403 `force_not_allowed`
+   *      （否则成员可用 force 抢注他人已占城市，与「先到先得」矛盾）
+   *   ③ 文案由"代设"口吻改为"自设"口吻
+   */
+  selfMode: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:modelValue', 'saved'])
 
@@ -146,9 +182,24 @@ const occupancyMembers = ref([])
 const normCity = (s) => String(s ?? '').replace(/[\s\u3000]+/g, '').trim().replace(/市$/, '')
 
 const drawerTitle = computed(() => {
+  if (props.selfMode) return '我的管辖范围'
   const who = props.member?.username || '子公司'
   return `${who} · 管辖范围`
 })
+
+const alertTitle = computed(() => (props.selfMode
+  ? '管辖范围 = 你能同步到的「上限」'
+  : '管辖范围 = 该子公司可同步的「上限」'))
+
+const emptyCandidateTitle = computed(() => (props.selfMode
+  ? '集团尚未导入门店数据，暂无可选城市 —— 请联系集团总部先在集团账号导入全国门店清单，导入后下拉即可选择'
+  : '集团账号当前没有任何门店数据，城市候选为空 —— 请先在集团账号导入门店清单'))
+
+const alertDesc = computed(() => (props.selfMode
+  ? '只能同步落在本范围内的门店，范围之外的行不会出现在候选里。'
+    + '城市只能选「集团确有门店的城市」，且一城一家、先到先得。保存后立即生效。'
+  : '子公司只能同步落在本范围内的门店；范围之外的行不会出现在候选里。'
+    + '只到城市级，不细分区县。保存后立即生效（下次同步即按新范围计算候选）。'))
 
 /** 城市候选 = 集团有门店的城市 ∪ 该成员已选但集团暂无门店的城市（后者要能回显） */
 const cityOptions = computed(() => {
@@ -246,6 +297,12 @@ function submit() {
 
   const c = conflicts[0]
   const holder = c.company || c.username
+
+  // 成员自设：没有 force 权限（后端 403 force_not_allowed）—— 直接拦住，别让用户白跑一趟
+  if (props.selfMode) {
+    ElMessage.error(`城市「${c.city}」已被「${holder}」占用，请先改选其他城市（一城一家、先到先得）`)
+    return
+  }
   ElMessageBox.confirm(
     `城市「${c.city}」当前归属「${holder}」，正常保存会被拒绝（规则：城市互斥）。`
     + '如确需修正历史数据（同城两家），可强制保存并留痕。',
