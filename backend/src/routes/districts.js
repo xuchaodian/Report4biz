@@ -4,13 +4,15 @@ import { authenticate } from '../middleware/auth.js'
 import { getAuthorization } from './smartsteps.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota } from '../utils/quotaGate.js'
+import { getGeoObject } from '../models/geoStore.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
 
 const router = express.Router()
 
-// 内存缓存：shapefileId -> { geojson, ts }
-const geojsonCache = new Map()
+// v1.13.143：geojson 已外置到文件（models/geoStore.js），原先这里的
+// geojsonCache（1 小时 TTL、与 shapefiles.js 的 1 分钟缓存各自为政）已删除，
+// 缓存统一归 geoStore 管，避免同一个 geojson 在内存里存两份 V8 对象。
 
 // H4（v1.13.106）：商圈内门店/竞品计数缓存——bbox 预筛后仅对少量候选跑射线，结果按
 // (bbox + 数据版本) 缓存 60s。数据版本取 competitors/markers 的 MAX(updated_at)，
@@ -319,14 +321,11 @@ function getCityTier(name) {
 }
 
 function getGeojson(id) {
-  const cached = geojsonCache.get(id)
-  if (cached && Date.now() - cached.ts < 60 * 60 * 1000) return cached.geojson
+  // v1.13.143：geojson 外置到文件，缓存由 geoStore 统一管理（调用点无需改动）
   const db = getDb()
-  const row = db.prepare(`SELECT geojson FROM shapefiles WHERE id = ?`).get(id)
+  const row = db.prepare(`SELECT id FROM shapefiles WHERE id = ?`).get(id)
   if (!row) return null
-  const geojson = JSON.parse(row.geojson)
-  geojsonCache.set(id, { geojson, ts: Date.now() })
-  return geojson
+  return getGeoObject(id)
 }
 
 function parseCityName(filename) {

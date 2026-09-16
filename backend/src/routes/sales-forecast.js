@@ -4,6 +4,7 @@ import { aroundSearch } from '../utils/amapPoi.js'
 import { PersistentCache } from '../utils/persistentCache.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { getGeoObject } from '../models/geoStore.js'
 
 const router = express.Router()
 
@@ -55,10 +56,8 @@ function getAllDistricts() {
   const list = []
   for (const f of files) {
     const city = String(f.name || '').replace(/\.zip$/, '').replace(/市$/, '')
-    const row = db.prepare(`SELECT geojson FROM shapefiles WHERE id = ?`).get(f.id)
-    if (!row || !row.geojson) continue
-    let geojson
-    try { geojson = JSON.parse(row.geojson) } catch (e) { continue }
+    // v1.13.143：geojson 已外置到文件，用 getGeoObject 取（内部含解析缓存）
+    const geojson = getGeoObject(f.id)
     if (!geojson || !geojson.features) continue
     for (const ft of geojson.features) {
       const p = ft.properties || {}
@@ -201,8 +200,10 @@ function calcRadiusPopulation(db, lat, lng, city) {
   if (cached) {
     geojson = cached.v
   } else {
-    const row = db.prepare('SELECT geojson FROM shapefiles WHERE id = ?').get(sf.id)
-    geojson = row ? JSON.parse(row.geojson) : null
+    // v1.13.143：geojson 已外置到文件（models/geoStore.js）。
+    // 这里刻意保留 popGeoCache —— 预测路径会在一次请求内对每个门店反复取样，
+    // 每轮都重解析 30MB 人口网格会拖垮响应；该缓存 maxSize=5 + 10min TTL 是有界行为。
+    geojson = getGeoObject(sf.id)
     if (geojson) popGeoCache.set(sf.id, geojson)
   }
   if (!geojson || !geojson.features) return out

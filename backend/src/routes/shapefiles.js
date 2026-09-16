@@ -10,6 +10,9 @@ import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
 import { textSearchAll } from '../utils/amapPoi.js'
+import {
+  writeGeoText, removeGeoFile, getGeoObject, attachGeo
+} from '../models/geoStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -30,9 +33,11 @@ function visibilityClause(user, alias) {
   }
 }
 
-// 简单内存缓存：避免同一 shapefile 被频繁 JSON.parse（key=shapefileId, value={geojson, ts}）
-const shapefileCache = new Map()
-const CACHE_TTL_MS = 60 * 1000 // 缓存1分钟
+// ⚠️ v1.13.143：geojson 已外置到文件（见 models/geoStore.js）。
+// 本文件的 SQL 一律**不再 SELECT geojson**（它是空串占位），改为用
+// attachGeo() / attachGeoAll() 从文件回填，或用 getGeoObject() 取解析对象。
+// 原先这里的 shapefileCache / CACHE_TTL_MS 已删除 —— 缓存统一由 geoStore 管理，
+// 避免两份缓存各自 1 分钟 / 1 小时 TTL 造成「同一个文件两份 V8 对象」的内存浪费。
 
 // 配置上传
 const storage = multer.diskStorage({
@@ -137,20 +142,28 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       return res.status(400).json({ message: parseResult.error || '解析失败' })
     }
 
-    // 保存到数据库
+    // 保存到数据库（v1.13.143：geojson 外置成文件，主库该列只留空串占位）
     const db = getDb()
     const geojsonData = JSON.stringify(parseResult.data)
 
-    // 插入数据
-    const insertResult = db.prepare(
-      `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
-    ).run(originalName, geojsonData, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId, category)
+    // 顺序很关键：先 INSERT 拿 id → 再写 geojson 文件 → 最后统一提交。
+    // 写文件失败就回滚并删掉刚落地的文件，不会留下「有行无文件」的破窗。
+    let insertId = null
+    db.beginTx()
+    try {
+      const insertResult = db.prepare(
+        `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
+         VALUES (?, '', ?, ?, ?, ?, datetime('now', 'localtime'))`
+      ).run(originalName, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId, category)
 
-    // 立即保存到磁盘，防止进程重启导致数据丢失
-    db.saveNow()
-
-    const insertId = insertResult.lastInsertRowid
+      insertId = insertResult.lastInsertRowid
+      writeGeoText(insertId, geojsonData)
+      db.commitTx()   // 内含统一落盘（替代原先的 db.saveNow()，且写入合并为一次）
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 忽略 */ }
+      try { if (insertId) removeGeoFile(insertId) } catch (e3) { /* 忽略 */ }
+      throw e
+    }
 
     res.json({
       success: true,
@@ -217,13 +230,14 @@ router.get('/:id', authenticate, (req, res) => {
     const vis = visibilityClause(req.user)
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names, feature_count FROM shapefiles WHERE id = ? AND ${vis.clause}`
+      `SELECT id, name, field_names, feature_count FROM shapefiles WHERE id = ? AND ${vis.clause}`
     ).get(id, ...vis.params)
 
     if (!row) {
       return res.status(404).json({ message: '未找到' })
     }
 
+    attachGeo(row)   // geojson 在文件里，回填后再解析
     const geojson = JSON.parse(row.geojson)
 
     res.json({
@@ -288,6 +302,9 @@ router.delete('/:id', authenticate, (req, res) => {
     const result = db.prepare(`DELETE FROM shapefiles WHERE ${whereSql}`).run(...whereParams)
     db.saveNow()
 
+    // v1.13.143：geojson 外置成文件，删行后必须同步删文件，否则留下孤儿文件
+    if (result.changes > 0) removeGeoFile(id)
+
     // result.changes === 0 表示无匹配行（越权或不存在）
     res.json({ success: true, message: result.changes > 0 ? '删除成功' : '未找到该文件或无权删除' })
 
@@ -307,13 +324,14 @@ router.post('/:id/query', authenticate, (req, res) => {
 
     // 获取 Shapefile 数据
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+      `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
     ).get(id, ...vis.params)
 
     if (!row) {
       return res.status(404).json({ message: '未找到该文件' })
     }
 
+    attachGeo(row)
     const geojson = JSON.parse(row.geojson)
     const features = geojson.features || []
 
@@ -397,7 +415,7 @@ router.get('/:id/fields', authenticate, (req, res) => {
     const vis = visibilityClause(req.user)
 
     const row = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+      `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
     ).get(id, ...vis.params)
 
     if (!row) {
@@ -407,6 +425,7 @@ router.get('/:id/fields', authenticate, (req, res) => {
     const fieldNames = JSON.parse(row.field_names || '[]')
     
     // 分析每个字段，识别数值字段
+    attachGeo(row)
     const geojson = JSON.parse(row.geojson)
     const features = geojson.features || []
     
@@ -466,11 +485,11 @@ router.post('/calculate-population', authenticate, (req, res) => {
     let rows
     if (shapefileId) {
       rows = db.prepare(
-        `SELECT id, name, geojson, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
+        `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
       ).all(shapefileId, ...vis.params)
     } else {
       rows = db.prepare(
-        `SELECT id, name, geojson, field_names FROM shapefiles WHERE ${vis.clause}`
+        `SELECT id, name, field_names FROM shapefiles WHERE ${vis.clause}`
       ).all(...vis.params)
     }
 
@@ -491,20 +510,9 @@ router.post('/calculate-population', authenticate, (req, res) => {
     const circleBbox = turf.bbox(circle)
 
     for (const row of rows) {
-      // 使用内存缓存避免重复 JSON.parse
-      let geojson
-      const cached = shapefileCache.get(row.id)
-      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-        geojson = cached.geojson
-      } else {
-        geojson = JSON.parse(row.geojson)
-        shapefileCache.set(row.id, { geojson, ts: Date.now() })
-        // 控制缓存大小，超过10个时删除最旧的
-        if (shapefileCache.size > 10) {
-          const oldest = shapefileCache.keys().next().value
-          shapefileCache.delete(oldest)
-        }
-      }
+      // 缓存统一由 geoStore 管理：文本 LRU + 仅小文件缓存解析对象。
+      // 人口网格单文件最大 30MB，V8 解析后 3~4 倍，在 1.6GB 机器上不做对象级缓存。
+      const geojson = getGeoObject(row.id) || { features: [] }
       const features = geojson.features || []
       console.log(`[calculate-population] 处理文件: ${row.name}, 要素数: ${features.length}`)
 
@@ -621,13 +629,14 @@ router.post('/search-commerce', authenticate, (req, res) => {
 
     // 获取所有 other 类 shapefile（当前用户可见）
     const rows = db.prepare(
-      `SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'other' AND ${vis.clause}`
+      `SELECT id, name, field_names FROM shapefiles WHERE category = 'other' AND ${vis.clause}`
     ).all(...vis.params)
 
     const matchedFeatures = []
 
     for (const row of rows) {
       try {
+        attachGeo(row)
         const geojson = JSON.parse(row.geojson)
         const features = geojson.features || []
 
@@ -683,8 +692,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     if (!cityName || !radius) return res.status(400).json({ success: false, error: '缺少参数' })
     const r = parseFloat(radius) || 1
     const db = getDb()
-    const rows = db.prepare(`SELECT id, name, geojson, field_names FROM shapefiles WHERE category = 'population' AND name LIKE ? AND ${vis.clause} LIMIT 1`).all(`%${cityName}%`, ...vis.params)
+    const rows = db.prepare(`SELECT id, name, field_names FROM shapefiles WHERE category = 'population' AND name LIKE ? AND ${vis.clause} LIMIT 1`).all(`%${cityName}%`, ...vis.params)
     if (!rows || !rows.length) return res.json({ success: false, error: `未找到${cityName}的数据` })
+    attachGeo(rows[0])
     const geojson = JSON.parse(rows[0].geojson)
     const features = geojson.features || []
     const markers = db.prepare('SELECT id, latitude, longitude, store_status, brand FROM markers').all()
