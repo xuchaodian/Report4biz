@@ -40,8 +40,9 @@ function getMonthlyTokenUsage(db, userId) {
 function recordTokenUsage(userId, tokens) {
   try {
     const db = getDb()
+    // v1.13.144：不再追加 db.saveNow() —— run() 在非事务态已自动落盘（database.js run 内 `if (!getTxFlag()) saveDatabase()`），
+    // 事务态则由 commitTx 统一落盘。原写法每次记账都整库写两遍。
     db.prepare(`INSERT INTO ai_usage (user_id, tokens_used) VALUES (?, ?)`).run(userId, tokens)
-    db.saveNow()
   } catch (e) {
     console.error('[AI] 记录token用量失败:', e.message)
   }
@@ -52,9 +53,9 @@ function recordTokenUsage(userId, tokens) {
 function logAiEgress(userId, endpoint, payloadChars) {
   try {
     const db = getDb()
+    // v1.13.144：同上，run() 已负责落盘，不再追加 db.saveNow()
     db.prepare(`INSERT INTO ai_egress_log (user_id, endpoint, payload_chars) VALUES (?, ?, ?)`)
       .run(userId, endpoint, Number(payloadChars) || 0)
-    db.saveNow()
     console.log(`[AI-Egress] user=${userId} endpoint=${endpoint} payload=${Number(payloadChars) || 0}chars → ark.cn-beijing.volces.com`)
   } catch (e) {
     console.error('[AI] 记录数据外发日志失败:', e.message)

@@ -408,9 +408,16 @@ adminRouter.post('/delete', authenticate, async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: '客户不存在' })
     }
-    // 删除用量记录 + Key
-    db.prepare(`DELETE FROM api_usage WHERE api_key_id = ?`).run(keyId)
-    db.prepare(`DELETE FROM api_keys WHERE id = ?`).run(keyId)
+    // 删除用量记录 + Key（v1.13.144：两删同事务 ⇒ 单次落盘，且不会留下孤儿用量记录）
+    db.beginTx()
+    try {
+      db.prepare(`DELETE FROM api_usage WHERE api_key_id = ?`).run(keyId)
+      db.prepare(`DELETE FROM api_keys WHERE id = ?`).run(keyId)
+      db.commitTx()
+    } catch (e) {
+      db.rollbackTx()
+      throw e
+    }
     res.json({ success: true, message: `已删除 ${client.company_name} 及其用量记录` })
   } catch (e) {
     console.error('删除客户失败:', e)
@@ -693,18 +700,29 @@ router.post('/', requireApiKey, async (req, res) => {
 
     // 4. 扣费 + 记录（v1.13.105 A1：同一批联通配额双轨扣减——客户 balance 与 admin remaining_quota 同步 -1。
     //    仅真实上游调用成功且非空数据才扣；缓存命中 / mock / 空数据失败（deducted=0）不扣 remaining）
-    if (deducted > 0) {
-      db.prepare(`UPDATE api_keys SET balance = balance - 1 WHERE id = ?`).run(client.id)
-      db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
-    }
-    db.prepare(`
-      INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    `).run(client.id, services.join(','), cLng, cLat, r, cityMonth || null, deducted)
+    // v1.13.144：账目「扣余额 + 扣池 + 写流水 (+ 写缓存)」合并为**单事务** ⇒ 单次落盘，
+    // 且彻底消除「扣了钱没流水」的中间态（进程崩溃时整体回滚，账目自洽）。
+    // 仅在**写点 >1** 时开事务：单写点若也开事务，反而变成「run 落盘 + commit 落盘」两次。
+    const multiWrite = deducted > 0
+    if (multiWrite) db.beginTx()
+    try {
+      if (deducted > 0) {
+        db.prepare(`UPDATE api_keys SET balance = balance - 1 WHERE id = ?`).run(client.id)
+        db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+      }
+      db.prepare(`
+        INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+      `).run(client.id, services.join(','), cLng, cLat, r, cityMonth || null, deducted)
 
-    // 5. 成功后写缓存
-    if (querySuccess && !isEmpty) {
-      saveToCache(db, cLng, cLat, r, cityMonth, services, result)
+      // 5. 成功后写缓存（saveToCache 自身吞异常：缓存非账目，失败不应回滚扣费）
+      if (querySuccess && !isEmpty) {
+        saveToCache(db, cLng, cLat, r, cityMonth, services, result)
+      }
+      if (multiWrite) db.commitTx()
+    } catch (e) {
+      if (multiWrite) db.rollbackTx()
+      throw e
     }
 
     const updatedClient = db.prepare(`SELECT balance FROM api_keys WHERE id = ?`).get(client.id)
