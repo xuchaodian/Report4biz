@@ -5,14 +5,65 @@ import crypto from 'crypto'
 import { getDb } from '../models/database.js'
 import { JWT_SECRET, APP_BASE_URL } from '../config.js'
 import { sendPasswordResetMail, isMailEnabled } from '../utils/mailer.js'
+import { overLimit } from '../utils/rateLimit.js'
+import {
+  issueRegisterTicket, verifyRegisterTicket, clientIpOf,
+  REG_WINDOW_MS, REG_MAX_PER_IP, REG_MIN_FILL_MS, REG_HONEYPOT_FIELD, REG_TICKET_MESSAGES
+} from '../utils/registerGuard.js'
 
 const router = express.Router()
+
+// ============================================================================
+// 注册防护（v1.13.149 · P0）
+//
+// 三道闸门（分层，详见 utils/registerGuard.js 顶部说明）：
+//   ① IP 滑动窗口限流  ② 表单票据（HMAC 无状态）  ③ 蜜罐字段
+//
+// 🔒 顺序刻意如此，勿调换（①限流 → ②票据 → ③字段 → ④重名 → ⑤蜜罐 → ⑥落库）：
+//   限流必须最先 ⇒ 超频请求不消耗任何后续资源（bcrypt 尤其贵）；
+//   蜜罐必须**最后**（在全部正常校验之后、落库之前）⇒ 填与不填蜜罐，攻击者可观察的
+//   一切（状态码/文案/耗时/id 量级）完全一致，他就无法用「故意提交畸形字段」或
+//   「故意用一个已知存在的用户名」反推出哪个字段是蜜罐。
+// ============================================================================
+
+// 蜜罐假回执专用的 id 游标（见下方 ⑤）：保证连续命中返回递增且不重复的 id
+let honeypotIdCursor = 0
+
+// 领取注册票据（公开）：证明「确实打开过注册页」，抬高纯 POST 脚本的门槛。
+// 无状态、无 IO、无副作用，故不额外限流（额度由 /register 侧把住）。
+router.get('/register-ticket', (req, res) => {
+  res.set('Cache-Control', 'no-store')
+  res.json({ ticket: issueRegisterTicket(), minFillMs: REG_MIN_FILL_MS })
+})
 
 // 注册
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body
+    const body = req.body || {}
+    const ip = clientIpOf(req)
 
+    // ① IP 限流
+    if (overLimit(`reg:ip:${ip}`, REG_MAX_PER_IP, REG_WINDOW_MS)) {
+      console.warn('[auth][register] IP 限流命中:', ip)
+      res.set('Retry-After', String(Math.ceil(REG_WINDOW_MS / 1000)))
+      return res.status(429).json({ message: '注册请求过于频繁，请稍后再试' })
+    }
+
+    const { username, email, password } = body
+
+    // ② 表单票据
+    const tk = verifyRegisterTicket(body.ticket)
+    if (!tk.ok) {
+      if (tk.reason === 'too_fast' || tk.reason === 'expired') {
+        console.warn('[auth][register] 票据被拒:', tk.reason, ip)
+      }
+      return res.status(400).json({
+        message: REG_TICKET_MESSAGES[tk.reason] || REG_TICKET_MESSAGES.missing,
+        code: `ticket_${tk.reason}`
+      })
+    }
+
+    // ③ 字段校验（文案与历史逐字一致，勿改）
     if (!username || !email || !password) {
       return res.status(400).json({ message: '请填写所有必填字段' })
     }
@@ -23,16 +74,33 @@ router.post('/register', async (req, res) => {
 
     const db = getDb()
 
-    // 检查用户名是否存在
+    // ④ 检查用户名是否存在
     const existingUser = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(username, email)
     if (existingUser) {
       return res.status(400).json({ message: '用户名或邮箱已存在' })
     }
 
-    // 加密密码
+    // ⑤ 蜜罐：位置刻意放在**全部正常校验之后、落库之前**。
+    //    ⇒ 填不填蜜罐，攻击者能观察到的一切（状态码 / 文案 / 耗时 / id 量级）都无差别，
+    //      他就无法用「故意提交畸形字段」或「故意用一个已知存在的用户名」去反推
+    //      「哪个字段是蜜罐」（若蜜罐提前拦截，这两种探测会得到与他预期不同的回执而暴露）。
+    if (String(body[REG_HONEYPOT_FIELD] || '').trim()) {
+      console.warn('[auth][register] 蜜罐命中（疑似脚本）:', ip, String(username).slice(0, 32))
+      try { bcrypt.hashSync(String(password), 10) } catch (e) { /* 忽略 */ } // 抹平 bcrypt 耗时
+      // id 取「MAX(id) 之后的自增游标」：与真实自增同量级、严格递增且**绝不重复**
+      // （若每次都返回同一个随机 id，或返回 6 位数 id，都成了可识别的破绽）
+      const maxId = Number(db.prepare('SELECT MAX(id) AS m FROM users').get()?.m || 0)
+      if (honeypotIdCursor <= maxId) honeypotIdCursor = maxId + 1
+      const fakeId = honeypotIdCursor++
+      return res.status(201).json({
+        message: '注册成功',
+        user: { id: fakeId, username, email, role: 'user' }
+      })
+    }
+
+    // ⑥ 加密并落库
     const hashedPassword = bcrypt.hashSync(password, 10)
 
-    // 创建用户
     const result = db.prepare(`
       INSERT INTO users (username, email, password, role)
       VALUES (?, ?, ?, ?)
@@ -149,35 +217,12 @@ const RESET_WINDOW_MS = 15 * 60 * 1000
 const RESET_MAX_PER_EMAIL = 3
 const RESET_MAX_PER_IP = 10
 const FORGOT_UNIFORM_MSG = '如果该邮箱已注册，我们已发送密码重置链接，请查收邮件（也请检查垃圾邮件箱）。'
-const resetHits = new Map()
 
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex')
 }
 
-// 滑动窗口限流（进程内；pm2 单实例 fork 模式下足够）
-function overLimit(key, max) {
-  const now = Date.now()
-  const arr = (resetHits.get(key) || []).filter((t) => now - t < RESET_WINDOW_MS)
-  if (arr.length >= max) {
-    resetHits.set(key, arr)
-    return true
-  }
-  arr.push(now)
-  resetHits.set(key, arr)
-  return false
-}
-
-// 定期清理过期限流记录，避免 Map 无限增长（unref 不阻塞进程退出）
-const resetHitsCleaner = setInterval(() => {
-  const now = Date.now()
-  for (const [k, arr] of resetHits) {
-    const keep = arr.filter((t) => now - t < RESET_WINDOW_MS)
-    if (keep.length) resetHits.set(k, keep)
-    else resetHits.delete(k)
-  }
-}, 10 * 60 * 1000)
-if (resetHitsCleaner.unref) resetHitsCleaner.unref()
+// 限流器已抽到 utils/rateLimit.js（v1.13.149 起与「注册」共用同一套桶）
 
 // 申请重置：发送一次性重置链接
 router.post('/forgot-password', async (req, res) => {
@@ -196,8 +241,9 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(503).json({ message: '邮件服务未配置，请联系管理员' })
     }
 
-    const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'unknown'
-    if (overLimit(`ip:${ip}`, RESET_MAX_PER_IP) || overLimit(`em:${email}`, RESET_MAX_PER_EMAIL)) {
+    const ip = clientIpOf(req)
+    if (overLimit(`reset:ip:${ip}`, RESET_MAX_PER_IP, RESET_WINDOW_MS) ||
+        overLimit(`reset:em:${email}`, RESET_MAX_PER_EMAIL, RESET_WINDOW_MS)) {
       return res.status(429).json({ message: '请求过于频繁，请稍后再试' })
     }
 

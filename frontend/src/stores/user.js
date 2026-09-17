@@ -44,13 +44,18 @@ export const useUserStore = defineStore('user', {
       }
     },
     
-    async register(username, email, password) {
+    // v1.13.149：extra = { ticket, hp_note }（注册防护票据 + 蜜罐，见 utils/registerGuard.js）
+    async register(username, email, password, extra = {}) {
       this.loading = true
       try {
-        await axios.post(`${API_URL}/auth/register`, { username, email, password })
+        await axios.post(`${API_URL}/auth/register`, { username, email, password, ...extra })
         return { success: true }
       } catch (error) {
-        return { success: false, message: error.response?.data?.message || '注册失败' }
+        return {
+          success: false,
+          message: error.response?.data?.message || '注册失败',
+          code: error.response?.data?.code || ''
+        }
       } finally {
         this.loading = false
       }
