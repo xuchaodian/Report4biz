@@ -1075,8 +1075,8 @@ router.post('/:id/transfer/preview', authenticate, requireOrgOwner, (req, res) =
     if (!plan.counts.total) {
       return res.status(409).json({
         code: 'nothing_to_transfer',
-        message: `「${plan.fromName}」名下没有可划拨的门店/竞品`
-          + `（该城市下不存在由集团下发的副本；原持有方自建的行不随划拨转移）`,
+        message: `「${plan.fromName}」名下没有位于所选城市的门店/竞品`
+          + `（该城确无数据，或门店实际 city 与所选城市不一致）`,
         counts: plan.counts
       })
     }

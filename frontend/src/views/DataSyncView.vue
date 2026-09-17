@@ -218,6 +218,9 @@
             <el-tag type="primary" effect="dark" size="small">更新 {{ preview.counts.updated }}</el-tag>
             <el-tag type="danger" effect="dark" size="small">删除 {{ preview.counts.deleted }}</el-tag>
             <el-tag type="info" size="small">跳过 {{ preview.counts.skipped }}</el-tag>
+            <el-tag v-if="preview.counts.duplicate" type="warning" size="small">
+              疑似重复 {{ preview.counts.duplicate }}
+            </el-tag>
             <span v-if="preview.counts.outOfScope" class="ds-muted">
               范围外静默丢弃 {{ preview.counts.outOfScope }} 条
             </span>
@@ -236,6 +239,20 @@
             </template>
           </el-alert>
 
+          <el-alert
+            v-if="preview.counts.duplicate"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom:10px;"
+          >
+            <template #title>
+              有 {{ preview.counts.duplicate }} 条「疑似重复」：本账号里已经存在同一家门店
+              （门店编号相同，或名称+城市+地址相同），按「先到先得」不再写入。
+              这些行不会出现在下面的可勾选列表里 —— 若要以源侧为准，请先处理本账号里已有的那一行。
+            </template>
+          </el-alert>
+
           <el-table
             v-if="previewRows.length"
             ref="previewTableRef"
@@ -246,7 +263,7 @@
             row-key="key"
             @selection-change="onPreviewSelection"
           >
-            <el-table-column type="selection" width="42" :selectable="() => true" />
+            <el-table-column type="selection" width="42" :selectable="selectableRow" />
             <el-table-column label="动作" width="82">
               <template #default="{ row }">
                 <el-tag :type="actionTagType(row.action)" size="small" effect="plain">{{ actionLabel(row.action) }}</el-tag>
@@ -262,12 +279,13 @@
               <template #default="{ row }">
                 <span v-if="row.action === 'deleted'" class="ds-danger">源侧已删除</span>
                 <span v-else-if="row.action === 'updated'" class="ds-changes">{{ changeText(row) }}</span>
+                <span v-else-if="row.action === 'duplicate'" class="ds-warn">{{ dupText(row) }}</span>
                 <span v-else class="ds-muted">新增到目标账号</span>
               </template>
             </el-table-column>
           </el-table>
           <div v-else class="ds-muted" style="padding:8px 0;">
-            本批次没有需要写入的变更（全部为「无变化」或「防回环跳过」）。
+            本批次没有需要写入的变更（全部为「无变化」「防回环跳过」或「疑似重复」）。
           </div>
 
           <div class="ds-actions" style="margin-top:12px;">
@@ -276,7 +294,7 @@
               type="primary"
               size="small"
               :loading="committing"
-              :disabled="!previewRows.length"
+              :disabled="!writableRows.length"
               @click="doCommit"
             >确认同步（{{ checkedCount }} 行）</el-button>
           </div>
@@ -631,13 +649,17 @@ const scopeBrandOptions = computed(() => {
 
 const previewRows = computed(() => {
   if (!preview.value) return []
-  const { added, updated, deleted } = preview.value.items
+  const { added, updated, deleted, duplicate } = preview.value.items
   return [
     ...added.map(i => ({ ...i, action: 'added' })),
     ...updated.map(i => ({ ...i, action: 'updated' })),
-    ...deleted.map(i => ({ ...i, action: 'deleted' }))
+    ...deleted.map(i => ({ ...i, action: 'deleted' })),
+    // 疑似重复（规则 34）：只展示、不可勾选 —— 它们本来就不会被写入
+    ...(duplicate || []).map(i => ({ ...i, action: 'duplicate' }))
   ]
 })
+/** 真正会被写入的行（疑似重复不算）—— 确认按钮的启用条件 */
+const writableRows = computed(() => previewRows.value.filter(r => r.action !== 'duplicate'))
 const checkedCount = computed(() => checkedKeys.value.length)
 
 // 预览标题的「源 → 目标」路径（按方向取名字，避免 member_to_group 时显示成「子公司 → 子公司」）
@@ -661,8 +683,20 @@ function changeText (row) {
 }
 const fmt = (v) => (v === null || v === undefined || v === '') ? '空' : String(v)
 
-const actionLabel = (a) => ({ added: '新增', updated: '更新', deleted: '删除' }[a] || a)
-const actionTagType = (a) => ({ added: 'success', updated: 'primary', deleted: 'danger' }[a] || 'info')
+const actionLabel = (a) => ({ added: '新增', updated: '更新', deleted: '删除', duplicate: '疑似重复' }[a] || a)
+const actionTagType = (a) => ({
+  added: 'success', updated: 'primary', deleted: 'danger', duplicate: 'warning'
+}[a] || 'info')
+/** 疑似重复行不可勾选（它本就不会写入） */
+const selectableRow = (row) => row.action !== 'duplicate'
+/** 疑似重复的命中理由（让用户知道"为什么算重复"） */
+const DUP_REASON = { store_code: '门店编号相同', name_city_address: '名称+城市+地址相同' }
+function dupText (row) {
+  const why = DUP_REASON[row.by] || '业务键相同'
+  const where = row.matchedIsLocal ? '本账号自建行' : '本账号已有行'
+  const no = row.matchedRowId ? ` #${row.matchedRowId}` : ''
+  return `${why} → 命中${where}${no}；先到先得，本次不写入`
+}
 const statusLabel = (s) => ({
   success: '成功', partial: '部分成功', failed: '失败', preview: '预览', rolled_back: '已回滚'
 }[s] || s)
@@ -792,6 +826,9 @@ async function doCommit () {
   try {
     await ElMessageBox.confirm(
       `将按预览结果写入 ${checkedCount.value} 行变更（其中删除 ${preview.value.counts.deleted} 行）。` +
+      (preview.value.counts.duplicate
+        ? `另有 ${preview.value.counts.duplicate} 条疑似重复不会写入（先到先得）。`
+        : '') +
       '写入在同一事务内完成，任一步失败整体回滚。确认继续？',
       '确认同步', { type: 'warning' }
     )
@@ -804,6 +841,7 @@ async function doCommit () {
     const d = await api.post('/sync/commit', { batchId: preview.value.batchId, excluded })
     ElMessage.success(
       `同步完成：新增 ${d.applied.inserted} / 更新 ${d.applied.updated} / 删除 ${d.applied.deleted}` +
+      (d.applied.duplicate ? ` / 疑似重复未写入 ${d.applied.duplicate}` : '') +
       (d.applied.failed ? ` / 失败 ${d.applied.failed}` : '')
     )
     preview.value = null

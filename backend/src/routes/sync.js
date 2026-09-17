@@ -515,7 +515,7 @@ router.post('/commit', authenticate, (req, res) => {
       `[sync] commit batch=${batchId} dir=${params.direction} `
       + `src=${params.sourceUserId} tgt=${params.targetUserId} `
       + `ins=${result.inserted} upd=${result.updated} del=${result.deleted} `
-      + `skip=${result.skipped} fail=${result.failed} by=${meId}`
+      + `skip=${result.skipped} dup=${result.duplicate} fail=${result.failed} by=${meId}`
     )
 
     res.json({
@@ -527,6 +527,8 @@ router.post('/commit', authenticate, (req, res) => {
         updated: result.updated,
         deleted: result.deleted,
         skipped: result.skipped,
+        // 疑似重复（规则 34）：命中了目标账号已有同店，**未写入**
+        duplicate: result.duplicate,
         failed: result.failed
       },
       planned: plan.counts,

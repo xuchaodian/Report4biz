@@ -145,6 +145,82 @@ export function diffFields(fields, sourceRow, mirrorRow) {
 }
 
 // ---------------------------------------------------------------------------
+// 2b. 业务键判重（v0.13 R2 · 规则 34）
+// ---------------------------------------------------------------------------
+//
+// 指针匹配（user_id + origin_user_id + origin_row_id）回答的是「这行是不是从那边来的」，
+// 它**回答不了**「这是不是同一家门店」。于是三种情况会凭空多出一份副本：
+//   · 目标账号自己录过某店，而这店源侧库里本来就有（只是没同步下来）
+//   · 两家账号都录了同一家店
+//   · 划拨之后新持有方又录了一遍
+// 故在指针匹配之外补一层**业务键**兜底：`store_code` 优先，缺失时回退
+// `name + city + address` 归一化组合。
+//
+// ★ 命中已有行时**只提示、不写入**（先到先得）：
+//   目标侧那条行**不是本源的镜像**（origin_user_id 为空或属于别人），
+//   直接 UPDATE 会破坏「一源一镜像」的单写者语义（规则 4）。
+//   所以记入 `items.duplicate` + `counts.duplicate` ——
+//   ⛔ **绝不静默丢弃**（静默丢弃是本系统已经踩过的坑，见规则 11 的 outOfScope）。
+
+/** 判重专用文本归一化：去全部空白 + 小写（不做全角/半角转换，保持可解释） */
+function normKeyText(v) {
+  return String(v === null || v === undefined ? '' : v).trim().toLowerCase().replace(/\s+/g, '')
+}
+
+/**
+ * 业务键。返回 `null` = 「这行的信息量不足以判重」——宁可不判，也不误判。
+ *
+ * ① `store_code` 非空 ⇒ 用它，并**带上 brand 前缀**：
+ *    竞品表里 6 个品牌各有自己的门店编号体系，只比 code 会把「老乡鸡 #100」
+ *    和「米村拌饭 #100」判成同一家 ⇒ 漏同步（比多一份副本更糟：那是**丢数据**）。
+ * ② 回退 `name + city + address`：要求 name 非空，且 city / address **至少有一个**。
+ *    只有名字的键（「星巴克」）太弱，连锁品牌必然误判。
+ * @returns {{key:string, by:'store_code'|'name_city_address'}|null}
+ */
+export function businessKeyOf(row) {
+  const code = normKeyText(row && row.store_code)
+  if (code) {
+    const brand = normKeyText(row && row.brand)
+    return { key: `code:${brand}|${code}`, by: 'store_code' }
+  }
+  const name = normKeyText(row && row.name)
+  if (!name) return null
+  const city = normalizeCity(row && row.city)
+  const addr = normKeyText(row && row.address)
+  if (!city && !addr) return null
+  return { key: `nca:${name}|${city}|${addr}`, by: 'name_city_address' }
+}
+
+/**
+ * 目标账号的**业务键索引**（一次性读全表；源行逐行查库在 5000 行量级下太贵）。
+ *
+ * ★ 索引**包含目标账号的全部行**（自建行 + 各来源镜像）——判重问的是
+ *   「这个账号里是不是已经有这家店」，与那行是谁同步来的无关。
+ * ★ 同键多行时保留 **id 最小**的那条（先到先得），其余计入 `shadowed`，
+ *   供 UI 提示「该账号内本来就存在重复行」。
+ *
+ * @returns {{ map:Map<string,object>, shadowed:number }}
+ */
+function buildBusinessKeyIndex(db, kind, targetUserId) {
+  const rows = db.prepare(`
+    SELECT id, name, store_code, brand, city, address,
+           origin_user_id, origin_owner, origin_row_id
+      FROM ${kind} WHERE user_id = ?
+     ORDER BY id
+  `).all(targetUserId) || []
+
+  const map = new Map()
+  let shadowed = 0
+  for (const r of rows) {
+    const bk = businessKeyOf(r)
+    if (!bk) continue
+    if (map.has(bk.key)) { shadowed++; continue }
+    map.set(bk.key, { id: r.id, row: r, by: bk.by, synthetic: false })
+  }
+  return { map, shadowed }
+}
+
+// ---------------------------------------------------------------------------
 // 3. 范围判定（规则 11 / 13）
 // ---------------------------------------------------------------------------
 
@@ -240,6 +316,10 @@ function pickAttrs(row) {
  *   items.updated  [{key, kind, rowId, mirrorRowId, ...attrs, changes[]}]
  *   items.deleted  [{key, kind, mirrorRowId, ...attrs, reason}]
  *   items.skipped  [{kind, rowId, name, reason}]  reason: self_origin | no_change | gone
+ *   items.duplicate [{key, kind, rowId, matchedRowId, matchedIsLocal, by, ...attrs}]
+ *        —— 业务键命中（规则 34）：目标账号里已有同一家店（先到先得），**不写入**，
+ *           只提示。`by` = store_code | name_city_address；`matchedIsLocal` = 命中行是否为
+ *           目标账号自建（true 表示「你自己早就录过这家」）。
  *   counts.outOfScope / outOfFilter  —— 静默丢弃计数（规则 11：不报错，但要让用户看得见）
  */
 export function buildPlan(db, opts) {
@@ -259,14 +339,19 @@ export function buildPlan(db, opts) {
 
   const sourceRows = db.prepare(`SELECT * FROM ${kind} WHERE user_id = ?`).all(sourceUserId) || []
 
-  const items = { added: [], updated: [], deleted: [], skipped: [] }
+  const items = { added: [], updated: [], deleted: [], skipped: [], duplicate: [] }
   const counts = {
-    added: 0, updated: 0, deleted: 0, skipped: 0,
-    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0
+    added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
+    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0,
+    duplicateShadowed: 0    // 目标账号内本来就存在的重复行（只提示，不进计划）
   }
 
   const sourceIds = new Set()
   let processed = 0
+
+  // ★ 业务键索引（v0.13 R2）：循环前一次性建好 ⇒ O(1) 命中；
+  //   本批新增的行会**就地补进索引**，让「源侧自己就有重复」也在第一轮拦住。
+  const bkIndex = buildBusinessKeyIndex(db, kind, targetUserId)
 
   for (const row of sourceRows) {
     // 防回环（规则 3）：该行本来就是「目标账号同步过来的镜像」，再拉回去会重复
@@ -291,12 +376,30 @@ export function buildPlan(db, opts) {
     `).get(targetUserId, sourceUserId, row.id)
 
     if (!mirror) {
-      counts.added++
-      items.added.push({
-        key: `added:${row.id}`, kind, rowId: row.id,
-        originOwner: targetLabel,
-        ...pickAttrs(row)
-      })
+      // ---- 二级兜底：业务键判重（规则 34）----
+      const bk = businessKeyOf(row)
+      const dup = bk ? bkIndex.map.get(bk.key) : null
+      if (dup) {
+        counts.duplicate++
+        items.duplicate.push({
+          key: `duplicate:${row.id}`, kind, rowId: row.id,
+          matchedRowId: dup.synthetic ? null : dup.id,
+          matchedOriginUserId: dup.synthetic ? sourceUserId : (dup.row.origin_user_id ?? null),
+          matchedOriginOwner: dup.synthetic ? targetLabel : (dup.row.origin_owner ?? null),
+          matchedIsLocal: !dup.synthetic && dup.row.origin_user_id == null,
+          by: bk.by,
+          ...pickAttrs(row)
+        })
+      } else {
+        counts.added++
+        items.added.push({
+          key: `added:${row.id}`, kind, rowId: row.id,
+          originOwner: targetLabel,
+          ...pickAttrs(row)
+        })
+        // 本批新增的行补进索引（synthetic）：同批内后出现的同键行判重复，先到先得
+        if (bk) bkIndex.map.set(bk.key, { id: null, row, by: bk.by, synthetic: true })
+      }
     } else {
       const changes = diffFields(fields, row, mirror)
       if (changes.length === 0) {
@@ -335,7 +438,8 @@ export function buildPlan(db, opts) {
     })
   }
 
-  counts.total = counts.added + counts.updated + counts.deleted + counts.skipped
+  counts.duplicateShadowed = bkIndex.shadowed
+  counts.total = counts.added + counts.updated + counts.deleted + counts.skipped + counts.duplicate
   return { kind, direction, sourceUserId, targetUserId, fields, items, counts }
 }
 
@@ -365,17 +469,18 @@ export function buildPlanForKinds(db, opts) {
 
   const fieldsByKind = {}
   const byKind = {}
-  const items = { added: [], updated: [], deleted: [], skipped: [] }
+  const items = { added: [], updated: [], deleted: [], skipped: [], duplicate: [] }
   const counts = {
-    added: 0, updated: 0, deleted: 0, skipped: 0,
-    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0, byKind
+    added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
+    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0, byKind,
+    duplicateShadowed: 0
   }
 
   for (const p of parts) {
     fieldsByKind[p.kind] = p.fields
     byKind[p.kind] = p.counts
-    for (const bucket of ['added', 'updated', 'deleted', 'skipped']) items[bucket].push(...p.items[bucket])
-    for (const k of ['added', 'updated', 'deleted', 'skipped', 'outOfScope', 'outOfFilter', 'selfOrigin', 'noChange', 'total']) {
+    for (const bucket of ['added', 'updated', 'deleted', 'skipped', 'duplicate']) items[bucket].push(...p.items[bucket])
+    for (const k of ['added', 'updated', 'deleted', 'skipped', 'duplicate', 'outOfScope', 'outOfFilter', 'selfOrigin', 'noChange', 'total', 'duplicateShadowed']) {
       counts[k] += p.counts[k] || 0
     }
   }
@@ -414,6 +519,9 @@ export function listCandidates(db, opts) {
   let outOfScope = 0
   let outOfFilter = 0
   let selfOrigin = 0
+  let duplicate = 0
+  // 与 buildPlan 同源的业务键索引 —— 「候选 N 家」与「预览 N 行」必须对得上
+  const bkIndex = buildBusinessKeyIndex(db, kind, targetUserId)
 
   for (const row of rows) {
     if (row.origin_user_id != null && Number(row.origin_user_id) === Number(targetUserId)) { selfOrigin++; continue }
@@ -424,16 +532,28 @@ export function listCandidates(db, opts) {
       SELECT id FROM ${kind} WHERE user_id = ? AND origin_user_id = ? AND origin_row_id = ?
     `).get(targetUserId, sourceUserId, row.id)
 
+    let dup = null
+    if (!mirror) {
+      const bk = businessKeyOf(row)
+      if (bk) {
+        dup = bkIndex.map.get(bk.key) || null
+        if (!dup) bkIndex.map.set(bk.key, { id: null, row, by: bk.by, synthetic: true })
+      }
+    }
+    if (dup) duplicate++
+
     inScope.push({
       kind,                       // 多对象批次下前端据此标注「门店 / 竞品」
       rowId: row.id,
       mirrorRowId: mirror ? mirror.id : null,
-      mirrorState: mirror ? 'synced' : 'new',
+      mirrorState: mirror ? 'synced' : (dup ? 'duplicate' : 'new'),
+      duplicateOfRowId: dup && !dup.synthetic ? dup.id : null,
+      duplicated: !!dup,
       ...pickAttrs(row)
     })
   }
 
-  return { kind, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin }
+  return { kind, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin, duplicate }
 }
 
 /**
@@ -451,17 +571,19 @@ export function listCandidatesForKinds(db, opts) {
   }
   const parts = kinds.map(kind => listCandidates(db, { kind, ...base }))
 
-  const out = { kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, byKind: {} }
+  const out = { kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, duplicate: 0, byKind: {} }
   for (const p of parts) {
     out.byKind[p.kind] = {
       total: p.total, inScope: p.inScope.length,
-      outOfScope: p.outOfScope, outOfFilter: p.outOfFilter, selfOrigin: p.selfOrigin
+      outOfScope: p.outOfScope, outOfFilter: p.outOfFilter, selfOrigin: p.selfOrigin,
+      duplicate: p.duplicate
     }
     out.total += p.total
     out.inScope.push(...p.inScope)
     out.outOfScope += p.outOfScope
     out.outOfFilter += p.outOfFilter
     out.selfOrigin += p.selfOrigin
+    out.duplicate += p.duplicate
   }
   return out
 }
@@ -494,7 +616,7 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
   const ex = new Set(excluded || [])
   const { kind, sourceUserId, targetUserId } = plan
 
-  const result = { inserted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0, detail: [] }
+  const result = { inserted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0, duplicate: 0, detail: [] }
   const push = (row) => { if (result.detail.length < DETAIL_SAMPLE_LIMIT) result.detail.push(row) }
 
   // ---- 按对象缓存字段与 INSERT 语句（多对象批次下每张表各一份）----
@@ -512,6 +634,16 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
 
   db.beginTx()
   try {
+    // ---- 疑似重复（规则 34）：只记录，**绝不写入** ----
+    //   命中的目标行不是本源的镜像（自建行或属于别人），改写它会破坏单写者语义。
+    for (const it of (plan.items.duplicate || [])) {
+      result.duplicate++
+      push({
+        kind: kindOf(it), action: 'duplicate_skip', rowId: it.rowId, name: it.name,
+        matchedRowId: it.matchedRowId, by: it.by
+      })
+    }
+
     for (const it of plan.items.added) {
       const k = kindOf(it)
       if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', rowId: it.rowId, reason: 'user_excluded' }); continue }
@@ -581,7 +713,7 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
        WHERE id = ?
     `).run(
       countsTotal(plan.counts), result.inserted, result.updated, result.deleted,
-      result.skipped + (plan.counts.skipped || 0), result.failed, status,
+      result.skipped + (plan.counts.skipped || 0) + (plan.counts.duplicate || 0), result.failed, status,
       JSON.stringify({ applied: result.detail, planned: plan.counts, appliedCount: result.detail.length }),
       batchId
     )
@@ -600,7 +732,8 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
 }
 
 function countsTotal(c) {
-  return (c.added || 0) + (c.updated || 0) + (c.deleted || 0) + (c.skipped || 0)
+  // ★ duplicate 计入 total：它出现在预览的「待处理」里，不计会让分项加总对不上
+  return (c.added || 0) + (c.updated || 0) + (c.deleted || 0) + (c.skipped || 0) + (c.duplicate || 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -621,12 +754,14 @@ export function createBatch(db, {
     sample: plan ? {
       added: plan.items.added.slice(0, DETAIL_SAMPLE_LIMIT),
       updated: plan.items.updated.slice(0, DETAIL_SAMPLE_LIMIT),
-      deleted: plan.items.deleted.slice(0, DETAIL_SAMPLE_LIMIT)
+      deleted: plan.items.deleted.slice(0, DETAIL_SAMPLE_LIMIT),
+      duplicate: (plan.items.duplicate || []).slice(0, DETAIL_SAMPLE_LIMIT)
     } : null,
     truncated: !!plan && (
       plan.items.added.length > DETAIL_SAMPLE_LIMIT
       || plan.items.updated.length > DETAIL_SAMPLE_LIMIT
       || plan.items.deleted.length > DETAIL_SAMPLE_LIMIT
+      || (plan.items.duplicate || []).length > DETAIL_SAMPLE_LIMIT
     )
   }
 
@@ -892,16 +1027,29 @@ export function buildTransferPlan(db, {
   const sample = {}
 
   for (const kind of list) {
-    // ① 待改判（from 名下、由集团下发行）
+    // ① 待改判 = from 名下**该城的全部行**（v0.13 R4）
+    //    ⛔ 原口径只搬 `origin_user_id = owner`（集团下发的镜像行），刻意留下 from 自建的行。
+    //       在「子公司自助维护门店 + 新设子公司整城转移」的真实流程下会出三种麻烦：
+    //         ① 新城拿不全数据（自建的那几家永远留在原持有方名下）
+    //         ② 某城全是自建行 ⇒ moved 为空 ⇒ 409 nothing_to_transfer（用户眼里是「划不动」）
+    //         ③ 归属悬空（scope 已互调，门店却还挂旧主）
+    //       故放开为「整城转移」，仅留一条防回环：不过继「本来就来自受让方」的行。
     const srcRows = (db.prepare(`
-      SELECT id, name, city, district, address FROM ${kind}
-       WHERE user_id = ? AND origin_user_id = ?
+      SELECT id, name, city, district, address, origin_user_id, store_code
+        FROM ${kind}
+       WHERE user_id = ? AND (origin_user_id IS NULL OR origin_user_id != ?)
        ORDER BY id
-    `).all(from, owner) || []).filter(hitCity)
+    `).all(from, to) || []).filter(hitCity)
 
     moved[kind] = srcRows.map(r => r.id)
+    // 「其中 N 家为原持有方自行录入」——预览里必须让用户点确认前看得见
+    const selfBuilt = srcRows.filter(r => r.origin_user_id == null).length
 
     // ② 集团侧镜像（origin 指向 from 的那些行）
+    //    ★ 口径**不变**：A 的自建行若曾回传集团，集团侧那条镜像的 origin_user_id 正是 A，
+    //      天然落在这个集合里 ⇒ 步骤 3 会把它的 origin_* 一并改指受让方。
+    //      🔴 漏了它，下一轮 member_to_group 会判定「源行已不在 A 名下」而按删除传播
+    //         删掉**集团**那家门店（规则 6）。
     const mirrorRows = (db.prepare(`
       SELECT id, name, city FROM ${kind}
        WHERE user_id = ? AND origin_user_id = ?
@@ -909,7 +1057,7 @@ export function buildTransferPlan(db, {
     `).all(owner, from) || []).filter(hitCity)
 
     groupMirrors[kind] = mirrorRows.map(r => r.id)
-    byKind[kind] = { count: srcRows.length, groupMirrors: mirrorRows.length }
+    byKind[kind] = { count: srcRows.length, selfBuilt, groupMirrors: mirrorRows.length }
     sample[kind] = srcRows.slice(0, 20)
   }
 
@@ -957,6 +1105,9 @@ export function buildTransferPlan(db, {
       storeSales,
       groupMirrors: list.reduce((n, k) => n + (groupMirrors[k] || []).length, 0),
       groupMirrorsByKind: Object.fromEntries(list.map(k => [k, (groupMirrors[k] || []).length])),
+      // v0.13 R4：待改判行里「原持有方自行录入」的家数（预览提示用）
+      selfBuilt: list.reduce((n, k) => n + ((byKind[k] && byKind[k].selfBuilt) || 0), 0),
+      selfBuiltByKind: Object.fromEntries(list.map(k => [k, (byKind[k] && byKind[k].selfBuilt) || 0])),
       purchases,
       total: list.reduce((n, k) => n + (moved[k] || []).length, 0)
     },
@@ -998,12 +1149,18 @@ export function applyTransfer(db, { plan, batchId = null, actorId = null, ip = n
   db.beginTx()
   try {
     // ---- 1) 门店主体改判（行 id 不变 —— 引用连续的关键）----
+    //   ★ v0.13 R4：本步标的已放开为「该城全部行」（含 from 自建行），故
+    //     belong_member_user_id 一并同迁 —— 否则该行在新持有方名下仍挂着旧主的
+    //     显式归属，靠 belong 兜底的范围判定（规则 13）会错位。
     for (const kind of kinds) {
       for (const id of (moved[kind] || [])) {
         const r = db.prepare(`
-          UPDATE ${kind} SET user_id = ?, updated_at = datetime('now')
+          UPDATE ${kind}
+             SET user_id = ?,
+                 belong_member_user_id = CASE WHEN belong_member_user_id = ? THEN ? ELSE belong_member_user_id END,
+                 updated_at = datetime('now')
            WHERE id = ? AND user_id = ?
-        `).run(to, id, from)
+        `).run(to, from, to, id, from)
         if (r && r.changes > 0) result[kind] = (result[kind] || 0) + 1
       }
     }
@@ -1234,10 +1391,14 @@ function rollbackTransfer(db, { batch, detail, force, actorId }) {
   try {
     for (const kind of kinds) {
       for (const id of (t.moved[kind] || [])) {
+        // belong 与 user_id 成对搬回（与 applyTransfer 步 1 对称）
         const r = db.prepare(`
-          UPDATE ${kind} SET user_id = ?, updated_at = datetime('now')
+          UPDATE ${kind}
+             SET user_id = ?,
+                 belong_member_user_id = CASE WHEN belong_member_user_id = ? THEN ? ELSE belong_member_user_id END,
+                 updated_at = datetime('now')
            WHERE id = ? AND user_id = ?
-        `).run(from, id, to)
+        `).run(from, to, from, id, to)
         if (r && r.changes > 0) result.restored[kind] = (result.restored[kind] || 0) + 1
       }
       for (const id of (t.groupMirrors?.[kind] || [])) {

@@ -24,7 +24,7 @@
         :closable="false"
         show-icon
         title="划拨 = 把同一批门店的归属「改判」给新公司，不是复制一份"
-        description="门店行 ID 不变，历史销售与预测数据连续（引用不断链）；原持有方自建的门店不会被搬走。"
+        description="门店行 ID 不变，历史销售与预测数据连续（引用不断链）；该城的门店**整城转移**——原持有方自行录入的门店也一并改归新公司。"
       />
 
       <div class="tw-sec">① 影响面（只读预览）</div>
@@ -32,6 +32,13 @@
         <li>
           「{{ fromName }}」名下
           <b>{{ counts.markers }}</b> 家门店（{{ cities.join('、') }}）
+          <template v-if="counts.selfBuilt">
+            <br>
+            <span class="tw-dim">
+              └ 其中 <b>{{ counts.selfBuilt }}</b> 家为「{{ fromName }}」自行录入
+              （整城转移会一并改归 {{ toName }}）
+            </span>
+          </template>
           <span v-if="counts.competitors" class="tw-dim">/ 竞品门店 <b>{{ counts.competitors }}</b> 条</span>
         </li>
         <li>

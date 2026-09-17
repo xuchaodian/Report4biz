@@ -906,7 +906,8 @@ describe('⑧ mirrors kind=all + 配额一级分配（批次 E）', () => {
 //   ② store_sales.user_id 跟随（⛔ 漏了销售预测断链 —— 风险 P0）
 //   ③ 集团侧镜像 origin_user_id / belong_member_user_id 改指 B
 //   ④ A 的 scope 去掉苏州 / B 的 scope 并入苏州（否则 A 再同步会凭空重建重复副本）
-// 以及：行 id 不变、A 自建行不误伤、购买履历不迁、回滚完整可逆。
+// 以及：行 id 不变、★ v0.13 R4 起 A 自建行**随城转移**（整城转移，不再刻意留下）、
+// 购买履历不迁、集团侧镜像 origin 同迁（否则下轮删除传播误删集团门店）、回滚完整可逆。
 // ===========================================================================
 describe('⑨ 辖区划拨 + 回滚（P2）', () => {
   const T = {}
@@ -981,14 +982,16 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
     void T.hHz
   })
 
-  it('transfer/preview：只圈「集团下发」的行，不误伤成员自建行；store_sales 与集团镜像分别计数', async () => {
+  it('transfer/preview：★ v0.13 R4 整城转移 —— 集团下发 3 条 + A 自建 1 条，并明示自建家数', async () => {
     const r = await call('POST', `/api/orgs/${T.org}/transfer/preview`, {
       token: T.tokHq,
       body: { fromUserId: T.a, toUserId: T.b, cities: ['苏州市'], kinds: ['markers'] }
     })
     expect(r.status).toBe(200)
-    expect(r.body.counts.markers).toBe(3)              // 只算 origin=集团 的 3 条
-    expect(r.body.counts.storeSales).toBe(2)           // 关联销售记录
+    expect(r.body.counts.markers).toBe(4)              // R4：3 条集团下发 + 1 条 A 自建（整城转移）
+    expect(r.body.counts.selfBuilt).toBe(1)            // ★ 其中 1 家为原持有方自行录入
+    expect(r.body.counts.selfBuiltByKind.markers).toBe(1)
+    expect(r.body.counts.storeSales).toBe(2)           // 关联销售记录（只挂在前 2 条镜像上）
     expect(r.body.counts.groupMirrors).toBe(2)         // 集团侧 origin=A 的 2 行
     expect(r.body.counts.purchases).toBe(0)
     T.previewBatchId = r.body.batchId
@@ -1000,13 +1003,13 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
     expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aOwn).user_id).toBe(T.a)
   })
 
-  it('transfer/commit：单事务三步 + scope 互调；★ 行 id 不变、A 自建行不搬、store_sales 无残留', async () => {
+  it('transfer/commit：单事务三步 + scope 互调；★ 行 id 不变、自建行随城转移、store_sales 无残留', async () => {
     const db = getDb()
     const r = await call('POST', `/api/orgs/${T.org}/transfer/commit`, {
       token: T.tokHq, body: { batchId: T.previewBatchId, mode: 'transfer' }
     })
     expect(r.status).toBe(200)
-    expect(r.body.moved.markers).toBe(3)
+    expect(r.body.moved.markers).toBe(4)
     expect(r.body.storeSales).toBe(2)
     expect(r.body.groupMirrors).toBe(2)
 
@@ -1016,8 +1019,13 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
       expect(row.user_id).toBe(T.b)
       expect(row.origin_user_id).toBe(T.hq)           // 来源仍是集团，只是写权人换了
     }
-    // A 自建行不搬
-    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aOwn).user_id).toBe(T.a)
+    // ★ v0.13 R4：A 自建行**随城转移**（旧口径「只搬集团下发行」会让新城拿不全数据；
+    //   若某城全是自建行，旧口径还会直接 409 nothing_to_transfer —— 用户眼里就是「划不动」）
+    expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(T.aOwn).user_id).toBe(T.b)
+    // 归属与管辖范围一致：A 名下苏州市已无任何门店（不留「scope 已交、门店还挂着」的悬空态）
+    expect(db.prepare(`
+      SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND city IN ('苏州市','苏州')
+    `).get(T.a).n).toBe(0)
 
     // ② store_sales 跟随（★ 风险 P0 的显式断言：旧 user_id 零残留）
     const restOld = db.prepare(`
@@ -1035,6 +1043,17 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
       expect(m.origin_user_id).toBe(T.b)
       expect(m.belong_member_user_id).toBe(T.b)
     }
+
+    // ③-b ★ R4 连锁保护（不做会删掉集团的门店）：
+    //     gMirror1 的 origin_row_id 指向 A 的**自建行** aOwn。该行改指 B 后，
+    //     集团侧镜像的 origin_* 必须同迁 —— 否则下一轮 A 发起的 member_to_group
+    //     会判定「源行已不在 A 名下」而按删除传播（规则 6）**删掉集团那家门店**。
+    const pullFromA = await call('POST', '/api/sync/preview', {
+      token: T.tokHq, body: { direction: 'member_to_group', userId: T.a, kind: 'markers', filter: {} }
+    })
+    expect(pullFromA.status).toBe(200)
+    expect(pullFromA.body.counts.deleted).toBe(0)          // ⛔ 回归时这里会变成 1
+    expect((pullFromA.body.items.deleted || []).length).toBe(0)
 
     // ④ scope 互调
     const scopeOf = (uid) => {
@@ -1104,11 +1123,11 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
       token: T.tokHq, body: {}
     })
     expect(r.status).toBe(200)
-    expect(r.body.restored.markers).toBe(3)
+    expect(r.body.restored.markers).toBe(4)            // R4：含 A 自建行
     expect(r.body.restored.storeSales).toBe(2)
     expect(r.body.restored.groupMirrors).toBe(2)
 
-    for (const id of T.aMirrors) {
+    for (const id of [...T.aMirrors, T.aOwn]) {
       expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(id).user_id).toBe(T.a)
     }
     const backOld = db.prepare(`
@@ -1179,7 +1198,7 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
     })
     expect(rb.status).toBe(200)          // 修复前：409 target_edited（edited=3）
     expect(rb.body.edited).toBe(0)
-    expect(rb.body.restored.markers).toBe(3)
+    expect(rb.body.restored.markers).toBe(4)
     for (const id of T.aMirrors) {
       expect(db.prepare(`SELECT user_id FROM markers WHERE id = ?`).get(id).user_id).toBe(T.a)
     }
