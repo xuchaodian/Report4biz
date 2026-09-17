@@ -1,12 +1,8 @@
 <template>
-  <div class="register-container">
-    <div class="register-box">
-      <div class="register-header">
-        <img src="@/assets/logo.png" alt="Logo" class="login-logo">
-        <h1>选址赢家Online</h1>
-        <p>创建您的账号</p>
-      </div>
-      
+  <div class="auth-container">
+    <AuthBackground />
+
+    <AuthCard title="选址赢家Online" subtitle="创建您的账号">
       <el-form
         ref="formRef"
         :model="form"
@@ -25,7 +21,7 @@
             :prefix-icon="User"
           />
         </el-form-item>
-        
+
         <el-form-item prop="email">
           <el-input
             v-model="form.email"
@@ -37,7 +33,7 @@
             :prefix-icon="Message"
           />
         </el-form-item>
-        
+
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
@@ -63,7 +59,7 @@
             </template>
           </el-input>
         </el-form-item>
-        
+
         <el-form-item prop="confirmPassword">
           <el-input
             v-model="form.confirmPassword"
@@ -89,10 +85,11 @@
             </template>
           </el-input>
         </el-form-item>
-        
+
         <!-- 蜜罐（v1.13.149 注册防护）：留在渲染树里让脚本「看得见」，
              但人眼与读屏都接触不到 —— tabindex=-1 不参与 Tab 序，aria-hidden 不进读屏。
-             一旦被填 ⇒ 服务端返回假成功且不落库，不给攻击者「被识别」的可迭代反馈。 -->
+             一旦被填 ⇒ 服务端返回假成功且不落库，不给攻击者「被识别」的可迭代反馈。
+             定位锚点已由 .register-box 变为 AuthCard 的 .auth-card（同为 position:relative）。 -->
         <div class="hp-field" aria-hidden="true">
           <label for="reg-hp-note">备注</label>
           <input
@@ -111,19 +108,19 @@
             size="large"
             :loading="userStore.loading"
             :disabled="!regReady"
-            class="register-btn"
+            class="auth-submit"
             @click="handleRegister"
           >
             注 册
           </el-button>
         </el-form-item>
       </el-form>
-      
-      <div class="register-footer">
+
+      <template #footer>
         <span>已有账号？</span>
         <router-link to="/login">立即登录</router-link>
-      </div>
-    </div>
+      </template>
+    </AuthCard>
   </div>
 </template>
 
@@ -134,6 +131,8 @@ import axios from 'axios'
 import { User, Lock, Message } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import AuthBackground from '@/components/AuthBackground.vue'
+import AuthCard from '@/components/AuthCard.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -231,45 +230,7 @@ const handleRegister = async () => {
 </script>
 
 <style lang="scss" scoped>
-.register-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.register-box {
-  position: relative; // 蜜罐 .hp-field 的定位锚点（避免相对 viewport 定位）
-  width: 400px;
-  padding: 40px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.register-header {
-  text-align: center;
-  margin-bottom: 30px;
-  
-  h1 {
-    font-size: 28px;
-    color: #333;
-    margin-bottom: 8px;
-  }
-  
-  p {
-    color: #666;
-    font-size: 14px;
-  }
-}
-
-.register-form {
-  .register-btn {
-    width: 100%;
-  }
-}
+/* 容器（.auth-container）、卡片（AuthCard.vue）、主按钮（.auth-submit）均为共用样式 */
 
 // 蜜罐（v1.13.149）：刻意用「移出视口」而非 display:none —— 保持它在渲染树里，
 // 让脚本「看得见并去填」，同时对人和读屏完全不可见（配合 tabindex=-1 + aria-hidden）
@@ -279,22 +240,5 @@ const handleRegister = async () => {
   width: 1px;
   height: 1px;
   overflow: hidden;
-}
-
-.register-footer {
-  text-align: center;
-  margin-top: 20px;
-  color: #666;
-  font-size: 14px;
-  
-  a {
-    color: #409eff;
-    margin-left: 5px;
-    text-decoration: none;
-    
-    &:hover {
-      text-decoration: underline;
-    }
-  }
 }
 </style>

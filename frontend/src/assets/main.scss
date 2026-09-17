@@ -403,3 +403,39 @@ body {
 .pwd-toggle .el-icon {
   font-size: inherit;
 }
+
+/* ===== 认证页外壳与提交按钮（登录/注册/忘记密码/重置密码共用，v1.13.151） =====
+   原本四页各写一份 .login-container / .register-container / .forgot-container /
+   .reset-container，规格开始漂移（背景一页照片三页渐变、卡片 420↔400、圆角 16↔12）。
+   与 .pwd-toggle 同理：跨组件的同一视觉约定写在全局，避免再次分叉。
+   背景层组件见 components/AuthBackground.vue，卡片见 components/AuthCard.vue。 */
+.auth-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  /* 🔴 矮视口（浏览器缩放 125%~150%、窄窗口、横屏手机）下卡片高于视口时，必须能滚动到按钮 ——
+     #app 是 overflow:hidden，外层永远不可滚，所以滚动容器只能是这里。
+     原写法 overflow:hidden + align-items:center 会把卡片上下两端直接裁掉，
+     注册页（最高的一页）的「注 册」按钮将完全无法触达。
+     ⚠️ 不用 align-items:center —— flex 居中 + 内容溢出时，上溢部分在滚动容器里永远够不到
+     （经典 bug）。改为让 .auth-card 自己 margin:auto（见 AuthCard.vue），
+     双轴居中且内容超高时退化为 margin 0，两端都可达。
+     ⚠️ overflow-x 必须显式 hidden：overflow-y:auto 会让 overflow-x 的 visible 被计算为 auto，
+     那样注册页蜜罐字段（left:-9999px）就会凭空长出一条横向滚动条。 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1a1a2e;   /* 首帧占位：照片未解码前不出现白闪 */
+}
+
+/* 认证页主按钮：四页统一 44px 高 / 16px 字 / 4px 字距（原仅登录页如此）
+   ⚠️ 必须写成 `.auth-container .auth-submit`（权重 0,2,0）—— EP 的 `.el-button--large`
+   同样声明了 `height:var(--el-button-size)`(40px) 与 `font-size:var(--el-font-size-base)`(14px)，
+   单类选择器与它同权重（0,1,0），谁生效取决于 CSS 打包顺序（不稳定）。
+   原登录页用 `.login-form .login-btn` 两权重恰好压过，换成通用类后必须显式补回。 */
+.auth-container .auth-submit {
+  width: 100%;
+  height: 44px;
+  font-size: 16px;
+  letter-spacing: 4px;
+}

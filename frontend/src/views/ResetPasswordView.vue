@@ -1,12 +1,8 @@
 <template>
-  <div class="reset-container">
-    <div class="reset-box">
-      <div class="reset-header">
-        <img src="@/assets/logo.png" alt="Logo" class="reset-logo">
-        <h1>设置新密码</h1>
-        <p>请设置一个新的登录密码</p>
-      </div>
+  <div class="auth-container">
+    <AuthBackground />
 
+    <AuthCard title="设置新密码" subtitle="请设置一个新的登录密码">
       <!-- 校验中 -->
       <div v-if="state === 'checking'" class="reset-tip">正在校验链接…</div>
 
@@ -16,7 +12,7 @@
           <template #title>链接不可用</template>
           <div class="reset-invalid-body">{{ invalidMessage }}</div>
         </el-alert>
-        <el-button type="primary" size="large" class="reset-btn" @click="goForgot">
+        <el-button type="primary" size="large" class="auth-submit reset-state-btn" @click="goForgot">
           重新申请重置
         </el-button>
       </div>
@@ -88,7 +84,7 @@
             type="primary"
             size="large"
             :loading="loading"
-            class="reset-btn"
+            class="auth-submit"
             @click="handleSubmit"
           >
             确认修改
@@ -104,10 +100,10 @@
         </el-alert>
       </div>
 
-      <div class="reset-footer">
+      <template #footer>
         <router-link to="/login">返回登录</router-link>
-      </div>
-    </div>
+      </template>
+    </AuthCard>
   </div>
 </template>
 
@@ -117,6 +113,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
+import AuthBackground from '@/components/AuthBackground.vue'
+import AuthCard from '@/components/AuthCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -200,56 +198,13 @@ const goForgot = () => router.push('/forgot-password')
 </script>
 
 <style lang="scss" scoped>
-.reset-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.reset-box {
-  width: 400px;
-  padding: 40px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.reset-header {
-  text-align: center;
-  margin-bottom: 30px;
-
-  .reset-logo {
-    width: 64px;
-    height: auto;
-    margin-bottom: 12px;
-  }
-
-  h1 {
-    font-size: 28px;
-    color: #333;
-    margin-bottom: 8px;
-  }
-
-  p {
-    color: #666;
-    font-size: 14px;
-  }
-}
+/* 容器（.auth-container）、卡片（AuthCard.vue）、主按钮（.auth-submit）均为共用样式 */
 
 .reset-tip {
   text-align: center;
   color: #999;
   font-size: 14px;
   padding: 16px 0;
-}
-
-.reset-form {
-  .reset-btn {
-    width: 100%;
-  }
 }
 
 .reset-invalid,
@@ -261,25 +216,8 @@ const goForgot = () => router.push('/forgot-password')
     margin-top: 4px;
   }
 
-  .reset-btn {
-    width: 100%;
+  .reset-state-btn {
     margin-top: 18px;
-  }
-}
-
-.reset-footer {
-  text-align: center;
-  margin-top: 20px;
-  color: #666;
-  font-size: 14px;
-
-  a {
-    color: #409eff;
-    text-decoration: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
   }
 }
 </style>

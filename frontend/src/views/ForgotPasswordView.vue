@@ -1,12 +1,8 @@
 <template>
-  <div class="forgot-container">
-    <div class="forgot-box">
-      <div class="forgot-header">
-        <img src="@/assets/logo.png" alt="Logo" class="forgot-logo">
-        <h1>找回密码</h1>
-        <p>输入注册邮箱，我们将发送重置链接</p>
-      </div>
+  <div class="auth-container">
+    <AuthBackground />
 
+    <AuthCard title="找回密码" subtitle="输入注册邮箱，我们将发送重置链接">
       <!-- 未提交：输入邮箱 -->
       <el-form
         v-if="!sent"
@@ -34,7 +30,7 @@
             type="primary"
             size="large"
             :loading="loading"
-            class="forgot-btn"
+            class="auth-submit"
             @click="handleSubmit"
           >
             发送重置链接
@@ -51,18 +47,18 @@
 
         <el-button
           size="large"
-          class="forgot-btn"
           :loading="loading"
+          class="auth-submit forgot-done-btn"
           @click="retry"
         >
           没收到？重新发送
         </el-button>
       </div>
 
-      <div class="forgot-footer">
+      <template #footer>
         <router-link to="/login">返回登录</router-link>
-      </div>
-    </div>
+      </template>
+    </AuthCard>
   </div>
 </template>
 
@@ -71,6 +67,8 @@ import { ref, reactive } from 'vue'
 import { Message } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
+import AuthBackground from '@/components/AuthBackground.vue'
+import AuthCard from '@/components/AuthCard.vue'
 
 const formRef = ref(null)
 const loading = ref(false)
@@ -110,50 +108,7 @@ const retry = () => {
 </script>
 
 <style lang="scss" scoped>
-.forgot-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.forgot-box {
-  width: 400px;
-  padding: 40px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
-.forgot-header {
-  text-align: center;
-  margin-bottom: 30px;
-
-  .forgot-logo {
-    width: 64px;
-    height: auto;
-    margin-bottom: 12px;
-  }
-
-  h1 {
-    font-size: 28px;
-    color: #333;
-    margin-bottom: 8px;
-  }
-
-  p {
-    color: #666;
-    font-size: 14px;
-  }
-}
-
-.forgot-form {
-  .forgot-btn {
-    width: 100%;
-  }
-}
+/* 容器（.auth-container）、卡片（AuthCard.vue）、主按钮（.auth-submit）均为共用样式 */
 
 .forgot-done {
   .forgot-done-body {
@@ -162,25 +117,8 @@ const retry = () => {
     margin-top: 4px;
   }
 
-  .forgot-btn {
-    width: 100%;
+  .forgot-done-btn {
     margin-top: 18px;
-  }
-}
-
-.forgot-footer {
-  text-align: center;
-  margin-top: 20px;
-  color: #666;
-  font-size: 14px;
-
-  a {
-    color: #409eff;
-    text-decoration: none;
-
-    &:hover {
-      text-decoration: underline;
-    }
   }
 }
 </style>
