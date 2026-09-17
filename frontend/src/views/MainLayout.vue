@@ -90,7 +90,8 @@
               <el-dropdown-item command="export">
                 <el-icon><Download /></el-icon>导出报表
               </el-dropdown-item>
-              <el-dropdown-item command="dataSync">
+              <!-- 仅集团账号（总部 / 子公司）可见：不属于任何集团时该页只有空态，没必要展示入口 -->
+              <el-dropdown-item v-if="userStore.hasOrg" command="dataSync">
                 <el-icon><RefreshRight /></el-icon>数据同步
               </el-dropdown-item>
               <li class="quota-dropdown-item" @click.stop>
@@ -222,7 +223,10 @@ const userStore = useUserStore()
 // 配额显示
 const quotaLoading = ref(false)
 const handleDropdownVisible = (visible) => {
-  if (visible) refreshQuota()
+  if (!visible) return
+  refreshQuota()
+  // 组织归属：首屏已预热，这里再静默复验一次，让「刚被绑定/解绑集团」立刻反映到菜单
+  userStore.fetchOrgRole(true)
 }
 const refreshQuota = async () => {
   quotaLoading.value = true
@@ -295,6 +299,8 @@ const handleTemplateUpload = async () => {
 
 onMounted(() => {
   userStore.fetchUser()
+  // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
+  userStore.fetchOrgRole()
 })
 
 const handleCommand = async (command) => {

@@ -591,8 +591,10 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
+import { useUserStore } from '@/stores/user'
 import ScopeEditor from '@/components/org/ScopeEditor.vue'
 
+const userStore = useUserStore()
 const loadingOrg = ref(true)
 const role = ref(null)          // 'owner' | 'member' | null
 const orgId = ref(null)
@@ -797,6 +799,8 @@ async function loadAll () {
   try {
     const me = await safeGet('/orgs/me')
     role.value = me.role || null
+    // 回写全局归属，保证右上角菜单入口与页面判定始终一致
+    userStore.setOrgRole(me.role)
     if (!role.value) return
 
     orgId.value = me.org.id
