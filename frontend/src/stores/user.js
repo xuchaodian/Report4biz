@@ -68,7 +68,9 @@ export const useUserStore = defineStore('user', {
         const { data } = await axios.get(`${API_URL}/auth/me`)
         this.user = data.user
       } catch (error) {
-        this.logout()
+        // token 已失效（过期 / 被登出撤销 / 账号改密致版本失配）⇒ 只需清本地：
+        // 服务端那边它本就已无效，没必要再发一次 /logout。用 clearSession 而非 logout。
+        this.clearSession()
       }
     },
     
@@ -115,7 +117,33 @@ export const useUserStore = defineStore('user', {
       this.quota = newQuota
     },
     
-    logout() {
+    /**
+     * 退出登录（v1.13.150：服务端**真的**会撤销本设备的 token）
+     *
+     * 顺序刻意如此，勿调换：
+     *   1) 先带 token 调 POST /api/auth/logout ⇒ 服务端把该 token 的 jti 拉黑。
+     *      这是「共享设备」场景的核心价值：即便 token 已被人抄走，登出后也立即失效。
+     *   2) 无论成功 / 失败 / 超时，都继续清本地 —— 登出**绝不能**被网络问题卡住。
+     * 该接口刻意设计为「幂等 + 不挂认证中间件」，故不会出现 401 弹窗；此处仍全量兜底。
+     */
+    async logout() {
+      const token = this.token || sessionStorage.getItem('token')
+      if (token) {
+        try {
+          await axios.post(`${API_URL}/auth/logout`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 5000   // 登出要快：慢网络下不拖住跳转
+          })
+        } catch (error) {
+          // 服务端不可达 / token 已失效：忽略，本地清理照常（宁可本地先断）
+          console.warn('服务端登出未成功（本地仍会清理）:', error?.message || error)
+        }
+      }
+      this.clearSession()
+    },
+
+    /** 仅清本地会话（登出 / token 失效 / 换账号共用） */
+    clearSession() {
       this.token = ''
       this.user = null
       this.quota = null
@@ -124,6 +152,19 @@ export const useUserStore = defineStore('user', {
       sessionStorage.removeItem('token')
       localStorage.removeItem('userId')
       delete axios.defaults.headers.common['Authorization']
+    },
+
+    /**
+     * v1.13.150：应用服务端重签的 token。
+     * 场景：本人修改密码 —— 服务端会让该账号**全部**旧 token 失效（改密码踢所有设备
+     * 是安全必需），同时回一枚新版本号的 token 给「当前这台设备」，用它替换本地凭据，
+     * 避免本人刚改完密码就被自己踢下线。
+     */
+    applyToken(token) {
+      if (!token) return
+      this.token = token
+      sessionStorage.setItem('token', token)
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
     }
   }
 })

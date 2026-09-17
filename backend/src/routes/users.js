@@ -2,6 +2,7 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
+import { signToken, bumpTokenVersion, currentTokenVersion } from '../utils/tokenAuth.js'
 import { getPoolInfo } from './resale.js'
 
 const router = express.Router()
@@ -267,6 +268,7 @@ router.put('/me', authenticate, (req, res) => {
     // 更新用户信息
     const updates = []
     const params = []
+    let passwordChanged = false
 
     if (email) {
       // 检查邮箱是否被其他用户使用
@@ -284,6 +286,7 @@ router.put('/me', authenticate, (req, res) => {
       }
       updates.push('password = ?')
       params.push(bcrypt.hashSync(password, 10))
+      passwordChanged = true
     }
 
     if (company !== undefined) {
@@ -301,13 +304,36 @@ router.put('/me', authenticate, (req, res) => {
     }
 
     params.push(userId)
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+    // v1.13.150 会话失效：改密码 ⇒ 该账号**所有**已签发 token 作废。
+    // 为什么不能只靠 jti 黑名单：黑名单只能精确撤销「某一枚 token」，无从枚举
+    // 该账号在别处签发的 token；「改密码踢全部」只能走账号级 token_version。
+    // 🔒 本人当前设备不因此掉线：bump 之后按新版本号重签一枚回给前端替换。
+    const applyUpdate = () => db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+    let refreshedToken = null
+
+    if (passwordChanged) {
+      // 两次写 ⇒ 包事务压成一次落盘（落盘铁律：≥2 次才包）
+      db.beginTx()
+      try {
+        applyUpdate()
+        bumpTokenVersion(db, userId)
+        refreshedToken = signToken(existingUser, currentTokenVersion(db, userId))
+        db.commitTx()
+      } catch (e) {
+        try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+        throw e
+      }
+    } else {
+      applyUpdate()   // 单次写：不包事务（包了反而多一次落盘）
+    }
 
     const user = db.prepare('SELECT id, username, email, role, company, logo, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '修改成功',
-      user
+      user,
+      ...(refreshedToken ? { token: refreshedToken } : {})
     })
   } catch (error) {
     console.error('修改个人信息错误:', error)
@@ -427,6 +453,9 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
         }
       }
       db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+      // v1.13.150：管理员改了该用户密码 ⇒ 其所有会话立即作废（含 TA 当前登录的设备）。
+      // 并入既有事务：不额外增加落盘次数。改角色/邮箱/配额等不触发。
+      if (password) bumpTokenVersion(db, userId)
       db.commitTx()   // 内含统一落盘
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
@@ -572,7 +601,18 @@ router.post('/:id/reset-password', authenticate, requireAdmin, (req, res) => {
     }
 
     const hashedPassword = bcrypt.hashSync('123456', 10)
-    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, userId)
+
+    // v1.13.150：管理员重置密码 ⇒ 该用户所有会话立即作废（场景：账号疑似被盗时强制下线）。
+    // 两次写（改密码 + bump 版本）⇒ 包事务压成一次落盘。
+    db.beginTx()
+    try {
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, userId)
+      bumpTokenVersion(db, userId)
+      db.commitTx()
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw e
+    }
 
     res.json({ message: '密码已重置为 123456' })
   } catch (error) {

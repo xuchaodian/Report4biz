@@ -32,7 +32,9 @@
           <el-icon><Document /></el-icon>
           <span>{{ $t('nav.statistics') }}</span>
         </router-link>
-        <el-dropdown trigger="hover" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
+        <!-- trigger=click（非默认 hover）：触屏/共享终端上 hover 常需点两次才展开，
+             与右上角个人下拉保持一致 -->
+        <el-dropdown trigger="click" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
           <span class="nav-dropdown-trigger">
             <el-icon><Compass /></el-icon>
             <span>{{ $t('nav.siteWorkbench') }}</span>
@@ -59,7 +61,9 @@
       </nav>
 
       <div class="header-right">
-        <el-dropdown @command="handleCommand" @visible-change="handleDropdownVisible">
+        <!-- trigger=click：EP 默认是 hover，触屏/共享终端上「点一下」只会触发 hover 状态、
+             需再点一次才展开（用户反馈的现象）；click 模式一次点击即展开，且点击外部关闭由 EP 内置处理 -->
+        <el-dropdown trigger="click" @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
             <el-avatar v-if="userStore.user?.logo" :size="32" :src="userStore.user.logo" />
             <el-avatar v-else :size="32" :icon="UserFilled" />
@@ -322,10 +326,17 @@ const handleCommand = async (command) => {
   } else if (command === 'dataSync') {
     router.push('/data-sync')
   } else if (command === 'logout') {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      type: 'warning'
-    })
-    userStore.logout()
+    // 取消「确认」会 reject（'cancel' / 'close'）——必须吞掉，否则控制台留 unhandled rejection
+    try {
+      await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+        type: 'warning'
+      })
+    } catch (e) {
+      return
+    }
+    // v1.13.150：logout 现在会先请求服务端撤销本设备 token（失败也照样清本地），
+    // 故必须 await 完再跳转，避免请求还在路上页面就卸载了
+    await userStore.logout()
     router.push('/login')
   }
 }

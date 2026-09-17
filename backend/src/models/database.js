@@ -117,6 +117,16 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 为已有数据库添加 token_version 字段（如果不存在）—— v1.13.150 登录态撤销
+  // 语义：每次「改密码/重置密码」+1 ⇒ 该账号此前签发的所有 token 立即失效
+  // （JWT 内嵌签发时的版本快照 tv，校验时与库内现值比对，见 utils/tokenAuth.js）
+  // ⚠️ 默认值必须是 0：老 token 无 tv 字段时按 0 处理，才能保证上线不踢人
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 创建管理员总配额表
   db.run(`
     CREATE TABLE IF NOT EXISTS admin_quota (
@@ -255,6 +265,28 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, used_at)`)
+
+  // ==========================================================================
+  // 已撤销 token 黑名单（v1.13.150 · 登录态撤销之①）
+  //
+  // 只服务一件事：「退出登录」精确撤销**当前这一枚** token（同账号其他设备不受影响）。
+  // 账号级失效（改密码踢全部）走 users.token_version，不经过本表。
+  //
+  // ⚠️ expires_at 用 epoch 毫秒（INTEGER）而非 DATETIME：与 password_resets 同理，
+  //    规避 sql.js 的 CURRENT_TIMESTAMP（UTC 串，无时区标记）与 JS 时间混用造成的隐式错位。
+  // ⚠️ 本表按 token 自然过期时间惰性清理（见 utils/tokenAuth.js::revokeToken），
+  //    不设定时任务 —— 登出是低频动作，顺手删过期行即可，成本可忽略。
+  //    因此表大小上限 ≈ 「最近 7 天内登出过的会话数」，不会无限膨胀。
+  // ==========================================================================
+  db.run(`
+    CREATE TABLE IF NOT EXISTS revoked_tokens (
+      jti TEXT PRIMARY KEY,                  -- JWT 的 jti（唯一标识，主键即索引）
+      user_id INTEGER,                       -- 审计用；不设外键（用户删除后仍需保留到自然过期）
+      expires_at INTEGER NOT NULL,           -- epoch 毫秒；到点后本行即可删除
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_revoked_tokens_exp ON revoked_tokens(expires_at)`)
 
   // ==========================================================================
   // 集团 / 子公司数据同步（v0.9 P0 · 设计方案 §5.1）

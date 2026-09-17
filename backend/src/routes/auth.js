@@ -7,6 +7,10 @@ import { JWT_SECRET, APP_BASE_URL } from '../config.js'
 import { sendPasswordResetMail, isMailEnabled } from '../utils/mailer.js'
 import { overLimit } from '../utils/rateLimit.js'
 import {
+  signToken, verifyTokenPayload, revokeToken, bumpTokenVersion, currentTokenVersion,
+  SESSION_EXPIRED_MESSAGE
+} from '../utils/tokenAuth.js'
+import {
   issueRegisterTicket, verifyRegisterTicket, clientIpOf,
   REG_WINDOW_MS, REG_MAX_PER_IP, REG_MIN_FILL_MS, REG_HONEYPOT_FIELD, REG_TICKET_MESSAGES
 } from '../utils/registerGuard.js'
@@ -144,12 +148,8 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ message: '用户名或密码错误' })
     }
 
-    // 生成JWT
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    )
+    // 生成JWT（v1.13.150：内嵌 jti + 账号版本快照 tv，便于服务端撤销，见 utils/tokenAuth.js）
+    const token = signToken(user, user.token_version)
 
     res.json({
       message: '登录成功',
@@ -171,6 +171,47 @@ router.post('/login', (req, res) => {
   }
 })
 
+// ============================================================================
+// 退出登录（v1.13.150）
+//
+// 语义：把**当前这一枚** token 拉黑（按 jti），同账号其他设备不受影响。
+//   - 账号级失效（改密码踢掉全部设备）走 users.token_version，不在本接口职责内。
+//   - 老 token（无 jti）无法单点撤销 ⇒ 仍返回 200，前端照常清本地；
+//     老 token 会随用户重新登录被替换，最长 7 天后自然过期。
+//
+// 🔒 为什么**不挂 authenticate 中间件**（刻意为之，勿"修正"）：
+//   1) 登出必须**幂等** —— 多标签页/重复点击时，token 已在黑名单，
+//      若走 authenticate 会先被 401 挡下；而前端 401 拦截器会跳登录页/弹"登录已过期"，
+//      用户明明在主动登出却看到报错。这里一律 200，由前端清本地后跳 /login。
+//   2) 无鉴权不放宽攻击面：拉黑依据是 token 自身的 jti，攻击者不持有该 token
+//      就无从得知其 jti；伪造 token 验签失败直接跳过（不产生任何写入），
+//      故本接口**无法被用于撤销他人会话**，也无写入放大。
+// ============================================================================
+router.post('/logout', (req, res) => {
+  res.set('Cache-Control', 'no-store')
+  try {
+    const authHeader = req.headers.authorization || ''
+    const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : ''
+    if (!token) {
+      return res.json({ message: '已退出登录', revoked: false })   // 无会话可撤
+    }
+
+    let decoded
+    try {
+      decoded = jwt.verify(token, JWT_SECRET)
+    } catch (e) {
+      // 过期 / 伪造 / 已被撤销：没有可撤销的有效会话，照样回 200（登出幂等）
+      return res.json({ message: '已退出登录', revoked: false })
+    }
+
+    return res.json({ message: '已退出登录', revoked: revokeToken(decoded, getDb()) })
+  } catch (error) {
+    console.error('退出登录错误:', error)
+    // ⚠️ 服务端拉黑失败也不能阻断客户端登出；用 revoked:false 标记并由日志留痕
+    return res.json({ message: '已退出登录', revoked: false })
+  }
+})
+
 // 获取当前用户信息
 router.get('/me', (req, res) => {
   try {
@@ -183,6 +224,12 @@ router.get('/me', (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET)
 
     const db = getDb()
+
+    // 服务端撤销校验（与 middleware/auth.js 一致，勿漏：本接口不走 authenticate 中间件）
+    const chk = verifyTokenPayload(decoded, db)
+    if (!chk.ok) {
+      return res.status(401).json({ message: SESSION_EXPIRED_MESSAGE })
+    }
     const user = db.prepare('SELECT id, username, email, role, vip_until, company, logo, quota, created_at FROM users WHERE id = ?').get(decoded.id)
 
     if (!user) {
@@ -346,6 +393,9 @@ router.post('/reset-password', (req, res) => {
       // 一次性：本条置为已用，同时作废该用户其余未用令牌
       db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL')
         .run(now, row.user_id)
+      // v1.13.150：密码已变 ⇒ 该账号此前签发的**所有** token 立即作废
+      //（「密码被盗 → 重置密码求救」场景的核心价值；老 token 无 tv ⇒ 按 0 比对会失配 ⇒ 同样被踢）
+      bumpTokenVersion(db, row.user_id)
       db.commitTx()
     } catch (e) {
       db.rollbackTx()

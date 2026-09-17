@@ -2465,6 +2465,11 @@ const handleSubmit = async () => {
 
     const { data } = await axios.put('/api/users/me', updateData)
 
+    // v1.13.150：改密码会让服务端作废该账号**全部**旧 token（含本机这枚）。
+    // 后端在回执里补发一枚按新版本号重签的 token —— 必须先落地再 fetchUser，
+    // 否则下面这步会拿旧 token 去打 /me 而 401，把刚改完密码的用户弹出登录页。
+    if (data.token) userStore.applyToken(data.token)
+
     // 更新本地用户信息
     await userStore.fetchUser()
 

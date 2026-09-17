@@ -15,7 +15,8 @@
         <el-button type="primary" @click="showAddDialog">
           <el-icon><Plus /></el-icon>添加门店
         </el-button>
-        <el-dropdown @command="handleImportMenuCommand">
+        <!-- trigger=click：与顶栏各下拉一致，避免触屏上「悬停需点两次」 -->
+        <el-dropdown trigger="click" @command="handleImportMenuCommand">
           <el-button>
             <el-icon><Upload /></el-icon>导入门店
           </el-button>
