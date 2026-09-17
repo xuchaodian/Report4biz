@@ -111,8 +111,11 @@ export const useCompetitorStore = defineStore('competitor', {
     async clearAllCompetitors() {
       try {
         const { data } = await axios.delete(`${API_URL}/competitors/clear-all`)
-        this.competitors = []
-        return { success: true, count: data.count }
+        // ★ 只读镜像行会被后端保留（规则 4），不能本地清空 —— 否则前端「看不见」
+        //   仍存在的集团下发竞品，用户以为删干净了，实际数据还在。
+        if (data.keptSynced > 0) await this.fetchCompetitors(true)
+        else this.competitors = []
+        return { success: true, count: data.count, message: data.message, keptSynced: data.keptSynced || 0 }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '清空失败' }
       }

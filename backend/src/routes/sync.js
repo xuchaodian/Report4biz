@@ -48,6 +48,9 @@ import {
 import {
   DIRECTIONS,
   SYNC_KINDS,
+  ROW_KINDS,
+  SNAPSHOT_KIND,
+  SNAPSHOT_ROWS_TABLE,
   KIND_META,
   normalizeKinds,
   buildPlanForKinds,
@@ -198,6 +201,28 @@ function kindsFromQuery(v) {
   return normalizeKinds(v)
 }
 
+/**
+ * 方向 × 对象白名单（规则 35）。
+ *
+ * 竞品期次快照**只允许集团下发**（group_to_member）：竞品由集团导入并下发，
+ * 子公司不自行上传 —— 把快照往上拉既有违业务约定，也会让集团账号冒出一批
+ * 「只跟某个子公司辖区有关的残缺档案」（明细已按成员城市过滤过）。
+ *
+ * ★ 为什么在路由层**显式 400**而不是让内核返回空计划：
+ *   空计划走完流程会表现为「提示同步成功、一条没进」＝ 静默空转，
+ *   这正是本系统反复踩过的坑（规则 11 的 outOfScope 同理）。
+ *   宁可让用户看到一句明确的「该对象不支持这个方向」。
+ */
+function checkKindDirection(kinds, direction) {
+  if (direction !== DIRECTIONS.MEMBER_TO_GROUP) return null
+  const bad = (kinds || []).filter(k => k === SNAPSHOT_KIND)
+  if (!bad.length) return null
+  return {
+    code: 'kind_direction_not_allowed',
+    message: '竞品期次快照只支持「集团下发到子公司」，不支持「从子公司同步到集团」（竞品由集团统一导入）'
+  }
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/sync/scope-options（批次 C）
 // ---------------------------------------------------------------------------
@@ -274,6 +299,13 @@ router.get('/scope-options', authenticate, (req, res) => {
       SELECT DISTINCT brand FROM competitors
        WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
     `).all(sourceUserId))
+    // 快照品牌（P2/R3）：集团可能「只上传了季度快照、还没建竞品门店列表」
+    // （线上实况就是如此：user4 名下 5 个快照 / 5637 行明细，competitors 却是 0 行）
+    // ⇒ 不把快照品牌算进来，子公司侧的品牌下拉会是空的，等于同步不了竞品。
+    pushBrands(db.prepare(`
+      SELECT DISTINCT brand FROM competitor_snapshots
+       WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
+    `).all(sourceUserId))
     const brands = [...brandSet].sort((a, b) => a.localeCompare(b, 'zh'))
 
     // ---- 该成员当前已选（回显用；集团无数据的已选城市也应能显示出来）----
@@ -324,8 +356,13 @@ router.get('/candidates', authenticate, (req, res) => {
     if (tr.error) return res.status(tr.error.status).json(tr.error.body)
 
     const kinds = kindsFromQuery(req.query?.kind || req.query?.kinds)
+    // 规则 35：候选阶段同样拒绝快照的「往上拉」
+    const dErr = checkKindDirection(kinds, tr.direction)
+    if (dErr) return res.status(400).json(dErr)
+
     const citiesRaw = String(req.query?.cities || '').split(',').map(s => s.trim()).filter(Boolean)
     const brandsRaw = String(req.query?.brands || '').split(',').map(s => s.trim()).filter(Boolean)
+    const periodsRaw = String(req.query?.periods || '').split(',').map(s => s.trim()).filter(Boolean)
     const merged = mergeScopeWithFilter(tr.member.scope_json, { cities: citiesRaw, brands: brandsRaw })
 
     const out = listCandidatesForKinds(db, {
@@ -334,7 +371,8 @@ router.get('/candidates', authenticate, (req, res) => {
       targetUserId: tr.targetUserId,
       scopeJson: merged.scopeJson,
       belongUserId: tr.memberUserId,
-      keyword: req.query?.keyword || ''
+      keyword: req.query?.keyword || '',
+      periods: periodsRaw
     })
 
     res.json({
@@ -389,8 +427,16 @@ router.post('/preview', authenticate, (req, res) => {
     if (tr.error) return res.status(tr.error.status).json(tr.error.body)
 
     const kinds = kindsFromQuery(body.kind || body.kinds)
+    // 规则 35：快照不支持「往上拉」—— 显式拒绝，不做静默空转
+    const dirErr = checkKindDirection(kinds, tr.direction)
+    if (dirErr) return res.status(400).json(dirErr)
+
     const merged = mergeScopeWithFilter(tr.member.scope_json, body.filter || {})
     const keyword = String(body.filter?.keyword || '')
+    // 期次收窄（可选）：竞品快照按季期次下发，勾选后只下发这些期
+    const periods = Array.isArray(body.filter?.periods)
+      ? body.filter.periods.map(p => String(p).trim()).filter(Boolean)
+      : []
 
     const plan = buildPlanForKinds(db, {
       kinds,
@@ -400,6 +446,7 @@ router.post('/preview', authenticate, (req, res) => {
       scopeJson: merged.scopeJson,
       belongUserId: tr.memberUserId,
       keyword,
+      periods,
       targetLabel: displayName(db, tr.sourceUserId)
     })
 
@@ -419,6 +466,7 @@ router.post('/preview', authenticate, (req, res) => {
         scopeJson: merged.scopeJson,
         belongUserId: tr.memberUserId,
         keyword,
+        periods,
         targetLabel: displayName(db, tr.sourceUserId)
       },
       createdBy: req.user?.id,
@@ -493,14 +541,21 @@ router.post('/commit', authenticate, (req, res) => {
     const params = detail?.params
     if (!params) return res.status(409).json({ message: '批次参数缺失，请重新预览' })
 
+    const planKinds = params.kinds || (params.kind ? [params.kind] : ['markers'])
+    // 规则 35：预览时拦过一次，提交时再拦一次 —— 批次参数是持久化的，
+    // 单靠预览那一关挡不住「直接构造 commit 请求」
+    const cErr = checkKindDirection(planKinds, params.direction)
+    if (cErr) return res.status(400).json(cErr)
+
     const plan = buildPlanForKinds(db, {
-      kinds: params.kinds || (params.kind ? [params.kind] : ['markers']),
+      kinds: planKinds,
       direction: params.direction,
       sourceUserId: params.sourceUserId,
       targetUserId: params.targetUserId,
       scopeJson: params.scopeJson,
       belongUserId: params.belongUserId,
       keyword: params.keyword,
+      periods: params.periods || [],
       targetLabel: params.targetLabel
     })
 
@@ -515,7 +570,8 @@ router.post('/commit', authenticate, (req, res) => {
       `[sync] commit batch=${batchId} dir=${params.direction} `
       + `src=${params.sourceUserId} tgt=${params.targetUserId} `
       + `ins=${result.inserted} upd=${result.updated} del=${result.deleted} `
-      + `skip=${result.skipped} dup=${result.duplicate} fail=${result.failed} by=${meId}`
+      + `skip=${result.skipped} dup=${result.duplicate} fail=${result.failed} `
+      + `snapRows=${result.snapshotRows} by=${meId}`
     )
 
     res.json({
@@ -529,7 +585,11 @@ router.post('/commit', authenticate, (req, res) => {
         skipped: result.skipped,
         // 疑似重复（规则 34）：命中了目标账号已有同店，**未写入**
         duplicate: result.duplicate,
-        failed: result.failed
+        failed: result.failed,
+        // 快照专有（规则 36）：本次实际写入的**明细行数**。
+        // 头表计数是「N 期」、明细是「M 行」—— 两者不是一回事，UI 要分开说，
+        // 否则用户看到「同步了 3 期」却不知道后台写了 2000 行。
+        snapshotRows: result.snapshotRows
       },
       planned: plan.counts,
       detail: result.detail,
@@ -735,6 +795,12 @@ router.post('/foreign/remove', authenticate, (req, res) => {
     db.beginTx()
     try {
       for (const id of ids) {
+        // 快照（§5b / 规则 36）：明细表没有 user_id、也没有级联生效
+        // （sqlite 默认 foreign_keys=OFF）⇒ 必须先按头表 id 清掉它的明细，
+        // 否则头表删掉后那些明细行成为**永久孤儿**（再也无法被任何逻辑引用）。
+        if (kind === SNAPSHOT_KIND) {
+          db.prepare(`DELETE FROM ${SNAPSHOT_ROWS_TABLE} WHERE snapshot_id = ?`).run(id)
+        }
         const r = db.prepare(`
           DELETE FROM ${kind}
            WHERE id = ? AND user_id = ? AND origin_user_id IS NOT NULL
@@ -773,15 +839,27 @@ router.get('/mirrors', authenticate, (req, res) => {
 
     const rows = []
     for (const kind of kinds) {
+      // ⚠️ 每类对象的列不同：快照头表没有 name / city / address（期次在 period 上）。
+      //   共用一条 SELECT 会在 kind=all 时直接 SQL 报错（`no such column: name`）。
+      const sel = kind === SNAPSHOT_KIND
+        ? `SELECT id, brand, period, period_seq, total_count, origin_total_count,
+                  origin_user_id, origin_row_id, origin_owner, sync_batch_id, sync_readonly
+             FROM ${SNAPSHOT_KIND}`
+        : `SELECT id, name, store_code, brand, city, district, address,
+                  origin_user_id, origin_row_id, origin_owner, sync_batch_id, sync_readonly
+             FROM ${kind}`
       const part = db.prepare(`
-        SELECT id, name, store_code, brand, city, district, address,
-               origin_user_id, origin_row_id, origin_owner, sync_batch_id, sync_readonly
-          FROM ${kind}
+        ${sel}
          WHERE user_id = ? AND origin_user_id IS NOT NULL
          ORDER BY origin_owner, id
          LIMIT ?
       `).all(req.user.id, limit) || []
-      for (const r of part) rows.push({ ...r, kind })
+      for (const r of part) {
+        rows.push(kind === SNAPSHOT_KIND
+          // 快照用「品牌 期次」合成展示名，前端表格列与门店行保持同构
+          ? { ...r, kind, name: `${r.brand || ''} ${r.period || ''}`.trim() }
+          : { ...r, kind })
+      }
     }
 
     const grouped = {}

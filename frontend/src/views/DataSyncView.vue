@@ -82,6 +82,13 @@
               <span class="ds-label">数据范围</span>
               <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
               <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
+              <el-checkbox v-model="kinds.competitor_snapshots">竞品期次快照</el-checkbox>
+              <el-tooltip
+                content="集团按季上传的竞品期次档案（含已闭店的行）。勾选后仅同步「你管辖城市」的明细；由集团统一维护，同步下来只读。"
+                placement="top"
+              >
+                <span class="ds-muted" style="cursor:help;">（开关店监测用）</span>
+              </el-tooltip>
 
               <span class="ds-label" style="margin-left:16px;">本次筛选</span>
               <el-select
@@ -124,7 +131,10 @@
             </div>
 
             <div class="ds-candbar">
-              <span>候选 <b class="ds-num">{{ candidateSummary.inScope }}</b> 家</span>
+              <span>候选 <b class="ds-num">{{ candidateSummary.inScope }}</b> {{ candidateUnit }}</span>
+              <span v-if="candidateSummary.detailRows" class="ds-muted">
+                · 快照明细 {{ candidateSummary.detailRows }} 行
+              </span>
               <span v-if="candidateSummary.outOfScope" class="ds-muted">
                 · 范围外丢弃 {{ candidateSummary.outOfScope }} 条
               </span>
@@ -170,6 +180,7 @@
               <span class="ds-label" style="margin-left:16px;">数据范围</span>
               <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
               <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
+              <span class="ds-muted">（竞品期次快照仅支持集团下发，不参与此方向）</span>
             </div>
 
             <el-alert
@@ -221,8 +232,16 @@
             <el-tag v-if="preview.counts.duplicate" type="warning" size="small">
               疑似重复 {{ preview.counts.duplicate }}
             </el-tag>
+            <!-- 快照是「两表一起搬」：头表按「期」计、明细按「行」计，两者要分开说，
+                 否则用户看到「同步 3 期」不知道后台写了 2000 行 -->
+            <el-tag v-if="preview.counts.detailRows" type="info" size="small" effect="plain">
+              含快照明细 {{ preview.counts.detailRows }} 行
+            </el-tag>
             <span v-if="preview.counts.outOfScope" class="ds-muted">
               范围外静默丢弃 {{ preview.counts.outOfScope }} 条
+            </span>
+            <span v-if="preview.counts.truncated" class="ds-warn">
+              ⚠️ 超出单批上限 {{ preview.counts.truncated }} 条被截断，请缩小范围或按期次分批同步
             </span>
           </div>
 
@@ -272,14 +291,21 @@
             <el-table-column label="类型" width="90">
               <template #default="{ row }">{{ kindLabel(row.kind) }}</template>
             </el-table-column>
-            <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="store_code" label="门店编号" width="100" show-overflow-tooltip />
+            <el-table-column prop="name" label="门店名称 / 期次" min-width="150" show-overflow-tooltip />
+            <el-table-column label="编号 / 明细行数" width="120" show-overflow-tooltip>
+              <template #default="{ row }">
+                <!-- 快照行代表一期档案（不是一家店）：编号列改显明细行数 -->
+                <span v-if="isSnapshotRow(row)" class="ds-muted">{{ row.detailRows ?? 0 }} 行</span>
+                <span v-else>{{ row.store_code }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="city" label="城市" width="90" show-overflow-tooltip />
             <el-table-column label="说明" min-width="220" show-overflow-tooltip>
               <template #default="{ row }">
                 <span v-if="row.action === 'deleted'" class="ds-danger">源侧已删除</span>
                 <span v-else-if="row.action === 'updated'" class="ds-changes">{{ changeText(row) }}</span>
                 <span v-else-if="row.action === 'duplicate'" class="ds-warn">{{ dupText(row) }}</span>
+                <span v-else-if="isSnapshotRow(row)" class="ds-changes">{{ snapshotAddText(row) }}</span>
                 <span v-else class="ds-muted">新增到目标账号</span>
               </template>
             </el-table-column>
@@ -580,10 +606,20 @@ const cityOptions = ref([])     // [{name, key, count}]
 const brandOptions = ref([])
 
 const filter = ref({ cities: [], brands: [], keyword: '' })
-const kinds = ref({ markers: true, competitors: false })
+// 快照默认不勾：与「竞品门店」保持一致的显式选择习惯（一次可能写入上千行明细）
+const kinds = ref({ markers: true, competitors: false, competitor_snapshots: false })
 const selectedKinds = computed(() => Object.keys(kinds.value).filter(k => kinds.value[k]))
-const kindsParam = computed(() => selectedKinds.value.join(','))
-const candidateSummary = ref({ inScope: 0, outOfScope: 0, outOfFilter: 0, selfOrigin: 0 })
+/**
+ * 只支持「集团下发」的对象（规则 35）。
+ * ★ 方向②是「从子公司同步到集团」—— 该方向携带快照会被后端 400 拒绝，
+ *   故前端在构造请求前就把它摘掉，而不是让用户点了预览才看到报错。
+ */
+const DOWNLOAD_ONLY_KINDS = ['competitor_snapshots']
+const kindsForDirection = (dir) => selectedKinds.value.filter(
+  k => !(dir === 'member_to_group' && DOWNLOAD_ONLY_KINDS.includes(k))
+)
+const kindsParam = computed(() => kindsForDirection('group_to_member').join(','))
+const candidateSummary = ref({ inScope: 0, outOfScope: 0, outOfFilter: 0, selfOrigin: 0, detailRows: 0 })
 const targetMember = ref(null)
 const targetScopeCities = ref([])
 
@@ -647,6 +683,14 @@ const scopeBrandOptions = computed(() => {
   return brandOptions.value.filter(b => allow.has(b))
 })
 
+/**
+ * 候选计数单位：勾了快照 ⇒ 一个候选可能是「一期」而不是「一家店」，
+ * 统一说「家」会把人误导（1 期含上千行）。
+ */
+const candidateUnit = computed(
+  () => (selectedKinds.value.includes('competitor_snapshots') ? '项' : '家')
+)
+
 const previewRows = computed(() => {
   if (!preview.value) return []
   const { added, updated, deleted, duplicate } = preview.value.items
@@ -690,18 +734,42 @@ const actionTagType = (a) => ({
 /** 疑似重复行不可勾选（它本就不会写入） */
 const selectableRow = (row) => row.action !== 'duplicate'
 /** 疑似重复的命中理由（让用户知道"为什么算重复"） */
-const DUP_REASON = { store_code: '门店编号相同', name_city_address: '名称+城市+地址相同' }
+const DUP_REASON = {
+  store_code: '门店编号相同',
+  name_city_address: '名称+城市+地址相同',
+  // 快照的判重键 = 头表 UNIQUE(user_id,brand,period)：一期一条
+  brand_period: '品牌+期次相同'
+}
 function dupText (row) {
   const why = DUP_REASON[row.by] || '业务键相同'
+  if (row.by === 'brand_period') {
+    const no = row.matchedRowId ? ` #${row.matchedRowId}` : ''
+    return `本账号已有「${row.brand} ${row.period}」这一期${no}；先到先得，本次不写入（如需以集团为准请先删掉本账号那一期）`
+  }
   const where = row.matchedIsLocal ? '本账号自建行' : '本账号已有行'
   const no = row.matchedRowId ? ` #${row.matchedRowId}` : ''
   return `${why} → 命中${where}${no}；先到先得，本次不写入`
+}
+
+// ---- 竞品期次快照（v0.13 P2/R3）----
+const SNAPSHOT_KIND = 'competitor_snapshots'
+const isSnapshotRow = (row) => row?.kind === SNAPSHOT_KIND
+/** 快照新增行的说明：本辖区 N 行 / 全国 M 行（让用户知道自己拿到的是**过滤后**的一份） */
+function snapshotAddText (row) {
+  const local = row.detailRows ?? 0
+  const total = row.originTotalCount
+  if (total === null || total === undefined) return `本辖区 ${local} 行`
+  return `本辖区 ${local} 行 / 全国 ${total} 行（按你的管辖城市过滤）`
 }
 const statusLabel = (s) => ({
   success: '成功', partial: '部分成功', failed: '失败', preview: '预览', rolled_back: '已回滚'
 }[s] || s)
 const statusTagType = (s) => ({ success: 'success', partial: 'warning', failed: 'danger' }[s] || 'info')
-const KIND_LABEL = { markers: '我的门店', competitors: '竞品门店' }
+const KIND_LABEL = {
+  markers: '我的门店',
+  competitors: '竞品门店',
+  competitor_snapshots: '竞品期次快照'
+}
 const kindLabel = (k) => KIND_LABEL[k] || '未知'
 const directionLabel = (d) => ({
   group_to_member: '集团 → 子公司',
@@ -768,7 +836,12 @@ async function loadCandidates () {
     try {
       const d = await safeGet('/sync/candidates', { kind: kindsParam.value, direction: 'group_to_member', cities: filter.value.cities.join(','), brands: filter.value.brands.join(','), keyword: filter.value.keyword })
       candidateSummary.value = {
-        inScope: d.inScope.length, outOfScope: d.outOfScope, outOfFilter: d.outOfFilter, selfOrigin: d.selfOrigin
+        inScope: d.inScope.length,
+        outOfScope: d.outOfScope,
+        outOfFilter: d.outOfFilter,
+        selfOrigin: d.selfOrigin,
+        // 快照：候选的「期数」与「明细行数」是两回事（1 期可能上千行）
+        detailRows: d.detailRows || 0
       }
     } catch (e) {
       console.error('查询候选失败:', e)
@@ -791,8 +864,8 @@ async function doPreview () {
   previewing.value = true
   try {
     const body = isMember.value
-      ? { userId: myMember.value.userId, direction: 'group_to_member', kinds: selectedKinds.value, filter: filter.value }
-      : { userId: targetMember.value, direction: 'member_to_group', kinds: selectedKinds.value, filter: { keyword: '' } }
+      ? { userId: myMember.value.userId, direction: 'group_to_member', kinds: kindsForDirection('group_to_member'), filter: filter.value }
+      : { userId: targetMember.value, direction: 'member_to_group', kinds: kindsForDirection('member_to_group'), filter: { keyword: '' } }
     const d = await api.post('/sync/preview', body)
     preview.value = d
     checkedKeys.value = [
@@ -826,6 +899,9 @@ async function doCommit () {
   try {
     await ElMessageBox.confirm(
       `将按预览结果写入 ${checkedCount.value} 行变更（其中删除 ${preview.value.counts.deleted} 行）。` +
+      (preview.value.counts.detailRows
+        ? `其中快照明细 ${preview.value.counts.detailRows} 行会随期次一并写入。`
+        : '') +
       (preview.value.counts.duplicate
         ? `另有 ${preview.value.counts.duplicate} 条疑似重复不会写入（先到先得）。`
         : '') +
@@ -841,6 +917,7 @@ async function doCommit () {
     const d = await api.post('/sync/commit', { batchId: preview.value.batchId, excluded })
     ElMessage.success(
       `同步完成：新增 ${d.applied.inserted} / 更新 ${d.applied.updated} / 删除 ${d.applied.deleted}` +
+      (d.applied.snapshotRows ? ` / 快照明细 ${d.applied.snapshotRows} 行` : '') +
       (d.applied.duplicate ? ` / 疑似重复未写入 ${d.applied.duplicate}` : '') +
       (d.applied.failed ? ` / 失败 ${d.applied.failed}` : '')
     )

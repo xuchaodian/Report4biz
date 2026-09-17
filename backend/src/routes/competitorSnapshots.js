@@ -77,10 +77,52 @@ function validateParsed(req, res, rawRows) {
 
 /** 该品牌手工行（competitors 中 snapshot_id IS NULL） */
 function manualRowsOf(db, userId, brand) {
+  // ⚠️ 排除**集团下发镜像**（sync_readonly=1）：镜像行的 snapshot_id 按规则 8 是空的，
+  //   若不排除，它会被当成「可收编的手工行」在下一次导入时被删掉 ——
+  //   即「子公司一上传就把集团下发的竞品门店删了」。只读锁必须在 SQL 层就生效。
   return db.prepare(
     `SELECT id, store_code, name, city, district, latitude, longitude, description
-     FROM competitors WHERE user_id = ? AND brand = ? AND snapshot_id IS NULL`
+     FROM competitors
+      WHERE user_id = ? AND brand = ? AND snapshot_id IS NULL
+        AND (sync_readonly IS NULL OR sync_readonly != 1)`
   ).all(userId, brand)
+}
+
+/**
+ * 集团下发只读拦截（v0.13 P2/R3 · 规则 35）。
+ *
+ * 命中任一即拒绝子公司自行上传：
+ *   ① 同品牌同期次已有**集团下发的镜像**：真让写进去会撞
+ *      `UNIQUE(user_id, brand, period)` —— 头表这个唯一约束是「一期一条」的物理保证，
+ *      镜像已经占了那个位置，硬插只会抛 500 数据库错误（用户看到「导入失败」却不知为何）。
+ *   ② 同品牌下已存在集团下发镜像（任何期次）：该品牌的竞品由集团统一维护，
+ *      子公司自建会让「集团说的最新期」和「子公司自己传的期」在同一时间轴上打架。
+ *
+ * @returns {null | {code:string, message:string}}  null = 放行
+ */
+function groupPushedConflict(db, userId, brand, period) {
+  const same = db.prepare(`
+    SELECT id, period FROM competitor_snapshots
+     WHERE user_id = ? AND brand = ? AND period = ? AND sync_readonly = 1
+  `).get(userId, brand, period)
+  if (same) {
+    return {
+      code: 'period_group_managed',
+      message: `「${brand} ${period}」由集团统一下发，子公司不可自行上传或覆盖（如需修正请联系集团管理员）`
+    }
+  }
+  const any = db.prepare(`
+    SELECT id, period FROM competitor_snapshots
+     WHERE user_id = ? AND brand = ? AND sync_readonly = 1
+     ORDER BY period_seq DESC LIMIT 1
+  `).get(userId, brand)
+  if (any) {
+    return {
+      code: 'brand_group_managed',
+      message: `品牌「${brand}」的竞品快照由集团统一维护（已下发 ${any.period} 期），子公司不可自行上传；如需本地专用数据请联系集团管理员`
+    }
+  }
+  return null
 }
 /** 品牌已有快照（升序）；brand 空 → 取该用户全部快照（品牌聚合用） */
 function snapshotsOfBrand(db, userId, brand) {
@@ -155,6 +197,13 @@ router.get('/', authenticate, (req, res) => {
           id: s.id, period: s.period, period_seq: s.period_seq,
           data_version: s.data_version || '', source_file: s.source_file || '',
           total_count: s.total_count, open_count: s.open_count,
+          // 集团下发标记（v0.13 P2/R3）：前端据此禁用「删除」并显示来源标签
+          sync_readonly: Number(s.sync_readonly) === 1,
+          origin_owner: s.origin_owner || '',
+          // 源侧（全国）口径 —— 镜像的 total_count 已被改写为**本辖区**行数，
+          // 不给出原值的话，子公司会以为「全国老乡鸡只有 650 家」
+          origin_total_count: s.origin_total_count ?? null,
+          origin_open_count: s.origin_open_count ?? null,
           created_at: s.created_at
         }))
       }
@@ -184,6 +233,11 @@ router.post('/preview', authenticate, upload.single('file'), (req, res) => {
     if (!pp.valid) { cleanup(req); return res.status(400).json({ message: `期次格式无效：${periodRaw}（支持 2026-09 或 2026Q3）` }) }
 
     const db = getDb()
+    // 规则 35：集团已下发该品牌/该期 ⇒ 子公司不能自行上传
+    //   （preview 也要拦：别让用户把文件传完、看完预览，最后一步才被拒）
+    const conflict = groupPushedConflict(db, req.user.id, brand, pp.label)
+    if (conflict) { cleanup(req); return res.status(403).json(conflict) }
+
     const norm = normalizeRows(f.rawRows)
     const hasKeyColumn = Object.keys(f.rawRows[0]).some(h => /store_id|store_code|shopid|shop_id|门店id|门店编号|编号/i.test(h))
     const version = detectDataVersion(f.rawRows, f.originalname)
@@ -260,6 +314,10 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
     if (!Array.isArray(adoptIds)) adoptIds = []
 
     const db = getDb()
+    // 规则 35：集团已下发 ⇒ 子公司不可自行上传（否则会撞 UNIQUE(user_id,brand,period)）
+    const conflict = groupPushedConflict(db, req.user.id, brand, pp.label)
+    if (conflict) { cleanup(req); return res.status(403).json(conflict) }
+
     const norm = normalizeRows(f.rawRows)
     const cleanRows = norm.rows
     const openCount = cleanRows.filter(r => r.status === 'open').length
@@ -320,8 +378,11 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
             }
           }
         }
-        // ---- 4. 清旧快照镜像行（手工行保留）----
-        db.exec(`DELETE FROM competitors WHERE user_id=${req.user.id} AND brand=${esc(brand)} AND snapshot_id IS NOT NULL`)
+        // ---- 4. 清旧快照镜像行（手工行保留；**集团下发的镜像行也保留**）----
+        //   镜像行本不该进到这里（① 同品牌导入已被 groupPushedConflict 拒掉），
+        //   这里再加一道 SQL 级兜底：只有**非只读**的快照镜像才允许被本期替换。
+        db.exec(`DELETE FROM competitors WHERE user_id=${req.user.id} AND brand=${esc(brand)}
+                   AND snapshot_id IS NOT NULL AND (sync_readonly IS NULL OR sync_readonly != 1)`)
         deletedSnapshotRows += changedRows()
         // ---- 5. 写入新镜像（仅坐标完整行；缺坐标行只进快照溯源，地图/列表不需要）----
         const insertSql = `INSERT INTO competitors (store_code, brand, name, store_type, store_category, city, district, address, description, latitude, longitude, status, icon_color, user_id, industry, trading_area, price, rating, reviews, taste_score, environment_score, service_score, period, snapshot_id, created_at, updated_at)
@@ -506,6 +567,16 @@ router.delete('/:id', authenticate, (req, res) => {
 
     const snap = db.prepare(`SELECT * FROM competitor_snapshots WHERE id = ? AND user_id = ?`).get(id, req.user.id)
     if (!snap) return res.status(404).json({ message: '未找到该期快照或无权删除' })
+
+    // 只读锁（规则 4 / 35）：集团下发的期次由集团维护，子公司不可删。
+    //   与 markers / competitors 共用同一套语义 —— 想本地自管请先「脱离同步」（若已开放）。
+    if (Number(snap.sync_readonly) === 1) {
+      return res.status(403).json({
+        code: 'snapshot_readonly',
+        message: `该期快照（${snap.brand} ${snap.period}）由集团统一下发，子公司不可删除；`
+          + `如需调整请让集团重新导入该期`
+      })
+    }
 
     // 是否最新期（最新期镜像正占据竞品列表；历史期镜像在导入更新期时已被清空）
     const snaps = snapshotsOfBrand(db, req.user.id, snap.brand)

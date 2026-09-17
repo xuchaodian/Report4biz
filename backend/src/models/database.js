@@ -530,6 +530,25 @@ export async function initDatabase() {
     )
   `)
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_cs_user_brand ON competitor_snapshots(user_id, brand)`) } catch (e) {}
+  // ---- 集团下发镜像列（v1.13.147 · P2/R3）----
+  // 快照头表也要能当「镜像行」：集团下发到子公司后，这一期就归集团维护，子公司只读。
+  // ⚠️ 明细表 `competitor_snapshot_rows` **刻意不加** user_id/origin_*：
+  //    它靠 `snapshot_id` 归属，跟着头表走；给它也加一套溯源列会出现
+  //    「头表已脱离同步、明细行还自称镜像」的不一致态。
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN origin_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN origin_row_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN origin_owner TEXT`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN sync_batch_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN sync_readonly INTEGER DEFAULT 0`) } catch (e) { /* 列已存在 */ }
+  // 源侧（全国）口径的原值：镜像的 total_count/open_count 被改写为**本辖区**行数，
+  // 原始全国数另存两列，否则子公司会以为「全国老乡鸡只有 650 家」（UI 显示「本辖区 650 / 全国 1905」）。
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN origin_total_count INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE competitor_snapshots ADD COLUMN origin_open_count INTEGER`) } catch (e) { /* 列已存在 */ }
+  try {
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_cs_origin
+            ON competitor_snapshots(user_id, origin_user_id, origin_row_id)
+            WHERE origin_user_id IS NOT NULL`)
+  } catch (e) { /* 索引已存在 */ }
   // 快照明细表：该期全量门店行（含闭店标记行，溯源用）
   db.run(`
     CREATE TABLE IF NOT EXISTS competitor_snapshot_rows (

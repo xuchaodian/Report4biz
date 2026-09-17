@@ -800,14 +800,21 @@ describe('⑦ competitors + 多类型单批次（批次 E）', () => {
 })
 
 describe('⑧ mirrors kind=all + 配额一级分配（批次 E）', () => {
-  it('GET /mirrors?kind=all：合并 markers + competitors，每行带 kind', async () => {
+  it('GET /mirrors?kind=all：合并 markers + competitors + 快照，每行带 kind', async () => {
     const r = await call('GET', '/api/sync/mirrors?kind=all&limit=500', { token: tokens.subA })
     expect(r.status).toBe(200)
-    expect(r.body.kinds).toEqual(['markers', 'competitors'])
+    // v0.13 P2/R3：同步对象扩到 `competitor_snapshots` 后 kind=all 覆盖三类。
+    // ⚠️ 快照头表没有 name/city/address 列 —— 共用一条 SELECT 会直接 SQL 报错，
+    //   所以 /mirrors 里是**按 kind 分列查询**的（见 routes/sync.js）。
+    expect(r.body.kinds).toEqual(['markers', 'competitors', 'competitor_snapshots'])
     const kinds = new Set(r.body.mirrors.map(m => m.kind))
     expect(kinds.has('markers')).toBe(true)
     expect(kinds.has('competitors')).toBe(true)
     expect(r.body.mirrors.every(m => m.kind)).toBe(true)
+    // 快照行用「品牌 期次」合成展示名，避免前端表格出现空列
+    for (const m of r.body.mirrors.filter(x => x.kind === 'competitor_snapshots')) {
+      expect(String(m.name || '').trim().length).toBeGreaterThan(0)
+    }
   })
 
   it('GET /quota/summary：返回池概览 + 成员明细（含 grantedTotal）', async () => {

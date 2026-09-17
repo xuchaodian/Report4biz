@@ -94,9 +94,12 @@ export const useMarkerStore = defineStore('marker', {
 
     async batchDeleteMarkers(ids) {
       try {
-        await axios.post(`${API_URL}/markers/batch-delete`, { ids })
-        this.markers = this.markers.filter(m => !ids.includes(m.id))
-        return { success: true, count: ids.length }
+        const { data } = await axios.post(`${API_URL}/markers/batch-delete`, { ids })
+        // ★ 只读镜像行会被后端跳过（规则 4）。若存在被跳过的行，必须回源刷新，
+        //   否则前端把「其实还在」的集团下发行从界面上抹掉，用户以为删掉了。
+        if (data.skippedSynced > 0) await this.fetchMarkers(true)
+        else this.markers = this.markers.filter(m => !ids.includes(m.id))
+        return { success: true, count: data.count, message: data.message, skippedSynced: data.skippedSynced || 0 }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '批量删除失败' }
       }
@@ -105,8 +108,9 @@ export const useMarkerStore = defineStore('marker', {
     async clearAllMarkers() {
       try {
         const { data } = await axios.delete(`${API_URL}/markers/clear-all`)
-        this.markers = []
-        return { success: true, count: data.count }
+        if (data.keptSynced > 0) await this.fetchMarkers(true)
+        else this.markers = []
+        return { success: true, count: data.count, message: data.message, keptSynced: data.keptSynced || 0 }
       } catch (error) {
         return { success: false, message: error.response?.data?.message || '清空失败' }
       }

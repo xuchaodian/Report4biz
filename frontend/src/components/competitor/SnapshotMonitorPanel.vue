@@ -75,7 +75,15 @@
           @click="pickPair(s.period)"
         >
           <div class="tl-period">{{ s.period }}
-            <el-tooltip content="删除该期快照" placement="top">
+            <!-- 集团下发的期次是只读镜像：不给删除入口（后端也会 403，前端不制造假入口） -->
+            <el-tooltip
+              v-if="s.sync_readonly"
+              :content="`由「${s.origin_owner || '集团'}」统一下发，子公司只读；删除/覆盖请找集团管理员`"
+              placement="top"
+            >
+              <el-tag class="tl-lock" size="small" type="warning" effect="plain">集团下发</el-tag>
+            </el-tooltip>
+            <el-tooltip v-else content="删除该期快照" placement="top">
               <el-button
                 class="tl-del"
                 size="small"
@@ -88,7 +96,11 @@
             </el-tooltip>
           </div>
           <el-tag size="small" :type="s.period === targetPeriod ? 'primary' : 'info'" effect="plain">{{ s.data_version || '未标版本' }}</el-tag>
-          <div class="tl-count">{{ s.open_count }} 营 / {{ s.total_count }} 总</div>
+          <div class="tl-count">
+            {{ s.open_count }} 营 / {{ s.total_count }} 总
+            <!-- 镜像的计数是**本辖区**口径；全国原值另存，不显示会让人以为「全国就这么多」 -->
+            <span v-if="s.origin_total_count" class="tl-scope">（本辖区 · 全国 {{ s.origin_open_count ?? '?' }} 营 / {{ s.origin_total_count }} 总）</span>
+          </div>
           <div class="tl-time">{{ shortTime(s.created_at) }}</div>
         </div>
       </div>
@@ -438,8 +450,12 @@ watch(() => props.initialTarget, (nv) => { if (nv) { targetPeriod.value = nv; if
         position: relative; display: flex; align-items: center; justify-content: space-between;
         font-weight: 700; font-size: 15px; color: #303133;
         .tl-del { margin-left: 6px; flex: 0 0 auto; }
+        .tl-lock { margin-left: 6px; flex: 0 0 auto; font-weight: 400; }
       }
-      .tl-count { font-size: 12px; color: #666; margin-top: 3px; }
+      .tl-count {
+        font-size: 12px; color: #666; margin-top: 3px;
+        .tl-scope { color: #a8abb2; }
+      }
       .tl-time { font-size: 11px; color: #bbb; margin-top: 2px; }
     }
   }

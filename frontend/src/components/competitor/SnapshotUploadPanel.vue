@@ -8,6 +8,24 @@
         </div>
       </template>
       <div class="upload-form">
+        <!-- 集团下发只读（v0.13 P2/R3 · 规则 35）：该品牌由集团统一维护，
+             本页的上传/覆盖会被后端 403，故直接在前面就告知，别让用户白传一遍文件 -->
+        <el-alert
+          v-if="groupManaged"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="`品牌「${brand}」的竞品快照由集团统一维护，子公司不能自行上传`"
+          style="margin-bottom: 14px"
+        >
+          <template #default>
+            <div style="font-size: 12px; line-height: 1.7;">
+              已下发 {{ groupManaged.count }} 期（{{ groupManaged.periods.join(' / ') }}）<span v-if="groupManaged.owner">，来源：{{ groupManaged.owner }}</span>。<br>
+              请到「数据同步 → 从集团同步」勾选「竞品期次快照」获取；
+              如需修正数据请联系集团管理员重新导入。
+            </div>
+          </template>
+        </el-alert>
         <el-form label-width="90px" label-position="right">
           <el-row :gutter="16">
             <el-col :span="8">
@@ -285,10 +303,24 @@
       <div v-else class="history-list">
         <div v-for="s in history" :key="s.id" class="history-item">
           <div class="his-left">
-            <div class="his-period">{{ s.period }}<el-tag size="small" type="info" effect="plain" style="margin-left: 8px">{{ s.data_version || '未标版本' }}</el-tag></div>
+            <div class="his-period">
+              {{ s.period }}
+              <el-tag size="small" type="info" effect="plain" style="margin-left: 8px">{{ s.data_version || '未标版本' }}</el-tag>
+              <!-- 集团下发只读（规则 35）：镜像行的 total_count 已被改写为**本辖区**行数，
+                   不给全国原值的话子公司会以为「全国这家只有这么多家」 -->
+              <el-tooltip
+                v-if="s.sync_readonly"
+                :content="`由「${s.origin_owner || '集团'}」统一下发，子公司只读；删除/覆盖请找集团管理员`"
+              >
+                <el-tag size="small" type="warning" effect="plain" style="margin-left: 6px">集团下发</el-tag>
+              </el-tooltip>
+            </div>
             <div class="his-meta">
               <span>共 {{ s.total_count }} 行</span>
               <span style="margin-left: 12px">营业 {{ s.open_count }}</span>
+              <span v-if="s.sync_readonly" class="his-scope">
+                （本辖区 · 全国 {{ s.origin_open_count ?? '-' }} 营 / {{ s.origin_total_count ?? '-' }} 总）
+              </span>
               <span style="margin-left: 12px">来源：{{ s.source_file || '-' }}</span>
               <span style="margin-left: 12px">{{ formatTime(s.created_at) }}</span>
             </div>
@@ -300,7 +332,15 @@
             <el-button size="small" type="primary" plain @click="$emit('goto-monitor', { brand, period: s.period })">
               去对比
             </el-button>
-            <el-button size="small" type="danger" plain :loading="deletingId === s.id" @click="deleteOne(s)">
+            <!-- 集团下发的期次是只读镜像：不给删除入口（后端也会 403，前端不制造假入口） -->
+            <el-button
+              v-if="!s.sync_readonly"
+              size="small"
+              type="danger"
+              plain
+              :loading="deletingId === s.id"
+              @click="deleteOne(s)"
+            >
               <el-icon><Delete /></el-icon> 删除
             </el-button>
           </div>
@@ -323,6 +363,11 @@ const competitorStore = useCompetitorStore()
 /* ---------------- 删除期次（撤回误传，v1.13.95） ---------------- */
 const deletingId = ref(null)
 const deleteOne = async (s) => {
+  // 防御：集团下发的期次是只读镜像（按钮已隐藏，此处兜底）
+  if (s && s.sync_readonly) {
+    ElMessage.warning(`「${brand.value} ${s.period}」由${s.origin_owner || '集团'}统一下发，只读不可删除`)
+    return
+  }
   // history 为最新在前（listBrandSnapshots 升序后 reverse），首项即最新期
   const isLatest = history.value[0]?.id === s.id
   const listTip = isLatest
@@ -380,8 +425,25 @@ const brandOptions = computed(() => {
 })
 const snapshotBrandsCache = ref([])
 
-const canPreview = computed(() => brand.value && period.value && rawFile.value)
-const canImport = computed(() => previewData.value && !previewData.value.blockImport && !previewData.value.sameHashExists)
+/**
+ * 该品牌是否已由集团下发（规则 35）。
+ * `snapshotBrandsCache` 来自 `GET /competitors/snapshots`，其中每期带
+ * `sync_readonly` / `origin_owner`（v1.13.147 起返回）。
+ * 命中即禁止在本页上传：后端会 403（同品牌/同期次都会），前端不制造假入口。
+ */
+const groupManaged = computed(() => {
+  const hit = snapshotBrandsCache.value.find(b => b.brand === brand.value)
+  const locked = (hit?.snapshots || []).filter(s => s.sync_readonly)
+  if (!locked.length) return null
+  return {
+    count: locked.length,
+    periods: locked.map(s => s.period),
+    owner: locked[0].origin_owner || ''
+  }
+})
+
+const canPreview = computed(() => brand.value && period.value && rawFile.value && !groupManaged.value)
+const canImport = computed(() => previewData.value && !previewData.value.blockImport && !previewData.value.sameHashExists && !groupManaged.value)
 
 /* ---------------- 文件 ---------------- */
 const handleFileChange = (file) => {
@@ -587,6 +649,7 @@ defineExpose({ refreshHistory, setBrand: (b) => { brand.value = b; refreshHistor
       .his-left {
         .his-period { font-weight: 600; font-size: 14px; color: #303133; }
         .his-meta { font-size: 12px; color: #909399; margin-top: 3px; }
+        .his-meta .his-scope { color: #e6a23c; }
       }
     }
   }

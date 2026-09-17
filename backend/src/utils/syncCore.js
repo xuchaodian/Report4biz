@@ -2,11 +2,19 @@
 // 同步内核 syncCore（批次 D · 设计方案 v0.10 §4 / §6 / §8；批次 E 扩到 competitors）
 // ----------------------------------------------------------------------------
 // 服务对象（`SYNC_KINDS`）：
-//   · `markers`     我的门店   （批次 D 跑通全链路）
-//   · `competitors` 竞品门店   （批次 E 横向复用 —— §11 实施建议：
-//                    「先把单对象全链路跑通，确认无误后再横向复用」）
-//   按表名泛化：内核只把 `kind` 当作**表名**使用，字段由 PRAGMA 内省得出
-//   ⇒ 新增对象只需加进 SYNC_KINDS，无需改本文件的同步逻辑。
+//   · `markers`              我的门店       （批次 D 跑通全链路）
+//   · `competitors`          竞品门店       （批次 E 横向复用 —— §11 实施建议：
+//                             「先把单对象全链路跑通，确认无误后再横向复用」）
+//   · `competitor_snapshots` 竞品期次快照   （v0.13 P2/R3 —— **特例**，见 §5b）
+//   前两个按表名泛化：内核只把 `kind` 当作**表名**使用，字段由 PRAGMA 内省得出
+//   ⇒ 新增同类对象只需加进 SYNC_KINDS，无需改本文件的同步逻辑。
+//
+// ⚠️ 竞品快照为什么是「特例」而不是「再加一个表名」：
+//   它要搬的是**两张表**——头表 `competitor_snapshots`（有 user_id）+ 明细表
+//   `competitor_snapshot_rows`（**没有 user_id**，靠 snapshot_id 归属）。
+//   泛化的前提「每行都有 user_id」在此不成立，硬套会退化成「只同步空的头表」。
+//   故 §5b 单开一段专写它，并把方向约束为**只下不上**（子公司不自行上传，见规则 35）。
+//   泛化路径（markers/competitors）**逐字未动** —— 回归风险最小。
 //
 // ★ 本模块「零业务 import」：只从 scopeGuard 取纯函数（其自身零 import）。
 //   目的与 quotaGate/scopeGuard 相同 —— 可在生产直接 `import()` 做自检，
@@ -24,6 +32,11 @@
 //   规则 11 管辖范围：只同步 city ∈ scope.cities 或 belong = 本人的行；越界**静默丢弃并计数**
 //   规则 13 城市兜底：city 为空的行不参与范围圈定（只能靠 belong 显式归属）
 //   规则 15 原子性：commit 的全部写入在**单事务**内，任一步失败整体回滚
+//   规则 34 业务键判重：命中目标账号已有行 ⇒ 只提示不写入（先到先得）
+//   规则 35 快照单向下行：竞品期次快照只允许 `group_to_member`；明细按成员管辖城市过滤
+//           后随头表下发，头表 total_count/open_count 改写为**本辖区**口径
+//   规则 36 明细随头表：快照明细无 user_id/溯源列，其归属与只读性**完全跟随头表**
+//           ⇒ 头表删除/回滚/脱离时必须连带明细，否则留下永久孤儿行
 //
 // ⚠️ **同步**（buildPlan/applyPlan）不迁移 store_sales：同步是「复制行」，不是「划拨」。
 //   镜像门店在目标账号下**没有销售历史** —— 这是刻意的边界，不要为了「看起来完整」
@@ -35,8 +48,23 @@
 
 import { normalizeCity, parseCityList, parseBrandList } from './scopeGuard.js'
 
+/** 竞品期次快照：内核里唯一的「特例对象」（两表一起搬），见 §5b */
+export const SNAPSHOT_KIND = 'competitor_snapshots'
+/** 快照明细表（无 user_id —— 靠 snapshot_id 归属，禁止泛化路径碰它） */
+export const SNAPSHOT_ROWS_TABLE = 'competitor_snapshot_rows'
+
 /** 可同步对象 = 目标表名白名单（顺序即 UI 展示顺序） */
-export const SYNC_KINDS = ['markers', 'competitors']
+export const SYNC_KINDS = ['markers', 'competitors', SNAPSHOT_KIND]
+
+/**
+ * 「行级对象」= 每行自带 `user_id`、可逐行圈城市/可划拨的对象。
+ *
+ * ⛔ 快照**不在其中**：头表没有 city 列（城市在明细行上），明细表连 user_id 都没有。
+ *   划拨（§9）那套 `WHERE user_id=? / city` 逻辑套到快照上会直接 SQL 报错，
+ *   语义上也不该搬 —— 它是集团按季下发的**全国档案**，与「某城市门店归谁」无关。
+ *   ⇒ 凡「按城市搬行 / 按行删镜像」的地方一律用本清单，不要用 SYNC_KINDS。
+ */
+export const ROW_KINDS = ['markers', 'competitors']
 
 /**
  * 对象元数据（前端展示用；`GET /api/sync/scope-options` 会回传给 UI）。
@@ -44,7 +72,12 @@ export const SYNC_KINDS = ['markers', 'competitors']
  */
 export const KIND_META = {
   markers: { label: '我的门店', short: '门店', field: 'markers', table: 'markers' },
-  competitors: { label: '竞品门店', short: '竞品', field: 'competitors', table: 'competitors' }
+  competitors: { label: '竞品门店', short: '竞品', field: 'competitors', table: 'competitors' },
+  // 每个 item 代表**一期快照**（不是一家店）⇒ 前端表格要按期次渲染，见 DataSyncView
+  [SNAPSHOT_KIND]: {
+    label: '竞品期次快照', short: '快照', field: 'snapshots', table: SNAPSHOT_KIND,
+    unit: '期', downloadOnly: true
+  }
 }
 
 /** kind → 中文标签（未知 kind 原样返回，便于排查） */
@@ -334,6 +367,9 @@ export function buildPlan(db, opts) {
     targetLabel = ''
   } = opts || {}
 
+  // ★ 特例分派：竞品期次快照（§5b）。两表一起搬，泛化路径（单表 + WHERE user_id）不适用。
+  if (kind === SNAPSHOT_KIND) return buildSnapshotPlan(db, opts)
+
   const fields = syncableFields(db, kind)
   const matcher = buildScopeMatcher(scopeJson, belongUserId)
 
@@ -343,7 +379,13 @@ export function buildPlan(db, opts) {
   const counts = {
     added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
     outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0,
-    duplicateShadowed: 0    // 目标账号内本来就存在的重复行（只提示，不进计划）
+    duplicateShadowed: 0,    // 目标账号内本来就存在的重复行（只提示，不进计划）
+    // 安全阀溢出计数（v1.13.147 从 outOfFilter 里拆出来）——
+    // 原实现把「超过 MAX_PLAN_ROWS」折进 outOfFilter，语义是「关键词没匹配上」，
+    // 于是界面上完全看不出「被截断」：用户只看到总数少了一截、**没有任何提示**。
+    truncated: 0,
+    // 快照专有维度（泛化对象恒为 0，保持键齐全便于各对象计数加总）
+    detailRows: 0, detailOutOfScope: 0, detailOutOfFilter: 0, directionBlocked: 0, periodFiltered: 0
   }
 
   const sourceIds = new Set()
@@ -366,7 +408,8 @@ export function buildPlan(db, opts) {
     if (!inAllowedScope(row, matcher)) { counts.outOfScope++; continue }
     if (!matchKeyword(row, keyword)) { counts.outOfFilter++; continue }
 
-    if (processed >= MAX_PLAN_ROWS) { counts.outOfFilter++; continue }
+    // 安全阀（MAX_PLAN_ROWS）：**显式计数**，不再混进 outOfFilter（否则完全静默，见 counts 注释）
+    if (processed >= MAX_PLAN_ROWS) { counts.truncated++; continue }
     processed++
     sourceIds.add(row.id)
 
@@ -440,7 +483,9 @@ export function buildPlan(db, opts) {
 
   counts.duplicateShadowed = bkIndex.shadowed
   counts.total = counts.added + counts.updated + counts.deleted + counts.skipped + counts.duplicate
-  return { kind, direction, sourceUserId, targetUserId, fields, items, counts }
+  // scopeJson/keyword 一并回传：`applyPlan` 要**重建**范围过滤器
+  // （快照明细的按城市过滤发生在 apply 阶段，必须与预览同一套口径，否则「预览 650、落库 1905」）
+  return { kind, direction, sourceUserId, targetUserId, fields, items, counts, scopeJson, belongUserId, keyword }
 }
 
 /**
@@ -461,10 +506,13 @@ export function buildPlan(db, opts) {
  */
 export function buildPlanForKinds(db, opts) {
   const kinds = normalizeKinds(opts?.kinds ?? opts?.kind)
-  const { direction, sourceUserId, targetUserId, scopeJson = null, belongUserId = null, keyword = '', targetLabel = '' } = opts || {}
+  const {
+    direction, sourceUserId, targetUserId, scopeJson = null, belongUserId = null,
+    keyword = '', targetLabel = '', periods = []
+  } = opts || {}
 
   const parts = kinds.map(kind => buildPlan(db, {
-    kind, direction, sourceUserId, targetUserId, scopeJson, belongUserId, keyword, targetLabel
+    kind, direction, sourceUserId, targetUserId, scopeJson, belongUserId, keyword, targetLabel, periods
   }))
 
   const fieldsByKind = {}
@@ -473,14 +521,19 @@ export function buildPlanForKinds(db, opts) {
   const counts = {
     added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
     outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0, byKind,
-    duplicateShadowed: 0
+    duplicateShadowed: 0, truncated: 0,
+    detailRows: 0, detailOutOfScope: 0, detailOutOfFilter: 0, directionBlocked: 0, periodFiltered: 0
   }
 
   for (const p of parts) {
     fieldsByKind[p.kind] = p.fields
     byKind[p.kind] = p.counts
     for (const bucket of ['added', 'updated', 'deleted', 'skipped', 'duplicate']) items[bucket].push(...p.items[bucket])
-    for (const k of ['added', 'updated', 'deleted', 'skipped', 'duplicate', 'outOfScope', 'outOfFilter', 'selfOrigin', 'noChange', 'total', 'duplicateShadowed']) {
+    for (const k of [
+      'added', 'updated', 'deleted', 'skipped', 'duplicate', 'outOfScope', 'outOfFilter',
+      'selfOrigin', 'noChange', 'total', 'duplicateShadowed', 'truncated',
+      'detailRows', 'detailOutOfScope', 'detailOutOfFilter', 'directionBlocked', 'periodFiltered'
+    ]) {
       counts[k] += p.counts[k] || 0
     }
   }
@@ -494,7 +547,13 @@ export function buildPlanForKinds(db, opts) {
     fields: fieldsByKind[kinds[0]] || [],
     fieldsByKind,
     items,
-    counts
+    counts,
+    // ★ 供 `applyPlan` 重建范围过滤器：快照明细的按城市过滤发生在 apply 阶段，
+    //   必须与预览时**同一套口径**，否则「预览 650 行、落库 1905 行」。
+    scopeJson,
+    belongUserId,
+    keyword,
+    periods
   }
 }
 
@@ -511,6 +570,9 @@ export function listCandidates(db, opts) {
     belongUserId = null,
     keyword = ''
   } = opts || {}
+
+  // ★ 特例分派：竞品期次快照（§5b）
+  if (kind === SNAPSHOT_KIND) return listSnapshotCandidates(db, opts)
 
   const matcher = buildScopeMatcher(scopeJson, belongUserId)
   const rows = db.prepare(`SELECT * FROM ${kind} WHERE user_id = ?`).all(sourceUserId) || []
@@ -571,12 +633,16 @@ export function listCandidatesForKinds(db, opts) {
   }
   const parts = kinds.map(kind => listCandidates(db, { kind, ...base }))
 
-  const out = { kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, duplicate: 0, byKind: {} }
+  const out = {
+    kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, duplicate: 0,
+    detailRows: 0, byKind: {}
+  }
   for (const p of parts) {
     out.byKind[p.kind] = {
       total: p.total, inScope: p.inScope.length,
       outOfScope: p.outOfScope, outOfFilter: p.outOfFilter, selfOrigin: p.selfOrigin,
-      duplicate: p.duplicate
+      duplicate: p.duplicate,
+      detailRows: p.detailRows || 0    // 快照：本辖区的明细行数（「N 期 / M 行」要分开说）
     }
     out.total += p.total
     out.inScope.push(...p.inScope)
@@ -584,8 +650,340 @@ export function listCandidatesForKinds(db, opts) {
     out.outOfFilter += p.outOfFilter
     out.selfOrigin += p.selfOrigin
     out.duplicate += p.duplicate
+    out.detailRows += p.detailRows || 0
   }
   return out
+}
+
+// ---------------------------------------------------------------------------
+// 5b. 竞品期次快照（特例对象 · 规则 35 / 36）
+// ---------------------------------------------------------------------------
+//
+// 搬什么：头表 `competitor_snapshots`（源账号名下的期次档案）
+//        + 明细表 `competitor_snapshot_rows`（该期全量门店行，含闭店行）
+//
+// 为什么必须单独写一遍、不能用泛化路径：
+//   ① 明细表**没有 user_id** ⇒ 泛化的 `WHERE user_id = ?` 对它无意义；
+//      它的归属只有 `snapshot_id` 一个来源 ⇒ 头表搬到哪、明细跟到哪（规则 36）。
+//   ② 交付单位是**期次**不是行：源侧一期是「全国 207 城」，目标侧只该拿自己辖区那份
+//      ⇒ 头表 total_count/open_count **必须按实际落库行数重算**，否则监测面板会
+//      出现「写着 1905 家、列表只有 650 家」的错乱。源侧全国口径另存
+//      origin_total_count/origin_open_count，供 UI 显示「本辖区 650 / 全国 1905」。
+//   ③ 判重键不同：**品牌 + 期次**（正是头表的 UNIQUE(user_id,brand,period)）。
+//      泛化的业务键（store_code / name+city+address）是**门店级**的，
+//      对「一期档案」没有意义 —— 套用会把「集团这期档案」误判成「某家门店」。
+//
+// 方向约束（规则 35）：只允许 group_to_member。子公司不自行上传竞品；
+//   把快照往上拉会让集团账号冒出「只跟某个子公司辖区有关的残缺档案」。
+//   越界方向由 routes/sync.js 直接 400 拒绝（**不静默**），内核这里再自保一次。
+//
+// ⚠️ 与 `competitors` 对象的分工（别把两者混起来）：
+//    · `competitors` 同步 = 子公司**竞品门店列表**（地图/列表用），镜像行是自建行身份
+//      （期次列按规则 8 刻意不复制）；
+//    · `competitor_snapshots` 同步 = 子公司**期次档案**（开关店监测 / 两期 diff 用）。
+//    两者各走各的，互不依赖 —— 这正是规则 8「期次隔离」得以保持不变的原因。
+
+/** 头表参与同步的列。**显式列出、不用 PRAGMA 内省**：内省会把 total_count / open_count /
+ *  file_hash 当普通列照抄，而它们恰恰是需要重算或不宣复制的（见上面 ② 与 file_hash 注释）。 */
+const SNAPSHOT_HEADER_FIELDS = ['brand', 'period', 'period_seq', 'source_file', 'data_version']
+
+/** 快照判重键 = 品牌 + 期次（与头表 UNIQUE 约束同源，避免「判重过了却插不进去」） */
+function snapshotKey(s) {
+  return `${normKeyText(s && s.brand)}|${String((s && s.period) || '').trim()}`
+}
+
+/** 快照在 UI 上的展示名（头表没有 name 列，前端表格按 `name` 渲染，故合成一个） */
+function snapLabel(s) {
+  const brand = String((s && s.brand) || '').trim()
+  const period = String((s && s.period) || '').trim()
+  return `${brand} ${period}`.trim() || `#${s && s.id}`
+}
+
+/**
+ * 快照的过滤器。
+ *
+ * ★ 品牌过滤只对**头表**生效：明细表 `competitor_snapshot_rows` 没有 brand 列，
+ *   若把品牌集合丢给 `inAllowedScope` 跑明细，`row.brand` 恒为空 ⇒ 整期明细全判越界、
+ *   下发变成空档（静默空转的老坑）。城市过滤则相反，只对明细生效（头表没有 city 列）。
+ */
+function snapshotFilters({ scopeJson = null, keyword = '', periods = [] } = {}) {
+  const m = buildScopeMatcher(scopeJson, null)
+  const list = Array.isArray(periods) ? periods.map(p => String(p).trim()).filter(Boolean) : []
+  return { cityKeys: m.cityKeys, brands: m.brands, keyword: String(keyword || ''), periods: new Set(list) }
+}
+
+/** 头表是否在范围内（只判品牌；城市维度留给明细） */
+function snapshotHeaderAllowed(snap, f) {
+  if (f.brands && f.brands.size > 0) {
+    const b = String((snap && snap.brand) || '').trim()
+    if (!f.brands.has(b)) return false
+  }
+  return true
+}
+
+/** 镜像里该期的**全部**明细行（镜像本身就只有本辖区的行） */
+function readMirrorRows(db, mirrorId) {
+  return db.prepare(`
+    SELECT store_key, name, city, district, address, latitude, longitude, status, description, extra
+      FROM ${SNAPSHOT_ROWS_TABLE} WHERE snapshot_id = ? ORDER BY store_key
+  `).all(mirrorId) || []
+}
+
+/**
+ * 源期明细 → **本辖区应下发的行**（城市 + 关键词过滤，静默丢弃但计数）。
+ * @returns {{kept:object[], sourceTotal:number, outOfScope:number, outOfFilter:number}}
+ */
+function readSnapshotRows(db, snapshotId, f) {
+  const rows = db.prepare(`
+    SELECT store_key, name, city, district, address, latitude, longitude, status, description, extra
+      FROM ${SNAPSHOT_ROWS_TABLE} WHERE snapshot_id = ? ORDER BY store_key
+  `).all(snapshotId) || []
+
+  const kept = []
+  let outOfScope = 0
+  let outOfFilter = 0
+  for (const r of rows) {
+    // 明细行没有 brand / belong_member_user_id ⇒ 只按城市圈定（规则 11 / 13）
+    if (!inAllowedScope(r, { cityKeys: f.cityKeys, brands: null, belongUserId: null })) { outOfScope++; continue }
+    if (!matchKeyword(r, f.keyword)) { outOfFilter++; continue }
+    kept.push(r)
+  }
+  return { kept, sourceTotal: rows.length, outOfScope, outOfFilter }
+}
+
+/** open 行数（镜像计数口径与源侧 `open_count` 一致） */
+function countOpen(rows) {
+  return rows.filter(r => String(r.status || '') === 'open').length
+}
+
+/** 明细集合是否与「应下发集合」等价（逐字段宽松比较；两边都已按 store_key 排序） */
+const SNAPSHOT_ROW_FIELDS = ['store_key', 'name', 'city', 'district', 'address', 'latitude', 'longitude', 'status', 'description', 'extra']
+function sameSnapshotRows(cur, want) {
+  if (cur.length !== want.length) return false
+  for (let i = 0; i < cur.length; i++) {
+    for (const f of SNAPSHOT_ROW_FIELDS) {
+      if (!looseEqual(cur[i][f], want[i][f])) return false
+    }
+  }
+  return true
+}
+
+/**
+ * 生成快照同步计划（只读）。
+ * 与 `buildPlan` 同构返回，好让 `buildPlanForKinds` 原样合并：
+ * items 的每一项代表**一期快照**（不是一家店），额外带
+ * `brand / period / period_seq / detailRows / originTotalCount / originOpenCount`。
+ */
+export function buildSnapshotPlan(db, opts) {
+  const {
+    direction,
+    sourceUserId,
+    targetUserId,
+    scopeJson = null,
+    keyword = '',
+    periods = []
+  } = opts || {}
+
+  const f = snapshotFilters({ scopeJson, keyword, periods })
+  const fields = SNAPSHOT_HEADER_FIELDS.slice()
+  const items = { added: [], updated: [], deleted: [], skipped: [], duplicate: [] }
+  const counts = {
+    added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
+    outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0,
+    duplicateShadowed: 0, truncated: 0,
+    // 快照专有计数：明细行维度的可见性（头表 N 期 ≠ 明细 N 行）
+    detailRows: 0, detailOutOfScope: 0, detailOutOfFilter: 0, directionBlocked: 0, periodFiltered: 0
+  }
+
+  // 规则 35 自保：内核可被直接调用，不能只靠路由层拦
+  if (direction === DIRECTIONS.MEMBER_TO_GROUP) {
+    counts.directionBlocked = 1
+    return { kind: SNAPSHOT_KIND, direction, sourceUserId, targetUserId, fields, items, counts, scopeJson, belongUserId: null, keyword }
+  }
+
+  const sourceRows = db.prepare(`
+    SELECT * FROM ${SNAPSHOT_KIND} WHERE user_id = ? ORDER BY brand, period_seq
+  `).all(sourceUserId) || []
+
+  // 目标账号「品牌|期次」占用表 —— 判重键（先到先得）
+  const occ = new Map()
+  for (const r of db.prepare(`
+    SELECT id, brand, period, origin_user_id, origin_owner FROM ${SNAPSHOT_KIND} WHERE user_id = ? ORDER BY id
+  `).all(targetUserId) || []) {
+    const k = snapshotKey(r)
+    if (occ.has(k)) { counts.duplicateShadowed++; continue }
+    occ.set(k, r)
+  }
+
+  const sourceIds = new Set()
+
+  for (const snap of sourceRows) {
+    // 防回环（规则 3）
+    if (snap.origin_user_id != null && Number(snap.origin_user_id) === Number(targetUserId)) {
+      counts.selfOrigin++
+      counts.skipped++
+      items.skipped.push({ kind: SNAPSHOT_KIND, rowId: snap.id, name: snapLabel(snap), reason: 'self_origin' })
+      continue
+    }
+    // 品牌维度越界 ⇒ 整期不下发（源侧仍在，故不会被判删除）
+    if (!snapshotHeaderAllowed(snap, f)) { counts.outOfScope++; continue }
+    // 期次收窄（可选 filter.periods）：未勾选的期次不下发。
+    // ★ 它**不是**删除条件 —— 下面的反向扫描靠 `stillExists`（源行确实还在）兜住，
+    //   所以「这轮只下 2026-08」不会把子公司已有的 2026-05 档案清掉。
+    if (f.periods.size > 0 && !f.periods.has(String(snap.period || '').trim())) { counts.periodFiltered++; continue }
+    sourceIds.add(snap.id)
+
+    const det = readSnapshotRows(db, snap.id, f)
+    counts.detailOutOfScope += det.outOfScope
+    counts.detailOutOfFilter += det.outOfFilter
+
+    const mirror = db.prepare(`
+      SELECT * FROM ${SNAPSHOT_KIND}
+       WHERE user_id = ? AND origin_user_id = ? AND origin_row_id = ?
+    `).get(targetUserId, sourceUserId, snap.id)
+
+    if (!mirror) {
+      // ---- 判重：目标账号里已有同「品牌|期次」档案（自建的 / 别家下发的）----
+      //   头表有 UNIQUE(user_id,brand,period)，硬插会撞唯一索引让整个事务回滚。
+      //   按先到先得记 duplicate 提示，⛔ 不覆盖、不静默丢弃。
+      const hit = occ.get(snapshotKey(snap))
+      if (hit) {
+        counts.duplicate++
+        items.duplicate.push({
+          key: `duplicate:snap:${snap.id}`, kind: SNAPSHOT_KIND, rowId: snap.id,
+          matchedRowId: hit.id, matchedIsLocal: hit.origin_user_id == null,
+          matchedOriginUserId: hit.origin_user_id ?? null,
+          matchedOriginOwner: hit.origin_owner ?? null,
+          by: 'brand_period',
+          name: snapLabel(snap), brand: snap.brand, period: snap.period, period_seq: snap.period_seq,
+          detailRows: det.kept.length, originTotalCount: snap.total_count ?? 0
+        })
+        continue
+      }
+      // 本辖区一行都没有 ⇒ 该期对这家子公司无意义，不写空档案
+      if (!det.kept.length) { counts.outOfScope++; continue }
+
+      counts.added++
+      counts.detailRows += det.kept.length
+      items.added.push({
+        key: `added:snap:${snap.id}`, kind: SNAPSHOT_KIND, rowId: snap.id,
+        originOwner: '',
+        name: snapLabel(snap), brand: snap.brand, period: snap.period, period_seq: snap.period_seq,
+        detailRows: det.kept.length,
+        originTotalCount: snap.total_count ?? 0, originOpenCount: snap.open_count ?? 0
+      })
+      // 同批内自重复（源侧同品牌同期次两条）就地占位，后到者判重
+      occ.set(snapshotKey(snap), { id: null, brand: snap.brand, period: snap.period })
+    } else {
+      // ---- 更新判定：头表字段 + 明细集合 + 计数，全都没变 ⇒ no_change（一行不写）----
+      const wantTotal = det.kept.length
+      const wantOpen = countOpen(det.kept)
+      const changes = diffFields(fields, snap, mirror)
+      for (const [col, want, cur] of [
+        ['total_count', wantTotal, mirror.total_count],
+        ['open_count', wantOpen, mirror.open_count],
+        ['origin_total_count', snap.total_count ?? null, mirror.origin_total_count],
+        ['origin_open_count', snap.open_count ?? null, mirror.origin_open_count]
+      ]) {
+        if (!looseEqual(cur, want)) changes.push({ field: col, from: isBlank(cur) ? null : cur, to: isBlank(want) ? null : want })
+      }
+      const detailChanged = !sameSnapshotRows(readMirrorRows(db, mirror.id), det.kept)
+
+      if (!detailChanged && changes.length === 0) {
+        counts.noChange++
+        counts.skipped++
+        items.skipped.push({ kind: SNAPSHOT_KIND, rowId: snap.id, name: snapLabel(snap), reason: 'no_change' })
+      } else {
+        counts.updated++
+        counts.detailRows += wantTotal
+        items.updated.push({
+          key: `updated:snap:${mirror.id}`, kind: SNAPSHOT_KIND, rowId: snap.id, mirrorRowId: mirror.id,
+          name: snapLabel(snap), brand: snap.brand, period: snap.period, period_seq: snap.period_seq,
+          detailRows: wantTotal, detailChanged, changes
+        })
+      }
+    }
+  }
+
+  // 反向扫描 = 删除传播（规则 6）：镜像所依据的源期次已不存在
+  const mirrors = db.prepare(`
+    SELECT * FROM ${SNAPSHOT_KIND} WHERE user_id = ? AND origin_user_id = ?
+  `).all(targetUserId, sourceUserId) || []
+
+  for (const mi of mirrors) {
+    if (mi.origin_row_id != null && sourceIds.has(mi.origin_row_id)) continue
+    // 源期次仍在、只是被收窄的 scope 挡在范围外 ⇒ 刻意不删（与 markers 同口径：
+    // 「改一次范围就丢一批档案」比留着一份旧档案糟得多）。要清请走「移除外来副本」。
+    const stillExists = mi.origin_row_id == null
+      ? false
+      : !!db.prepare(`SELECT 1 FROM ${SNAPSHOT_KIND} WHERE id = ? AND user_id = ?`).get(mi.origin_row_id, sourceUserId)
+    if (stillExists) continue
+
+    counts.deleted++
+    items.deleted.push({
+      key: `deleted:snap:${mi.id}`, kind: SNAPSHOT_KIND, mirrorRowId: mi.id,
+      name: snapLabel(mi), brand: mi.brand, period: mi.period, period_seq: mi.period_seq,
+      reason: mi.origin_row_id == null ? 'orphan' : 'source_removed'
+    })
+  }
+
+  counts.total = counts.added + counts.updated + counts.deleted + counts.skipped + counts.duplicate
+  return { kind: SNAPSHOT_KIND, direction, sourceUserId, targetUserId, fields, items, counts, scopeJson, belongUserId: null, keyword }
+}
+
+/** 快照候选（与 `buildSnapshotPlan` 同源判定，「候选 N 期」与「预览 N 期」必须对得上） */
+export function listSnapshotCandidates(db, opts) {
+  const { sourceUserId, targetUserId, scopeJson = null, keyword = '', periods = [] } = opts || {}
+  const f = snapshotFilters({ scopeJson, keyword, periods })
+
+  const rows = db.prepare(`
+    SELECT * FROM ${SNAPSHOT_KIND} WHERE user_id = ? ORDER BY brand, period_seq
+  `).all(sourceUserId) || []
+
+  const occ = new Set()
+  for (const r of db.prepare(`SELECT brand, period FROM ${SNAPSHOT_KIND} WHERE user_id = ?`).all(targetUserId) || []) {
+    occ.add(snapshotKey(r))
+  }
+
+  const inScope = []
+  let outOfScope = 0
+  let outOfFilter = 0
+  let selfOrigin = 0
+  let duplicate = 0
+  let detailRows = 0
+  let periodFiltered = 0
+
+  for (const snap of rows) {
+    if (snap.origin_user_id != null && Number(snap.origin_user_id) === Number(targetUserId)) { selfOrigin++; continue }
+    if (!snapshotHeaderAllowed(snap, f)) { outOfScope++; continue }
+    if (f.periods.size > 0 && !f.periods.has(String(snap.period || '').trim())) { periodFiltered++; continue }
+
+    const det = readSnapshotRows(db, snap.id, f)
+    outOfFilter += det.outOfFilter
+    const mirror = db.prepare(`
+      SELECT id FROM ${SNAPSHOT_KIND} WHERE user_id = ? AND origin_user_id = ? AND origin_row_id = ?
+    `).get(targetUserId, sourceUserId, snap.id)
+
+    const isDup = !mirror && occ.has(snapshotKey(snap))
+    if (isDup) duplicate++
+
+    // 与 buildPlan 对齐：本辖区无行且非重复命中 ⇒ 该期不参与下发（计越界）
+    if (!mirror && !isDup && !det.kept.length) { outOfScope++; continue }
+
+    detailRows += det.kept.length
+    inScope.push({
+      kind: SNAPSHOT_KIND,
+      rowId: snap.id,
+      mirrorRowId: mirror ? mirror.id : null,
+      mirrorState: mirror ? 'synced' : (isDup ? 'duplicate' : 'new'),
+      duplicated: isDup,
+      name: snapLabel(snap), brand: snap.brand, period: snap.period, period_seq: snap.period_seq,
+      detailRows: det.kept.length,
+      originTotalCount: snap.total_count ?? 0
+    })
+  }
+
+  return { kind: SNAPSHOT_KIND, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin, duplicate, detailRows, periodFiltered }
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +993,106 @@ export function listCandidatesForKinds(db, opts) {
 /** 目标侧镜像行的系统列取值 */
 function mirrorMeta({ batchId, sourceUserId, sourceLabel }) {
   return { origin_user_id: sourceUserId, origin_owner: sourceLabel || '', sync_batch_id: batchId, sync_readonly: 1 }
+}
+
+/**
+ * 写入/更新一期快照镜像（头表 + 本辖区明细）。**调用方必须已在事务内**。
+ *
+ * ★ 为什么「插头表 → 灌明细 → 回头定稿计数」三步而不是先算后插：
+ *   计数必须与**实际落库行数**一致，而实际落库受 `UNIQUE(snapshot_id, store_key)` 约束
+ *   （源侧同键重复行会被 OR IGNORE 丢掉）⇒ 只有插完才知道真数。
+ *   `total_count` 若照抄源侧，子公司监测面板就会出现「写着 1905 家、列表只有 650 家」。
+ *
+ * ★ 明细用 `INSERT OR IGNORE`：源侧同期偶然出现重复 store_key 时，
+ *   宁可丢掉那一行副本，也不能让 UNIQUE 冲突把**整个同步事务**回滚。
+ *
+ * @returns {{ok:true, mirrorId:number, rows:number, replaced:number}} | {{ok:false, reason:string}}
+ */
+function writeSnapshotMirror(db, { sourceSnapshotId, targetUserId, sourceUserId, batchId, sourceLabel, filters }) {
+  const snap = db.prepare(`SELECT * FROM ${SNAPSHOT_KIND} WHERE id = ? AND user_id = ?`)
+    .get(sourceSnapshotId, sourceUserId)
+  if (!snap) return { ok: false, reason: 'source_gone' }
+
+  const det = readSnapshotRows(db, snap.id, filters)
+  const mirror = db.prepare(`
+    SELECT * FROM ${SNAPSHOT_KIND} WHERE user_id = ? AND origin_user_id = ? AND origin_row_id = ?
+  `).get(targetUserId, sourceUserId, sourceSnapshotId)
+
+  let mirrorId
+  if (mirror) {
+    // 目标账号已「脱离同步」这个期次 ⇒ 它是自有档案了，绝不覆盖（规则 4）
+    if (Number(mirror.sync_readonly) !== 1) return { ok: false, reason: 'mirror_locked_or_missing' }
+
+    db.prepare(`
+      UPDATE ${SNAPSHOT_KIND}
+         SET brand = ?, period = ?, period_seq = ?, source_file = ?, data_version = ?,
+             origin_total_count = ?, origin_open_count = ?,
+             origin_owner = ?, sync_batch_id = ?, updated_at = datetime('now')
+       WHERE id = ? AND user_id = ? AND sync_readonly = 1
+    `).run(
+      snap.brand, snap.period, snap.period_seq, snap.source_file ?? null, snap.data_version ?? null,
+      snap.total_count ?? null, snap.open_count ?? null,
+      sourceLabel || '', batchId, mirror.id, targetUserId
+    )
+    mirrorId = mirror.id
+  } else {
+    const r = db.prepare(`
+      INSERT INTO ${SNAPSHOT_KIND}
+        (user_id, brand, period, period_seq, source_file, data_version,
+         total_count, open_count, origin_user_id, origin_row_id, origin_owner,
+         sync_batch_id, sync_readonly, origin_total_count, origin_open_count,
+         created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, 1, ?, ?, datetime('now'), datetime('now'))
+    `).run(
+      targetUserId, snap.brand, snap.period, snap.period_seq, snap.source_file ?? null, snap.data_version ?? null,
+      sourceUserId, snap.id, sourceLabel || '', batchId,
+      snap.total_count ?? null, snap.open_count ?? null
+    )
+    mirrorId = r.lastInsertRowid
+    // ⚠️ 刻意**不复制 file_hash**：那是「源侧那个文件」的 md5，目标账号从没见过它，
+    //   照抄会让子公司侧「重复导入检测」用错基准。
+  }
+
+  // ---- 明细：先比后写（集合没变就一行不写 —— 避免每轮同步重灌上千行）----
+  let replaced = 0
+  if (!sameSnapshotRows(readMirrorRows(db, mirrorId), det.kept)) {
+    db.prepare(`DELETE FROM ${SNAPSHOT_ROWS_TABLE} WHERE snapshot_id = ?`).run(mirrorId)
+    const ins = db.prepare(`
+      INSERT OR IGNORE INTO ${SNAPSHOT_ROWS_TABLE}
+        (snapshot_id, store_key, name, city, district, address, latitude, longitude, status, description, extra, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `)
+    for (const r of det.kept) {
+      const rr = ins.run(
+        mirrorId, r.store_key, r.name ?? null, r.city ?? null, r.district ?? null, r.address ?? null,
+        r.latitude ?? null, r.longitude ?? null, r.status ?? 'unknown', r.description ?? null, r.extra ?? null
+      )
+      if (rr && rr.changes > 0) replaced++
+    }
+  }
+
+  // ---- 定稿计数：按**实际落库**行数（含被 OR IGNORE 丢掉的行）----
+  const actual = readMirrorRows(db, mirrorId)
+  db.prepare(`
+    UPDATE ${SNAPSHOT_KIND} SET total_count = ?, open_count = ?, updated_at = datetime('now')
+     WHERE id = ? AND user_id = ?
+  `).run(actual.length, countOpen(actual), mirrorId, targetUserId)
+
+  return { ok: true, mirrorId, rows: actual.length, replaced }
+}
+
+/**
+ * 删除一期快照镜像。**先清明细再删头表**（规则 36）：
+ * sqlite3/sql.js 的 `foreign_keys` 默认不开，`ON DELETE CASCADE` **不会触发**，
+ * 靠级联会留下一堆永远不会被引用的孤儿明细行（P1 清理 user4 时实际踩到过这个坑）。
+ */
+function deleteSnapshotMirror(db, { mirrorRowId, targetUserId, sourceUserId }) {
+  db.prepare(`DELETE FROM ${SNAPSHOT_ROWS_TABLE} WHERE snapshot_id = ?`).run(mirrorRowId)
+  const r = db.prepare(`
+    DELETE FROM ${SNAPSHOT_KIND}
+     WHERE id = ? AND user_id = ? AND origin_user_id = ? AND sync_readonly = 1
+  `).run(mirrorRowId, targetUserId, sourceUserId)
+  return (r && r.changes) || 0
 }
 
 /**
@@ -616,8 +1114,17 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
   const ex = new Set(excluded || [])
   const { kind, sourceUserId, targetUserId } = plan
 
-  const result = { inserted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0, duplicate: 0, detail: [] }
+  const result = { inserted: 0, updated: 0, deleted: 0, skipped: 0, failed: 0, duplicate: 0, snapshotRows: 0, detail: [] }
   const push = (row) => { if (result.detail.length < DETAIL_SAMPLE_LIMIT) result.detail.push(row) }
+
+  // 快照明细在 **apply 阶段**按城市过滤 ⇒ 用与预览同源的口径重建过滤器
+  // （plan.scopeJson 由 buildPlan/buildPlanForKinds 回传）
+  const snapFilters = snapshotFilters({
+    scopeJson: plan.scopeJson ?? null,
+    keyword: plan.keyword || '',
+    periods: plan.periods || []
+  })
+  const isSnap = (k) => k === SNAPSHOT_KIND
 
   // ---- 按对象缓存字段与 INSERT 语句（多对象批次下每张表各一份）----
   const fieldsFor = (k) => (plan.fieldsByKind && plan.fieldsByKind[k]) || plan.fields || []
@@ -647,6 +1154,23 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
     for (const it of plan.items.added) {
       const k = kindOf(it)
       if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', rowId: it.rowId, reason: 'user_excluded' }); continue }
+
+      // ---- 特例：快照 = 头表 + 本辖区明细（§5b）----
+      if (isSnap(k)) {
+        const w = writeSnapshotMirror(db, {
+          sourceSnapshotId: it.rowId, targetUserId, sourceUserId, batchId, sourceLabel, filters: snapFilters
+        })
+        if (!w.ok) {
+          result.failed++
+          push({ kind: k, action: 'insert', rowId: it.rowId, name: it.name, period: it.period, reason: w.reason })
+        } else {
+          result.inserted++
+          result.snapshotRows += w.rows
+          push({ kind: k, action: 'insert', rowId: it.rowId, mirrorRowId: w.mirrorId, name: it.name, period: it.period, rows: w.rows })
+        }
+        continue
+      }
+
       const src = db.prepare(`SELECT * FROM ${k} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
       if (!src) { result.failed++; push({ kind: k, action: 'insert', rowId: it.rowId, reason: 'source_gone' }); continue }
 
@@ -664,6 +1188,26 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
     for (const it of plan.items.updated) {
       const k = kindOf(it)
       if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
+
+      // ---- 特例：快照（§5b）----
+      if (isSnap(k)) {
+        const w = writeSnapshotMirror(db, {
+          sourceSnapshotId: it.rowId, targetUserId, sourceUserId, batchId, sourceLabel, filters: snapFilters
+        })
+        if (!w.ok) {
+          result.failed++
+          push({ kind: k, action: 'update', mirrorRowId: it.mirrorRowId, name: it.name, period: it.period, reason: w.reason })
+        } else {
+          result.updated++
+          result.snapshotRows += w.rows
+          push({
+            kind: k, action: 'update', mirrorRowId: w.mirrorId, rowId: it.rowId,
+            name: it.name, period: it.period, rows: w.rows, replaced: w.replaced, changes: it.changes
+          })
+        }
+        continue
+      }
+
       const src = db.prepare(`SELECT * FROM ${k} WHERE id = ? AND user_id = ?`).get(it.rowId, sourceUserId)
       if (!src) { result.failed++; push({ kind: k, action: 'update', mirrorRowId: it.mirrorRowId, reason: 'source_gone' }); continue }
 
@@ -687,6 +1231,20 @@ export function applyPlan(db, { plan, excluded = [], batchId, sourceLabel = '' }
     for (const it of plan.items.deleted) {
       const k = kindOf(it)
       if (ex.has(it.key)) { result.skipped++; push({ kind: k, action: 'skip', mirrorRowId: it.mirrorRowId, reason: 'user_excluded' }); continue }
+
+      // ---- 特例：快照（§5b）—— 先清明细再删头表，避免孤儿（规则 36）----
+      if (isSnap(k)) {
+        const n = deleteSnapshotMirror(db, { mirrorRowId: it.mirrorRowId, targetUserId, sourceUserId })
+        if (!n) {
+          result.failed++
+          push({ kind: k, action: 'delete', mirrorRowId: it.mirrorRowId, name: it.name, period: it.period, reason: 'mirror_locked_or_missing' })
+        } else {
+          result.deleted++
+          push({ kind: k, action: 'delete', mirrorRowId: it.mirrorRowId, name: it.name, period: it.period })
+        }
+        continue
+      }
+
       // 再确认一次：只删「仍是本批次来源的只读镜像」，绝不误删用户已脱离同步的自有行
       const r = db.prepare(`
         DELETE FROM ${k}
@@ -1010,14 +1568,15 @@ export function buildTransferPlan(db, {
   fromUserId,
   toUserId,
   cities = [],
-  kinds = SYNC_KINDS
+  kinds = ROW_KINDS
 } = {}) {
   const owner = Number(ownerUserId)
   const from = Number(fromUserId)
   const to = Number(toUserId)
   const keys = cityKeySet(cities)
-  const list = (Array.isArray(kinds) && kinds.length ? kinds : SYNC_KINDS)
-    .filter(k => SYNC_KINDS.includes(k))
+  // ⛔ 划拨只认「行级对象」（ROW_KINDS）：快照头表没有 city 列，卷进来会 SQL 报错。
+  const list = (Array.isArray(kinds) && kinds.length ? kinds : ROW_KINDS)
+    .filter(k => ROW_KINDS.includes(k))
 
   const hitCity = (row) => keys.has(normalizeCity(row.city))
 
@@ -1477,6 +2036,17 @@ function rollbackSyncBatch(db, { batch, actorId = null }) {
   db.beginTx()
   try {
     for (const kind of list) {
+      // 快照（§5b）：明细无 user_id ⇒ 必须**先按头表圈出本批次的镜像期次，再清它们的明细**，
+      // 否则回滚掉头表后会留下永远无人引用的孤儿明细行（规则 36）。
+      if (kind === SNAPSHOT_KIND) {
+        db.prepare(`
+          DELETE FROM ${SNAPSHOT_ROWS_TABLE}
+           WHERE snapshot_id IN (
+             SELECT id FROM ${SNAPSHOT_KIND}
+              WHERE user_id = ? AND origin_user_id = ? AND sync_batch_id = ? AND sync_readonly = 1
+           )
+        `).run(target, source, batch.id)
+      }
       const r = db.prepare(`
         DELETE FROM ${kind}
          WHERE user_id = ? AND origin_user_id = ? AND sync_batch_id = ? AND sync_readonly = 1

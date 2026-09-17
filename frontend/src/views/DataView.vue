@@ -112,15 +112,23 @@
         style="width: 100%"
         @selection-change="handleSelectionChange"
       >
-        <el-table-column type="selection" width="45" reserve-selection />
+        <el-table-column type="selection" width="45" reserve-selection :selectable="(row) => !isLocked(row)" />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="100" />
-        <el-table-column prop="name" label="门店名称" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="name" label="门店名称" min-width="240">
           <template #default="{ row }">
-            {{ row.name }}
-            <template v-if="getStoreStars(row.name) > 0">
-              <span class="store-stars">{{ '⭐'.repeat(getStoreStars(row.name)) }}</span>
-            </template>
+            <!-- 不用 show-overflow-tooltip：它会给 .cell 加 overflow:hidden，
+                 名称一长就把后面的星级与「集团下发」标签整块裁掉。改成 flex +
+                 名称自身省略号化，星级/标签始终可见（名称全称靠 title 悬停）。 -->
+            <div class="cell-wrap">
+              <span class="cell-name" :title="row.name">{{ row.name }}</span>
+              <span v-if="getStoreStars(row.name) > 0" class="store-stars">
+                {{ '⭐'.repeat(getStoreStars(row.name)) }}
+              </span>
+              <el-tag v-if="isLocked(row)" size="small" type="info" effect="plain" class="lock-tag">
+                集团下发
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="联通人口" width="110" align="center">
@@ -165,7 +173,7 @@
             <el-button type="success" link @click="openSaleDialog([row])" title="录月度销售">
               <el-icon><Money /></el-icon>
             </el-button>
-            <el-button type="primary" link @click="handleEdit(row)">
+            <el-button type="primary" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '编辑'" @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
             </el-button>
             <el-button type="success" link @click="handleLocate(row)">
@@ -174,7 +182,7 @@
             <el-button type="warning" link @click="handleViewPurchase(row)">
               📋
             </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
+            <el-button type="danger" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '删除'" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </template>
@@ -822,6 +830,12 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
+
+// ★ 集团下发镜像行（sync_readonly=1）：由集团账号统一维护，本账号只读（规则 4）。
+//   前端置灰 + tooltip；后端 blockedBySyncLock 仍会 403 兜底（双拦截）。
+//   注意：录月度销售（store_sales）是**按用户**记账的业务数据，不受只读锁限制。
+const isLocked = (row) => Number(row && row.sync_readonly) === 1
+const LOCK_TIP = '由集团统一维护，只读'
 const showBatchSmartstepsDialog = ref(false)
 
 
@@ -1020,6 +1034,7 @@ const showAddDialog = () => {
 
 // 编辑
 const handleEdit = (row) => {
+  if (isLocked(row)) { ElMessage.warning(`「${row.name}」${LOCK_TIP}`); return }
   isEdit.value = true
   editingId.value = row.id
   Object.assign(form, {
@@ -1076,6 +1091,7 @@ const handleSave = async () => {
 
 // 删除
 const handleDelete = async (row) => {
+  if (isLocked(row)) { ElMessage.warning(`「${row.name}」${LOCK_TIP}`); return }
   try {
     await ElMessageBox.confirm(`确定要删除门店「${row.name}」吗？`, '提示', {
       type: 'warning'
@@ -1274,14 +1290,17 @@ const submitSales = async () => {
 // 批量删除
 const handleBatchDelete = async () => {
   if (selectedRows.value.length === 0) return
+  // ★ 防御：只读镜像行不可删（勾选框已 :selectable 屏蔽，此处兜底）
+  const deletable = selectedRows.value.filter(row => !isLocked(row))
+  if (deletable.length === 0) { ElMessage.warning('所选门店均为集团下发，只读不可删除'); return }
   try {
-    await ElMessageBox.confirm(`确定要删除选中的 ${selectedRows.value.length} 条门店数据吗？`, '提示', {
+    await ElMessageBox.confirm(`确定要删除选中的 ${deletable.length} 条门店数据吗？`, '提示', {
       type: 'warning'
     })
-    const ids = selectedRows.value.map(row => row.id)
+    const ids = deletable.map(row => row.id)
     const result = await markerStore.batchDeleteMarkers(ids)
     if (result.success) {
-      ElMessage.success(`成功删除 ${result.count} 条数据`)
+      ElMessage.success(result.message || `成功删除 ${result.count} 条数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
       // 重置筛选条件
@@ -1298,8 +1317,11 @@ const handleBatchDelete = async () => {
 const handleClearAll = async () => {
   try {
     const hasFilter = hasActiveFilters.value
-    const targetIds = hasFilter ? filteredMarkers.value.map(m => m.id) : null
-    const count = targetIds?.length || markerStore.markers.length
+    // ★ 只读镜像行不计入「待删除」，也不计入数量提示（后端同样会保留它们）
+    const deletable = markerStore.markers.filter(m => !isLocked(m))
+    const targetIds = hasFilter ? filteredMarkers.value.filter(m => !isLocked(m)).map(m => m.id) : null
+    const count = hasFilter ? targetIds.length : deletable.length
+    if (count === 0) { ElMessage.warning('没有可清除的自有门店（集团下发为只读）'); return }
     const msg = hasFilter
       ? `将删除当前筛选条件下的 ${count} 条门店数据，不可恢复！确定继续吗？`
       : `此操作将清空您所有的 ${count} 条门店数据，不可恢复！确定继续吗？`
@@ -1316,7 +1338,7 @@ const handleClearAll = async () => {
     }
 
     if (result.success) {
-      ElMessage.success(`已清除 ${result.count} 条门店数据`)
+      ElMessage.success(result.message || `已清除 ${result.count} 条门店数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
       if (!hasFilter) markerStore.clearFilters()
@@ -2261,7 +2283,31 @@ const resetRanking = () => {
 }
 
 .store-stars {
-  margin-left: 4px;
+  flex: 0 0 auto;
+  margin-left: 0;
   font-size: 12px;
+}
+
+.lock-tag {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* ★ 名称单元格：flex + min-width:0 ⇒ 名称可省略号化，星级/标签永不压缩 */
+.cell-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cell-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

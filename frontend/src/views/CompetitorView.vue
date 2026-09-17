@@ -79,13 +79,25 @@
         style="width: 100%"
         @selection-change="handleSelectionChange"
       >
-        <el-table-column type="selection" width="45" reserve-selection />
+        <el-table-column type="selection" width="45" reserve-selection :selectable="(row) => !isLocked(row)" />
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
             {{ row.brand }}
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="门店名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="name" label="门店名称" min-width="220">
+          <template #default="{ row }">
+            <!-- 不用 show-overflow-tooltip：它会给 .cell 加 overflow:hidden，
+                 名称一长就把后面的「集团下发」标签整块裁掉。改成 flex + 名称自身
+                 省略号化，标签始终可见（名称全称靠 title 悬停）。 -->
+            <div class="cell-wrap">
+              <span class="cell-name" :title="row.name">{{ row.name }}</span>
+              <el-tag v-if="isLocked(row)" size="small" type="info" effect="plain" class="lock-tag">
+                集团下发
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="营业状态" width="100" show-overflow-tooltip>
           <template #default="{ row }">
             <span>{{ row.status || '未知' }}</span>
@@ -112,12 +124,20 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <el-button type="danger" link @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
+            <el-tooltip :disabled="!isLocked(row)" :content="LOCK_TIP" placement="top">
+              <span>
+                <el-button type="primary" link :disabled="isLocked(row)" @click="handleEdit(row)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+              </span>
+            </el-tooltip>
+            <el-tooltip :disabled="!isLocked(row)" :content="LOCK_TIP" placement="top">
+              <span>
+                <el-button type="danger" link :disabled="isLocked(row)" @click="handleDelete(row)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </span>
+            </el-tooltip>
             <el-button type="success" link @click="handleLocate(row)">
               <el-icon><Location /></el-icon>
             </el-button>
@@ -400,6 +420,11 @@ const editingId = ref(null)
 const tableRef = ref(null)
 const selectedRows = ref([])
 
+// ★ 集团下发镜像行（sync_readonly=1）：由集团账号统一维护，本账号只读。
+//   前端置灰 + tooltip 说明来源；后端 blockedBySyncLock 仍会 403 兜底（双拦截）。
+const isLocked = (row) => Number(row && row.sync_readonly) === 1
+const LOCK_TIP = '由集团统一维护，只读'
+
 // Tab 结构：list=竞品列表 / upload=期次上传 / monitor=开关店监测
 const activeTab = ref('list')
 const uploadPanelRef = ref(null)
@@ -554,6 +579,7 @@ const showAddDialog = () => {
 }
 
 const handleEdit = (row) => {
+  if (isLocked(row)) { ElMessage.warning(`「${row.name}」${LOCK_TIP}`); return }
   isEdit.value = true
   editingId.value = row.id
   Object.assign(form, {
@@ -599,6 +625,7 @@ const handleSave = async () => {
 }
 
 const handleDelete = async (row) => {
+  if (isLocked(row)) { ElMessage.warning(`「${row.name}」${LOCK_TIP}`); return }
   try {
     await ElMessageBox.confirm(`确定要删除「${row.name}」吗？`, '提示', { type: 'warning' })
     const result = await competitorStore.deleteCompetitor(row.id)
@@ -614,9 +641,12 @@ const handleSelectionChange = (selection) => { selectedRows.value = selection }
 
 const handleBatchDelete = async () => {
   if (selectedRows.value.length === 0) return
+  // ★ 防御：只读镜像行不可删（勾选框已 :selectable 屏蔽，此处兜底）
+  const deletable = selectedRows.value.filter(row => !isLocked(row))
+  if (deletable.length === 0) { ElMessage.warning('所选数据均为集团下发，只读不可删除'); return }
   try {
-    await ElMessageBox.confirm(`确定要删除选中的 ${selectedRows.value.length} 条竞品数据吗？`, '提示', { type: 'warning' })
-    const ids = selectedRows.value.map(row => row.id)
+    await ElMessageBox.confirm(`确定要删除选中的 ${deletable.length} 条竞品数据吗？`, '提示', { type: 'warning' })
+    const ids = deletable.map(row => row.id)
     const result = await competitorStore.batchDeleteCompetitors(ids)
     if (result.success) {
       ElMessage.success(`成功删除 ${result.count} 条数据`)
@@ -637,13 +667,20 @@ const handleLocate = (row) => {
 const handleClearAll = async () => {
   try {
     await ElMessageBox.confirm(
-      '此操作将清空所有竞品门店数据，不可恢复！确定继续吗？',
+      '此操作将清空所有<b>自有</b>竞品门店数据，不可恢复！<br/>集团下发的镜像竞品会被保留。',
       '危险操作',
-      { type: 'warning', confirmButtonText: '确定清空', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
+      {
+        type: 'warning',
+        dangerouslyUseHTMLString: true,
+        confirmButtonText: '确定清空',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger'
+      }
     )
     const result = await competitorStore.clearAllCompetitors()
     if (result.success) {
-      ElMessage.success(`已清空 ${result.count} 条竞品数据`)
+      // 后端会在保留只读镜像行时回传完整说明文案，直接用
+      ElMessage.success(result.message || `已清空 ${result.count} 条竞品数据`)
       tableRef.value?.clearSelection()
       selectedRows.value = []
       // 重置筛选条件
@@ -745,6 +782,27 @@ const handleExport = async () => {
   background: white;
   border-radius: 8px;
   padding: 15px;
+}
+.lock-tag {
+  flex: 0 0 auto;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 18px;
+}
+/* ★ 名称单元格：flex + min-width:0 ⇒ 名称可省略号化，标签/星级永不压缩 */
+.cell-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cell-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pagination-container {
   margin-top: 15px;
