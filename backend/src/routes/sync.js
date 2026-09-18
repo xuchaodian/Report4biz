@@ -326,9 +326,12 @@ router.get('/scope-options', authenticate, (req, res) => {
       kinds: SYNC_KINDS.map(k => ({ kind: k, ...KIND_META[k] })),
       cities,
       brands,
+      // 三类来源（门店 ∪ 竞品 ∪ 快照明细）的行数合计。
+      // ⚠️ 字段名沿用历史的 `totalMarkers`（前端未消费，保留以免破坏契约），
+      //    语义自 v1.13.154 起已不止「门店」—— 改名前请先确认无外部消费者。
       totalMarkers: cities.reduce((s, c) => s + c.count, 0),
       selected,
-      note: '城市候选 = 集团账号「我的门店」中出现过的城市；管辖范围只到城市级（规则 11）'
+      note: '城市候选 = 集团账号「我的门店 / 竞品门店 / 竞品期次快照」中出现过的城市；管辖范围只到城市级（规则 11）'
     })
   } catch (error) {
     console.error('获取管辖范围选项失败:', error)

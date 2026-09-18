@@ -125,9 +125,23 @@ export function collectConflicts(members, cities, excludeUserId = null) {
 }
 
 /**
- * 城市候选聚合 —— 「集团账号实际有门店的城市」（规则 11：只到城市级）。
- * 按归一化键合并（「上海市 / 上海 / ' 上海 市 '」视为同城），`count` 为该键下门店总数，
- * `name` 保留**首次出现**的原样写法。
+ * 城市候选聚合 —— 「集团账号**确有数据**的城市」（规则 11：只到城市级）。
+ *
+ * ★ v1.13.154 起候选来源放宽为**三类合并**（原实现只算 `markers`）：
+ *     ① `markers`                 我的门店
+ *     ② `competitors`             竞品门店
+ *     ③ `competitor_snapshot_rows` 竞品期次快照明细（⚠️ **该表没有 user_id** ——
+ *        靠 `snapshot_id` 归属，必须 JOIN 头表 `competitor_snapshots` 才能按账号过滤）
+ *   起因（生产实际卡死过）：集团若**只导入竞品 / 只导入季度快照**而还没建门店清单，
+ *   门店候选就是空的 ⇒ 「管辖范围」下拉无城市可选、保存也被 400 拒（两处同用本函数）
+ *   ⇒ `scope_json` 永远为空 ⇒ 同步**两个方向都恒 0 行**（`inAllowedScope` 空集恒 false）。
+ *   放宽后语义仍是「集团确有数据的城市」，**不**放开到行政区划全集（避免提权）。
+ *
+ * ★ 与「品牌候选」保持一致：`routes/sync.js` 的品牌候选早已合并快照品牌
+ *   （「集团可能只上传了季度快照、还没建竞品门店列表」），本次把城市候选补齐同一口径。
+ *
+ * 按归一化键合并（「上海市 / 上海 / ' 上海 市 '」视为同城），`count` 为该键下**行数合计**，
+ * `name` 保留**首次出现**的原样写法（来源优先序：门店 → 竞品 → 快照）。
  *
  * ★ 为什么必须抽成单一事实来源：
  *   v0.13 R1 起「子公司自助设范围」写入前要校验**新增城市 ∈ 候选集**（规则 34），
@@ -135,23 +149,33 @@ export function collectConflicts(members, cities, excludeUserId = null) {
  *   迟早出现「下拉里能选、保存却被 400」或反之（前端 `ScopeEditor` 的城市候选
  *   也直接消费 options 接口）⇒ 两边都调用本函数。
  *
- * ★ 为什么候选取「集团账号的门店城市」而不是行政区划全集：
- *   scope 的语义是「集团能同步给子公司哪些城市」（§D4 两层圈定）。集团根本没有门店的
+ * ★ 为什么候选取「集团账号确有数据的城市」而不是行政区划全集：
+ *   scope 的语义是「集团能同步给子公司哪些城市」（§D4 两层圈定）。集团根本没有数据的
  *   城市，设了也不会有任何行可同步（`inAllowedScope` 恒 false），反而把下拉撑到几千项。
  *
  * ★ 收 db 参数而不 import database.js —— 本模块因此可被独立单测与生产自检（见文件头）。
  *
  * @param {object} db
  * @param {number} ownerUserId 集团总部账号 id
- * @returns {Array<{name:string,key:string,count:number}>} 按门店数降序
+ * @returns {Array<{name:string,key:string,count:number}>} 按行数降序（三类来源合计）
  */
 export function aggregateMarkersCities(db, ownerUserId) {
   const rows = db.prepare(`
     SELECT city, COUNT(*) AS n
-      FROM markers
-     WHERE user_id = ? AND city IS NOT NULL AND TRIM(city) != ''
+      FROM (
+        SELECT city FROM markers
+         WHERE user_id = ? AND city IS NOT NULL AND TRIM(city) != ''
+        UNION ALL
+        SELECT city FROM competitors
+         WHERE user_id = ? AND city IS NOT NULL AND TRIM(city) != ''
+        UNION ALL
+        SELECT r.city AS city
+          FROM competitor_snapshot_rows r
+          JOIN competitor_snapshots s ON s.id = r.snapshot_id
+         WHERE s.user_id = ? AND r.city IS NOT NULL AND TRIM(r.city) != ''
+      )
      GROUP BY city
-  `).all(ownerUserId) || []
+  `).all(ownerUserId, ownerUserId, ownerUserId) || []
 
   const map = new Map()
   for (const r of rows) {

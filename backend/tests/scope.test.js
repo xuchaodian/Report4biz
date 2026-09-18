@@ -218,18 +218,53 @@ describe('① scopeGuard 纯函数', () => {
     expect(occ.members.find(m => m.userId === 2).count).toBe(1)
   })
 
-  it('★ aggregateMarkersCities（v0.13 R1）：按归一化键聚合、计数合并、门店数降序', async () => {
+  it('★ aggregateMarkersCities（v0.13 R1 / v1.13.154）：三类来源合并、计数合并、行数降序', async () => {
     const { getDb: g } = await import('../src/models/database.js')
     const agg = aggregateMarkersCities(g(), ids.hq)
     const byKey = Object.fromEntries(agg.map(c => [c.key, c.count]))
-    // beforeAll 里集团账号造了 上海市 / 上海 / ' 上海市 ' 三条 + 杭州两条 + 苏州 + 北京
-    expect(byKey['上海']).toBe(3)
+    // beforeAll 里集团账号造了：门店 上海市 / 上海 / ' 上海市 ' 三条 + 杭州两条 + 苏州 + 北京，
+    // 以及竞品 上海市 一条 —— v1.13.154 起城市候选把竞品也并入 ⇒ 上海 = 3 + 1
+    expect(byKey['上海']).toBe(4)
     expect(byKey['杭州']).toBe(2)
     expect(byKey['苏州']).toBe(1)
     expect(byKey['北京']).toBe(1)
-    expect(agg[0].key).toBe('上海')            // 降序：上海(3) 在杭州(2) 之前
-    expect(agg[0].name).toBe('上海市')          // name 保留首次出现的原样写法
-    expect(agg.length).toBe(4)                 // 归一化后只剩 4 个城市
+    expect(agg[0].key).toBe('上海')            // 降序：上海(4) 在杭州(2) 之前
+    expect(agg[0].name).toBe('上海市')          // name 保留首次出现的原样写法（门店先于竞品）
+    expect(agg.length).toBe(4)                 // 归一化后仍是 4 个城市
+  })
+
+  it('★ 城市候选合并快照明细（v1.13.154）：集团只导了快照、还没建门店清单也能设管辖范围', async () => {
+    // 明细表 competitor_snapshot_rows **没有 user_id**（靠 snapshot_id 归属）⇒
+    // 本用例是「JOIN 写漏 / 账号过滤写漏」的回归闸
+    const { getDb: g } = await import('../src/models/database.js')
+    const db = g()
+    const snap = db.prepare(
+      `INSERT INTO competitor_snapshots (user_id, brand, period, period_seq) VALUES (?, ?, ?, ?)`
+    ).run(ids.hq, '老乡鸡', '2026-08', 1)
+    db.prepare(
+      `INSERT INTO competitor_snapshot_rows (snapshot_id, store_key, name, city, status) VALUES (?, ?, ?, ?, ?)`
+    ).run(snap.lastInsertRowid, 'NJ-001', '南京店', '南京市', 'open')
+
+    const agg = aggregateMarkersCities(g(), ids.hq)
+    expect(agg.map(c => c.key)).toContain('南京')          // 该城市 markers/competitors 里都没有
+    expect(agg.find(c => c.key === '南京').count).toBe(1)
+
+    // 反向保证：**别家账号**的快照不算进集团候选（JOIN 必须带 s.user_id 过滤）
+    const other = db.prepare(
+      `INSERT INTO competitor_snapshots (user_id, brand, period, period_seq) VALUES (?, ?, ?, ?)`
+    ).run(ids.subA, '大米先生', '2026-08', 1)
+    db.prepare(
+      `INSERT INTO competitor_snapshot_rows (snapshot_id, store_key, name, city, status) VALUES (?, ?, ?, ?, ?)`
+    ).run(other.lastInsertRowid, 'XA-001', '西安店', '西安市', 'open')
+    expect(aggregateMarkersCities(g(), ids.hq).map(c => c.key)).not.toContain('西安')
+
+    // 用完即清：本用例插了 2 期快照，不清会污染后续用例的城市候选计数。
+    // ⚠️ 明细表必须**显式**先删 —— sql.js 默认 foreign_keys=OFF，头表的 ON DELETE CASCADE 不生效
+    db.prepare(`DELETE FROM competitor_snapshot_rows WHERE snapshot_id IN (?, ?)`)
+      .run(snap.lastInsertRowid, other.lastInsertRowid)
+    db.prepare(`DELETE FROM competitor_snapshots WHERE id IN (?, ?)`)
+      .run(snap.lastInsertRowid, other.lastInsertRowid)
+    expect(aggregateMarkersCities(g(), ids.hq).map(c => c.key)).not.toContain('南京')
   })
 })
 
@@ -400,16 +435,16 @@ describe('④ 管辖范围选项 GET /api/sync/scope-options', () => {
     expect(r.status).toBe(403)
   })
 
-  it('★ 城市候选 = 集团账号有门店的城市，且按归一化键聚合计数', async () => {
+  it('★ 城市候选 = 集团账号确有数据的城市（门店 ∪ 竞品 ∪ 快照明细），按归一化键聚合计数', async () => {
     const r = await call('GET', `/api/sync/scope-options?orgId=${ids.org}`, { token: tokens.hq })
     expect(r.status).toBe(200)
     const byKey = Object.fromEntries(r.body.cities.map(c => [c.key, c.count]))
-    expect(byKey['上海']).toBe(3)     // 上海市 / 上海 / ' 上海市 ' 三条合并
+    expect(byKey['上海']).toBe(4)     // 门店 3 条合并 + 竞品 1 条（v1.13.154 起候选含竞品）
     expect(byKey['杭州']).toBe(2)
     expect(byKey['苏州']).toBe(1)
     expect(byKey['北京']).toBe(1)
-    expect(r.body.totalMarkers).toBe(7)
-    // 降序：上海(3) 在杭州(2) 之前
+    expect(r.body.totalMarkers).toBe(8)   // 门店 7 + 竞品 1（字段名沿用，语义已是三类合计）
+    // 降序：上海(4) 在杭州(2) 之前
     expect(r.body.cities[0].key).toBe('上海')
   })
 
