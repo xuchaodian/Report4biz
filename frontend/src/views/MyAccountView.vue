@@ -180,6 +180,26 @@
         <el-select v-model="filterCityMonth" placeholder="数据年月" style="width: 130px" clearable @change="handleFilterChange">
           <el-option v-for="m in cityMonthOptions" :key="m" :label="m" :value="m" />
         </el-select>
+        <!-- v1.13.157 集团可见域：「来源」筛选 —— 可见域含多个账号（集团 owner 看到子公司履历）时才出现，与「导出报表」弹窗同款 -->
+        <el-select
+          v-if="historySourceOptions.length > 1"
+          v-model="filterSource"
+          placeholder="来源"
+          style="width: 140px"
+          aria-label="按数据来源筛选购买履历"
+          @change="handleFilterChange"
+        >
+          <el-option label="全部来源" value="all" />
+          <el-option
+            v-for="s in historySourceOptions"
+            :key="s.userId"
+            :label="s.isSelf ? '本账号' : s.name"
+            :value="s.userId"
+          />
+        </el-select>
+        <el-tag v-if="historyPullOffNames.length" type="warning" size="small" effect="plain">
+          已关闭共享：{{ historyPullOffNames.join('、') }}
+        </el-tag>
         <el-button v-if="hasActiveFilters" type="warning" plain @click="resetFilters">
           <el-icon><Close /></el-icon>清除筛选
         </el-button>
@@ -211,6 +231,13 @@
         <el-table-column label="订单ID" width="110" fixed>
           <template #default="{ row }">
             <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
+          </template>
+        </el-table-column>
+        <!-- v1.13.157 集团可见域：履历混排多个账号时标出「这是谁买的」；单账号场景隐藏，不增加视觉噪音 -->
+        <el-table-column v-if="historySourceOptions.length > 1" label="来源" width="120" fixed>
+          <template #default="{ row }">
+            <el-tag v-if="row.is_self" size="small" effect="plain" type="info">本账号</el-tag>
+            <el-tag v-else size="small" effect="plain" type="success">{{ row.owner_name || '-' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="购买时间" width="135">
@@ -261,7 +288,12 @@
             <span class="quota-used">{{ row.quota_used ? '-' + row.quota_used : '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="剩余次数" width="75" align="center">
+        <el-table-column width="75" align="center">
+          <template #header>
+            <el-tooltip content="该记录购买后，它所属账号当时的剩余次数（来源非本账号时是对方账号的余额，不计入本公司配额）" placement="top">
+              <span style="cursor: help;">剩余次数</span>
+            </el-tooltip>
+          </template>
           <template #default="{ row }">
             <span class="quota-remaining">{{ row.remaining ?? '-' }}</span>
           </template>
@@ -392,7 +424,13 @@
     >
       <template #header>
         <div class="dialog-header-flex">
-          <span>📊 查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}</span>
+          <span>
+            📊 查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}
+            <!-- v1.13.157 集团可见域：打开的是子公司记录时明确标出来源（后端 /api/purchase/:id 已回传 is_self/owner_name） -->
+            <el-tag v-if="currentDetail && currentDetail.is_self === false" size="small" effect="plain" type="success" style="margin-left:6px;">
+              来源：{{ currentDetail.owner_name || '-' }}
+            </el-tag>
+          </span>
           <div class="dialog-header-actions">
             <el-button type="success" size="small" class="btn-ai-advice" @click="handleAiAdvice" :disabled="!resultData || aiAdviceLoading">
               {{ isVipUser ? '🤖 AI 选址建议' : '🔒 AI 选址建议（VIP）' }}
@@ -406,7 +444,9 @@
             <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
               📄 PDF速览
             </el-button>
-            <el-button type="warning" size="small" @click="handleShareToWeChat" :disabled="detailLoading || !currentDetail">
+            <!-- v1.13.157：分享只针对自己的记录（share-token 端点仍是自身口径 user_id = ?）；
+                 集团打开子公司记录时隐藏，避免「点了报记录不存在」，也防止把子公司付费数据生成公开分享链接 -->
+            <el-button v-if="currentDetail?.is_self !== false" type="warning" size="small" @click="handleShareToWeChat" :disabled="detailLoading || !currentDetail">
               💬 微信分享
             </el-button>
             <el-dropdown @command="handleExportDropdown" :disabled="detailLoading || !currentDetail" trigger="click">
@@ -601,6 +641,15 @@ const filterDistrict = ref('')
 const filterRadius = ref('')
 const filterCityMonth = ref('')
 
+// v1.13.157 集团可见域：「来源」筛选
+// · historySourceOptions / historyPullOffNames 由 GET /api/purchase/history 的
+//   sources / blockedByPullOff 填充（后端 scopeSummary）
+// · 只有「可见域含多个账号」时（集团 owner 看到子公司履历）下拉与「来源」列才出现；
+//   普通账号（含子公司成员）恒为单来源 ⇒ 自动隐藏，不增加视觉噪音
+const filterSource = ref('all')
+const historySourceOptions = ref([])
+const historyPullOffNames = ref([])
+
 // 筛选选项（从历史数据中提取）
 const storeTypeOptions = ['已开业', '重点候选', '一般候选']
 const cityOptions = computed(() => [...new Set(historyList.value.map(h => h.city).filter(Boolean))])
@@ -611,6 +660,7 @@ const cityMonthOptions = computed(() => [...new Set(historyList.value.map(h => h
 // 是否有激活的筛选条件
 const hasActiveFilters = computed(() => {
   return filterKeywords.value || filterStoreType.value || filterCity.value || filterDistrict.value || filterRadius.value || filterCityMonth.value
+    || (historySourceOptions.value.length > 1 && filterSource.value !== 'all')
 })
 
 // 筛选后的历史列表
@@ -640,6 +690,10 @@ const filteredHistoryList = computed(() => {
     if (filterCityMonth.value && h.city_month !== filterCityMonth.value) {
       return false
     }
+    // 来源（v1.13.157 集团可见域；'all' 或单来源时不生效）
+    if (filterSource.value !== 'all' && Number(h.owner_user_id) !== Number(filterSource.value)) {
+      return false
+    }
     return true
   })
 })
@@ -665,6 +719,7 @@ const resetFilters = () => {
   filterDistrict.value = ''
   filterRadius.value = ''
   filterCityMonth.value = ''
+  filterSource.value = 'all'
   historyPage.value = 1
 }
 
@@ -1292,10 +1347,20 @@ const showHistoryDialog = async () => {
   try {
     const { data } = await axios.get('/api/purchase/history')
     historyList.value = data.purchases || []
+    // v1.13.157 集团可见域：来源清单（>1 才显示「来源」筛选与列）+ 已关闭共享的成员提示
+    historySourceOptions.value = data.sources || []
+    historyPullOffNames.value = (data.blockedByPullOff || []).map(b => b.name).filter(Boolean)
+    // 防御：切账号后旧选中的来源可能已不在可见域内 ⇒ 回落「全部来源」，避免筛出空列表
+    if (historySourceOptions.value.length <= 1 ||
+        !historySourceOptions.value.some(s => Number(s.userId) === Number(filterSource.value))) {
+      filterSource.value = 'all'
+    }
   } catch (e) {
     console.error('加载购买履历失败:', e)
     ElMessage.error('加载购买履历失败')
     historyList.value = []
+    historySourceOptions.value = []
+    historyPullOffNames.value = []
   } finally {
     historyLoading.value = false
   }
