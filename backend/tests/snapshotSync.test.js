@@ -159,6 +159,9 @@ beforeAll(async () => {
     token: tokens.hq, body: { cities: ['北京市'], brands: [] }
   })
 
+  // v1.13.152 合规闸门：成员本人「知情确认」后才允许接收集团数据（本文件只验确认后的链路）
+  await call('POST', '/api/orgs/me/consent', { token: tokens.sub })
+
   // ---- 集团账号名下的期次档案（模拟「集团按季导入」）----
   // 老乡鸡 2026-05：全国 3 家（上海 2 / 北京 1）
   R.s1 = mkSnap(db, ids.hq, {

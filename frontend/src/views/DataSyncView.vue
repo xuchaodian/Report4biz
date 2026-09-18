@@ -35,19 +35,64 @@
           <span v-else class="ds-orgmeta">
             管辖范围 {{ scopeCities.length ? scopeCities.join(' / ') : '未设置' }}
           </span>
+          <el-tooltip
+            v-if="isMember && consented"
+            :content="`本人确认于 ${myMember.consentedAt}（合规留痕，集团不可代签）`"
+            placement="top"
+          >
+            <el-tag size="small" type="success" effect="plain">已知情确认</el-tag>
+          </el-tooltip>
           <el-button size="small" text type="primary" style="margin-left:auto" @click="loadAll">刷新</el-button>
         </div>
+
+        <!--
+          知情确认提示条（v1.13.152，仅未确认的子公司成员可见）
+          ★ 与后端闸门配套：成员未确认时 `POST /api/sync/commit` 返回 403 `consent_required`，
+            但**预览不拦** —— 成员可以先看清「会同步哪些数据」再确认。
+          ★ 页面内常驻而非弹窗：不打断浏览；且入口位置与管理端「用户管理 → 集团/子公司」
+            那列「待确认」的提示文案指向同一处（成员本人在此页自助确认，集团不可代签）。
+        -->
+        <el-alert
+          v-if="isMember && !consented"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="ds-consent-bar"
+        >
+          <template #title>
+            <div class="ds-consent-head">
+              <span>需你本人知情确认 —— 确认后才能接收集团下发的数据</span>
+              <el-button
+                type="primary"
+                size="small"
+                :loading="consenting"
+                style="margin-left:auto;"
+                @click="doConsent"
+              >我已了解，确认</el-button>
+            </div>
+          </template>
+          <div class="ds-consent-body">
+            <div>· 集团可查看并维护<b>你管辖范围内</b>的门店数据（按城市，范围外的行看不到）</div>
+            <div>· 同步给你的门店是<b>只读镜像</b>：本地不能改、不能删，只能由集团更新或撤回</div>
+            <div>· 你随时可在本页关闭「接收集团下发」与「允许集团拉取」</div>
+            <div>· 确认会记录你的账号与时间；此确认<b>不能由集团代签</b></div>
+          </div>
+        </el-alert>
 
         <!-- ① 从集团同步（仅子公司） -->
         <div v-if="isMember" class="ds-block">
           <div class="ds-block-head">
             <span class="ds-block-title">① 从集团同步</span>
-            <span class="ds-block-note">把集团授权给你的门店同步到本账号（只读镜像，由集团维护）</span>
+            <span class="ds-block-note">
+              把集团授权给你的门店同步到本账号（只读镜像，由集团维护）
+              <b v-if="!consented" class="ds-need-consent">（需先完成知情确认）</b>
+            </span>
             <el-button
               size="small"
               type="primary"
               plain
               style="margin-left:auto;"
+              :disabled="!consented"
               @click="selfScope.open = true"
             >
               设置我的管辖范围
@@ -80,9 +125,9 @@
           <template v-else>
             <div class="ds-filter">
               <span class="ds-label">数据范围</span>
-              <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
-              <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
-              <el-checkbox v-model="kinds.competitor_snapshots">竞品期次快照</el-checkbox>
+              <el-checkbox v-model="kinds.markers" :disabled="!consented">我的门店</el-checkbox>
+              <el-checkbox v-model="kinds.competitors" :disabled="!consented">竞品门店</el-checkbox>
+              <el-checkbox v-model="kinds.competitor_snapshots" :disabled="!consented">竞品期次快照</el-checkbox>
               <el-tooltip
                 content="集团按季上传的竞品期次档案（含已闭店的行）。勾选后仅同步「你管辖城市」的明细；由集团统一维护，同步下来只读。"
                 placement="top"
@@ -100,6 +145,7 @@
                 placeholder="全部管辖城市"
                 size="small"
                 style="width:220px;"
+                :disabled="!consented"
               >
                 <el-option
                   v-for="c in filterCityOptions"
@@ -117,6 +163,7 @@
                 placeholder="全部品牌"
                 size="small"
                 style="width:170px;"
+                :disabled="!consented"
               >
                 <el-option v-for="b in scopeBrandOptions" :key="b" :label="b" :value="b" />
               </el-select>
@@ -126,8 +173,9 @@
                 clearable
                 size="small"
                 style="width:190px;"
+                :disabled="!consented"
               />
-              <el-button size="small" @click="loadCandidates">查候选</el-button>
+              <el-button size="small" :disabled="!consented" @click="loadCandidates">查候选</el-button>
             </div>
 
             <div class="ds-candbar">
@@ -148,10 +196,52 @@
             </div>
 
             <div class="ds-actions">
-              <el-button type="primary" size="small" :loading="previewing" @click="doPreview">预览</el-button>
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!consented"
+                :loading="previewing"
+                @click="doPreview"
+              >预览</el-button>
               <span class="ds-muted">预览不会写入数据；确认同步才真正落地</span>
+              <span v-if="!consented" class="ds-need-consent" style="margin-left:auto;">
+                需先完成上方「知情确认」
+              </span>
             </div>
           </template>
+
+          <!--
+            我的接收设置（v1.13.152）：成员「否决权」的自助入口。
+            ★ 后端 `PATCH /api/orgs/me/settings` 自 v0.9 起就存在且限定成员本人可调，
+              但前端一直没有调用点 ⇒ 成员只能被集团改，自己关不掉、也开不回来。
+            ★ 刻意放在 v-if/v-else 链**之外**：`canReceive` 关掉后上面整段筛选区会消失，
+              若设置行也放在里面，成员就再也找不到开回来的开关（只能去求集团）。
+          -->
+          <div class="ds-mysettings">
+            <span class="ds-label">我的接收设置</span>
+            <div class="ds-myswitch">
+              <el-switch
+                :model-value="canReceive"
+                :loading="savingSettings"
+                @change="(v) => saveMySettings({ canReceive: v })"
+              />
+              <span class="ds-myswitch-text">
+                <b>接收集团下发</b>
+                <span class="ds-muted">关闭后集团无法把门店同步给你</span>
+              </span>
+            </div>
+            <div class="ds-myswitch">
+              <el-switch
+                :model-value="canPull(myMember)"
+                :loading="savingSettings"
+                @change="(v) => saveMySettings({ allowGroupPull: v })"
+              />
+              <span class="ds-myswitch-text">
+                <b>允许集团拉取</b>
+                <span class="ds-muted">关闭后集团无法把你的数据同步上去</span>
+              </span>
+            </div>
+          </div>
         </div>
 
         <!-- ② 从子公司同步（仅集团/管理员） -->
@@ -656,6 +746,70 @@ const isSelfEmptying = computed(() => {
 const isMember = computed(() => role.value === 'member')
 const canReceive = computed(() => Number(myMember.value?.canReceive ?? 1) !== 0)
 const canPull = (m) => Number(m?.allowGroupPull ?? 1) !== 0
+
+/**
+ * 成员本人「知情确认」（v1.13.152）
+ *
+ * ★ 后端 `POST /api/orgs/me/consent` 自 v0.9 起就存在、也有单测，
+ *   但前端**从未有过调用点** ⇒ `org_members.consented_at` 永远是 NULL，
+ *   管理端「用户管理 → 集团/子公司」那列「知情确认」的「待确认」成了死状态
+ *   （提示文案还写着"等待成员本人在「数据同步」页点击确认"，指向一个不存在的按钮）。
+ *   本函数补上这个入口。
+ * ★ 与后端闸门配套：未确认时 `POST /api/sync/commit` 返回 403 `consent_required`；
+ *   但**预览刻意放开** —— 成员可以先看清「会同步哪些数据」再决定是否确认。
+ * ★ 确认只写一次（后端幂等：已确认再调返回 alreadyConsented）。
+ */
+const consented = computed(() => !!myMember.value?.consented)
+const consenting = ref(false)
+const savingSettings = ref(false)
+
+async function doConsent () {
+  try {
+    await ElMessageBox.confirm(
+      '确认后：\n' +
+      '· 集团可查看并维护「你管辖范围内」的门店数据（范围外的行看不到）；\n' +
+      '· 同步给你的门店是只读镜像，本地不能改、不能删，只能由集团更新或撤回；\n' +
+      '· 你随时可在本页关闭「接收集团下发」与「允许集团拉取」。\n\n' +
+      '确认会记录你的账号与时间，不可由集团代签。',
+      '知情确认',
+      { type: 'info', confirmButtonText: '我已了解，确认', cancelButtonText: '再看看' }
+    )
+  } catch (e) { return }   // 用户取消
+
+  consenting.value = true
+  try {
+    const d = await api.post('/orgs/me/consent')
+    ElMessage.success(d?.alreadyConsented ? '你已完成过知情确认' : '知情确认已记录')
+    // 整页重载：未确认时「① 从集团同步」的控件是禁用的，确认后要立刻解开
+    await loadAll()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '知情确认失败')
+  } finally {
+    consenting.value = false
+  }
+}
+
+/**
+ * 成员自改「可接收下发 / 可被集团拉取」（否决权自助入口）
+ * ★ 乐观更新：EP 的 el-switch 是受控组件，只传 `:model-value` 时不先行落地会「弹回」再跳，
+ *   视觉上像失败。这里先改本地、再用服务端回执校正，失败则整页重载回真实态。
+ */
+async function saveMySettings (patch) {
+  if (!myMember.value) return
+  const backup = { canReceive: myMember.value.canReceive, allowGroupPull: myMember.value.allowGroupPull }
+  myMember.value = { ...myMember.value, ...patch }
+  savingSettings.value = true
+  try {
+    const d = await api.patch('/orgs/me/settings', patch)
+    if (d?.member) myMember.value = d.member
+    ElMessage.success('已更新接收设置')
+  } catch (e) {
+    myMember.value = { ...myMember.value, ...backup }
+    ElMessage.error(e?.response?.data?.message || '更新接收设置失败')
+  } finally {
+    savingSettings.value = false
+  }
+}
 
 /**
  * 子公司自助设管辖范围（v0.13 R1）
@@ -1225,6 +1379,24 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-danger { color: #f56c6c; }
 .ds-changes { font-size: 12px; color: #606266; }
 .ds-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+
+/* ==== 知情确认（v1.13.152）==== */
+/* 提示条与「① 从集团同步」之间留白：它虽在区块之外，但语义上是该区块的前置条件 */
+.ds-consent-bar { margin-bottom: 14px; }
+.ds-consent-head { display: flex; align-items: center; gap: 12px; }
+.ds-consent-body { font-size: 12px; line-height: 1.9; color: #606266; }
+/* 未确认时禁用区块内的提示字：用橙色与 .ds-muted 区分，避免"看起来只是灰说明" */
+.ds-need-consent { font-size: 12px; color: #e6a23c; font-weight: 500; }
+
+/* 我的接收设置：成员自助开关。放在 v-if/v-else 链之外，任何状态下都在。 */
+.ds-mysettings {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed #ebeef5;
+}
+.ds-myswitch { display: inline-flex; align-items: center; gap: 8px; }
+.ds-myswitch-text { display: inline-flex; flex-direction: column; line-height: 1.4; }
+.ds-myswitch-text b { font-size: 12px; font-weight: 500; color: #303133; }
 .ds-preview { background: #fafcff; border-radius: 8px; padding: 14px 12px; }
 .ds-counts { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 

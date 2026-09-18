@@ -530,6 +530,32 @@ router.post('/commit', authenticate, (req, res) => {
       || (batch.direction === DIRECTIONS.GROUP_TO_MEMBER && isTargetMember)
     if (!allowed) return res.status(403).json({ message: '无权限提交该同步批次' })
 
+    // -----------------------------------------------------------------------
+    // 🔴 合规闸门（v1.13.152）：成员本人「知情确认」后才允许把集团数据写入本账号
+    //
+    // 背景：`org_members.consented_at` 是 v0.9 就定下的合规留痕，但前端一直没有任何
+    //   调用 `POST /api/orgs/me/consent` 的入口 ⇒ 该列永远是 NULL，管理端的「待确认」
+    //   标签成了死状态；后端也不校验 ⇒ 直调 API 可直接写入，留痕形同装饰。
+    //
+    // 三条边界，刻意如此：
+    //   ① 只拦**成员本人发起**的接收方向。集团 owner / 平台 admin 的运维路径不拦 ——
+    //      集团把数据推给成员属代操作，其约束是成员的 `can_receive` 否决权，不是本闸门。
+    //   ② 只拦 `commit`（真正写库）。`preview` 只读不写，**刻意放开** ——
+    //      让成员先看清「会同步哪些数据」再决定是否确认，比先逼他签字更合理。
+    //   ③ 查不到 org_members 行（理论上不会：allowed 已保证是 target member）按未确认处理。
+    // -----------------------------------------------------------------------
+    if (!isAdmin && !isOwner && batch.direction === DIRECTIONS.GROUP_TO_MEMBER && isTargetMember) {
+      const gate = db.prepare(
+        `SELECT consented_at FROM org_members WHERE org_id = ? AND user_id = ?`
+      ).get(batch.org_id, meId)
+      if (!gate?.consented_at) {
+        return res.status(403).json({
+          code: 'consent_required',
+          message: '请先在「数据同步」页完成知情确认，再接收集团下发的数据。'
+        })
+      }
+    }
+
     if (batch.status !== 'preview') {
       return res.status(409).json({
         code: 'batch_not_preview',

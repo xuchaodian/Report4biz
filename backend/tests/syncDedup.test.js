@@ -119,6 +119,9 @@ beforeAll(async () => {
   await call('PATCH', `/api/orgs/${ids.org}/members/${ids.sub}/scope`, {
     token: tokens.hq, body: { cities: ['苏州市'], brands: [] }
   })
+
+  // v1.13.152 合规闸门：成员本人「知情确认」后才允许接收集团数据（本文件只验确认后的链路）
+  await call('POST', '/api/orgs/me/consent', { token: tokens.sub })
 })
 
 afterAll(async () => {

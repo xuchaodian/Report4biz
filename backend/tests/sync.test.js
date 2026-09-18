@@ -24,6 +24,7 @@
  *   规则 13 城市兜底 —— city 空则按坐标反查补全（city_source=geocoded）
  *   规则 15 原子性   —— commit 单事务，任一步失败整体回滚
  *   规则 10/24       —— 不跨组织（非成员一律拒绝）
+ *   规则 ★ v1.13.152 —— 成员本人知情确认（consented_at）后才允许 commit（见 ⑩）
  *
  * 通过 R4B_DB_PATH 指向 /tmp 临时库，绝不触碰真实库。
  */
@@ -143,6 +144,11 @@ beforeAll(async () => {
     token: tokens.hq,
     body: { cities: ['成都市'], brands: [] }
   })
+
+  // v1.13.152 合规闸门：成员本人「知情确认」后才允许接收集团数据。
+  // 本文件的既有用例验证的都是**确认之后**的正常链路，故先让 subA 完成确认；
+  // 「未确认被拦」由 ⑩ 用全新账号单独验证（否则 subB 等既有用例会被误伤）。
+  await call('POST', '/api/orgs/me/consent', { token: tokens.subA })
 
   // 回滚测试用：一对干净账号
   rowIds.r1 = mk('回滚源1', '成都市', ids.rbSrc, CD.lat, CD.lng)
@@ -939,6 +945,11 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
     await call('POST', `/api/orgs/${T.org}/members`, { token: T.tokHq, body: { username: 'tf_a' } })
     await call('POST', `/api/orgs/${T.org}/members`, { token: T.tokHq, body: { username: 'tf_b' } })
 
+    // v1.13.152：划拨链路里成员各自「从集团同步」过，需先完成知情确认。
+    // 本组只验划拨/回滚，闸门本身在 ⑩ 验证。
+    await call('POST', '/api/orgs/me/consent', { token: T.tokA })
+    await call('POST', '/api/orgs/me/consent', { token: T.tokB })
+
     const mk = (name, city, uid, brand = '萨莉亚') => db.prepare(
       `INSERT INTO markers (name, city, brand, latitude, longitude, user_id) VALUES (?, ?, ?, 31.3, 120.6, ?)`
     ).run(name, city, brand, uid).lastInsertRowid
@@ -1266,5 +1277,151 @@ describe('⑨ 辖区划拨 + 回滚（P2）', () => {
     expect(db.prepare(`
       SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND origin_user_id = ? AND sync_batch_id = ?
     `).get(T.b, T.hq, pv.body.batchId).n).toBe(0)
+  })
+})
+
+// ===========================================================================
+// ⑩ 成员知情确认闸门（v1.13.152）
+//
+// 背景：`org_members.consented_at` 是 v0.9 设计方案就写下的合规留痕，
+//   但前端**从未有过**调用 `POST /api/orgs/me/consent` 的入口 ⇒ 该列永远为 NULL，
+//   管理端「用户管理 → 集团/子公司」那列「知情确认」永远停在「待确认」；
+//   后端也不校验 ⇒ 直调 API 照样能写入，留痕形同装饰。
+//
+// 本组验证闸门的四条边界：
+//   ① 未确认：preview **放开**（成员先看清"会同步哪些数据"再决定是否确认）；commit 403
+//   ② 本人确认后：同一批次即可提交；重复确认幂等（alreadyConsented，时间不变）
+//   ③ 集团 owner 推数据给成员**不拦** —— 代操作由成员 can_receive 否决权约束，非本闸门
+//   ④ 非成员账号调确认接口 → 404
+// ===========================================================================
+describe('⑩ 成员知情确认闸门（v1.13.152）', () => {
+  const C = {}
+
+  beforeAll(async () => {
+    const db = getDb()
+    const seed = (username) => db.prepare(
+      `INSERT INTO users (username, email, password, role, quota) VALUES (?, ?, ?, 'user', 0)`
+    ).run(username, `${username}@t.local`, 'x').lastInsertRowid
+
+    C.hq = seed('cg_hq')
+    C.m1 = seed('cg_m1')          // 未确认 → 验证闸门
+    C.m2 = seed('cg_m2')          // 未确认 → 验证 owner 代操作不受拦
+    C.tokHq = makeToken({ id: C.hq, username: 'cg_hq', role: 'user' })
+    C.tokM1 = makeToken({ id: C.m1, username: 'cg_m1', role: 'user' })
+
+    const r = await call('POST', '/api/orgs', {
+      token: tokens.admin, body: { name: '知情确认集团', ownerUserId: C.hq }
+    })
+    C.org = r.body.org.id
+    for (const u of ['cg_m1', 'cg_m2']) {
+      await call('POST', `/api/orgs/${C.org}/members`, { token: C.tokHq, body: { username: u } })
+    }
+    // 两个成员都设了范围，但**刻意都不确认**
+    // ★ 城市必须错开：同组织内一城一家（规则 34），两个成员抢同一城市会 409，
+    //   第二个人的 scope 存不进去 → 后续 preview 全部 outOfScope（曾因此误判成闸门问题）。
+    const s1 = await call('PATCH', `/api/orgs/${C.org}/members/${C.m1}/scope`, {
+      token: C.tokHq, body: { cities: ['武汉市'], brands: [] }
+    })
+    const s2 = await call('PATCH', `/api/orgs/${C.org}/members/${C.m2}/scope`, {
+      token: C.tokHq, body: { cities: ['长沙市'], brands: [] }
+    })
+    expect(s1.status).toBe(200)
+    expect(s2.status).toBe(200)
+
+    const mkMk = (name, city, lat, lng) => db.prepare(
+      `INSERT INTO markers (name, city, brand, latitude, longitude, user_id) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(name, city, '萨莉亚', lat, lng, C.hq).lastInsertRowid
+
+    mkMk('集团武汉店', '武汉市', 30.59, 114.30)
+    mkMk('集团长沙店', '长沙市', 28.23, 112.94)
+  })
+
+  it('未确认：preview 放开（先看清内容）；commit 403 consent_required 且零写入', async () => {
+    const db = getDb()
+    const before = db.prepare(`SELECT COUNT(*) AS n FROM markers WHERE user_id = ?`).get(C.m1).n
+
+    const pv = await call('POST', '/api/sync/preview', {
+      token: C.tokM1, body: { direction: 'group_to_member', kind: 'markers', filter: {} }
+    })
+    expect(pv.status).toBe(200)                                  // ★ 预览刻意不拦
+    expect(pv.body.counts.added).toBeGreaterThan(0)
+    C.batchId = pv.body.batchId
+
+    const cm = await call('POST', '/api/sync/commit', { token: C.tokM1, body: { batchId: C.batchId } })
+    expect(cm.status).toBe(403)
+    expect(cm.body.code).toBe('consent_required')
+    expect(String(cm.body.message)).toContain('知情确认')
+
+    // 三条零副作用断言：行数不变 / 镜像零条 / 批次没被消费（仍是 preview，确认后可续用）
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM markers WHERE user_id = ?`).get(C.m1).n).toBe(before)
+    expect(db.prepare(
+      `SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND origin_user_id = ?`
+    ).get(C.m1, C.hq).n).toBe(0)
+    expect(core.findBatch(db, C.batchId).status).toBe('preview')
+  })
+
+  it('本人确认后：同一批次即可提交；重复确认幂等（alreadyConsented 且时间不变）', async () => {
+    const c1 = await call('POST', '/api/orgs/me/consent', { token: C.tokM1 })
+    expect(c1.status).toBe(200)
+    expect(c1.body.ok).toBe(true)
+    expect(c1.body.alreadyConsented).toBe(false)
+    expect(c1.body.consentedAt).toBeTruthy()
+
+    const cm = await call('POST', '/api/sync/commit', { token: C.tokM1, body: { batchId: C.batchId } })
+    expect(cm.status).toBe(200)
+    expect(cm.body.applied.inserted).toBe(1)
+
+    const c2 = await call('POST', '/api/orgs/me/consent', { token: C.tokM1 })
+    expect(c2.status).toBe(200)
+    expect(c2.body.alreadyConsented).toBe(true)
+    expect(c2.body.consentedAt).toBe(c1.body.consentedAt)         // 只写一次，不被刷新
+  })
+
+  it('同意之后仍可否决：成员自关「接收集团下发」→ preview 409（闸门不取代否决权）', async () => {
+    const off = await call('PATCH', '/api/orgs/me/settings', {
+      token: C.tokM1, body: { canReceive: false }
+    })
+    expect(off.status).toBe(200)
+    expect(off.body.member.canReceive).toBe(false)
+
+    const pv = await call('POST', '/api/sync/preview', {
+      token: C.tokM1, body: { direction: 'group_to_member', kind: 'markers', filter: {} }
+    })
+    expect(pv.status).toBe(409)
+    expect(pv.body.code).toBe('member_can_receive_off')
+
+    // 且确认状态不被开关改动影响
+    const me = await call('GET', '/api/orgs/me', { token: C.tokM1 })
+    expect(me.body.member.consented).toBe(true)
+    expect(me.body.member.canReceive).toBe(false)
+
+    // 复原，避免影响后续用例
+    await call('PATCH', '/api/orgs/me/settings', { token: C.tokM1, body: { canReceive: true } })
+  })
+
+  it('集团 owner 推数据给**未确认**成员不被拦（代操作由 can_receive 约束，非本闸门）', async () => {
+    const pv = await call('POST', '/api/sync/preview', {
+      token: C.tokHq, body: { userId: C.m2, direction: 'group_to_member', kind: 'markers', filter: {} }
+    })
+    expect(pv.status).toBe(200)
+    expect(pv.body.counts.added).toBe(1)                          // 长沙店（m2 的辖区）
+    const cm = await call('POST', '/api/sync/commit', { token: C.tokHq, body: { batchId: pv.body.batchId } })
+    expect(cm.status).toBe(200)
+    expect(cm.body.applied.inserted).toBe(1)
+
+    // 且**没有**顺手替 m2 写下确认（不可代签）
+    const db = getDb()
+    const row = db.prepare(`SELECT consented_at FROM org_members WHERE org_id = ? AND user_id = ?`)
+      .get(C.org, C.m2)
+    expect(row.consented_at).toBeNull()
+  })
+
+  it('非成员账号调确认接口 → 404，不产生任何写入', async () => {
+    const db = getDb()
+    const before = db.prepare(`SELECT COUNT(*) AS n FROM org_members WHERE consented_at IS NOT NULL`).get().n
+    const r = await call('POST', '/api/orgs/me/consent', { token: tokens.outsider })
+    expect(r.status).toBe(404)
+    expect(r.body.message).toContain('不属于任何集团')
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM org_members WHERE consented_at IS NOT NULL`).get().n).toBe(before)
   })
 })
