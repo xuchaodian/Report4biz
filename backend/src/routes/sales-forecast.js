@@ -5,6 +5,7 @@ import { PersistentCache } from '../utils/persistentCache.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getGeoObject } from '../models/geoStore.js'
+import { readableUserIds, placeholders } from '../utils/visibleScope.js'
 
 const router = express.Router()
 
@@ -100,10 +101,30 @@ function districtProfileVector(d) {
 }
 
 // ===================== 门店画像（联通 result_data） =====================
-function storeProfileVector(db, storeName) {
+/**
+ * 门店画像向量：按门店名取最近一条**可见**的联通购买记录。
+ *
+ * ★ v1.13.156 修复跨账号读取（原实现 `WHERE store_name = ?` **完全没有 user_id 过滤**）：
+ *   只要两个账号存在同名门店，就会读到**别人**的购买画像 —— 违反「严格不跨用户」底线。
+ *   生产里这个洞是"有用但没授权"的：集团 owner 名下没有购买记录，却能靠它拿到
+ *   子公司的画像（表现上预测能跑通）。因此**不能简单收窄为只看自己**，
+ *   那会让集团侧的销售预测当场退化。
+ *   ⇒ 正确口径 = 「我的可见域」：普通账号 = 只有自己（漏洞关闭）；
+ *      集团 owner = 自己 + 允许被拉取的子公司（能力保留且**转为显式授权**）；
+ *      平台 admin = 传 null 保持全局语义（与同文件既有的 `isAdmin ? '1=1'` 一致）。
+ */
+function profileScopeIds(db, req, isAdmin) {
+  if (isAdmin) return null
+  return readableUserIds(db, req.user.id)
+}
+
+function storeProfileVector(db, storeName, userIds = null) {
+  // 显式空数组 = 无可见范围 ⇒ 直接判无权，绝不退化成"不过滤"
+  if (Array.isArray(userIds) && userIds.length === 0) return null
+  const scopeSql = Array.isArray(userIds) ? `AND user_id IN (${placeholders(userIds.length)})` : ''
   const row = db.prepare(
-    `SELECT result_data FROM purchases WHERE store_name = ? AND result_data IS NOT NULL AND result_data != '' ORDER BY id DESC LIMIT 1`
-  ).get(storeName)
+    `SELECT result_data FROM purchases WHERE store_name = ? ${scopeSql} AND result_data IS NOT NULL AND result_data != '' ORDER BY id DESC LIMIT 1`
+  ).get(storeName, ...(Array.isArray(userIds) ? userIds : []))
   if (!row || !row.result_data) return null
   try {
     const d = JSON.parse(row.result_data)
@@ -168,10 +189,13 @@ function parseUnicomVector(resultData) {
   }
 }
 // 单店查库版（候选店/参照店特征用）
-function unicomVector(db, storeName) {
+// ★ v1.13.156 同 storeProfileVector：补上可见域过滤，关闭「按门店名跨账号读」的洞。
+function unicomVector(db, storeName, userIds = null) {
+  if (Array.isArray(userIds) && userIds.length === 0) return null
+  const scopeSql = Array.isArray(userIds) ? `AND user_id IN (${placeholders(userIds.length)})` : ''
   const row = db.prepare(
-    `SELECT result_data FROM purchases WHERE store_name = ? AND result_data IS NOT NULL AND result_data != '' ORDER BY id DESC LIMIT 1`
-  ).get(storeName)
+    `SELECT result_data FROM purchases WHERE store_name = ? ${scopeSql} AND result_data IS NOT NULL AND result_data != '' ORDER BY id DESC LIMIT 1`
+  ).get(storeName, ...(Array.isArray(userIds) ? userIds : []))
   return row ? parseUnicomVector(row.result_data) : null
 }
 
@@ -605,12 +629,12 @@ function haversineDist(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.asin(Math.sqrt(a))
 }
 // 参照店特征（与训练样本同构，供影响模拟）
-function buildXForRef(db, ref, userId, isAdmin) {
+function buildXForRef(db, ref, userId, isAdmin, profileIds = null) {
   const dv = ref.district ? districtProfileVector(ref.district) : [0, 0, 0, 0]
   const pop = calcRadiusPopulation(db, ref.lat, ref.lng, ref.city)
   const nearby = countNearby(db, ref.lat, ref.lng, 500, userId, isAdmin)
   const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? 35)
-  return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0, unicomVector(db, ref.name))
+  return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0, unicomVector(db, ref.name, profileIds))
 }
 
 // 样本统计（前端提示用）：已开业店数 + 已录入销售样本行数（店×年）+ L2/L3 门槛
@@ -645,6 +669,7 @@ router.get('/ref-stores', authenticate, (req, res) => {
     const db = getDb()
     const storeId = Number(req.query.storeId)
     const isAdmin = req.user.role === 'admin'
+    const profileIds = profileScopeIds(db, req, isAdmin)
     const refs = getReferenceStores(db, req.user.id, isAdmin)
     if (refs.length === 0) return res.json({ success: true, pool: [], auto: [] })
 
@@ -663,7 +688,7 @@ router.get('/ref-stores', authenticate, (req, res) => {
       ).get(storeId, ...(isAdmin ? [] : [req.user.id]))
       if (cand) {
         candDistrict = findDistrict(cand.latitude, cand.longitude)
-        candProfile = storeProfileVector(db, cand.name)
+        candProfile = storeProfileVector(db, cand.name, profileIds)
         candPop = calcRadiusPopulation(db, cand.latitude, cand.longitude, cand.city)
         candRef = { city: cand.city, mallType: cand.mall_type, tradeAreaType: cand.trade_area_type, storeCategory: cand.store_category }
       }
@@ -678,7 +703,7 @@ router.get('/ref-stores', authenticate, (req, res) => {
         if (r.city === candRef.city) score += 10
         score += typeMatchScore(candRef, r) * 3
         if (candProfile) {
-          const sp = storeProfileVector(db, r.name)
+          const sp = storeProfileVector(db, r.name, profileIds)
           if (sp && cosineSimilarity(candProfile, sp) > 0.5) score += 15
         }
         if (candPop && (candPop[1000] || candPop[3000] || candPop[5000])) {
@@ -711,6 +736,7 @@ router.post('/predict', authenticate, async (req, res) => {
     const storeId = Number(req.body.storeId)
     if (!storeId) return res.status(400).json({ message: '缺少 storeId' })
     const isAdmin = req.user.role === 'admin'
+    const profileIds = profileScopeIds(db, req, isAdmin)
     const cand = db.prepare(
       isAdmin ? `SELECT * FROM markers WHERE id = ?` : `SELECT * FROM markers WHERE id = ? AND user_id = ?`
     ).get(storeId, ...(isAdmin ? [] : [req.user.id]))
@@ -720,7 +746,7 @@ router.post('/predict', authenticate, async (req, res) => {
     }
 
     const candDistrict = findDistrict(cand.latitude, cand.longitude)
-    const candProfile = storeProfileVector(db, cand.name)
+    const candProfile = storeProfileVector(db, cand.name, profileIds)
     const candArea = cand.store_area || cand.area
     if (!candArea || candArea <= 0) {
       return res.json({ success: true, status: 'insufficient', message: '该候选门店缺少营业面积，无法预测（请在「我的门店」编辑补充面积）' })
@@ -786,9 +812,9 @@ router.post('/predict', authenticate, async (req, res) => {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
-          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name, profileIds))
           const nearRefs = refs.filter(r => haversineDist(cand.latitude, cand.longitude, r.lat, r.lng) <= 3000)
-          const X_near = nearRefs.map(r => buildXForRef(db, r, req.user.id, isAdmin))
+          const X_near = nearRefs.map(r => buildXForRef(db, r, req.user.id, isAdmin, profileIds))
           const pr = await postJson(L3_URL + '/predict', { X_cand: candX, X_near })
           if (pr && pr.success) {
             const predictComp = Math.round(pr.predEff * candArea)
@@ -840,7 +866,7 @@ router.post('/predict', authenticate, async (req, res) => {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
           const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
-          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name))
+          const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name, profileIds))
           const predLog = model.predictRaw(candX)
           const predictComp = Math.round(Math.exp(predLog) * candArea)
           const predictEff = predictComp
@@ -886,7 +912,7 @@ router.post('/predict', authenticate, async (req, res) => {
     // L1 门店画像相似度（双方购联通数据）
     if (candProfile) {
       const scored = refs
-        .map(r => ({ r, sim: cosineSimilarity(candProfile, storeProfileVector(db, r.name)) }))
+        .map(r => ({ r, sim: cosineSimilarity(candProfile, storeProfileVector(db, r.name, profileIds)) }))
         .filter(x => x.sim > 0.5)
         .sort((a, b) => b.sim - a.sim)
       if (scored.length >= MIN_REFS) {

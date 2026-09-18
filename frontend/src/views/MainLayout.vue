@@ -157,9 +157,31 @@
       <div class="export-dialog-tips" style="margin-bottom:10px;font-size:12px;color:#909399;">
         勾选要导出的购买记录（可多选），然后选择导出格式
       </div>
+      <!-- v1.13.156 集团可见域：本公司有多个账号时提供「来源」筛选 -->
+      <div v-if="exportSourceOptions.length > 1" class="export-source-bar" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#606266;">数据来源</span>
+        <el-select
+          v-model="exportSourceFilter"
+          size="small"
+          style="width:200px"
+          aria-label="按数据来源筛选购买记录"
+          @change="handleExportSourceChange"
+        >
+          <el-option label="全部来源" value="all" />
+          <el-option
+            v-for="s in exportSourceOptions"
+            :key="s.userId"
+            :label="s.isSelf ? '本账号' : s.name"
+            :value="s.userId"
+          />
+        </el-select>
+        <el-tag v-if="exportPullOffNames.length" type="warning" size="small" effect="plain">
+          已关闭共享：{{ exportPullOffNames.join('、') }}
+        </el-tag>
+      </div>
       <el-table
         ref="exportTableRef"
-        :data="exportList"
+        :data="exportListShown"
         stripe
         border
         style="width:100%"
@@ -170,6 +192,12 @@
         <el-table-column label="订单ID" width="170" fixed>
           <template #default="{ row }">
             <span style="font-size:12px;white-space:nowrap;">{{ row.order_no || row.id }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="exportSourceOptions.length > 1" label="来源" width="120" fixed>
+          <template #default="{ row }">
+            <el-tag v-if="row.is_self" size="small" effect="plain" type="info">本账号</el-tag>
+            <el-tag v-else size="small" effect="plain" type="success">{{ row.owner_name || '-' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="门店名称" min-width="140" show-overflow-tooltip>
@@ -212,7 +240,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
 import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
@@ -348,13 +376,40 @@ const exportSelected = ref([])
 const exportLoading = ref(false)
 const exportTableRef = ref(null)
 
+/**
+ * v1.13.156 集团可见域：集团账号的购买履历里混有**子公司**的记录。
+ * · `exportSourceOptions` —— 后端 `GET /api/purchase/history` 回传的 sources（>1 才展示筛选/来源列）
+ * · `exportSourceFilter`  —— 'all' 或某个 userId
+ * · `exportPullOffNames`  —— 已关闭「允许集团拉取」的子公司（其数据刻意不在可见域内，需明示，
+ *                            否则集团会以为"子公司还没买"，而不是"子公司不让看"）
+ */
+const exportSourceOptions = ref([])
+const exportSourceFilter = ref('all')
+const exportPullOffNames = ref([])
+const exportListShown = computed(() => {
+  if (exportSourceFilter.value === 'all') return exportList.value
+  return exportList.value.filter(r => Number(r.owner_user_id) === Number(exportSourceFilter.value))
+})
+const handleExportSourceChange = () => {
+  // 筛选变化后原勾选可能已不可见 ⇒ 清空选择，避免导出到"看不见的行"
+  exportTableRef.value?.clearSelection?.()
+  exportSelected.value = []
+}
+
 const openExportDialog = async () => {
   exportDialogVisible.value = true
   exportList.value = []
   exportSelected.value = []
+  exportSourceOptions.value = []
+  exportSourceFilter.value = 'all'
+  exportPullOffNames.value = []
   try {
     const { data } = await axios.get('/api/purchase/history')
     exportList.value = data.purchases || []
+    exportSourceOptions.value = Array.isArray(data.sources) ? data.sources : []
+    exportPullOffNames.value = Array.isArray(data.blockedByPullOff)
+      ? data.blockedByPullOff.map(x => x.name).filter(Boolean)
+      : []
   } catch (e) {
     console.error('加载购买记录失败:', e)
     ElMessage.error('加载购买记录失败')
@@ -419,7 +474,9 @@ const exportOneRecord = async (row, type) => {
   }
 
   const radiiStr = Array.isArray(detail.radii) ? detail.radii.join('_') + '米' : (detail.radii || '未知') + '米'
-  const baseName = `${detail.store_name || '门店'}_${radiiStr}_${detail.city_month || ''}`
+  // v1.13.156：导出子公司的记录时，文件名带上来源，避免多个子公司同名门店的报表互相覆盖
+  const ownerPrefix = (detail.is_self === false && detail.owner_name) ? `${detail.owner_name}_` : ''
+  const baseName = `${ownerPrefix}${detail.store_name || '门店'}_${radiiStr}_${detail.city_month || ''}`
 
   // Excel
   if (type === 'excel' || type === 'both') {

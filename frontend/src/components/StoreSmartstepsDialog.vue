@@ -185,6 +185,12 @@
     <div v-else>
       <p style="color: #666; margin-bottom: 15px;">请选择要查看的购买记录：</p>
       <el-table :data="storePurchases" @row-click="selectPurchase" stripe highlight-current-row>
+        <el-table-column v-if="hasMultiSourcePurchases" label="来源" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_self" size="small" effect="plain" type="info">本账号</el-tag>
+            <el-tag v-else size="small" effect="plain" type="success">{{ row.owner_name || '-' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="city_month" label="数据年月" width="100" />
         <el-table-column prop="created_at" label="购买时间" width="150" :formatter="(row) => formatDate(row.created_at)" />
         <el-table-column prop="store_type" label="门店类型" width="100" />
@@ -333,6 +339,14 @@ const exportingPdf = ref(false)
 
 // 门店购买履历
 const storePurchases = ref([])
+/**
+ * v1.13.156 集团可见域：集团账号打开门店时，履历里混有**子公司**的记录。
+ * 只有跨账号时才显示「来源」列 —— 单账号场景保持原样，不增加视觉噪音。
+ */
+const hasMultiSourcePurchases = computed(() => {
+  const ids = new Set(storePurchases.value.map(p => Number(p.owner_user_id) || 0))
+  return ids.size > 1
+})
 const showPurchaseHistoryDialog = ref(false)
 const selectedPurchase = ref(null)
 const showHistoryDetailDialog = ref(false)

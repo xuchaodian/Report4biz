@@ -10,6 +10,7 @@ import { buildSummaryValues, summaryValue } from '../utils/unicomSummaryValues.j
 import { UNICOM_SUMMARY_COLS } from '../utils/unicomSummaryCols.js'
 import { mapWithConcurrency } from '../utils/concurrency.js'
 import { PURCHASE_SHARE_SECRET } from '../config.js'
+import { visibleScope, readableUserIds, sourceLabels, placeholders, scopeSummary } from '../utils/visibleScope.js'
 import NodeCache from 'node-cache'
 import * as XLSX from 'xlsx'
 
@@ -53,6 +54,25 @@ const runExec = (cmd, timeout = 30000) => new Promise((resolve, reject) => {
     resolve({ stdout, stderr })
   })
 })
+
+/**
+ * 单条购买记录的可见性判定，并返回该行**所属账号** id（v1.13.156 集团可见域）。
+ *
+ * ★ 为什么必须走本函数而不是直接按 id 查：
+ *   三个导出端点把渲染交给 `export_excel.py`，而该脚本是**直连磁盘 SQLite**、
+ *   按 `WHERE id = ? AND user_id = ?` 取行。所以「授权」只能在 Node 侧完成，
+ *   再把行所属账号 id 传下去 —— 若传 `req.user.id`，集团 owner 导出子公司记录时
+ *   脚本查不到行、静默失败（surface 上是"导出失败/页数空白"，极难排查）。
+ *
+ * @returns {number|null} 所属 user_id；null = 不存在或不在可见域（调用方一律当 404 处理）
+ */
+function visiblePurchaseOwner(db, viewerId, purchaseId) {
+  const ids = readableUserIds(db, viewerId)
+  const row = db.prepare(
+    `SELECT user_id FROM purchases WHERE id = ? AND user_id IN (${placeholders(ids.length)})`
+  ).get(purchaseId, ...ids)
+  return row ? Number(row.user_id) : null
+}
 
 /**
  * 获取用户配额信息
@@ -150,19 +170,30 @@ router.post('/buy', authenticate, (req, res) => {
 
 /**
  * 获取购买历史（静态路由必须在 /:id 之前）
+ *
+ * ★ v1.13.156 集团可见域：范围从 `user_id = 我` 放宽为 `user_id IN 可见域`。
+ *   集团 owner ⇒ 自己 + 全部「允许被拉取」的子公司；其余账号 ⇒ 只有自己（行为不变）。
+ *   每行回传 `owner_user_id / owner_name / is_self`，前端据此打「来源」标签。
+ * ⚠️ 「购买后剩余配额」必须按**行所属账号**分别累计 —— 原来统一用 req.user.quota 扣减，
+ *   在跨账号混排时会扣成负数。改为按 owner 分组各扣自己的 users.quota。
  */
 router.get('/history', authenticate, (req, res) => {
   try {
     const db = getDb()
+    const vis = visibleScope(db, req.user.id)
+    const ids = vis.ids
+    const labels = sourceLabels(db, req.user.id, ids)
 
-    // 获取用户总配额
-    const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(req.user.id)
-    const totalQuota = user?.quota || 0
+    // 各可见账号的当前配额（按 owner 分别累计剩余，见上方注释）
+    const quotaByUser = new Map()
+    const qStmt = db.prepare(`SELECT COALESCE(quota, 0) AS quota FROM users WHERE id = ?`)
+    for (const id of ids) quotaByUser.set(Number(id), Number(qStmt.get(id)?.quota || 0))
 
     // 查询购买记录，关联门店表获取城市/区县/门店编号，并计算当日流水号
     const purchases = db.prepare(`
       SELECT
         p.id,
+        p.user_id,
         p.store_name,
         p.store_type,
         p.center_lng,
@@ -181,27 +212,27 @@ router.get('/history', authenticate, (req, res) => {
             AND p2.id <= p.id) as day_seq
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
-      WHERE p.user_id = ? AND p.status = 'active'
+      WHERE p.user_id IN (${placeholders(ids.length)}) AND p.status = 'active'
       ORDER BY p.created_at DESC
       LIMIT 500
-    `).all(req.user.id)
+    `).all(...ids)
 
-    // 计算每笔订单购买后的剩余配额
-    // SQL 是 ORDER BY created_at DESC（倒序），需要按时间正序计算后再反转
-    const orderedPurchases = [...purchases].reverse()
-    let cumulativeUsed = 0
-    const orderedRemaining = orderedPurchases.map(p => {
-      cumulativeUsed += p.quota_used || 0
-      return totalQuota - cumulativeUsed
-    })
-    // 反转回来，与 SQL 倒序一致
-    orderedRemaining.reverse()
+    // 计算每笔订单购买后的剩余配额（按所属账号分组；SQL 倒序 → 先翻正序算完再翻回）
+    const running = new Map()
+    const remainingByRowId = new Map()
+    for (const p of [...purchases].reverse()) {
+      const uid = Number(p.user_id)
+      const used = (running.get(uid) || 0) + (p.quota_used || 0)
+      running.set(uid, used)
+      remainingByRowId.set(p.id, (quotaByUser.get(uid) || 0) - used)
+    }
 
-    const formatted = purchases.map((p, idx) => {
+    const formatted = purchases.map((p) => {
       // 订单编号 = 门店编号 + 日期(YYYYMMDD) + 当日流水(3位)
       const dateStr = String(p.order_date || '').replace(/-/g, '')
       const seqStr = String(p.day_seq || 0).padStart(3, '0')
       const order_no = `${p.store_code || p.store_name || 'XXXX'}${dateStr}${seqStr}`
+      const label = labels.get(Number(p.user_id)) || { name: `#${p.user_id}`, isSelf: false }
       return {
         id: p.id,
         order_no,
@@ -212,8 +243,12 @@ router.get('/history', authenticate, (req, res) => {
         radius: p.radius,
         city_month: p.city_month,
         quota_used: p.quota_used || 0,
-        remaining: orderedRemaining[idx],  // 该订单购买后的剩余配额
+        remaining: remainingByRowId.get(p.id),  // 该订单购买后的剩余配额（所属账号口径）
         created_at: p.created_at,
+        // 来源（集团视角「这是谁买的」）
+        owner_user_id: Number(p.user_id),
+        owner_name: label.name,
+        is_self: !!label.isSelf,
         // 优先使用门店表的地址，如果没有则显示坐标
         city: p.city || '-',
         district: p.district || '-',
@@ -239,7 +274,7 @@ router.get('/history', authenticate, (req, res) => {
       }
     })
 
-    res.json({ purchases: enriched })
+    res.json({ purchases: enriched, ...scopeSummary(db, req.user.id) })
   } catch (error) {
     console.error('获取历史失败:', error)
     res.status(500).json({ message: '获取历史失败' })
@@ -247,11 +282,28 @@ router.get('/history', authenticate, (req, res) => {
 })
 
 /**
+ * 只读可见域摘要（供 UI 渲染「来源」下拉/标签；集团 owner 才有成员）。
+ * GET /api/purchase/visible-scope
+ * ⚠️ 只回展示名与开关，不回配额、不回任何业务数据。
+ */
+router.get('/visible-scope', authenticate, (req, res) => {
+  try {
+    res.json(scopeSummary(getDb(), req.user.id))
+  } catch (error) {
+    console.error('获取可见域失败:', error)
+    res.status(500).json({ message: '获取可见域失败' })
+  }
+})
+
+/**
  * 批量获取门店购买次数（一次查询所有门店）
+ * ★ v1.13.156 集团可见域：集团 owner 统计口径含子公司已购记录
+ *   （同名门店跨账号合计 —— 集团视角「这家店买过几次」本就应该合并计数）
  */
 router.get('/store-counts', authenticate, (req, res) => {
   try {
     const db = getDb()
+    const ids = readableUserIds(db, req.user.id)
 
     // 查询所有门店的购买次数与最近数据年月（按 store_name 分组，city_month 为 YYYYMM 字符串可排序取 MAX）
     const counts = db.prepare(`
@@ -260,9 +312,9 @@ router.get('/store-counts', authenticate, (req, res) => {
         COUNT(*) as count,
         MAX(city_month) as latest_city_month
       FROM purchases
-      WHERE user_id = ? AND status = 'active' AND store_name IS NOT NULL AND store_name != ''
+      WHERE user_id IN (${placeholders(ids.length)}) AND status = 'active' AND store_name IS NOT NULL AND store_name != ''
       GROUP BY store_name
-    `).all(req.user.id)
+    `).all(...ids)
 
     // 转换为 {门店名称: {count, latest_city_month}} 的格式
     const result = {}
@@ -282,15 +334,19 @@ router.get('/store-counts', authenticate, (req, res) => {
 
 /**
  * 按门店名称查询购买履历
+ * ★ v1.13.156 集团可见域：集团 owner 可查到子公司为该门店买的履历（带来源标注）
  */
 router.get('/by-store/:storeName', authenticate, (req, res) => {
   try {
     const { storeName } = req.params
     const db = getDb()
+    const ids = readableUserIds(db, req.user.id)
+    const labels = sourceLabels(db, req.user.id, ids)
 
     const purchases = db.prepare(`
       SELECT
         p.id,
+        p.user_id,
         p.store_name,
         p.store_type,
         p.center_lng,
@@ -303,11 +359,21 @@ router.get('/by-store/:storeName', authenticate, (req, res) => {
         m.district
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
-      WHERE p.user_id = ? AND p.store_name = ? AND p.status = 'active'
+      WHERE p.user_id IN (${placeholders(ids.length)}) AND p.store_name = ? AND p.status = 'active'
       ORDER BY p.created_at DESC
-    `).all(req.user.id, storeName)
+    `).all(...ids, storeName)
 
-    res.json({ purchases })
+    res.json({
+      purchases: purchases.map(p => {
+        const label = labels.get(Number(p.user_id)) || { name: `#${p.user_id}`, isSelf: false }
+        return {
+          ...p,
+          owner_user_id: Number(p.user_id),
+          owner_name: label.name,
+          is_self: !!label.isSelf
+        }
+      })
+    })
   } catch (error) {
     console.error('获取门店购买履历失败:', error)
     res.status(500).json({ message: '获取失败' })
@@ -339,6 +405,17 @@ router.get('/export-batch', authenticate, async (req, res) => {
   }
 
   const db = getDb()
+  // ★ v1.13.156 集团可见域：可导出本集团子公司的购买记录。
+  // 🔴 关键：export_excel.py 是**直连磁盘 SQLite** 并按 `WHERE id=? AND user_id=?` 取行，
+  //   因此必须把**行所属账号**的 user_id 传给脚本，不能传 req.user.id
+  //   （否则集团 owner 导出子公司的记录时脚本查不到行 → 静默失败）。
+  //   授权判断在 Node 侧先用「可见域」完成，脚本只负责渲染。
+  const vis = visibleScope(db, req.user.id)
+  const visLabels = sourceLabels(db, req.user.id, vis.ids)
+  const visRowStmt = db.prepare(
+    `SELECT id, user_id, store_name, radius, city_month FROM purchases
+      WHERE id = ? AND user_id IN (${placeholders(vis.ids.length)})`
+  )
   const tmpDir = join(__dirname, '../../uploads/screenshots', `batch_${Date.now()}_${Math.random().toString(36).slice(2)}`)
   fs.mkdirSync(tmpDir, { recursive: true })
   const loProfile = `/tmp/lo_${process.pid}_${Date.now()}`
@@ -354,20 +431,28 @@ router.get('/export-batch', authenticate, async (req, res) => {
   try {
     // 阶段 1：并发生成 Excel（保持 ids 原始顺序）
     const jobs = await mapWithConcurrency(ids, excelConcurrency, async (id) => {
-      const row = db.prepare('SELECT store_name, radii, city_month FROM purchases WHERE id = ? AND user_id = ?').get(Number(id), req.user.id)
+      const row = visRowStmt.get(Number(id), ...vis.ids)
       if (!row) return null
       const safeName = String(row.store_name || '门店').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
       let radiiStr = '未知'
       try {
-        const arr = JSON.parse(row.radii)
+        // ⚠️ 列名是 `radius`（单数）。历史实现写的是 row.radii ⇒ 恒为 undefined ⇒
+        //    JSON.parse(undefined) 抛异常 ⇒ 文件名永远落回「未知米」。此处顺带修正。
+        const arr = JSON.parse(row.radius)
         radiiStr = (Array.isArray(arr) ? arr : [arr]).map(Number).filter(Number.isFinite).join('_')
-      } catch (e) { /* 保持默认 */ }
+      } catch (e) {
+        const n = Number(row.radius)
+        if (Number.isFinite(n)) radiiStr = String(n)
+      }
       const cityMonth = row.city_month || ''
-      const base = `${safeName}_${radiiStr}米_${cityMonth}`.slice(0, 120)
+      // 集团视角：非本账号的记录在文件名前加来源前缀，避免多子公司同名门店互相覆盖且一眼可辨
+      const label = visLabels.get(Number(row.user_id))
+      const ownerPrefix = (label && !label.isSelf) ? `${String(label.name).replace(/[\\/:*?"<>|]/g, '_')}_` : ''
+      const base = `${ownerPrefix}${safeName}_${radiiStr}米_${cityMonth}`.slice(0, 140)
       const xlsxPath = join(tmpDir, `${base}.xlsx`)
 
       try {
-        await runExec(`python3 "${scriptPath}" "${templatePath}" "${xlsxPath}" "${dbPath}" ${id} ${req.user.id}`, 40000)
+        await runExec(`python3 "${scriptPath}" "${templatePath}" "${xlsxPath}" "${dbPath}" ${id} ${row.user_id}`, 40000)
       } catch (e) {
         console.error(`[批量导出] id=${id} Excel 生成失败:`, e.message)
         return null
@@ -435,6 +520,10 @@ router.get('/:id', authenticate, (req, res) => {
   try {
     const { id } = req.params
     const db = getDb()
+    // ★ v1.13.156 集团可见域：集团 owner 可打开子公司的购买记录详情。
+    //   🔴 越权防线就在这里 —— 把 id 的筛选范围锁进「可见域」，
+    //      绝不能只按 id 取行（否则 = 任意购买记录读取漏洞，与 145 提权同类）。
+    const vis = visibleScope(db, req.user.id)
 
     const purchase = db.prepare(`
       SELECT
@@ -443,8 +532,8 @@ router.get('/:id', authenticate, (req, res) => {
         m.district
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
-      WHERE p.id = ? AND p.user_id = ? AND p.status = 'active'
-    `).get(id, req.user.id)
+      WHERE p.id = ? AND p.user_id IN (${placeholders(vis.ids.length)}) AND p.status = 'active'
+    `).get(id, ...vis.ids)
 
     if (!purchase) {
       return res.status(404).json({ message: '记录不存在' })
@@ -481,6 +570,9 @@ router.get('/:id', authenticate, (req, res) => {
       radii = [purchase.radius]
     }
 
+    const label = sourceLabels(db, req.user.id, [Number(purchase.user_id)]).get(Number(purchase.user_id))
+      || { name: `#${purchase.user_id}`, isSelf: false }
+
     res.json({
       id: purchase.id,
       store_name: purchase.store_name,
@@ -493,7 +585,11 @@ router.get('/:id', authenticate, (req, res) => {
       created_at: purchase.created_at,
       city: purchase.city,
       district: purchase.district,
-      result_data: resultData
+      result_data: resultData,
+      // 来源（集团视角「这是谁买的」）
+      owner_user_id: Number(purchase.user_id),
+      owner_name: label.name,
+      is_self: !!label.isSelf
     })
   } catch (error) {
     console.error('获取详情失败:', error)
@@ -604,10 +700,16 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
   try {
     const { id } = req.params
     const db = getDb()
-    const purchase = db.prepare(`SELECT center_lng, center_lat FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    // ★ v1.13.156 可见域：集团 owner 导出子公司记录时，周边竞品取**该行所属账号**的竞品，
+    //   与子公司本人看到的底图一致（而不是拿集团自己的竞品去套）。
+    const vis = visibleScope(db, req.user.id)
+    const purchase = db.prepare(
+      `SELECT user_id, center_lng, center_lat FROM purchases
+        WHERE id = ? AND user_id IN (${placeholders(vis.ids.length)})`
+    ).get(id, ...vis.ids)
     if (!purchase) return res.status(404).json({ message: '记录不存在' })
 
-    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ? AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(req.user.id)
+    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ? AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(Number(purchase.user_id))
 
     res.json({
       center: { lat: purchase.center_lat, lng: purchase.center_lng },
@@ -631,7 +733,11 @@ router.get('/:id/shopping-centers-for-map', authenticate, (req, res) => {
   try {
     const { id } = req.params
     const db = getDb()
-    const purchase = db.prepare(`SELECT center_lng, center_lat FROM purchases WHERE id = ? AND user_id = ?`).get(id, req.user.id)
+    const vis = visibleScope(db, req.user.id)
+    const purchase = db.prepare(
+      `SELECT center_lng, center_lat FROM purchases
+        WHERE id = ? AND user_id IN (${placeholders(vis.ids.length)})`
+    ).get(id, ...vis.ids)
     if (!purchase) return res.status(404).json({ message: '记录不存在' })
 
     const centers = db.prepare(`SELECT id, name, latitude, longitude, address FROM shopping_centers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`).all()
@@ -659,8 +765,13 @@ router.get('/:id/export-excel', authenticate, (req, res) => {
     return res.status(400).json({ message: '报表模板不存在，请联系管理员上传模板' })
   }
 
+  // ★ v1.13.156 可见域：授权在 Node 侧判定，并把**行所属账号**的 user_id 交给脚本
+  //   （脚本按 `WHERE id=? AND user_id=?` 直连磁盘库取行，传错账号会静默查不到）
+  const owner = visiblePurchaseOwner(getDb(), req.user.id, req.params.id)
+  if (!owner) return res.status(404).json({ message: '记录不存在' })
+
   const scriptPath = join(__dirname, '../../export_excel.py')
-  const cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  const cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${owner}`
 
   exec(cmd, { timeout: 30000 }, (error, stdout, stderr) => {
     if (error) {
@@ -710,6 +821,10 @@ router.post('/:id/export-map-excel', authenticate, async (req, res) => {
   const screenshotDir = join(__dirname, '../../uploads/screenshots')
   if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
 
+  // ★ v1.13.156 可见域：授权在 Node 侧判定（见 visiblePurchaseOwner 注释）
+  const ownerId = visiblePurchaseOwner(getDb(), req.user.id, req.params.id)
+  if (!ownerId) return res.status(404).json({ message: '记录不存在' })
+
   const saveScreenshot = (base64Str, prefix) => {
     if (!base64Str) return null
     try {
@@ -731,7 +846,7 @@ router.post('/:id/export-map-excel', authenticate, async (req, res) => {
   const mapPath = saveScreenshot(mapScreenshot, 'map')
 
   const scriptPath = join(__dirname, '../../export_excel.py')
-  let cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  let cmd = `python3 "${scriptPath}" "${templatePath}" "${outputPath}" "${dbPath}" ${req.params.id} ${ownerId}`
   if (compPath) cmd += ` "${compPath}"`
   if (shopPath) cmd += ` "${shopPath}"`
   if (mapPath) cmd += ` "${mapPath}"`
@@ -791,6 +906,10 @@ router.post('/:id/export-pdf-report', authenticate, async (req, res) => {
   const screenshotDir = join(__dirname, '../../uploads/screenshots')
   if (!fs.existsSync(screenshotDir)) fs.mkdirSync(screenshotDir, { recursive: true })
 
+  // ★ v1.13.156 可见域：授权在 Node 侧判定（见 visiblePurchaseOwner 注释）
+  const ownerId = visiblePurchaseOwner(getDb(), req.user.id, req.params.id)
+  if (!ownerId) return res.status(404).json({ message: '记录不存在' })
+
   const saveScreenshot = (base64Str, prefix) => {
     if (!base64Str) return null
     try {
@@ -810,7 +929,7 @@ router.post('/:id/export-pdf-report', authenticate, async (req, res) => {
   const mapPath = saveScreenshot(mapScreenshot, 'map')
 
   const scriptPath = join(__dirname, '../../export_excel.py')
-  let cmd = `python3 "${scriptPath}" "${templatePath}" "${excelPath}" "${dbPath}" ${req.params.id} ${req.user.id}`
+  let cmd = `python3 "${scriptPath}" "${templatePath}" "${excelPath}" "${dbPath}" ${req.params.id} ${ownerId}`
   if (compPath) cmd += ` "${compPath}"`
   if (shopPath) cmd += ` "${shopPath}"`
   if (mapPath) cmd += ` "${mapPath}"`
@@ -886,6 +1005,10 @@ router.post('/export-merged', authenticate, (req, res) => {
     if (!cityMonth) return res.status(400).json({ message: '缺少数据年月' })
 
     const db = getDb()
+    // ★ v1.13.156 集团可见域：集团 owner 可对公司全部可见账号的已购数据做汇总导出
+    //   （= 「子公司不必再导出报表手工提交」，原话诉求 ②）
+    const vis = visibleScope(db, req.user.id)
+    const visLabels = sourceLabels(db, req.user.id, vis.ids)
     const colCount = UNICOM_SUMMARY_COLS.length
     const rows = [['门店 / 半径', ...UNICOM_SUMMARY_COLS.map(c => c.m)]]
     let combos = 0, matched = 0, empty = 0
@@ -894,11 +1017,11 @@ router.post('/export-merged', authenticate, (req, res) => {
       const name = String(store?.name || '').trim()
       if (!name) continue
       const purchases = db.prepare(`
-        SELECT id, store_name, center_lng, center_lat, radius, city_month, created_at, result_data
+        SELECT id, user_id, store_name, center_lng, center_lat, radius, city_month, created_at, result_data
         FROM purchases
-        WHERE user_id = ? AND store_name = ? AND status = 'active'
+        WHERE user_id IN (${placeholders(vis.ids.length)}) AND store_name = ? AND status = 'active'
         ORDER BY created_at DESC
-      `).all(req.user.id, name)
+      `).all(...vis.ids, name)
 
       for (const r of radii) {
         const R = Number(r)
@@ -922,7 +1045,10 @@ router.post('/export-merged', authenticate, (req, res) => {
           continue
         }
         matched++
-        rows.push([radiusLabel(name, R), ...UNICOM_SUMMARY_COLS.map(c => summaryValue(byCode, c.c, c.f))])
+        // 集团视角：非本账号的数据在行标签前标注来源，避免多子公司同名门店混为一行
+        const label = visLabels.get(Number(match.user_id))
+        const prefix = (label && !label.isSelf) ? `${label.name}·` : ''
+        rows.push([`${prefix}${radiusLabel(name, R)}`, ...UNICOM_SUMMARY_COLS.map(c => summaryValue(byCode, c.c, c.f))])
       }
     }
 
