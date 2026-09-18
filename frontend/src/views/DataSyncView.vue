@@ -269,8 +269,7 @@
               </el-select>
               <span class="ds-label" style="margin-left:16px;">数据范围</span>
               <el-checkbox v-model="kinds.markers">我的门店</el-checkbox>
-              <el-checkbox v-model="kinds.competitors">竞品门店</el-checkbox>
-              <span class="ds-muted">（竞品期次快照仅支持集团下发，不参与此方向）</span>
+              <span class="ds-muted">（竞品门店与竞品期次快照仅支持集团下发，不参与此方向）</span>
             </div>
 
             <el-alert
@@ -707,8 +706,16 @@ const selectedKinds = computed(() => Object.keys(kinds.value).filter(k => kinds.
  *   故前端在构造请求前就把它摘掉，而不是让用户点了预览才看到报错。
  */
 const DOWNLOAD_ONLY_KINDS = ['competitor_snapshots']
+/**
+ * 各方向「前端不携带」的对象。
+ * · member_to_group 额外摘掉 competitors —— 业务口径（2026-09-18 确认）：
+ *   竞品一律按季期次由集团下发，子公司不自行上传 ⇒ ② 方向不再提供该选项。
+ *   ⚠️ 后端 member_to_group **仍支持** competitors（能力保留），这里只收窄前端入口；
+ *      如需回退，把 'competitors' 移出本表即可（模板上也要恢复复选框）。
+ */
+const DIRECTION_EXCLUDED = { member_to_group: ['competitors', ...DOWNLOAD_ONLY_KINDS] }
 const kindsForDirection = (dir) => selectedKinds.value.filter(
-  k => !(dir === 'member_to_group' && DOWNLOAD_ONLY_KINDS.includes(k))
+  k => !(DIRECTION_EXCLUDED[dir] || []).includes(k)
 )
 const kindsParam = computed(() => kindsForDirection('group_to_member').join(','))
 const candidateSummary = ref({ inScope: 0, outOfScope: 0, outOfFilter: 0, selfOrigin: 0, detailRows: 0 })

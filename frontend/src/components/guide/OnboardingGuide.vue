@@ -5,7 +5,10 @@
       <div class="banner-content">
         <el-icon class="banner-icon"><MagicStick /></el-icon>
         <span class="banner-text">
-          <template v-if="!hasMyStores && !hasCompetitors">
+          <template v-if="isSubMember">
+            你所属集团的<strong>门店与竞品数据由集团下发</strong>。建议先到「数据同步」页完成<strong>知情确认</strong>，再从集团同步数据。
+          </template>
+          <template v-else-if="!hasMyStores && !hasCompetitors">
             欢迎使用选址赢家！建议先<strong>添加我的门店</strong>，再添加<strong>竞品门店</strong>，即可开始商圈分析。
           </template>
           <template v-else-if="!hasMyStores">
@@ -15,7 +18,10 @@
             我的门店已就绪！建议继续<strong>添加竞品门店</strong>，即可进行竞争分析。
           </template>
         </span>
-        <el-button type="primary" size="small" class="banner-btn" @click="goNextStep">
+        <el-button v-if="isSubMember" type="primary" size="small" class="banner-btn" @click="goDataSync">
+          前往数据同步 →
+        </el-button>
+        <el-button v-else type="primary" size="small" class="banner-btn" @click="goNextStep">
           {{ !hasMyStores ? '添加我的门店' : '添加竞品门店' }}
         </el-button>
         <el-icon class="banner-close" @click="dismissBanner"><Close /></el-icon>
@@ -97,10 +103,12 @@ import { ElMessage } from 'element-plus'
 import { MagicStick, Close, InfoFilled } from '@element-plus/icons-vue'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
+const userStore = useUserStore()
 
 const wizardVisible = ref(false)
 const step = ref(0)
@@ -112,13 +120,26 @@ const guideDoneKey = () => `guide_done_${localStorage.getItem('userId') || 'anon
 // 引导条关闭标记 key（按用户隔离）
 const bannerClosedKey = () => `guide_banner_closed_${localStorage.getItem('userId') || 'anon'}`
 
+/**
+ * 子公司成员（orgRole === 'member'）：数据由集团下发，不该引导「自己添加门店」。
+ * ★ 复用 userStore 已加载的归属（MainLayout 也会调），不额外发明判断。
+ */
+const isSubMember = computed(() => userStore.orgRole === 'member')
 const hasMyStores = computed(() => markerStore.markers.length > 0)
 const hasCompetitors = computed(() => competitorStore.competitors.length > 0)
-const dataReady = computed(() => hasMyStores.value && hasCompetitors.value)
+// 子公司：同步到任一类数据即视为就绪（集团可能只下发了门店或只有竞品）；
+// 普通用户：仍需两类齐备才算「数据就绪」（维持原口径）
+const dataReady = computed(() => isSubMember.value
+  ? (hasMyStores.value || hasCompetitors.value)
+  : (hasMyStores.value && hasCompetitors.value))
 
 // 初始化：预取数据并判断引导状态
 onMounted(async () => {
   bannerClosed.value = localStorage.getItem(bannerClosedKey()) === '1'
+  // ★ 必须先确定组织归属再判分支：本组件 mounted **早于** MainLayout（子先父后），
+  //   此刻 userStore.orgRole 通常还没加载 ⇒ 直接用会把自己的子公司成员误判成普通用户、
+  //   弹出错误的「添加我的门店」向导。store 内有 orgRoleLoaded 防重复，不会重复请求。
+  await userStore.fetchOrgRole()
   // 并行预取数据（已加载则跳过）
   if (markerStore.markers.length === 0) await markerStore.fetchMarkers()
   if (competitorStore.competitors.length === 0) await competitorStore.fetchCompetitors()
@@ -126,9 +147,10 @@ onMounted(async () => {
   // 数据未就绪 → 显示顶部引导条
   showBanner.value = !dataReady.value && !bannerClosed.value
 
-  // 首次使用（数据未就绪且未看过向导）→ 弹出分步向导
+  // 首次使用（数据未就绪且未看过向导）→ 弹出分步向导。
+  // ★ 子公司成员的引导改由顶部引导条承担（指向「数据同步」页），故不弹「自己添加门店」向导。
   const done = localStorage.getItem(guideDoneKey())
-  if (!dataReady.value && !done) {
+  if (!isSubMember.value && !dataReady.value && !done) {
     wizardVisible.value = true
   }
 })
@@ -145,6 +167,9 @@ const goNextStep = () => {
     router.push('/competitors')
   }
 }
+
+// 子公司成员：顶部引导条按钮 —— 一键前往「数据同步」页（从集团同步 + 完成知情确认）
+const goDataSync = () => router.push('/data-sync')
 
 const goTo = (path) => {
   router.push(path)
