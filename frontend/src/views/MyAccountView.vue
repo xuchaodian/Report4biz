@@ -4,8 +4,7 @@
       <template #header>
         <div class="card-header">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
-            <template v-if="isTrial">🎁 VIP 试用</template><template v-else>👑 VIP 用户</template> · 有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span>
-            <span v-if="vipExpired">（已过期）</span>
+            <template v-if="isTrial">🎁 VIP 试用</template><template v-else>👑 VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
           </span>
         </div>
       </template>
@@ -599,9 +598,12 @@ const isVip = computed(() => userStore.user?.role === 'vip' || userStore.user?.r
 const isTrial = computed(() => userStore.user?.role === 'trial')
 // 是否 VIP（管理员视为 VIP，用于 AI 选址建议门禁按钮显示）
 const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial' || userStore.user?.role === 'admin')
+// v1.13.158：vip_until 为空的语义统一为「长期有效（不过期）」—— 与后端 ai.js 的 VIP 门禁判定
+// （`!vip_until || 未过期`）保持一致。此前这三处各自把空值当「已过期/剩余 0 天」，会把
+// 权限正常的账号显示成红色「已过期」，误导客户以为需要续费。
 const vipUntilText = computed(() => {
   const u = userStore.user?.vip_until
-  if (!u) return ''
+  if (!u) return '长期有效'
   const d = new Date(String(u))
   if (isNaN(d.getTime())) return String(u).slice(0, 10)
   const y = d.getFullYear()
@@ -611,16 +613,16 @@ const vipUntilText = computed(() => {
 })
 const vipExpired = computed(() => {
   const u = userStore.user?.vip_until
-  if (!u) return true
+  if (!u) return false
   return new Date(String(u) + 'T23:59:59') < new Date()
 })
-// 是否 30 天内到期（提醒）
+// 是否 30 天内到期（提醒）；无到期日 → null 表示不限（不参与提醒）
 const vipDaysLeft = computed(() => {
   const u = userStore.user?.vip_until
-  if (!u) return 0
+  if (!u) return null
   return Math.ceil((new Date(String(u) + 'T23:59:59') - new Date()) / 86400000)
 })
-const vipExpiring = computed(() => !vipExpired.value && vipDaysLeft.value >= 0 && vipDaysLeft.value <= 30)
+const vipExpiring = computed(() => vipDaysLeft.value !== null && !vipExpired.value && vipDaysLeft.value >= 0 && vipDaysLeft.value <= 30)
 const quotaLoading = ref(false)
 
 // 购买履历相关

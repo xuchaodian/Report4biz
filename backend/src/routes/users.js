@@ -7,6 +7,18 @@ import { getPoolInfo } from './resale.js'
 
 const router = express.Router()
 
+// VIP 到期日：vip → 自保存之日起 1 年；trial → 自保存之日起 30 天；其他角色 → null
+// v1.13.158：POST 与 PUT 共用本函数。此前 POST（新建用户）的 INSERT 漏了 vip_until 列，
+// 导致「新建时直接选 VIP用户/VIP试用」的账号 role 写入了但 vip_until 为 NULL ——
+// 表现为用户管理列表该列显示「—」、我的账户误标「已过期」，且 trial 因
+// app.js 的降级条件带 `vip_until IS NOT NULL` 而永远不会到期降级（永久白嫖 VIP）。
+const VIP_DAYS = { vip: 365, trial: 30 }
+const calcVipUntil = (role) => {
+  const days = VIP_DAYS[role]
+  if (!days) return null
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
 // 获取用户列表（包含配额信息）
 router.get('/', authenticate, requireAdmin, (req, res) => {
   try {
@@ -234,12 +246,14 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
     const hashedPassword = bcrypt.hashSync(password, 10)
 
     // 创建用户
+    // v1.13.158：角色为 vip/trial 时必须一并写入 vip_until，否则到期日为空（见文件顶部 calcVipUntil 说明）
+    const finalRole = role || 'user'
     const result = db.prepare(`
-      INSERT INTO users (username, email, password, role, company)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(username, email, hashedPassword, role || 'user', company || '')
+      INSERT INTO users (username, email, password, role, company, vip_until)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(username, email, hashedPassword, finalRole, company || '', calcVipUntil(finalRole))
 
-    const user = db.prepare('SELECT id, username, email, role, company, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
+    const user = db.prepare('SELECT id, username, email, role, vip_until, company, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
 
     res.status(201).json({
       message: '用户创建成功',
@@ -406,17 +420,14 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       params.push(company)
     }
 
-    // VIP 到期：设为 VIP → 自保存日起算自动续期 1 年；设为 VIP 试用 → 自保存日起算 30 天；未改为其他角色则每次保存自动延续；改为其他角色 → 清除
+    // VIP 到期：设为 VIP → 自保存日起算自动续期 1 年；设为 VIP 试用 → 自保存日起算 30 天；
+    // 未传 role 则保持既有权值不动；改为其他角色 → 清除。
+    // v1.13.158：改用文件顶部的 calcVipUntil，与 POST 共用同一份口径（原先两处各写一遍，已分叉过一次）
     const finalRole = role !== undefined ? role : existingUser.role
-    if (finalRole === 'vip') {
-      const vipUntil = new Date(Date.now() + 365 * 24 * 3600 * 1000)
+    if (finalRole === 'vip' || finalRole === 'trial') {
       updates.push('vip_until = ?')
-      params.push(vipUntil.toISOString().slice(0, 10))
-    } else if (finalRole === 'trial') {
-      const vipUntil = new Date(Date.now() + 30 * 24 * 3600 * 1000)
-      updates.push('vip_until = ?')
-      params.push(vipUntil.toISOString().slice(0, 10))
-    } else if (role !== undefined && finalRole !== 'vip' && finalRole !== 'trial') {
+      params.push(calcVipUntil(finalRole))
+    } else if (role !== undefined) {
       updates.push('vip_until = ?')
       params.push(null)
     }

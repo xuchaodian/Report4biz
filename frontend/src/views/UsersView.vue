@@ -134,9 +134,13 @@
         </el-table-column>
         <el-table-column prop="vip_until" label="VIP到期日" width="110" align="center">
           <template #default="{ row }">
-            <span v-if="row.role === 'vip' && row.vip_until" :class="{ 'vip-expiring': isVipExpiring(row), 'vip-expired': isVipExpired(row) }">
-              {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '' }}{{ formatDate(row.vip_until) }}
-            </span>
+            <template v-if="row.role === 'vip' || row.role === 'trial'">
+              <span v-if="row.vip_until" :class="{ 'vip-expiring': isVipExpiring(row), 'vip-expired': isVipExpired(row) }">
+                {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '' }}{{ formatDate(row.vip_until) }}
+              </span>
+              <!-- v1.13.158：vip_until 为空 = 不过期（与后端 ai.js 的 VIP 门禁判定一致），不再显示「—」 -->
+              <span v-else style="color: #909399;">长期有效</span>
+            </template>
             <span v-else style="color: #c0c4cc;">—</span>
           </template>
         </el-table-column>
@@ -211,7 +215,7 @@
         <el-form-item v-if="form.role === 'vip' || form.role === 'trial'" label="VIP到期">
           <div style="width: 100%;">
             <div class="quota-tip" style="color: #e6a23c;">{{ form.role === 'trial' ? '🎁 VIP 试用自保存之日起 30 天，到期后自动恢复为普通用户' : '👑 自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）' }}</div>
-            <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期日：{{ form.vipUntilText }}</div>
+            <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期：{{ form.vipUntilText }}</div>
           </div>
         </el-form-item>
         <el-form-item v-if="isEdit" label="剩余次数">
@@ -836,7 +840,7 @@ const handleEdit = (row) => {
     quota: row.quota || 0,
     usedQuota: row.usedQuota || 0,
     remaining: editRemaining,
-    vipUntilText: row.vip_until ? formatDate(row.vip_until) : null
+    vipUntilText: row.vip_until ? formatDate(row.vip_until) : '长期有效'
   })
   originalRemaining.value = editRemaining
   dialogVisible.value = true
