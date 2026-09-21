@@ -888,6 +888,18 @@ export async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
 
+    // v1.13.161（L0/L1 解耦）：ai_usage 增加 endpoint 分列 —— AI 额度按「一次问答」计次，
+    // 而非按上游调用次数（服务端工具会触发第 2 次上游，记为 chat-followup 只贡献 token）。
+    // 历史行 endpoint 为 NULL ⇒ 不计入次数（本次上线即从零起算，是正确的初始状态）。
+    try {
+      db.run(`ALTER TABLE ai_usage ADD COLUMN endpoint TEXT`)
+    } catch (e) {
+      // 字段已存在，忽略
+    }
+    // 额度/日上限/熔断每次请求都要按 (user_id, created_at) 聚合，低基数也要有索引兜底
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created ON ai_usage(user_id, created_at)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at)`)
+
     // 4C-D4：AI 数据外发审计日志——凡将用户数据发送至第三方大模型（火山方舟）时留痕，供合规审计
     db.run(`CREATE TABLE IF NOT EXISTS ai_egress_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -5,6 +5,7 @@ import { tools, serverSideTools } from '../ai/tools.js'
 import { aroundSearch } from '../utils/amapPoi.js'
 import { ARK_API_KEY } from '../config.js'
 import { fetchWithTimeout, fetchStreamWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, STREAM_HEAD_TIMEOUT_MS } from '../utils/httpTimeout.js'
+import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext } from '../utils/aiQuota.js'
 
 const router = express.Router()
 
@@ -14,35 +15,14 @@ const MODEL = 'doubao-seed-2-0-pro-260215'
 // L6：AI 上游（火山方舟）非流式调用整体超时 90s；流式见 STREAM_HEAD_TIMEOUT_MS（仅首字节计时）
 const AI_TIMEOUT_MS = 90000
 
-// 每月AI token用量限额配置
-const TOKEN_LIMITS = [
-  { minQuota: 200, limit: 1_500_000, warn: true },        // ≥200 → 150万/月
-  { minQuota: 100, limit: 1_000_000, warn: true },        // 100~199 → 100万/月
-  { minQuota: 50, limit: 500_000, warn: true },           // 50~99 → 50万/月
-  { minQuota: 1, limit: 100_000, warn: true },            // 1~49 → 10万/月
-  { minQuota: 0, limit: 0, warn: true }                   // 0 → 禁止
-]
-
-// ... (rest of code stays)
-
-// 获取用户本月已用token数
-function getMonthlyTokenUsage(db, userId) {
-  const now = new Date()
-  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01 00:00:00`
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(tokens_used), 0) as total
-    FROM ai_usage WHERE user_id = ? AND created_at >= ?
-  `).get(userId, monthStart)
-  return row?.total || 0
-}
-
-// 记录AI token用量
-function recordTokenUsage(userId, tokens) {
+// 记录AI token用量（endpoint 区分「一次问答」与上游续轮 —— 口径见 utils/aiQuota.js）
+function recordTokenUsage(userId, tokens, endpoint = null) {
   try {
     const db = getDb()
     // v1.13.144：不再追加 db.saveNow() —— run() 在非事务态已自动落盘（database.js run 内 `if (!getTxFlag()) saveDatabase()`），
     // 事务态则由 commitTx 统一落盘。原写法每次记账都整库写两遍。
-    db.prepare(`INSERT INTO ai_usage (user_id, tokens_used) VALUES (?, ?)`).run(userId, tokens)
+    db.prepare(`INSERT INTO ai_usage (user_id, tokens_used, endpoint) VALUES (?, ?, ?)`)
+      .run(userId, tokens, endpoint)
   } catch (e) {
     console.error('[AI] 记录token用量失败:', e.message)
   }
@@ -62,85 +42,20 @@ function logAiEgress(userId, endpoint, payloadChars) {
   }
 }
 
-// token用量提醒阈值配置
-const TOKEN_WARN_CONFIG = [
-  { minQuota: 200, limit: 1_500_000, step: 150_000, label: '高频' },
-  { minQuota: 100, limit: 1_000_000, step: 100_000, label: '中频' },
-  { minQuota: 50, limit: 500_000, step: 50_000, label: '普通' },
-  { minQuota: 1, limit: 100_000, step: 10_000, label: '低频' }
-]
-
-// 获取用户tier对应的警告配置
-function getWarnConfig(remaining) {
-  for (const cfg of TOKEN_WARN_CONFIG) {
-    if (remaining >= cfg.minQuota) return cfg
-  }
-  return null
-}
-
-// 每个用户上次警告的阈值级别（内存跟踪，重启后重置）
-const warnedLevels = new Map()
-
-// 检查是否需要发送token用量提醒
-function checkTokenWarning(userId, monthlyUsed, remaining) {
-  const cfg = getWarnConfig(remaining)
-  if (!cfg) return null
-
-  const currentLevel = Math.floor(monthlyUsed / cfg.step)
-  const key = `${userId}_${cfg.label}`
-  const lastLevel = warnedLevels.get(key) ?? -1
-
-  if (currentLevel > lastLevel && currentLevel > 0) {
-    warnedLevels.set(key, currentLevel)
-    const warned = currentLevel * cfg.step
-    const remainTokens = cfg.limit - monthlyUsed
-    const remainAfterWarn = cfg.limit - warned
-    // 估算可查询次数：按每次平均 2000 tokens 估算
-    const estQueries = Math.max(1, Math.round(remainTokens / 2000))
-    const estQueriesAfterWarn = Math.max(1, Math.round(remainAfterWarn / 2000))
-    return {
-      warnAt: warned,
-      remainTokens,
-      estQueries,
-      limit: cfg.limit,
-      label: cfg.label,
-      message: `⚠️ 本月已消耗 ${(warned / 10000).toFixed(0)} 万 token，剩余约 ${(remainTokens / 10000).toFixed(0)} 万（约 ${estQueries} 次查询）`
-    }
-  }
-  return null
-}
-
-function checkAIAccess(userId) {
+// ============================================================================
+// AI 额度闸门（L0 解耦 / L1 额度 / L2 刹车）—— v1.13.161
+// ----------------------------------------------------------------------------
+// 原判据是**联通**配额（users.quota − Σ purchases.quota_used），与豆包花费毫无关系：
+//   联通池为 0 ⇒ AI 全站 403（连 admin 也打不开，2026-09-07 起停摆）
+//   联通额度给得大 ⇒ AI 顺带被放开，且 AI 侧零限制
+// 现改为读 AI 自己的账：角色分层额度 + 日上限 + 分钟限速 + 全局月度熔断，
+// 判据与文案统一收敛在 utils/aiQuota.js（唯一权威入口）。
+// 一并删除挂在联通 quota 上、且**前端从未消费**的
+// TOKEN_LIMITS / TOKEN_WARN_CONFIG / checkTokenWarning 死代码。
+// ============================================================================
+function checkAIAccess(userId, now = new Date()) {
   const db = getDb()
-  const user = db.prepare('SELECT quota FROM users WHERE id = ?').get(userId)
-  if (!user) return { allowed: false, message: '用户不存在' }
-  
-  const used = db.prepare(`
-    SELECT COALESCE(SUM(quota_used), 0) as used
-    FROM purchases WHERE user_id = ? AND status = 'active'
-  `).get(userId)
-  
-  const remaining = (user.quota || 0) - (used?.used || 0)
-  
-  // 剩余次数为0 → 直接禁止
-  if (remaining <= 0) {
-    return { allowed: false, message: '剩余次数为0，无法使用AI助手功能。请联系管理员购买联通人口数据配额' }
-  }
-  
-  const monthlyTokens = getMonthlyTokenUsage(db, userId)
-  
-  for (const limit of TOKEN_LIMITS) {
-    if (remaining >= limit.minQuota) {
-      // 找到对应区间
-      if (monthlyTokens >= limit.limit) {
-        const limitStr = limit.limit >= 1_500_000 ? '150万' : limit.limit >= 1_000_000 ? '100万' : limit.limit >= 500_000 ? '50万' : '10万'
-        return { allowed: false, message: `本月AI token用量已达${limitStr}上限，请下月再使用（已用${Math.round(monthlyTokens / 10000)}万）` }
-      }
-      return { allowed: true, remaining, monthlyTokens, limit: limit.limit }
-    }
-  }
-  
-  return { allowed: false, message: '无法使用AI助手功能' }
+  return checkAiBudget(db, loadAiUser(db, userId), now)
 }
 
 // 工具定义从 ../ai/tools.js 导入
@@ -148,13 +63,21 @@ function checkAIAccess(userId) {
 // AI 对话接口
 router.post('/chat', authenticate, async (req, res) => {
   try {
-    const { messages, context } = req.body
     const userId = req.user.id
 
-    // 检查AI使用权限（基于剩余配额和月token用量）
+    // 检查AI使用权限（AI 自己的账：角色额度 + 日上限 + 分钟限速 + 全局熔断）
     const access = checkAIAccess(userId)
     if (!access.allowed) {
-      return res.status(403).json({ message: access.message })
+      // 限速可重试 ⇒ 429；额度类（月/日/全局）⇒ 403
+      const status = access.code === 'rate_limited' ? 429 : 403
+      return res.status(status).json({ message: access.message, code: access.code })
+    }
+
+    // L2 刹车：按字符预算截断历史 + context 瘦身（防超长输入绕过次数额度）
+    const messages = truncateMessages(req.body?.messages)
+    const context = slimContext(req.body?.context)
+    if (!messages.length) {
+      return res.status(400).json({ message: '请提供对话内容' })
     }
 
     // 构建系统提示
@@ -236,13 +159,10 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
     const result = await response.json()
     const choice = result.choices?.[0]
 
-    // 记录本次token消耗
-    let tokenWarn = null
+    // 记录本次token消耗（endpoint='chat' ⇒ 计入「一次问答」额度）
     if (result.usage) {
       const totalTokens = (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0)
-      recordTokenUsage(userId, totalTokens)
-      // 检查是否需要发送token用量提醒
-      tokenWarn = checkTokenWarning(userId, access.monthlyTokens + totalTokens, access.remaining)
+      recordTokenUsage(userId, totalTokens, 'chat')
     }
 
     if (!choice) {
@@ -283,8 +203,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
             name: tc.function.name,
             args: JSON.parse(tc.function.arguments || '{}')
           })),
-          assistant_message: choice.message,
-          tokenWarn: tokenWarn?.message
+          assistant_message: choice.message
         })
       }
 
@@ -317,25 +236,22 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
       const followUpResult = await followUp.json()
       const finalContent = followUpResult.choices?.[0]?.message?.content || '已完成统计查询'
 
-      // 记录followUp的token消耗
+      // 记录followUp的token消耗（只贡献 token，不计入次数额度）
       if (followUpResult.usage) {
         const totalTokens = (followUpResult.usage.prompt_tokens || 0) + (followUpResult.usage.completion_tokens || 0)
-        recordTokenUsage(userId, totalTokens)
-        tokenWarn = checkTokenWarning(userId, access.monthlyTokens + totalTokens, access.remaining) || tokenWarn
+        recordTokenUsage(userId, totalTokens, 'chat-followup')
       }
 
       return res.json({
         type: 'text',
-        content: finalContent,
-        tokenWarn: tokenWarn?.message
+        content: finalContent
       })
     }
 
     // 普通文字回复
     res.json({
       type: 'text',
-      content: choice.message?.content || '好的，我来帮您处理。',
-      tokenWarn: tokenWarn?.message
+      content: choice.message?.content || '好的，我来帮您处理。'
     })
 
   } catch (error) {
@@ -586,16 +502,14 @@ router.post('/site-advice', authenticate, async (req, res) => {
     const { storeName = '', brand = '', category = '', city = '', radius = '', dataSummary = '', lat = null, lng = null, radiusMeters = null, radii = null, stream = false } = req.body || {}
     const userId = req.user.id
 
-    // 检查AI使用权限
+    // 检查AI使用权限（与 AI 助手共用同一额度闸门）
     const access = checkAIAccess(userId)
     if (!access.allowed) {
-      return res.status(403).json({ message: access.message })
+      const status = access.code === 'rate_limited' ? 429 : 403
+      return res.status(status).json({ message: access.message, code: access.code })
     }
-    // VIP 门禁：AI 选址建议仅 VIP 用户可用（查 DB 最新角色 + 到期校验，管理员视为 VIP）
-    const vipUser = getDb().prepare('SELECT role, vip_until FROM users WHERE id = ?').get(userId)
-    const isVip = vipUser && (vipUser.role === 'vip' || vipUser.role === 'admin') &&
-      (!vipUser.vip_until || new Date(String(vipUser.vip_until) + 'T23:59:59') >= new Date())
-    if (!isVip) {
+    // VIP 门禁：AI 选址建议仅 VIP 用户可用（判据抽到 utils/aiQuota.js::isVipActive，管理员视为 VIP）
+    if (!isVipActive(loadAiUser(getDb(), userId))) {
       return res.status(403).json({ message: '🤖 AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP' })
     }
     if (!brand && !storeName) {
@@ -698,6 +612,7 @@ router.post('/site-advice', authenticate, async (req, res) => {
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
       let buf = ''
+      let saCounted = false
       try {
         while (true) {
           const { done, value } = await reader.read()
@@ -713,7 +628,10 @@ router.post('/site-advice', authenticate, async (req, res) => {
               try {
                 const chunk = JSON.parse(line.slice(5).trim())
                 if (chunk.usage) {
-                  recordTokenUsage(userId, (chunk.usage.prompt_tokens || 0) + (chunk.usage.completion_tokens || 0))
+                  const t = (chunk.usage.prompt_tokens || 0) + (chunk.usage.completion_tokens || 0)
+                  // 首次 usage 计 1 次额度；同一请求若出现多块 usage，后续只贡献 token
+                  recordTokenUsage(userId, t, saCounted ? 'site-advice-extra' : 'site-advice')
+                  saCounted = true
                 }
               } catch (e) { /* 忽略解析失败 */ }
             }
@@ -730,10 +648,10 @@ router.post('/site-advice', authenticate, async (req, res) => {
     const result = await response.json()
     const reply = result.choices?.[0]?.message?.content || ''
 
-    // 记录token消耗
+    // 记录token消耗（endpoint='site-advice' ⇒ 计入「一次问答」额度）
     if (result.usage) {
       const totalTokens = (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0)
-      recordTokenUsage(userId, totalTokens)
+      recordTokenUsage(userId, totalTokens, 'site-advice')
     }
 
     res.json({ success: true, reply })
