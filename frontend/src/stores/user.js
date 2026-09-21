@@ -19,6 +19,24 @@ export const useUserStore = defineStore('user', {
     isAdmin: (state) => state.user?.role === 'admin',
     username: (state) => state.user?.username || '',
     availableQuota: (state) => state.quota?.available ?? 0,
+    /**
+     * ★ v1.13.160 集团品牌 Logo 读时继承 —— **全站展示 Logo 的唯一入口**。
+     *
+     * 后端在 login / GET /auth/me / PUT /users/me 三处回带：
+     *   logo           本人上传的 logo（**原义不变**，仅用于「有没有改动」比对与提交）
+     *   logo_effective 实际应展示的（自有优先，否则继承所属集团总部账号的）
+     *   logo_source    'self' | 'group' | null
+     *   logo_group_name 集团名（继承时用于提示语）
+     *
+     * ⚠️ 任何地方**展示** Logo 都必须走本 getter，不要直接用 user.logo ——
+     *    否则子公司账号会看不到集团品牌 Logo（父级需求：子公司无需重复上传）。
+     *    反之，**写回**（PUT /users/me 的 logo 字段）必须用 user.logo 原值。
+     * `??` 兜底旧版后端回包（无 logo_effective 字段）时不至于把头像变空。
+     */
+    effectiveLogo: (state) => state.user?.logo_effective ?? state.user?.logo ?? null,
+    /** 当前展示的 Logo 是否来自集团继承（设置页据此显示提示，不显示"可清除"） */
+    logoInherited: (state) => state.user?.logo_source === 'group',
+    logoGroupName: (state) => state.user?.logo_group_name || '',
     // 是否属于某个集团（总部 owner / 子公司 member）。
     // ⚠️ 必须带上 orgRoleLoaded：未确认前一律 false，避免菜单项「先闪现再消失」。
     hasOrg: (state) => state.orgRoleLoaded && (state.orgRole === 'owner' || state.orgRole === 'member')

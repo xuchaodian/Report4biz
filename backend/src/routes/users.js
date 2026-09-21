@@ -4,6 +4,8 @@ import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { signToken, bumpTokenVersion, currentTokenVersion } from '../utils/tokenAuth.js'
 import { getPoolInfo } from './resale.js'
+// v1.13.160：集团品牌 Logo 读时继承 —— 回执与 login//auth/me 同一口径，见 utils/brandLogo.js
+import { withResolvedLogo } from '../utils/brandLogo.js'
 
 const router = express.Router()
 
@@ -346,7 +348,9 @@ router.put('/me', authenticate, (req, res) => {
 
     res.json({
       message: '修改成功',
-      user,
+      // v1.13.160：`logo` 仍是本人自有值；展示用值走 logo_effective（集团继承）。
+      // 本人刚上传/清空 logo 时，这里也会立刻反映为 self / group。
+      user: withResolvedLogo(db, user),
       ...(refreshedToken ? { token: refreshedToken } : {})
     })
   } catch (error) {

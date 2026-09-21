@@ -65,7 +65,9 @@
              需再点一次才展开（用户反馈的现象）；click 模式一次点击即展开，且点击外部关闭由 EP 内置处理 -->
         <el-dropdown trigger="click" @command="handleCommand" @visible-change="handleDropdownVisible">
           <span class="user-info">
-            <el-avatar v-if="userStore.user?.logo" :size="32" :src="userStore.user.logo" />
+            <!-- v1.13.160：走 store 的 effectiveLogo —— 子公司账号无自有 Logo 时
+                 自动显示所属集团的品牌 Logo（父级需求：子公司无需重复上传） -->
+            <el-avatar v-if="userStore.effectiveLogo" :size="32" :src="userStore.effectiveLogo" />
             <el-avatar v-else :size="32" :icon="UserFilled" />
             <span class="username">{{ userStore.username }}</span>
             <el-icon class="arrow"><ArrowDown /></el-icon>

@@ -38,7 +38,10 @@
               >
                 <el-button size="small">上传 Logo</el-button>
               </el-upload>
-              <div style="font-size: 11px; color: #999; margin-top: 4px;">PNG/JPG/WEBP/SVG，建议正方形（≤500KB）。用于 PDF 速览 / 导出报表头部</div>
+              <div v-if="userStore.logoInherited" style="font-size: 11px; color: #e6a23c; margin-top: 4px; max-width: 320px; line-height: 1.5;">
+                当前显示的是集团「{{ userStore.logoGroupName }}」的品牌 Logo（无需重复上传）；上传自己的即会改为本账号专属
+              </div>
+              <div v-else style="font-size: 11px; color: #999; margin-top: 4px;">PNG/JPG/WEBP/SVG，建议正方形（≤500KB）。用于 PDF 速览 / 导出报表头部</div>
             </div>
           </div>
         </el-form-item>
@@ -1270,10 +1273,12 @@ onMounted(async () => {
   if (userStore.user?.company) {
     form.company = userStore.user.company
   }
-  if (userStore.user?.logo) {
-    form.logo = userStore.user.logo
-    form.logoPreview = userStore.user.logo
-  }
+  // v1.13.160：`logo` = 本人上传的原值（比对 / 提交用），`logoPreview` = 实际展示值。
+  // 子公司无自有 Logo 且所属集团已上传时，logoPreview 取集团品牌 Logo（读时继承），
+  // 此时 logo 仍为空 ⇒ 保存其它字段不会被误判为"改了 logo"，集团那张图也就不会被
+  // 复制进本账号（否则会冻结成旧图，集团后续换 Logo 本账号再也跟不上）。
+  form.logo = userStore.user?.logo || ''
+  form.logoPreview = userStore.effectiveLogo || ''
   // 获取配额信息
   if (!userStore.quota) {
     await userStore.fetchQuota()
@@ -3777,7 +3782,10 @@ const buildPdfReportHeader = () => {
   if (!container) return null
   const infoEl = container.querySelector('.detail-info')
   if (!infoEl) return null
-  const logo = form.logo || userStore.user?.logo
+  // v1.13.160：优先用预览值（含集团继承 / 本次新上传但尚未保存的图），
+  // 再退到本人自有值，最后退到 store 的 effectiveLogo —— 保证子公司导出的
+  // 报表头部也能带上集团品牌 Logo。
+  const logo = form.logoPreview || form.logo || userStore.effectiveLogo
   const company = form.company || userStore.user?.company || ''
   // 既无 Logo 也无公司名，则不插入
   if (!logo && !company) return null

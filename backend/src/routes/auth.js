@@ -14,6 +14,8 @@ import {
   issueRegisterTicket, verifyRegisterTicket, clientIpOf,
   REG_WINDOW_MS, REG_MAX_PER_IP, REG_MIN_FILL_MS, REG_HONEYPOT_FIELD, REG_TICKET_MESSAGES
 } from '../utils/registerGuard.js'
+// v1.13.160：集团品牌 Logo 读时继承（子公司无需重复上传）—— 见 utils/brandLogo.js 文件头
+import { resolveLogo, withResolvedLogo } from '../utils/brandLogo.js'
 
 const router = express.Router()
 
@@ -151,6 +153,11 @@ router.post('/login', (req, res) => {
     // 生成JWT（v1.13.150：内嵌 jti + 账号版本快照 tv，便于服务端撤销，见 utils/tokenAuth.js）
     const token = signToken(user, user.token_version)
 
+    // v1.13.160：集团品牌 Logo 读时继承
+    //   ⚠️ `logo` 保持「本人上传的 logo」原义不动（前端「我的账户」拿它当"有没有改动"
+    //      的比对基准）；展示用值走新增的 logo_effective。详见 utils/brandLogo.js 文件头。
+    const logoInfo = resolveLogo(db, user)
+
     res.json({
       message: '登录成功',
       token,
@@ -162,6 +169,7 @@ router.post('/login', (req, res) => {
         vip_until: user.vip_until || null,
         company: user.company,
         logo: user.logo || null,
+        ...logoInfo,
         quota: user.quota
       }
     })
@@ -236,7 +244,8 @@ router.get('/me', (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
 
-    res.json({ user })
+    // v1.13.160：与登录接口同一口径 —— 补 logo_effective / logo_source / logo_group_name
+    res.json({ user: withResolvedLogo(db, user) })
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return res.status(401).json({ message: 'Token无效或已过期' })
