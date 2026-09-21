@@ -62,7 +62,8 @@ vi.mock('../src/utils/amapPoi.js', () => ({
 let db, signToken
 let aiCallLimitFor, isVipActive, describeLimit, tokensToYuan
 let monthStartStamp, dayStartStamp, resetRateBuckets, checkAiBudget, loadAiUser
-let truncateMessages, slimContext
+let truncateMessages, slimContext, normalizeMaxTokens
+let clearAiCache
 let AI_ROLE_CALL_LIMIT, AI_DAILY_CALL_LIMIT, AI_RATE_PER_MINUTE, AI_GLOBAL_MONTHLY_TOKEN_CAP
 let server, base
 
@@ -151,6 +152,9 @@ beforeAll(async () => {
   loadAiUser = q.loadAiUser
   truncateMessages = q.truncateMessages
   slimContext = q.slimContext
+  normalizeMaxTokens = q.normalizeMaxTokens
+  // v1.13.162：同问缓存是模块级内存态 ⇒ 必须在用例间清空，否则命中缓存会跳过记账、造成假绿/假红
+  clearAiCache = (await import('../src/utils/aiResponseCache.js')).clearAiCache
   AI_ROLE_CALL_LIMIT = q.AI_ROLE_CALL_LIMIT
   AI_DAILY_CALL_LIMIT = q.AI_DAILY_CALL_LIMIT
   AI_RATE_PER_MINUTE = q.AI_RATE_PER_MINUTE
@@ -200,6 +204,7 @@ afterAll(async () => {
 beforeEach(() => {
   db.prepare(`DELETE FROM ai_usage`).run()
   resetRateBuckets()
+  clearAiCache()
 })
 
 // 每个用例都先自证前提：联通配额为 0

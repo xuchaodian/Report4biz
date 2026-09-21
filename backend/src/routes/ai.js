@@ -5,7 +5,8 @@ import { tools, serverSideTools } from '../ai/tools.js'
 import { aroundSearch } from '../utils/amapPoi.js'
 import { ARK_API_KEY } from '../config.js'
 import { fetchWithTimeout, fetchStreamWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, STREAM_HEAD_TIMEOUT_MS } from '../utils/httpTimeout.js'
-import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext } from '../utils/aiQuota.js'
+import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext, normalizeMaxTokens } from '../utils/aiQuota.js'
+import { cacheKey, getCached, setCached } from '../utils/aiResponseCache.js'
 
 const router = express.Router()
 
@@ -58,6 +59,32 @@ function checkAIAccess(userId, now = new Date()) {
   return checkAiBudget(db, loadAiUser(db, userId), now)
 }
 
+// ============================================================================
+// L3 降本（v1.13.162）：把「高消耗查询提示」从 systemPrompt 搬到服务端拼接
+// ----------------------------------------------------------------------------
+// 原实现是在 systemPrompt 里写「回复结尾必须加上：'💡 提示：…'」，
+// 让**模型**去复述三段固定文案 —— 代价是：
+//   ① 这段指令（含文案本身）每次调用都要作为 prompt 发一遍 ⇒ 每次都在付费
+//   ② 文案由模型复述 ⇒ 有概率漏字/改写，且占用 completion token
+// 现在改为：systemPrompt 删掉整段，**由服务端在拿到模型回复后按所调用的工具拼上**。
+// 收益：每次调用恒定省 ~400 字符的 prompt，且文案 100% 稳定。
+// ⚠️ 这三段文案必须与产品原口径**逐字一致**（用户可见），改动请同步前端文案约定。
+// ⚠️ 只对**服务端工具**（goes through followUp）拼接；前端执行的工具其回复由前端渲染。
+// ============================================================================
+const SERVER_TOOL_HINTS = {
+  query_mall_tenants: '💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击目标商场名称 → 在「餐饮商户」Tab中自助筛选查看，结果更完整且不消耗 AI 额度。',
+  compare_mall_tenants: '💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击商场 → 在「餐饮商户」Tab中选择「商户对比」功能自助操作。',
+  calculate_potential: '💡 提示：此查询消耗 token 较大。建议您在地图工具栏中点击「开店余地」按钮自助分析，支持自定义人口/门店筛选条件且不消耗 AI 额度。'
+}
+
+/** 按本次实际调用的服务端工具拼接提示；已含「💡 提示」则不再重复（防模型自行复述导致叠字） */
+function appendServerToolHints(content, toolNames = []) {
+  const text = content || ''
+  if (text.includes('💡 提示')) return text
+  const hint = toolNames.map(n => SERVER_TOOL_HINTS[n]).find(Boolean)
+  return hint ? `${text}\n\n${hint}` : text
+}
+
 // 工具定义从 ../ai/tools.js 导入
 
 // AI 对话接口
@@ -78,6 +105,18 @@ router.post('/chat', authenticate, async (req, res) => {
     const context = slimContext(req.body?.context)
     if (!messages.length) {
       return res.status(400).json({ message: '请提供对话内容' })
+    }
+
+    // L3 降本：输出上限归一化（原为硬编码 1500，会覆盖前端的 800，且可被撞满导致成本 ×2.4）
+    const maxTokens = normalizeMaxTokens(req.body?.max_tokens)
+
+    // L3 降本：同问短时缓存 —— 完全相同的请求（同账号 + 同对话 + 同 context + 同输出上限）直接复用。
+    // key 含 userId（隐私红线：绝不跨账号共享回答）；命中即不调上游、不记账、不产生任何费用。
+    const reqCacheKey = cacheKey({ model: MODEL, userId, messages, context, maxTokens })
+    const cachedResp = getCached(reqCacheKey)
+    if (cachedResp) {
+      console.log(`[AI-Cache] hit user=${userId} endpoint=chat → 复用结果（未调用上游、未记账）`)
+      return res.json(cachedResp)
     }
 
     // 构建系统提示
@@ -106,18 +145,6 @@ router.post('/chat', authenticate, async (req, res) => {
 - 商场商户对比：compare_mall_tenants（用户提到商场商户对比时调用）
 - 开店余地分析：calculate_potential（用户提到开店余地时调用）
 
-## ⚠️ 高消耗查询引导（重要）
-以下查询 token 消耗较大，你需要在回复结果的同时，引导用户亲自在系统中操作以获得更完整的结果：
-
-**【query_mall_tenants - 商场商户查询】**
-回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击目标商场名称 → 在「餐饮商户」Tab中自助筛选查看，结果更完整且不消耗 AI 额度。'
-
-**【compare_mall_tenants - 商场商户对比】**
-回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您打开左侧「购物中心」页面 → 点击商场 → 在「餐饮商户」Tab中选择「商户对比」功能自助操作。'
-
-**【calculate_potential - 开店余地分析】**
-回复结尾必须加上：'💡 提示：此查询消耗 token 较大。建议您在地图工具栏中点击「开店余地」按钮自助分析，支持自定义人口/门店筛选条件且不消耗 AI 额度。'
-
 当前用户数据概览：
 ${context ? JSON.stringify(context, null, 2) : '暂无'}
 
@@ -143,10 +170,14 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
           ...messages
         ],
         tools,
-        // 强制要求模型使用工具（特别是POI搜索）
-        tool_choice: 'required',
+        // v1.13.162：改为 'auto'。原为 'required'（强制每次都必须调工具），实价实测两个后果：
+        //   ① 纯问答被逼进工具模式 ⇒ finish_reason='tool_calls' 但 tool_calls 为空、content 也为空
+        //      ⇒ 落到下方兜底串「好的，我来帮您处理。」＝**假回复**（用户拿不到真答案）
+        //   ② 被逼「既调工具又写正文」⇒ 撞满 max_tokens（实测 finish=length、耗时 26.2s、成本 ×2.4）
+        // 'auto' 下指令类请求仍正常触发工具（实测 filter_markers / poi_around_search 命中 2/2）。
+        tool_choice: 'auto',
         temperature: 0.1,
-        max_tokens: 1500
+        max_tokens: maxTokens
       })
     }, AI_TIMEOUT_MS)
 
@@ -196,7 +227,7 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
       // 如果有需要前端执行的工具，直接返回给前端处理
       const clientSideTools = toolResults.filter(t => t.result?.status === 'client_side')
       if (clientSideTools.length > 0) {
-        return res.json({
+        const payload = {
           type: 'tool_calls',
           tool_calls: toolCalls.map(tc => ({
             id: tc.id,
@@ -204,7 +235,11 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
             args: JSON.parse(tc.function.arguments || '{}')
           })),
           assistant_message: choice.message
-        })
+        }
+        // 纯前端工具（无服务端查询结果）⇒ 结果里不含任何数据快照，复用完全安全：
+        // 前端拿到同一组指令后会**对着当时的实时数据**重新执行，不存在陈旧问题。
+        setCached(reqCacheKey, payload)
+        return res.json(payload)
       }
 
       // 如果是服务端工具（query_stats），再次调用 AI 获取文字回复
@@ -234,7 +269,12 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
       }, AI_TIMEOUT_MS)
 
       const followUpResult = await followUp.json()
-      const finalContent = followUpResult.choices?.[0]?.message?.content || '已完成统计查询'
+      // v1.13.162：原本由 systemPrompt 让模型复述的「高消耗查询提示」，改由服务端按实际调用的工具拼接
+      const rawFollowUpContent = followUpResult.choices?.[0]?.message?.content
+      const finalContent = appendServerToolHints(
+        rawFollowUpContent || '已完成统计查询',
+        toolResults.map(t => t.name)
+      )
 
       // 记录followUp的token消耗（只贡献 token，不计入次数额度）
       if (followUpResult.usage) {
@@ -242,17 +282,18 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
         recordTokenUsage(userId, totalTokens, 'chat-followup')
       }
 
-      return res.json({
-        type: 'text',
-        content: finalContent
-      })
+      const followUpPayload = { type: 'text', content: finalContent }
+      // 仅当模型确实产出了正文才缓存（避免把兜底串当答案缓存下来、放大问题）
+      if (rawFollowUpContent) setCached(reqCacheKey, followUpPayload)
+      return res.json(followUpPayload)
     }
 
     // 普通文字回复
-    res.json({
-      type: 'text',
-      content: choice.message?.content || '好的，我来帮您处理。'
-    })
+    // ⚠️ 空回复不缓存：把兜底串缓存下来会让「假回复」在 TTL 内反复被复用
+    const realContent = choice.message?.content
+    const textPayload = { type: 'text', content: realContent || '好的，我来帮您处理。' }
+    if (realContent) setCached(reqCacheKey, textPayload)
+    res.json(textPayload)
 
   } catch (error) {
     console.error('AI 接口错误:', error)

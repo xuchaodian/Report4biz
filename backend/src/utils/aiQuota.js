@@ -51,6 +51,47 @@ export const AI_GLOBAL_MONTHLY_YUAN_CAP = 200
 /** 计入「一次问答」的 endpoint —— 其余只贡献 token 不贡献次数 */
 export const AI_COUNTED_ENDPOINTS = ['chat', 'site-advice']
 
+// ============================================================================
+// L3 降本旋钮（v1.13.162）—— 同样收敛在此文件，避免 magic number 散落在路由里
+// ----------------------------------------------------------------------------
+// 实测（2026-09-21 实价探针，7 次对照调用）：
+//   单次调用 prompt ≈ 3889 tok、completion 67~1500 tok ⇒ **prompt 占总成本约 88%**
+//   其中 systemPrompt 1573 字符 + 20 个工具 schema 7378 字符 = 固定前缀 ≈ 8951 字符
+// 由此决定三件事：① 输出必须封顶（原 1500 硬编码可被撞满，实测 finish=length、耗时 26s、成本 ×2.4）
+//              ② systemPrompt 里「可服务端拼接」的指令一律搬走（每次调用都省）
+//              ③ 完全相同的请求直接复用结果（0 成本）
+// ============================================================================
+
+/** 单次回复的输出 token 上限（前端请求值也在此封顶） */
+export const AI_MAX_OUTPUT_TOKENS = (() => {
+  const n = Number(process.env.AI_MAX_OUTPUT_TOKENS)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1000
+})()
+
+/** 调用方未显式指定时的默认输出上限（与前端 AiAssistant.vue 请求的 800 对齐） */
+export const AI_DEFAULT_OUTPUT_TOKENS = 800
+
+/**
+ * 归一化调用方给的 max_tokens：非法/缺失 → 默认值；超上限 → 封顶。
+ * 抽成单一函数供各 AI 端点共用（派生值两处各写一份迟早分裂）。
+ */
+export function normalizeMaxTokens(value, fallback = AI_DEFAULT_OUTPUT_TOKENS) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return Math.min(fallback, AI_MAX_OUTPUT_TOKENS)
+  return Math.min(Math.floor(n), AI_MAX_OUTPUT_TOKENS)
+}
+
+/** 同问短时缓存 TTL（毫秒）；0 = 关闭缓存。可用 `AI_CACHE_TTL_MS` 覆盖。 */
+export const AI_CACHE_TTL_MS = (() => {
+  const raw = process.env.AI_CACHE_TTL_MS
+  if (raw === undefined || raw === '') return 10 * 60 * 1000
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 10 * 60 * 1000
+})()
+
+/** 同问缓存最多保留的条目数（LRU 淘汰，防内存无界增长） */
+export const AI_CACHE_MAX_ENTRIES = 200
+
 /** 混合单价（元/token）：输入 3.2、输出 16 元每百万，按 80/20 入出比折算 */
 const YUAN_PER_TOKEN_BLENDED = (0.8 * 3.2 + 0.2 * 16) / 1_000_000
 
