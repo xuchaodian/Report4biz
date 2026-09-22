@@ -908,6 +908,28 @@ export async function initDatabase() {
       payload_chars INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`)
+
+    // v1.13.165：AI 提问留痕 —— 数据驱动 FAQ（「本机操作指引」）的前置。
+    // 前端 FAQ 命中在**浏览器本地**直接返回卡片，请求根本到不了服务端 ⇒ 本表记录的
+    // 天然是「**FAQ 没拦住的问法**」，正是「该补哪条指引」的候选池（也是漏拦率的分子）。
+    //
+    // 🔴 隐私边界（本项目最高优先级红线：禁止跨账号数据聚合）：
+    //    ① 只存**提问文本**；context 内容（可能含门店/城市等业务数据）只记「有没有」不记内容；
+    //    ② 不提供任何跨账号的原文读取接口 —— 汇总分析只用**归并后的问法模式**；
+    //    ③ 单条按 AI_QUESTION_MAX_CHARS 截断，防长文本（粘表格）把库撑起来。
+    db.run(`CREATE TABLE IF NOT EXISTS ai_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL DEFAULT 'chat',
+      question_text TEXT NOT NULL,
+      question_len INTEGER NOT NULL DEFAULT 0,
+      msg_count INTEGER NOT NULL DEFAULT 0,
+      has_context INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`)
+    // 分析按时间窗（近 7/30 天）与账号分组 ⇒ 两个索引覆盖
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ai_questions_created ON ai_questions(created_at)`)
+    db.run(`CREATE INDEX IF NOT EXISTS idx_ai_questions_user ON ai_questions(user_id, created_at)`)
   } catch (e) {
     console.warn('创建 ai_usage 表失败:', e.message)
   }

@@ -7,6 +7,7 @@ import { ARK_API_KEY } from '../config.js'
 import { fetchWithTimeout, fetchStreamWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, STREAM_HEAD_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext, normalizeMaxTokens } from '../utils/aiQuota.js'
 import { cacheKey, getCached, setCached } from '../utils/aiResponseCache.js'
+import { logAiQuestion } from '../utils/aiQuestionLog.js'
 
 const router = express.Router()
 
@@ -109,6 +110,18 @@ router.post('/chat', authenticate, async (req, res) => {
 
     // L3 降本：输出上限归一化（原为硬编码 1500，会覆盖前端的 800，且可被撞满导致成本 ×2.4）
     const maxTokens = normalizeMaxTokens(req.body?.max_tokens)
+
+    // ========================================================================
+    // v1.13.165：提问留痕（数据驱动 FAQ 的前置）—— 落「FAQ 没拦住的真实问法」
+    // ------------------------------------------------------------------------
+    // ★ 位置三原则（改动请勿挪动，见 utils/aiQuestionLog.js 头部）：
+    //   · 闸门之后     ⇒ 被 403/429 拒的请求**零写入**（161「空 body 连打零成本」不被破坏）
+    //   · body 校验之后 ⇒ 无问法不落库
+    //   · 缓存之前     ⇒ 重复提问也留痕（重复＝该加指引的最强信号）
+    //   外加：在调上游之前 ⇒ 上游失败同样留痕。
+    // 只记问法文本，不记 context 内容/回答/IP（隐私边界见 utils/aiQuestionLog.js）
+    // ========================================================================
+    logAiQuestion(getDb(), { userId, endpoint: 'chat', messages, context })
 
     // L3 降本：同问短时缓存 —— 完全相同的请求（同账号 + 同对话 + 同 context + 同输出上限）直接复用。
     // key 含 userId（隐私红线：绝不跨账号共享回答）；命中即不调上游、不记账、不产生任何费用。
