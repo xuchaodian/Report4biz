@@ -11,6 +11,9 @@ dist.old*/
 *.timestamp-*.mjs
 *.timestamp-*.mjs.map
 
+# 测试运行器缓存（vitest 跑一次就生成，勿入库）
+backend/.vitest/
+
 # 环境变量
 .env
 .env.local

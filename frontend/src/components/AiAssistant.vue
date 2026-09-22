@@ -51,13 +51,30 @@
           <div class="welcome-icon"><el-icon><MagicStick /></el-icon></div>
           <div class="welcome-text">你好！我是 AI 操作助手</div>
           <div class="welcome-sub">用自然语言告诉我你想做什么</div>
-          <div class="quick-actions">
-            <div
-              v-for="q in quickQuestions"
-              :key="q"
-              class="quick-chip"
-              @click="sendMessage(q)"
-            >{{ q }}</div>
+          <!-- 组①：本机操作指引（零 token）。单独分组并标注「不消耗额度」，
+               既让用户敢点，也把使用习惯往这条最省的链路上引。 -->
+          <div class="quick-group">
+            <div class="quick-group-label">🔧 系统操作指引 · 不消耗额度</div>
+            <div class="quick-actions">
+              <div
+                v-for="q in faqQuickQuestions"
+                :key="q"
+                class="quick-chip quick-chip--faq"
+                @click="sendMessage(q)"
+              >{{ q }}</div>
+            </div>
+          </div>
+          <!-- 组②：需要 AI 真正执行的动作示例 -->
+          <div class="quick-group">
+            <div class="quick-group-label">⚡ 试试直接对我说</div>
+            <div class="quick-actions">
+              <div
+                v-for="q in actionQuickQuestions"
+                :key="q"
+                class="quick-chip"
+                @click="sendMessage(q)"
+              >{{ q }}</div>
+            </div>
           </div>
         </div>
 
@@ -130,7 +147,7 @@ import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus
 import { useUserStore } from '@/stores/user'
 import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'
-import { matchFaq } from '@/utils/faqMatch'
+import { matchFaq, listFaqs } from '@/utils/faqMatch'
 
 const { locale } = useI18n()
 // 语言按钮缩写：中 / 日 / EN
@@ -246,11 +263,14 @@ watch(messages, () => {
 }, { deep: true })
 
 
-const quickQuestions = [
-  // v1.13.163：前两条走**本机操作指引**（命中即直接作答，零 token），
-  // 既降低使用门槛，也是这条链路最容易被用户发现的入口
-  '怎么导出PDF报表',
-  '怎么添加门店',
+// ===== 欢迎页快捷问句（v1.13.164 分两组） =====
+// 组①：本机操作指引 —— **命中即在本地作答、完全不发请求**（零 token、零额度）。
+//   问句直接由 FAQ 表派生（`listFaqs()`），这样「新增了一条 FAQ 却忘了加快捷问句」
+//   或「问句改了导致点不中自己那条」都会被单测 F 组当场抓住。
+// 组②：真正要 AI 执行的动作示例 —— 展示助手的能力面（会花钱，故排在指引之后）。
+const faqQuickQuestions = listFaqs().map(f => f.question)
+
+const actionQuickQuestions = [
   '显示北京的已开业门店',
   '对比星巴克国贸店和望京店的人口',
   '开启热力图',
@@ -592,6 +612,22 @@ defineExpose({ addFeedback, visible })
     justify-content: center;
   }
 
+  /* 两组快捷问句的分组容器与标签（v1.13.164） */
+  .quick-group {
+    margin-bottom: 10px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .quick-group-label {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-bottom: 6px;
+    letter-spacing: 0.2px;
+  }
+
   .quick-chip {
     padding: 5px 10px;
     background: #ede9fe;
@@ -605,6 +641,13 @@ defineExpose({ addFeedback, visible })
       background: #8b5cf6;
       color: #fff;
     }
+  }
+
+  /* 操作指引组：白底 + 淡紫描边，与「要花钱的动作示例」在视觉上区分开（v1.13.164） */
+  .quick-chip--faq {
+    background: #fff;
+    color: #7c3aed;
+    border: 1px solid #e9d5ff;
   }
 }
 
@@ -748,6 +791,17 @@ defineExpose({ addFeedback, visible })
 
     li { margin-bottom: 4px; }
     li:last-child { margin-bottom: 0; }
+  }
+
+  /* 行内代码（字段名 / 文件名，v1.13.164 起文案里用得更多）——
+     默认 monospace 在 12px 正文里太抢，收一点并加淡紫底，读起来才知道是「要照着填的东西」 */
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: rgba(124, 58, 237, 0.09);
+    color: #6d28d9;
   }
 
   .msg-faq-note {
