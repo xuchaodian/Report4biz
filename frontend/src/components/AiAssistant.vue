@@ -31,6 +31,14 @@
           <div>
             <div class="ai-title">AI 操作助手</div>
           </div>
+          <!-- v1.13.163：本机指引命中计数（仅管理员可见）——
+               用于判断「操作指引」这条链路接住了多少提问，是否值得扩充 FAQ。
+               命中率 = 本计数 ÷ (本计数 + ai_usage 中 endpoint='chat' 的行数)。 -->
+          <span
+            v-if="userStore.isAdmin && faqHitCount > 0"
+            class="faq-hit-counter"
+            :title="`本机操作指引已接住 ${faqHitCount} 次提问（未消耗 AI 额度、未调用豆包）`"
+          >指引 ×{{ faqHitCount }}</span>
         </div>
         <el-button type="info" link size="small" @click="clearMessages">
           <el-icon><Delete /></el-icon>
@@ -63,8 +71,19 @@
           <div v-if="msg.role === 'assistant'" class="msg-avatar">
             <el-icon><MagicStick /></el-icon>
           </div>
-          <div class="msg-bubble">
-            <div class="msg-text" v-html="formatContent(msg.content)"></div>
+          <div class="msg-bubble" :class="{ 'faq-bubble': msg.faq }">
+            <!-- 操作指引卡片：内容来自内置文案（非模型生成），不消耗 AI 额度 -->
+            <div v-if="msg.faq" class="msg-faq">
+              <div class="msg-faq-head">
+                <span class="msg-faq-title">{{ msg.faq.icon }} {{ msg.faq.title }}</span>
+                <span class="msg-faq-badge">未消耗 AI 额度</span>
+              </div>
+              <ol class="msg-faq-steps">
+                <li v-for="(s, i) in msg.faq.steps" :key="i" v-html="formatContent(s)"></li>
+              </ol>
+              <div v-if="msg.faq.note" class="msg-faq-note" v-html="formatContent(msg.faq.note)"></div>
+            </div>
+            <div v-else class="msg-text" v-html="formatContent(msg.content)"></div>
             <div v-if="msg.actions && msg.actions.length" class="msg-actions">
               <span v-for="a in msg.actions" :key="a" class="action-tag">✓ {{ a }}</span>
             </div>
@@ -111,6 +130,7 @@ import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus
 import { useUserStore } from '@/stores/user'
 import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'
+import { matchFaq } from '@/utils/faqMatch'
 
 const { locale } = useI18n()
 // 语言按钮缩写：中 / 日 / EN
@@ -153,7 +173,30 @@ const historyStorageKey = () => {
   return `${HISTORY_KEY}_${uid}`
 }
 
-// 加载历史（仅恢复 user/assistant 纯文本消息，截断到 MAX_TOTAL_MSGS）
+// ===== 本机操作指引（FAQ）命中计数 =====
+// 只存本地（按用户隔离），**不发请求、不写库** ⇒ 保持「命中即零网络」；
+// 用途：运营者据此判断这条链路接住了多少提问、是否值得扩充 FAQ。
+const FAQ_HIT_KEY = 'aiFaqHits'
+const faqHitStorageKey = () => {
+  const uid = localStorage.getItem('userId') || 'anonymous'
+  return `${FAQ_HIT_KEY}_${uid}`
+}
+const faqHitCount = ref(0)
+const loadFaqHits = () => {
+  try {
+    faqHitCount.value = Number(localStorage.getItem(faqHitStorageKey())) || 0
+  } catch (e) {
+    faqHitCount.value = 0
+  }
+}
+const bumpFaqHits = () => {
+  faqHitCount.value += 1
+  try {
+    localStorage.setItem(faqHitStorageKey(), String(faqHitCount.value))
+  } catch (e) {}
+}
+
+// 加载历史（恢复 user/assistant；操作指引卡片连同 faq 结构一起恢复）
 const loadHistory = () => {
   try {
     const raw = localStorage.getItem(historyStorageKey())
@@ -161,19 +204,24 @@ const loadHistory = () => {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     return parsed
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant')
+        && (typeof m.content === 'string' || (m.faq && Array.isArray(m.faq.steps))))
       .slice(-MAX_TOTAL_MSGS)
   } catch (e) {
     return []
   }
 }
 
-// 保存历史（仅纯文本 user/assistant，不存 actions/工具调用大对象）
+// 保存历史（仅 user/assistant，不存 actions/工具调用大对象；
+// ⚠️ 但**必须保留 faq 卡片**，否则刷新后指引卡片退化成空气泡 —— v1.13.163）
 const saveHistory = () => {
   try {
     const slim = messages.value
-      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .map(m => ({ role: m.role, content: m.content }))
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+      .map(m => (m.faq
+        ? { role: m.role, content: '', faq: m.faq }
+        : { role: m.role, content: m.content }))
+      .filter(m => (typeof m.content === 'string' && m.content) || m.faq)
       .slice(-MAX_TOTAL_MSGS)
     localStorage.setItem(historyStorageKey(), JSON.stringify(slim))
   } catch (e) {
@@ -183,6 +231,7 @@ const saveHistory = () => {
 
 // 组件挂载时恢复历史
 onMounted(() => {
+  loadFaqHits()
   const restored = loadHistory()
   if (restored.length > 0) {
     messages.value = restored
@@ -198,6 +247,10 @@ watch(messages, () => {
 
 
 const quickQuestions = [
+  // v1.13.163：前两条走**本机操作指引**（命中即直接作答，零 token），
+  // 既降低使用门槛，也是这条链路最容易被用户发现的入口
+  '怎么导出PDF报表',
+  '怎么添加门店',
   '显示北京的已开业门店',
   '对比星巴克国贸店和望京店的人口',
   '开启热力图',
@@ -260,6 +313,17 @@ async function sendMessage(text) {
   if (messages.value.length > MAX_TOTAL_MSGS) {
     messages.value.splice(0, messages.value.length - MAX_TOTAL_MSGS)
   }
+
+  // ★ 操作指引（FAQ）本机命中 ⇒ 直接作答，**不调用豆包**：
+  //   零 token、不写 ai_usage、不占额度；路径来自内置文案，不会像模型那样编出不存在的入口。
+  //   判据见 utils/faqMatch.js（原则：宁可漏拦，不可误伤真指令）。
+  const faq = matchFaq(text, { orgRole: userStore.orgRole })
+  if (faq) {
+    messages.value.push({ role: 'assistant', content: '', faq })
+    bumpFaqHits()
+    return
+  }
+
   loading.value = true
 
   try {
@@ -625,6 +689,74 @@ defineExpose({ addFeedback, visible })
     }
 
     :deep(strong) { font-weight: 600; }
+  }
+
+  /* 本机指引命中计数（仅管理员可见，v1.13.163） */
+  .faq-hit-counter {
+    margin-left: 6px;
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #7c3aed;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 999px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  /* 操作指引卡片（v1.13.163）—— 内容来自内置文案，不消耗 AI 额度 */
+  .msg-bubble.faq-bubble {
+    background: #faf5ff;
+    border: 1px solid #e9d5ff;
+  }
+
+  .msg-faq-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 6px;
+    margin-bottom: 7px;
+    border-bottom: 1px dashed #ddd6fe;
+  }
+
+  .msg-faq-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #5b21b6;
+  }
+
+  .msg-faq-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+
+  .msg-faq-steps {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12.5px;
+    line-height: 1.75;
+    color: #374151;
+
+    li { margin-bottom: 4px; }
+    li:last-child { margin-bottom: 0; }
+  }
+
+  .msg-faq-note {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed #e5e7eb;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: #6b7280;
   }
 
   .msg-actions {
