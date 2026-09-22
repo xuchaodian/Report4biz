@@ -207,7 +207,7 @@
         </el-button>
         <span class="filter-count">共 {{ filteredHistoryList.length }} 条</span>
         <el-button type="primary" size="small" style="margin-left: 12px;" :disabled="compareSelected.length < 2" @click="openCompareDialog">
-          📊 对比分析{{ compareSelected.length > 0 ? ` (${compareSelected.length})` : '' }}
+          📊 对比看板{{ compareSelected.length > 0 ? ` (${compareSelected.length})` : '' }}
         </el-button>
         <el-button v-if="compareSelected.length > 0" size="small" @click="clearCompareSelection">
           清空选择
@@ -321,14 +321,14 @@
       </div>
     </el-dialog>
 
-    <!-- 查询结果对比对话框（多订单同图对比） -->
-    <el-dialog v-model="compareDialogVisible" width="960px" class="dialog-fancy" :close-on-click-modal="false" @closed="disposeCompareCharts">
+    <!-- 订单对比看板（v1.13.166：由「多订单同图对比」升级为 指标表 + 图表） -->
+    <el-dialog v-model="compareDialogVisible" width="min(1080px, 94vw)" class="dialog-fancy" :close-on-click-modal="false" @closed="disposeCompareCharts">
       <template #header>
         <div class="dialog-header-fancy">
           <span class="dhf-icon" style="background:#e1f5ee;">📊</span>
           <div>
-            <div class="dhf-title">查询结果对比</div>
-            <div class="dhf-sub">最多 5 笔订单同图对比 · 人口 / 客流 / 消费</div>
+            <div class="dhf-title">订单对比看板</div>
+            <div class="dhf-sub">最多 5 笔订单横向对比 · 指标表 / 人口 / 客流 / 消费</div>
           </div>
         </div>
       </template>
@@ -337,31 +337,88 @@
         <p style="margin-top:8px;">正在加载对比数据...</p>
       </div>
       <template v-else>
-        <!-- 对比订单信息 -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-          <el-tag v-for="(item, idx) in compareOrders" :key="item.id" :type="['primary','success','warning','danger','info'][idx % 5]" effect="light" closable @close="removeCompareOrder(item.id)">
-            {{ item.store_name || '订单' + item.id }}（{{ item.radius_display || item.radius + '米' }}）
-          </el-tag>
-        </div>
-
         <div v-if="compareOrders.length < 2" style="text-align:center;padding:30px;color:#999;">
           请至少选择 2 笔订单进行对比（在购买履历列表勾选）
         </div>
 
         <template v-else>
+          <!-- 口径警示：半径不一致（v1.13.166 起不再硬拦，但必须显式提醒，否则横向比大小会误导） -->
+          <el-alert
+            v-if="!compareRadiusCheck.consistent"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="compare-warn"
+          >
+            <template #title>所选订单半径口径不一致（{{ compareRadiusWarnText }}）</template>
+            不同半径的覆盖范围不同，人口 / 客流 / 消费的<b>绝对量不可直接比大小</b>；横向参考请优先看占比类指标（外省到访占比、高消费占比）。
+          </el-alert>
+
+          <!-- 对比订单信息 -->
+          <div class="compare-orders-bar">
+            <el-tag
+              v-for="(item, idx) in compareRows"
+              :key="item.id"
+              :type="['primary','success','warning','danger','info'][idx % 5]"
+              effect="light"
+              closable
+              @close="removeCompareOrder(item.id)"
+            >
+              {{ item.name }}（{{ item.radii_text }}）
+            </el-tag>
+            <el-button size="small" type="primary" plain @click="exportCompareCsv">⬇ 导出对比表</el-button>
+          </div>
+
+          <!-- 指标对比表：每列最优高亮；缺数据显示「无数据」（不是 0） -->
+          <div class="compare-table-block">
+            <h4 class="compare-block-title">📋 指标对比表</h4>
+            <el-table :data="compareRows" size="small" border stripe style="width:100%">
+              <el-table-column label="门店" min-width="150" fixed show-overflow-tooltip>
+                <template #default="{ row }">
+                  <div class="cmp-store">
+                    <span class="cmp-store-name">{{ row.name }}</span>
+                    <span class="cmp-store-sub">{{ row.subtitle }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                v-for="col in COMPARE_COLUMNS"
+                :key="col.key"
+                :label="col.label"
+                min-width="104"
+                align="right"
+              >
+                <template #default="{ row }">
+                  <span
+                    :class="{
+                      'cmp-best': isBestAt(compareRows, row, col.key),
+                      'cmp-radius-warn': col.key === 'radii_text' && !compareRadiusCheck.consistent
+                    }"
+                    :style="{ color: (row[col.key] === null || row[col.key] === undefined || row[col.key] === '') ? '#c0c4cc' : '' }"
+                  >{{ compareCellText(row, col) }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <p class="compare-note">
+              <span class="cmp-best">绿底</span> ＝ 该列最优（到访 / 居住 / 工作 / 居住+工作 / 外省占比 / 午晚餐 / 高消费占比 取最高，并列都算）；
+              <span style="color:#c0c4cc;">「无数据」</span> ＝ 该订单未购买对应联通服务，<b>不等于 0</b>；
+              半径 / 数据月 / 峰值时段属口径信息，不参与评比。
+            </p>
+          </div>
+
           <!-- 人口规模对比 -->
           <div class="compare-chart-block">
-            <h4 style="margin:0 0 8px;font-size:14px;color:#333;">👥 人口规模对比（到访/居住/工作）</h4>
+            <h4 class="compare-block-title" style="margin-top:18px;">👥 人口规模对比（到访/居住/工作）</h4>
             <div ref="comparePopEl" class="compare-chart-box"></div>
           </div>
           <!-- 客流活跃度对比 -->
           <div class="compare-chart-block">
-            <h4 style="margin:16px 0 8px;font-size:14px;color:#333;">⏰ 客流活跃度对比（小时段到访）</h4>
+            <h4 class="compare-block-title" style="margin-top:18px;">⏰ 客流活跃度对比（小时段到访）</h4>
             <div ref="compareFlowEl" class="compare-chart-box"></div>
           </div>
           <!-- 消费能力对比 -->
           <div class="compare-chart-block">
-            <h4 style="margin:16px 0 8px;font-size:14px;color:#333;">💰 消费水平对比（居住+工作）</h4>
+            <h4 class="compare-block-title" style="margin-top:18px;">💰 消费水平对比（居住+工作）</h4>
             <div ref="compareConsumeEl" class="compare-chart-box"></div>
           </div>
         </template>
@@ -581,6 +638,16 @@ import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
+// v1.13.166 多订单对比看板：解析器抽成单一权威模块（原先内联在本文件，新看板与图表必须同口径）
+import { extractApiResult, extractPopSums, extractFlowData, extractConsumeData } from '@/utils/smartstepsExtract'
+import {
+  COMPARE_COLUMNS,
+  buildCompareRows,
+  isBestAt,
+  checkRadiusConsistency,
+  formatCell,
+  buildCompareCsv
+} from '@/utils/orderCompare'
 
 const route = useRoute()
 const router = useRouter()
@@ -941,28 +1008,23 @@ const parseOrderRadius = (row) => {
   return null
 }
 
-// 半径是否一致：归一化后数组排序 join 比较
-const isSameRadius = (a, b) => {
-  const ra = parseOrderRadius(a)
-  const rb = parseOrderRadius(b)
-  if (!ra || !rb) return false
-  return [...ra].sort((x, y) => x - y).join(',') === [...rb].sort((x, y) => x - y).join(',')
-}
+// v1.13.166：原 isSameRadius 已删除 —— 半径口径判据统一走 @/utils/orderCompare 的
+// checkRadiusConsistency / radiusSignature（原先此处与看板各有一份，属分裂隐患）。
 
 const openCompareDialog = async () => {
   if (compareSelected.value.length < 2) {
     ElMessage.warning('请至少选择 2 笔订单进行对比')
     return
   }
-  // 半径一致性检查：不同半径的数据口径不同，直接对比会误导
-  const firstRow = compareSelected.value[0]
-  const inconsistent = compareSelected.value.slice(1).filter(r => !isSameRadius(firstRow, r))
-  if (inconsistent.length > 0) {
-    const firstR = parseOrderRadius(firstRow) || []
-    const badR = parseOrderRadius(inconsistent[0]) || []
-    ElMessage.warning(`所选订单半径不一致（${firstR.join('/')}米 vs ${badR.join('/')}米），请选择相同半径的订单进行对比`)
+  // v1.13.166：补齐上限闸门。原先「最多 5 笔」只写在标题文案里、**从未真正限制**，
+  //   勾 8 笔就会画出 8 条序列（图表不可读、颜色循环撞色）。看板与图表统一按 5 笔封顶。
+  if (compareSelected.value.length > 5) {
+    ElMessage.warning(`最多同时对比 5 笔订单（当前已选 ${compareSelected.value.length} 笔），请先取消多余勾选`)
     return
   }
+  // v1.13.166：**不再硬拦「半径不一致」**。对比表天然能容纳不同半径（每行显式标注半径），
+  //   硬拦反而挡掉了「同一门店 500m vs 1000m」「同城不同点位」这类最常见的对比诉求。
+  //   改为：允许打开 ＋ 表上方黄色口径警示条（图上仍注明口径不同、仅供横向参考）。
   compareDialogVisible.value = true
   compareLoading.value = true
   compareOrders.value = []
@@ -971,22 +1033,24 @@ const openCompareDialog = async () => {
     for (const row of compareSelected.value) {
       try {
         const { data } = await axios.get(`/api/purchase/${row.id}`)
-        // 半径：后端返回 radii 数组（兼容旧的 radius 单值）
-        let radiusText = '-'
-        if (Array.isArray(data.radii) && data.radii.length > 0) {
-          radiusText = data.radii.join('/') + '米'
-        } else if (data.radius) {
-          radiusText = data.radius + '米'
-        } else if (row.radius_display) {
-          radiusText = row.radius_display
-        } else if (row.radius) {
-          radiusText = row.radius + '米'
-        }
+        // v1.13.166：半径归一化交给 orderCompare.normalizeRadii（展示与判据同一函数，
+        //   避免「文本是一种口径、判据是另一种」——本项目反复踩过的分裂坑）
         loaded.push({
           id: data.id,
           store_name: data.store_name || row.store_name || '订单' + data.id,
-          radius_display: radiusText,
-          city_month: data.city_month,
+          city: data.city || row.city,
+          district: data.district || row.district,
+          store_type: data.store_type || row.store_type,
+          // 后端返回 radii 数组；无则回退列表行的 radius（可能是 JSON 字符串/数字）
+          radii: (Array.isArray(data.radii) && data.radii.length > 0) ? data.radii : row.radius,
+          city_month: data.city_month || row.city_month,
+          center_lng: data.center_lng,
+          center_lat: data.center_lat,
+          created_at: data.created_at || row.created_at,
+          order_no: row.order_no,
+          owner_name: data.owner_name || row.owner_name,
+          is_self: data.is_self !== undefined ? data.is_self : row.is_self,
+          quota_used: data.quota_used,
           result_data: data.result_data
         })
       } catch (e) {
@@ -1030,88 +1094,8 @@ const removeCompareOrder = (id) => {
   nextTick(() => renderCompareCharts())
 }
 
-// 提取 result_data 服务数据 —— 兼容多种格式
-// 格式1: {apiResult: {1001:...,1005:...}}（完整结构）
-// 格式2: {1001:...,1005:...}（直接服务号字典）
-// 格式3: 字符串 JSON（自动 parse）
-const extractApiResult = (resultData) => {
-  if (!resultData) return null
-  let api = resultData
-  if (typeof api === 'string') { try { api = JSON.parse(api) } catch (e) { return null } }
-  if (!api || typeof api !== 'object') return null
-  if (api.apiResult && typeof api.apiResult === 'object') return api.apiResult
-  // 检查是否直接含服务号键（如 1001/1005/1009/1010/1011/1013/1015 等）
-  const serviceKeys = Object.keys(api).filter(k => /^(100[0-9]|101[0-9]|102[0-9])$/.test(k))
-  if (serviceKeys.length > 0) return api
-  return null
-}
-
-// 1001 人口汇总提取：P0_SUM/到访 P1_SUM/居住 P2_SUM/工作
-const extractPopSums = (apiResult) => {
-  // 统一 1001 解析（大小写不敏感，见 utils/smartsteps1001.js）
-  const d = get1001Dict(apiResult)
-  if (!d) return null
-  return {
-    visit: pick1001(d, 'P0_SUM', null),
-    live: pick1001(d, 'P1_SUM', null),
-    work: pick1001(d, 'P2_SUM', null)
-  }
-}
-
-// 1005 小时段到访提取：day_type + hour_period + hour_visit
-const extractFlowData = (apiResult) => {
-  const arr = apiResult && apiResult['1005']
-  if (!Array.isArray(arr) || arr.length === 0) return null
-  const hourMap = new Map()
-  for (const item of arr) {
-    if (!item || typeof item !== 'object') continue
-    const hour = item.hour_period
-    if (item.day_type === 0 && typeof item.hour_visit === 'number') {
-      if (!hourMap.has(hour)) hourMap.set(hour, 0)
-      hourMap.set(hour, hourMap.get(hour) + item.hour_visit)
-    }
-  }
-  if (hourMap.size === 0) return null
-  const sorted = [...hourMap.entries()].sort((a, b) => a[0] - b[0])
-  return { hours: sorted.map(([h]) => h + '点'), values: sorted.map(([, v]) => v) }
-}
-
-// 1009 消费水平提取：兼容两种格式
-// 格式A（旧）: {consume_1: n, consume_2: n, consume_3: n} → 低/中/高
-// 格式B（联通实际）: [{popu_type, spendpower:"1"~"8", spendpower_value}, ...] → 高消费=spendpower≥5 人数，低消费=spendpower≤3
-const extractConsumeData = (apiResult) => {
-  const d = apiResult && apiResult['1009']
-  if (!d) return null
-
-  // 格式B：spendpower 数组（popu_type 0/1/2 全人群合计）
-  if (Array.isArray(d) && d.length > 0 && typeof d[0] === 'object' && d[0].spendpower !== undefined) {
-    let low = 0, mid = 0, high = 0
-    for (const item of d) {
-      const v = Number(item.spendpower_value)
-      if (isNaN(v)) continue
-      const level = Number(item.spendpower)
-      if (level <= 3) low += v
-      else if (level <= 5) mid += v
-      else high += v
-    }
-    if (low === 0 && mid === 0 && high === 0) return null
-    return { low, mid, high }
-  }
-
-  // 格式A：consume_1/2/3 或 低/中/高 文本键
-  if (typeof d === 'object') {
-    let c1 = 0, c2 = 0, c3 = 0
-    for (const [k, v] of Object.entries(d)) {
-      if (typeof v !== 'number') continue
-      if (/consume_1|低/i.test(k)) c1 += v
-      else if (/consume_2|中/i.test(k)) c2 += v
-      else if (/consume_3|高/i.test(k)) c3 += v
-    }
-    if (c1 === 0 && c2 === 0 && c3 === 0) return null
-    return { low: c1, mid: c2, high: c3 }
-  }
-  return null
-}
+// v1.13.166：extractApiResult / extractPopSums / extractFlowData / extractConsumeData
+// 已抽到 @/utils/smartstepsExtract（单一权威）—— 本文件改为 import，勿再内联一份。
 
 // 渲染3张对比图
 const renderCompareCharts = async () => {
@@ -1219,6 +1203,43 @@ const renderCompareCharts = async () => {
 const disposeCompareCharts = () => {
   Object.values(compareCharts).forEach(c => c?.dispose())
   for (const k of Object.keys(compareCharts)) delete compareCharts[k]
+}
+
+// ====== v1.13.166 对比看板：指标对比表 + 口径校验 + 导出 ======
+
+/** 对比表行（口径全部来自 @/utils/orderCompare，本组件不再自行解析） */
+const compareRows = computed(() => buildCompareRows(compareOrders.value))
+
+/** 半径口径校验：不一致时给黄色警示条（不再硬拦，见 openCompareDialog 注释） */
+const compareRadiusCheck = computed(() => checkRadiusConsistency(compareOrders.value))
+
+/** 半径不一致时的警示文案（口径分组 → '500/1000米 vs 500米'） */
+const compareRadiusWarnText = computed(() =>
+  compareRadiusCheck.value.groups
+    .map(g => (g.signature ? g.signature.split(',').join('/') + '米' : '未知半径'))
+    .join(' vs ')
+)
+
+/** 单元格文本（null → 「无数据」，绝不显示成 0） */
+const compareCellText = (row, col) => formatCell(row[col.key], col.type)
+
+/** 导出对比表为 CSV（UTF-8 BOM，Excel 打开不乱码；零新增依赖） */
+const exportCompareCsv = () => {
+  const rows = compareRows.value
+  if (rows.length < 2) {
+    ElMessage.warning('请至少保留 2 笔订单再导出')
+    return
+  }
+  const csv = buildCompareCsv(rows, COMPARE_COLUMNS)
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `订单对比_${rows.length}笔_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }
 
 
@@ -4262,7 +4283,7 @@ const handleExportExcel = async () => {
   color: #b07d2b;
 }
 
-/* 查询结果对比 */
+/* 订单对比看板（v1.13.166） */
 .compare-chart-block {
   margin-bottom: 8px;
 }
@@ -4273,6 +4294,77 @@ const handleExportExcel = async () => {
   border: 1px solid #ebeef5;
   border-radius: 8px;
   background: #fff;
+}
+
+/* 半径口径不一致的警示条 */
+.compare-warn {
+  margin-bottom: 12px;
+}
+
+/* 订单标签行 + 导出按钮 */
+.compare-orders-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+/* 指标对比表 */
+.compare-table-block {
+  margin-bottom: 6px;
+}
+
+.compare-block-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+/* 门店单元格：名称 + 城市/区县 两行 */
+.cmp-store {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.cmp-store-name {
+  font-weight: 600;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-store-sub {
+  font-size: 11px;
+  color: #909399;
+}
+
+/* 该列最优（并列都高亮）—— 与商圈对比弹窗的 .dv-best 同一视觉语言 */
+.cmp-best {
+  background: #e1f5ee;
+  color: #0f6e56 !important;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 5px;
+  display: inline-block;
+}
+
+/* 半径列：口径不一致时标黄，提示「这一列不是同一把尺子」 */
+.cmp-radius-warn {
+  background: #fdf0e3;
+  color: #b07d2b !important;
+  border-radius: 4px;
+  padding: 1px 5px;
+  display: inline-block;
+}
+
+.compare-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.7;
 }
 
 .score-grid {
