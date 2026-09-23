@@ -42,8 +42,11 @@ export const AI_MAX_INPUT_CHARS = 12000
 /** 单次请求 context 字符预算（超出直接置空，防绕过前端瘦身） */
 export const AI_MAX_CONTEXT_CHARS = 4000
 
-/** 全局月度 token 熔断阈值 —— 混合价 5.76 元/百万 tok（输入 3.2×0.8 + 输出 16×0.2）反推 ¥200 */
-export const AI_GLOBAL_MONTHLY_TOKEN_CAP = 34_720_000
+/** 全局月度 token 熔断阈值
+ *  ⚠️ 该值与模型单价**强耦合**，换模型必须同 commit 改（v1.13.168 换 2.1-pro 时已改）。
+ *  现行：混合价 10.8 元/百万 tok（输入 6.0×0.8 + 输出 30.0×0.2，doubao-seed-2-1-pro 官方价）
+ *        ⇒ 200 / (10.8/1e6) = 18,518,518 取整（反推回 ¥200 上限不漂移，误差 < 0.0001 元） */
+export const AI_GLOBAL_MONTHLY_TOKEN_CAP = 18_518_518
 
 /** 全局月度费用熔断阈值（元，仅用于文案） */
 export const AI_GLOBAL_MONTHLY_YUAN_CAP = 200
@@ -107,8 +110,10 @@ export const AI_QUESTION_MAX_CHARS = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 500
 })()
 
-/** 混合单价（元/token）：输入 3.2、输出 16 元每百万，按 80/20 入出比折算 */
-const YUAN_PER_TOKEN_BLENDED = (0.8 * 3.2 + 0.2 * 16) / 1_000_000
+/** 混合单价（元/token）：输入 6.0、输出 30.0 元每百万，按 80/20 入出比折算
+ *  ⚠️ 与 ai.js 的 MODEL 强耦合，换模型必须同 commit 改（v1.13.168 换 2.1-pro 时已改）。
+ *  旧值 3.2/16 为 doubao-seed-2-0-pro 的 [0,32]千tok 档价；2.1-pro 为单一档、无分段计费。 */
+const YUAN_PER_TOKEN_BLENDED = (0.8 * 6.0 + 0.2 * 30.0) / 1_000_000
 
 const pad2 = (n) => String(n).padStart(2, '0')
 

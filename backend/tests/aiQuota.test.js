@@ -253,8 +253,15 @@ describe('A 额度分层（L1）', () => {
   it('A9 文案与换算', () => {
     expect(describeLimit(Infinity)).toBe('不限')
     expect(describeLimit(100)).toBe('100 次')
-    // 混合价 5.76 元/百万 tok ⇒ 100 万 tok ≈ ¥5.76
-    expect(tokensToYuan(1_000_000)).toBeCloseTo(5.76, 6)
+    // 混合价 10.8 元/百万 tok（2.1-pro：输入 6.0×0.8 + 输出 30.0×0.2）⇒ 100 万 tok ≈ ¥10.8
+    expect(tokensToYuan(1_000_000)).toBeCloseTo(10.8, 6)
+  })
+
+  it('A10 熔断常量与混合价自洽（换模型时防只改一处）', () => {
+    // ¥200 上限 ÷ 混合价 ⇒ 取整后反推仍应≈¥200（容差 < 0.01 元）
+    const yuan = tokensToYuan(AI_GLOBAL_MONTHLY_TOKEN_CAP)
+    expect(yuan).toBeGreaterThan(199.99)
+    expect(yuan).toBeLessThan(200.01)
   })
 })
 
