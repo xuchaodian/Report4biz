@@ -542,3 +542,101 @@ describe('G. 关思考链（v1.13.167）—— 消除 reasoning token 按输出�
     expect(usageRows()).toBe(1)
   })
 })
+
+// ===========================================================================
+// H. 工具调用折叠守卫（v1.13.169）
+//    —— 重复调用只**执行一次**，但 tool_call_id 必须保持**严格 1:1**
+// ===========================================================================
+describe('H. 工具调用折叠守卫（v1.13.169）—— 2.1-pro 偶发重复调用', () => {
+  /** 造一个「首轮返回 N 条工具调用、续轮返回普通文字」的响应 */
+  function dupResponder(name, argList) {
+    return (parsed) => {
+      if (parsed && parsed.tools) {
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: argList.map((args, i) => ({
+                id: `tc${i + 1}`,
+                type: 'function',
+                function: { name, arguments: JSON.stringify(args) }
+              }))
+            },
+            finish_reason: 'tool_calls'
+          }],
+          usage: { prompt_tokens: 3800, completion_tokens: 60 }
+        }
+      }
+      return {
+        choices: [{ message: { role: 'assistant', content: '已为您完成查询' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 3000, completion_tokens: 80 }
+      }
+    }
+  }
+
+  it('H1 前端工具重复 2 次 ⇒ 下发前端的清单只剩 1 条，并打出折叠日志', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      upstream().responder = dupResponder('filter_markers', [{ city: '上海' }, { city: '上海' }])
+      const r = await ask('u1', '折叠-前端工具')
+      expect(r.status).toBe(200)
+      expect(r.body.type).toBe('tool_calls')
+      expect(r.body.tool_calls.length).toBe(1)                    // 🔴 去重
+      expect(r.body.tool_calls[0].name).toBe('filter_markers')
+      expect(spy.mock.calls.some(c => String(c[0]).includes('[AI-Dedup]'))).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('H2 🔴 服务端工具重复 2 次 ⇒ 只执行一次，但续轮 tool 消息必须仍是 2 条（协议 1:1）', async () => {
+    upstream().responder = dupResponder('query_stats', [{ group_by: 'city' }, { group_by: 'city' }])
+    const r = await ask('u1', '折叠-服务端工具')
+    expect(r.status).toBe(200)
+    expect(r.body.type).toBe('text')
+    expect(llmCalls().length).toBe(2)                             // 首轮 + 续轮
+
+    const msgs = lastCallBody().messages
+    const toolMsgs = msgs.filter(m => m.role === 'tool')
+    expect(toolMsgs.length).toBe(2)                               // 🔴 少一条上游直接 400
+    expect(toolMsgs[0].content).toBe(toolMsgs[1].content)         // 重复项复用首条结果
+
+    // assistant 消息里仍保留完整（未裁剪）的 tool_calls
+    const asst = msgs.filter(m => m.role === 'assistant' && Array.isArray(m.tool_calls)).pop()
+    expect(asst.tool_calls.length).toBe(2)
+    expect(asst.tool_calls.map(t => t.id)).toEqual(['tc1', 'tc2'])
+  })
+
+  it('H3 同名但参数不同 ⇒ 不折叠，两条都下发（合法多城用法）', async () => {
+    upstream().responder = dupResponder('filter_markers', [{ city: '上海' }, { city: '北京' }])
+    const r = await ask('u1', '折叠-不同参数')
+    expect(r.status).toBe(200)
+    expect(r.body.type).toBe('tool_calls')
+    expect(r.body.tool_calls.length).toBe(2)
+    expect(r.body.tool_calls.map(t => t.args.city)).toEqual(['上海', '北京'])
+  })
+
+  it('H4 无重复时行为不变（单条照旧下发）', async () => {
+    upstream().responder = dupResponder('filter_markers', [{ city: '上海' }])
+    const r = await ask('u1', '折叠-单条')
+    expect(r.status).toBe(200)
+    expect(r.body.type).toBe('tool_calls')
+    expect(r.body.tool_calls.length).toBe(1)
+  })
+
+  it('H5 🔴 源码守卫：结果列表基于完整 toolCalls、仅下发给前端才用 unique（防重构打破 1:1）', () => {
+    const src = fs.readFileSync(new URL('../src/routes/ai.js', import.meta.url), 'utf8')
+    // ① 折叠调用存在
+    expect(src).toMatch(/const \{ unique: uniqueToolCalls, aliasOf, collapsed \} = dedupeToolCalls\(toolCalls\)/)
+    // ② toolResults 必须基于**完整** toolCalls.map（改成 uniqueToolCalls.map ⇒ 续轮 400）
+    expect(src).toMatch(/const toolResults = toolCalls\.map\(/)
+    expect(src).not.toMatch(/const toolResults = uniqueToolCalls\.map\(/)
+    // ③ 下发前端的清单才用 uniqueToolCalls
+    expect(src).toMatch(/tool_calls: uniqueToolCalls\.map\(/)
+    // ④ 折叠项必须经 aliasOf 回映射（否则结果是 undefined）
+    expect(src).toMatch(/resultById\.get\(aliasOf\.get\(tc\.id\) \?\? tc\.id\)/)
+    // ⑤ 旧的「逐条 push」写法不得回潮
+    expect(src).not.toMatch(/toolResults\.push\(/)
+  })
+})

@@ -8,6 +8,7 @@ import { fetchWithTimeout, fetchStreamWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, STRE
 import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext, normalizeMaxTokens } from '../utils/aiQuota.js'
 import { cacheKey, getCached, setCached } from '../utils/aiResponseCache.js'
 import { logAiQuestion } from '../utils/aiQuestionLog.js'
+import { dedupeToolCalls } from '../utils/toolCallGuard.js'
 
 const router = express.Router()
 
@@ -265,32 +266,46 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
     if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls) {
       const toolCalls = choice.message.tool_calls
 
-      // 处理需要查询数据库的工具（query_stats）
-      const toolResults = []
-      for (const tc of toolCalls) {
-        let toolResult = null
-        const args = JSON.parse(tc.function.arguments || '{}')
+      // ======================================================================
+      // v1.13.169：折叠「同名 + 同参」的重复工具调用
+      // ----------------------------------------------------------------------
+      // 起因：2.1-pro 对服务端只读工具偶发重复调用（`query_city_data` ×2，3/3 复现）。
+      // ⚠️ 只折叠「执行」，**不折叠 id** —— 下方 toolResults 仍与上游 toolCalls 严格 1:1
+      //    （协议要求每个 tool_call_id 都有对应 tool 消息，少一条续轮直接 400），
+      //    重复项复用首次出现的结果。详见 utils/toolCallGuard.js 头注释。
+      // 只折叠「完全相同」的调用；参数不同的同名调用（如对比上海/北京）会被保留。
+      // ======================================================================
+      const { unique: uniqueToolCalls, aliasOf, collapsed } = dedupeToolCalls(toolCalls)
+      if (collapsed > 0) {
+        console.log(`[AI-Dedup] 折叠重复工具调用 ${toolCalls.length} → ${uniqueToolCalls.length}（折叠 ${collapsed} 条, user=${userId}）`)
+      }
 
+      // 处理需要查询数据库的工具（query_stats）—— 只对**首次出现**的执行
+      const resultById = new Map()
+      for (const tc of uniqueToolCalls) {
+        const args = JSON.parse(tc.function.arguments || '{}')
         if (serverSideTools.includes(tc.function.name)) {
-          toolResult = await executeServerTool(tc.function.name, userId, args)
+          resultById.set(tc.id, await executeServerTool(tc.function.name, userId, args))
         } else {
           // 其他工具由前端执行，这里返回 pending 标记
-          toolResult = { status: 'client_side', args }
+          resultById.set(tc.id, { status: 'client_side', args })
         }
-
-        toolResults.push({
-          tool_call_id: tc.id,
-          name: tc.function.name,
-          result: toolResult
-        })
       }
+
+      // 🔴 必须与 toolCalls 等长（1:1）：折叠项通过 aliasOf 取回首条的结果
+      const toolResults = toolCalls.map(tc => ({
+        tool_call_id: tc.id,
+        name: tc.function.name,
+        result: resultById.get(aliasOf.get(tc.id) ?? tc.id)
+      }))
 
       // 如果有需要前端执行的工具，直接返回给前端处理
       const clientSideTools = toolResults.filter(t => t.result?.status === 'client_side')
       if (clientSideTools.length > 0) {
         const payload = {
           type: 'tool_calls',
-          tool_calls: toolCalls.map(tc => ({
+          // ⚠️ 下发给前端的清单用去重后的 uniqueToolCalls（前端逐个 emit、无去重）
+          tool_calls: uniqueToolCalls.map(tc => ({
             id: tc.id,
             name: tc.function.name,
             args: JSON.parse(tc.function.arguments || '{}')
