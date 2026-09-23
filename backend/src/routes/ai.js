@@ -14,6 +14,28 @@ const router = express.Router()
 const ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const MODEL = 'doubao-seed-2-0-pro-260215'
 
+// ============================================================================
+// v1.13.167：显式关闭「深度思考链」(thinking)
+// ----------------------------------------------------------------------------
+// 豆包 2.0-pro **默认开启**思考链，且 reasoning token 按**输出价**计费
+// （输出 ¥16/百万，是输入价的 5 倍）；而 ai.js 本文件从未传过 thinking 参数
+// ⇒ 线上一直在为思考链付全价，且 max_tokens 管不住它（实测设 300 实际出 507）。
+//
+// 实价探针实测（2026-09-23 直连方舟同题对照，见
+// workbuddy过程文件/Report4biz_豆包模型下线影响评估_20260923.md §②）：
+//   不传 thinking      ⇒ completion 3391 tok（reasoning 2586，占 76%）⇒ ¥0.0546/次
+//   传 disabled        ⇒ completion  870 tok（reasoning    0，占  0%）⇒ ¥0.0142/次（−74%）
+//   传 enabled（显式） ⇒ 模型自判该题无需思考，反而更短（仍有 302 reasoning tok）
+// 回答长度几乎不变（~1400 字 → ~1300 字），质量无退化；
+// 附带收益：思考期不吐首字节，关闭后 site-advice 流式的首字节延迟更稳
+// （此前思考链贴着 STREAM_HEAD_TIMEOUT_MS 走，属超时风险源）。
+//
+// ⇒ chat 类场景（问答 / 20 个工具调度 / 选址建议）不需要思考链。**四处请求体缺一不可**：
+//   ① chat 首轮  ② chat 工具续轮  ③ site-advice 流式  ④ site-advice 非流式
+//   守卫测试：tests/aiCostControl.test.js §G（计数 + 运行时断言，防回退）
+// ============================================================================
+const THINKING_DISABLED = { type: 'disabled' }
+
 // L6：AI 上游（火山方舟）非流式调用整体超时 90s；流式见 STREAM_HEAD_TIMEOUT_MS（仅首字节计时）
 const AI_TIMEOUT_MS = 90000
 
@@ -178,6 +200,8 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
       },
       body: JSON.stringify({
         model: MODEL,
+        // v1.13.167：① chat 首轮 —— 关思考链（详因见文件头 THINKING_DISABLED 注释）
+        thinking: THINKING_DISABLED,
         messages: [
           { role: 'system', content: systemPrompt },
           ...messages
@@ -275,6 +299,8 @@ ${context ? JSON.stringify(context, null, 2) : '暂无'}
         },
         body: JSON.stringify({
           model: MODEL,
+          // v1.13.167：② chat 工具续轮（把工具结果润色成中文回复，同样无需思考链）
+          thinking: THINKING_DISABLED,
           messages: followUpMessages,
           temperature: 0.3,
           max_tokens: 400
@@ -623,6 +649,8 @@ router.post('/site-advice', authenticate, async (req, res) => {
           },
           body: JSON.stringify({
             model: MODEL,
+            // v1.13.167：③ site-advice 流式 —— 关思考链（原思考期不吐首字节，贴着 STREAM_HEAD_TIMEOUT_MS）
+            thinking: THINKING_DISABLED,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userContent }
@@ -642,6 +670,8 @@ router.post('/site-advice', authenticate, async (req, res) => {
           },
           body: JSON.stringify({
             model: MODEL,
+            // v1.13.167：④ site-advice 非流式 —— 关思考链
+            thinking: THINKING_DISABLED,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userContent }

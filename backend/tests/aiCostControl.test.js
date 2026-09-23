@@ -480,3 +480,65 @@ describe('F. 缓存模块单测（key 含 userId / TTL / LRU）', () => {
     expect(getCached('k1', 0).content).toBe('orig')
   })
 })
+
+// ===========================================================================
+/**
+ * G. 关思考链 —— v1.13.167
+ *
+ * 立项依据同样是**实价探针实测**（2026-09-23 直连方舟同题对照，见
+ * Report4biz_豆包模型下线影响评估_20260923.md §②）：
+ *   不传 thinking ⇒ completion 3391 tok（reasoning 2586，占 76%）⇒ ¥0.0546/次
+ *   传 disabled   ⇒ completion  870 tok（reasoning    0）        ⇒ ¥0.0142/次（**−74%**）
+ * 关键性质：`reasoning_tokens` 按**输出价**计费（¥16/百万 = 输入价 5 倍），
+ * 且 `max_tokens` 管不住它（实测 max_tokens=300 仍出 507 tok）。
+ * ⇒ 这是**确定性**降本（不是抽样噪声：reasoning 归零是协议级事实）。
+ *
+ * 必须四处都关（缺一即漏）：
+ *   ① /chat 首轮  ② /chat 工具续轮  ③ /site-advice 流式  ④ /site-advice 非流式
+ * ①② 用运行时打桩断言（本文件已能捕获上游请求体）；③④ 用源码计数守卫
+ * （流式路径需额外打桩 fetchStreamWithTimeout，成本高于收益 ⇒ 以源码守卫覆盖）。
+ */
+describe('G. 关思考链（v1.13.167）—— 消除 reasoning token 按输出价计费', () => {
+  it('G1 ⭐ /chat 首轮请求体必须显式 thinking:{type:"disabled"}', async () => {
+    await ask('u1', '关思考链-首轮')
+    expect(firstCallBody().thinking).toEqual({ type: 'disabled' })
+  })
+
+  it('G2 ⭐ /chat 工具续轮同样必须关闭（否则续轮又按输出价付思考链）', async () => {
+    upstream().responder = toolCallResponder('query_stats', { group_by: 'city' })
+    const r = await ask('u1', '关思考链-续轮')
+    expect(r.status).toBe(200)
+    expect(r.body.type).toBe('text')
+    expect(llmCalls().length).toBe(2)                       // 首轮 + 续轮
+    expect(firstCallBody().thinking).toEqual({ type: 'disabled' })
+    expect(lastCallBody().thinking).toEqual({ type: 'disabled' })
+  })
+
+  it('G3 🔴 源码守卫：恰好 4 处请求体带 disabled，且全篇无 enabled/auto 回退', () => {
+    const src = fs.readFileSync(new URL('../src/routes/ai.js', import.meta.url), 'utf8')
+    const lines = src.split('\n').filter((l) => !l.trim().startsWith('//'))
+
+    // ① 使用点必须正好 4 处（注释行已过滤，防止"只改注释"式假通过）
+    const used = lines.filter((l) => /thinking:\s*THINKING_DISABLED/.test(l))
+    expect(used.length).toBe(4)
+
+    // ② 常量本身的取值必须是 disabled
+    expect(src).toMatch(/const THINKING_DISABLED = \{ type: 'disabled' \}/)
+
+    // ③ 禁止任何形式的「开启 / 自动」思考链回退
+    expect(src).not.toMatch(/type:\s*'enabled'/)
+    expect(src).not.toMatch(/type:\s*'auto'/)
+
+    // ④ 上游请求体共 4 处（model: MODEL 另有 1 处在缓存 key 上）⇒ 数量对得上
+    //    才说明没有新增请求体而漏配 thinking
+    expect((src.match(/model: MODEL/g) || []).length).toBe(5)
+  })
+
+  it('G4 关闭思考链不改变既有响应形状（回答照常返回、照常记账）', async () => {
+    const r = await ask('u1', '关思考链-形状')
+    expect(r.status).toBe(200)
+    expect(r.body.type).toBe('text')
+    expect(r.body.content).toBe('这是真实回答')
+    expect(usageRows()).toBe(1)
+  })
+})
