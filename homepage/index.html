@@ -620,86 +620,6 @@ a { text-decoration: none; color: inherit; }
   </div>
 </section>
 
-<script>
-(function () {
-  var track = document.getElementById('bannerTrack')
-  var dots = Array.prototype.slice.call(document.querySelectorAll('#bannerDots button'))
-  var prevBtn = document.querySelector('.banner-prev')
-  var nextBtn = document.querySelector('.banner-next')
-  var slider = document.getElementById('mainBanner')
-  var idx = 0, timer = null
-  var SLIDES = 3, INTERVAL = 4000
-
-  function goTo(n) {
-    idx = (n + SLIDES) % SLIDES
-    track.style.transform = 'translateX(-' + (idx * 100 / SLIDES) + '%)'
-    dots.forEach(function (d, i) { d.classList.toggle('active', i === idx) })
-  }
-  function next() { goTo(idx + 1) }
-  function start() {
-    stop()
-    timer = setInterval(next, INTERVAL)
-  }
-  function stop() {
-    if (timer) { clearInterval(timer); timer = null }
-  }
-
-  nextBtn.addEventListener('click', function () { next(); start() })
-  prevBtn.addEventListener('click', function () { goTo(idx - 1); start() })
-  dots.forEach(function (d) {
-    d.addEventListener('click', function () { goTo(parseInt(d.dataset.i, 10)); start() })
-  })
-  // 悬停暂停，移出恢复
-  slider.addEventListener('mouseenter', stop)
-  slider.addEventListener('mouseleave', start)
-  // 触摸滑动支持
-  var touchX = null
-  slider.addEventListener('touchstart', function (e) { touchX = e.touches[0].clientX; stop() }, { passive: true })
-  slider.addEventListener('touchend', function (e) {
-    if (touchX === null) return
-    var dx = e.changedTouches[0].clientX - touchX
-    if (dx > 40) goTo(idx - 1); else if (dx < -40) goTo(idx + 1)
-    touchX = null; start()
-  }, { passive: true })
-
-  start()
-})()
-</script>
-
-<!-- ============ 移动端导航菜单 ============ -->
-<script>
-(function () {
-  var toggle = document.querySelector('.menu-toggle')
-  var nav = document.querySelector('.nav')
-  if (!toggle || !nav) return
-  toggle.setAttribute('type', 'button')
-  toggle.setAttribute('aria-label', '展开导航菜单')
-  toggle.setAttribute('aria-expanded', 'false')
-  function close() {
-    nav.classList.remove('open')
-    toggle.setAttribute('aria-expanded', 'false')
-    toggle.setAttribute('aria-label', '展开导航菜单')
-    toggle.textContent = '☰'
-  }
-  toggle.addEventListener('click', function (e) {
-    e.stopPropagation()
-    var open = nav.classList.toggle('open')
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
-    toggle.setAttribute('aria-label', open ? '收起导航菜单' : '展开导航菜单')
-    toggle.textContent = open ? '✕' : '☰'
-  })
-  nav.addEventListener('click', function (e) {
-    if (e.target && e.target.tagName === 'A') close()
-  })
-  document.addEventListener('click', function (e) {
-    if (!nav.contains(e.target) && !toggle.contains(e.target)) close()
-  })
-  window.addEventListener('resize', function () {
-    if (window.innerWidth > 960) close()
-  })
-})()
-</script>
-
 <!-- ============ 资讯 ============ -->
 <section class="section" style="padding:56px 0;">
   <div class="container">
@@ -1019,6 +939,8 @@ a { text-decoration: none; color: inherit; }
     </div>
   </div>
 </footer>
+
+<script src="home.js" defer></script>
 
 </body>
 </html>
