@@ -4,7 +4,7 @@
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="purchase" class="result">
       <div class="header">
-        <h2>📊 联通人口数据分析报告</h2>
+        <h2><AppIcon class="icon-text"><DataAnalysis /></AppIcon>联通人口数据分析报告</h2>
         <p class="subtitle">数据来源于 {{ purchase.city_month }}</p>
       </div>
       <div class="info-card">
@@ -26,6 +26,8 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+import { DataAnalysis } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const route = useRoute()
 const purchase = ref(null)

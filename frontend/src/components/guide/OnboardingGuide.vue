@@ -31,7 +31,7 @@
     <!-- 首次使用分步向导 -->
     <el-dialog
       v-model="wizardVisible"
-      title="👋 欢迎使用选址赢家Online"
+      title="欢迎使用选址赢家Online"
       width="560px"
       :close-on-click-modal="true"
       :show-close="true"
@@ -56,7 +56,7 @@
 
       <!-- Step 1: 我的门店 -->
       <div v-else-if="step === 1" class="wizard-body">
-        <h3 class="wizard-title">📌 第 1 步：添加我的门店</h3>
+        <h3 class="wizard-title"><AppIcon class="icon-text"><Shop /></AppIcon>第 1 步：添加我的门店</h3>
         <p class="wizard-desc">我的门店是你自己的门店数据，支持单个添加或 CSV 批量导入。</p>
         <div class="wizard-tip">
           <el-icon><InfoFilled /></el-icon>
@@ -66,13 +66,13 @@
           去添加我的门店 →
         </el-button>
         <el-tag v-else type="success" size="large" class="wizard-done">
-          ✅ 已添加 {{ markerStore.markers.length }} 家门店
+          已添加 {{ markerStore.markers.length }} 家门店
         </el-tag>
       </div>
 
       <!-- Step 2: 竞品门店 -->
       <div v-else-if="step === 2" class="wizard-body">
-        <h3 class="wizard-title">📊 第 2 步：添加竞品门店</h3>
+        <h3 class="wizard-title"><AppIcon class="icon-text"><Aim /></AppIcon>第 2 步：添加竞品门店</h3>
         <p class="wizard-desc">竞品门店是你的竞争品牌门店数据，用于竞争分析、开店余地评估。</p>
         <div class="wizard-tip">
           <el-icon><InfoFilled /></el-icon>
@@ -82,14 +82,14 @@
           去添加竞品门店 →
         </el-button>
         <el-tag v-else type="success" size="large" class="wizard-done">
-          ✅ 已添加 {{ competitorStore.competitors.length }} 家竞品
+          已添加 {{ competitorStore.competitors.length }} 家竞品
         </el-tag>
       </div>
 
       <template #footer>
         <el-button v-if="step > 0" @click="step--">上一步</el-button>
         <el-button v-if="step < 2" type="primary" @click="step++">下一步</el-button>
-        <el-button v-else type="primary" @click="finishWizard">开始使用 🎉</el-button>
+        <el-button v-else type="primary" @click="finishWizard">开始使用</el-button>
         <el-button text @click="skipWizard">跳过引导</el-button>
       </template>
     </el-dialog>
@@ -100,7 +100,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Close, InfoFilled } from '@element-plus/icons-vue'
+import { MagicStick, Close, InfoFilled, Shop, Aim } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useUserStore } from '@/stores/user'

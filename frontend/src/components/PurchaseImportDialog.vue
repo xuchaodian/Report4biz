@@ -5,10 +5,12 @@
     :close-on-click-modal="false"
     class="import-dialog"
     append-to-body
-    :title="'📥 导入联通 Excel（外部报表批量导入）'"
     @update:model-value="onVisibleChange"
     @closed="resetAll"
   >
+    <template #header>
+      <span class="dlg-title"><AppIcon><Upload /></AppIcon>导入联通 Excel（外部报表批量导入）</span>
+    </template>
     <div class="imp-body">
       <!-- ① 规则说明 -->
       <div class="imp-rules">
@@ -89,7 +91,8 @@
 <script setup>
 import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { FolderOpened } from '@element-plus/icons-vue'
+import { FolderOpened, Upload } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import api from '@/utils/api'
 
 const props = defineProps({

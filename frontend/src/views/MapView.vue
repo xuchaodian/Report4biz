@@ -283,7 +283,10 @@
     </el-dialog>
 
     <!-- 竞品雷达下钻（周边竞争强度增强）：点击竞争强度圆圈弹出 -->
-    <el-dialog v-model="competitionRadarVisible" title="📡 竞品雷达" width="720px" :close-on-click-modal="false" @closed="disposeRadarCharts">
+    <el-dialog v-model="competitionRadarVisible" width="720px" :close-on-click-modal="false" @closed="disposeRadarCharts">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Compass /></AppIcon>竞品雷达</span>
+      </template>
       <template #default>
         <div v-if="competitionRadarData" class="radar-drilldown">
           <div class="radar-head">
@@ -695,7 +698,7 @@
     <el-dialog v-model="potentialVisible" width="600px" class="dialog-fancy" :close-on-click-modal="false" draggable @opened="loadPotentialCities">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#faeeda;">🗺️</span>
+          <span class="dhf-icon" style="background:#faeeda;color:#916012;"><AppIcon><MapLocation /></AppIcon></span>
           <div>
             <div class="dhf-title">开店余地分析</div>
             <div class="dhf-sub">按门店 / 竞品 / 人口条件筛选区域</div>
@@ -900,7 +903,7 @@
     <el-dialog v-model="storeSimilarVisible" width="760px" class="dialog-fancy" draggable :show-close="true" @close="resetStoreSimilarDialog">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#eeedfe;">🔍</span>
+          <span class="dhf-icon" style="background:#eeedfe;color:#2d259d;"><AppIcon><Search /></AppIcon></span>
           <div>
             <div class="dhf-title">相似店</div>
             <div class="dhf-sub">同商圈同类型的相似门店</div>
@@ -1011,7 +1014,7 @@
       <div class="map-context-menu-divider"></div>
       <div class="map-context-menu-item" @click="contextMenuAction('lockmap')">
         <el-icon><Lock v-if="!mapLocked" /><Unlock v-else /></el-icon>
-        <span>{{ mapLocked ? '🔓 解锁地图（图标可移动）' : '🔒 锁定地图（拖动不误触图标）' }}</span>
+        <span>{{ mapLocked ? '解锁地图（图标可移动）' : '锁定地图（拖动不误触图标）' }}</span>
       </div>
     </div>
 
@@ -1019,7 +1022,7 @@
     <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable @closed="clearEnvScoreLayer">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e6f1fb;">🏙️</span>
+          <span class="dhf-icon" style="background:#e6f1fb;color:#0d579c;"><AppIcon><OfficeBuilding /></AppIcon></span>
           <div>
             <div class="dhf-title">周边环境打分卡</div>
             <div class="dhf-sub">8 类商业配套 · 高德 POI 免费评估</div>
@@ -1367,7 +1370,7 @@
     <el-dialog v-model="populationCompareVisible" width="900px" class="dialog-fancy" draggable :show-close="true">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e6f1fb;">👥</span>
+          <span class="dhf-icon" style="background:#e6f1fb;color:#0d579c;"><AppIcon><User /></AppIcon></span>
           <div>
             <div class="dhf-title">人口对比分析</div>
             <div class="dhf-sub">多门店人口指标横向对比</div>
@@ -1575,8 +1578,10 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import {
   Location, Connection, Coordinate, Crop, FullScreen,
-  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading, MapLocation, Lock, Unlock
+  Delete, View, Grid, DataLine, DataAnalysis, Aim, Search, Flag, Shop, ArrowLeft, Collection, LocationFilled, Edit, Close, CopyDocument, Loading, MapLocation, Lock, Unlock,
+  Compass, OfficeBuilding, User
 } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
@@ -2346,7 +2351,7 @@ const toggleMapLock = () => {
   mapLocked.value = !mapLocked.value
   localStorage.setItem('mapLocked', mapLocked.value ? '1' : '0')
   applyMapLockToMarkers()
-  ElMessage.success(mapLocked.value ? '🔒 地图已锁定：拖动地图碰到图标也无视，可正常拖动地图' : '🔓 地图已解锁：图标可正常拖动')
+  ElMessage.success(mapLocked.value ? '地图已锁定：拖动地图碰到图标也无视，可正常拖动地图' : '地图已解锁：图标可正常拖动')
 }
 // 右键菜单动作分发
 const contextMenuAction = (action) => {
@@ -4834,7 +4839,7 @@ const loadMarkers = async (skipFetch = false) => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([markerData.latitude, markerData.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5042,7 +5047,7 @@ const reloadBusinessLayer = () => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([markerData.latitude, markerData.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5185,7 +5190,7 @@ const loadCompetitors = async (skipFetch = false) => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([comp.latitude, comp.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5268,7 +5273,7 @@ const reloadCompetitorLayer = () => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([comp.latitude, comp.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5419,7 +5424,7 @@ const loadBrandStores = async (skipFetch = false) => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([store.latitude, store.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5487,7 +5492,7 @@ const reloadBrandStoreLayer = () => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([store.latitude, store.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5607,7 +5612,7 @@ const loadShoppingCenters = async (skipFetch = false) => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([store.latitude, store.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()
@@ -5669,7 +5674,7 @@ const reloadShoppingCenterLayer = () => {
             // 🔒 地图锁定：锁定时恢复原位置并忽略（避免拖动地图时误触图标移动）
             if (mapLocked.value) {
               e.target.setLatLng([store.latitude, store.longitude])
-              ElMessage.info('🔒 地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
+              ElMessage.info('地图已锁定，已忽略图标拖动（地图右键菜单可解锁）')
               return
             }
       const latlng = e.target.getLatLng()

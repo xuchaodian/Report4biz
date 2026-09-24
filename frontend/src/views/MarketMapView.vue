@@ -3,7 +3,7 @@
     <!-- 页头 -->
     <div class="mm-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🔍 {{ $t('cityInsight.title') }}</h2>
+        <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><Search /></AppIcon>{{ $t('cityInsight.title') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           {{ $t('cityInsight.desc') }}
         </p>
@@ -21,7 +21,10 @@
     </div>
 
     <!-- 权重设置对话框 -->
-    <el-dialog v-model="weightDialogVisible" :title="'⚙️ ' + $t('cityInsight.weightDialogTitle')" width="480px" :close-on-click-modal="false">
+    <el-dialog v-model="weightDialogVisible" width="480px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Setting /></AppIcon>{{ $t('cityInsight.weightDialogTitle') }}</span>
+      </template>
       <div style="font-size:12px;color:#909399;margin-bottom:14px;">
         {{ $t('cityInsight.weightDialogDesc') }}
       </div>
@@ -169,6 +172,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/utils/api'
 import { ElMessage } from 'element-plus'
+import { Search, Setting } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const { t } = useI18n()
 

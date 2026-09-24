@@ -54,7 +54,7 @@
           <!-- 组①：本机操作指引（零 token）。单独分组并标注「不消耗额度」，
                既让用户敢点，也把使用习惯往这条最省的链路上引。 -->
           <div class="quick-group">
-            <div class="quick-group-label">🔧 系统操作指引 · 不消耗额度</div>
+            <div class="quick-group-label"><AppIcon class="icon-text"><Tools /></AppIcon>系统操作指引 · 不消耗额度</div>
             <div class="quick-actions">
               <div
                 v-for="q in faqQuickQuestions"
@@ -66,7 +66,7 @@
           </div>
           <!-- 组②：需要 AI 真正执行的动作示例 -->
           <div class="quick-group">
-            <div class="quick-group-label">⚡ 试试直接对我说</div>
+            <div class="quick-group-label"><AppIcon class="icon-text"><Lightning /></AppIcon>试试直接对我说</div>
             <div class="quick-actions">
               <div
                 v-for="q in actionQuickQuestions"
@@ -143,7 +143,8 @@
 <script setup>
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChatDotRound, Close, MagicStick, Delete, Position } from '@element-plus/icons-vue'
+import { ChatDotRound, Close, MagicStick, Delete, Position, Tools, Lightning } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'

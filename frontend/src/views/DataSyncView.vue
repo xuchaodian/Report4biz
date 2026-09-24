@@ -3,7 +3,7 @@
     <el-card shadow="never" class="ds-card">
       <template #header>
         <div class="ds-header">
-          <span class="ds-title">🔗 数据同步</span>
+          <span class="ds-title"><AppIcon class="icon-text"><Connection /></AppIcon>数据同步</span>
           <span class="ds-sub">
             集团 ↔ 子公司「按需手动同步」：先预览、后确认，每次留痕可审计。
             管辖范围由各子公司自行设置（集团亦可代设或改派），同步过来的门店为只读镜像。
@@ -337,7 +337,7 @@
               范围外静默丢弃 {{ preview.counts.outOfScope }} 条
             </span>
             <span v-if="preview.counts.truncated" class="ds-warn">
-              ⚠️ 超出单批上限 {{ preview.counts.truncated }} 条被截断，请缩小范围或按期次分批同步
+              超出单批上限 {{ preview.counts.truncated }} 条被截断，请缩小范围或按期次分批同步
             </span>
           </div>
 
@@ -654,7 +654,7 @@
         <div>· 额度来自<b>你自己名下</b>，<b>不占用</b>「全池可分配」</div>
         <div>· 只在你与所选子公司之间移动，<b>组织总授权额度不变</b></div>
         <div>· 出资方恒为你本人 —— 无法从其他子公司扣额度</div>
-        <div v-if="isSelfEmptying" class="ds-danger">⚠ 转出后你的可用额度为 0，将无法发起查询</div>
+        <div v-if="isSelfEmptying" class="ds-danger">转出后你的可用额度为 0，将无法发起查询</div>
       </div>
       <template #footer>
         <el-button size="small" @click="reallocateDialog.visible = false">取消</el-button>
@@ -686,6 +686,8 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Connection } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import api from '@/utils/api'
 import { useUserStore } from '@/stores/user'
 import ScopeEditor from '@/components/org/ScopeEditor.vue'
@@ -1333,7 +1335,7 @@ async function doReallocate () {
       emptying
         ? `将你名下 ${amount} 次额度转给「${name}」。转出后你的可用额度为 0，将无法发起查询。确认？`
         : `把你名下 ${amount} 次额度转给「${name}」（二级再分配 · 不占用「全池可分配」· 组织总授权不变）。确认？`,
-      emptying ? '⚠ 转空自己的额度' : '确认转出',
+      emptying ? '转空自己的额度' : '确认转出',
       { type: emptying ? 'error' : 'warning' }
     )
   } catch (e) { return }   // 用户取消

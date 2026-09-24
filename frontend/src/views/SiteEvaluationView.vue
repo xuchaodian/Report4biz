@@ -3,7 +3,7 @@
     <!-- 页头 -->
     <div class="se-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🎯 选址评估</h2>
+        <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><Aim /></AppIcon>选址评估</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           点击地图选点，一键评估开店潜力 —— 人口 / 竞争 / 配套 / 交通 4 维加权评分（人口数据来自联通智慧足迹）
         </p>
@@ -48,7 +48,7 @@
           <el-icon><Odometer /></el-icon>
           &nbsp;剩余次数：<b>{{ quotaAvailable }}</b>
         </el-tag>
-        <span v-if="quotaAvailable < 1" class="se-quota-warn">⚠️ 余额不足，请联系管理员分配配额</span>
+        <span v-if="quotaAvailable < 1" class="se-quota-warn">余额不足，请联系管理员分配配额</span>
       </div>
     </div>
 
@@ -71,7 +71,7 @@
       <!-- 右：设置 + 结果 -->
       <div class="se-panel">
         <el-card shadow="never" class="se-card">
-          <template #header><b>⚙️ 评分设置</b></template>
+          <template #header><b><AppIcon class="icon-text"><Setting /></AppIcon>评分设置</b></template>
           <div class="se-form">
             <div class="se-form-item">
               <label>人口权重 α</label>
@@ -110,7 +110,7 @@
 
         <!-- 评分结果 -->
         <el-card v-if="result" shadow="never" class="se-card se-result-card">
-          <template #header><b>📊 评估结果</b></template>
+          <template #header><b><AppIcon class="icon-text"><DataAnalysis /></AppIcon>评估结果</b></template>
           <div class="se-total">
             <div class="se-total-score" :style="{ color: totalColor }">{{ result.score }}</div>
             <div class="se-total-label">综合评分</div>
@@ -137,7 +137,10 @@
     </div>
 
     <!-- 我的候选弹窗 -->
-    <el-dialog v-model="candDialogVisible" title="🗂️ 我的候选点位" width="720px">
+    <el-dialog v-model="candDialogVisible" width="720px">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Collection /></AppIcon>我的候选点位</span>
+      </template>
       <el-table :data="candList" size="small" border stripe max-height="420">
         <el-table-column type="index" label="#" width="45" />
         <el-table-column label="综合评分" width="90" align="center">
@@ -172,7 +175,8 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer } from '@element-plus/icons-vue'
+import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer, Aim, Setting, DataAnalysis, Collection } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const mapRef = ref(null)
 let map = null

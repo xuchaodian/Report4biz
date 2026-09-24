@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
-            <template v-if="isTrial">🎁 VIP 试用</template><template v-else>👑 VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
+            <template v-if="isTrial"><AppIcon class="icon-text"><Present /></AppIcon>VIP 试用</template><template v-else><AppIcon class="icon-text"><Medal /></AppIcon>VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
           </span>
         </div>
       </template>
@@ -104,7 +104,7 @@
     <el-card class="quota-card">
       <template #header>
         <div class="card-header">
-          <span>📊 联通人口数据配额</span>
+          <span><AppIcon class="icon-text"><DataAnalysis /></AppIcon>联通人口数据配额</span>
         </div>
       </template>
       <div class="quota-content">
@@ -121,13 +121,13 @@
         </div>
         <div class="quota-actions">
           <el-button type="text" @click="refreshQuota" :loading="quotaLoading">
-            🔄 刷新配额
+            <AppIcon class="icon-text"><Refresh /></AppIcon>刷新配额
           </el-button>
           <el-button type="text" @click="showQuotaHistoryDialog">
-            📜 充值履历
+            <AppIcon class="icon-text"><Memo /></AppIcon>充值履历
           </el-button>
           <el-button type="text" @click="showHistoryDialog">
-            📋 购买履历
+            <AppIcon class="icon-text"><Tickets /></AppIcon>购买履历
           </el-button>
         </div>
       </div>
@@ -142,13 +142,13 @@
     >
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e6f1fb;">📋</span>
+          <span class="dhf-icon" style="background:#e6f1fb;color:#0d579c;"><AppIcon><Tickets /></AppIcon></span>
           <div>
             <div class="dhf-title">购买履历</div>
             <div class="dhf-sub">历史查询订单与配额消耗记录</div>
           </div>
           <el-button type="primary" plain size="small" style="margin-left:auto;" @click="importDialogVisible = true">
-            📥 导入联通 Excel
+            <AppIcon class="icon-text"><Upload /></AppIcon>导入联通 Excel
           </el-button>
         </div>
       </template>
@@ -207,7 +207,7 @@
         </el-button>
         <span class="filter-count">共 {{ filteredHistoryList.length }} 条</span>
         <el-button type="primary" size="small" style="margin-left: 12px;" :disabled="compareSelected.length < 2" @click="openCompareDialog">
-          📊 对比看板{{ compareSelected.length > 0 ? ` (${compareSelected.length})` : '' }}
+          <AppIcon class="icon-text"><DataAnalysis /></AppIcon>对比看板{{ compareSelected.length > 0 ? ` (${compareSelected.length})` : '' }}
         </el-button>
         <el-button v-if="compareSelected.length > 0" size="small" @click="clearCompareSelection">
           清空选择
@@ -325,7 +325,7 @@
     <el-dialog v-model="compareDialogVisible" width="min(1080px, 94vw)" class="dialog-fancy" :close-on-click-modal="false" @closed="disposeCompareCharts">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e1f5ee;">📊</span>
+          <span class="dhf-icon" style="background:#e1f5ee;color:#17825d;"><AppIcon><DataAnalysis /></AppIcon></span>
           <div>
             <div class="dhf-title">订单对比看板</div>
             <div class="dhf-sub">最多 5 笔订单横向对比 · 指标表 / 人口 / 客流 / 消费</div>
@@ -366,12 +366,12 @@
             >
               {{ item.name }}（{{ item.radii_text }}）
             </el-tag>
-            <el-button size="small" type="primary" plain @click="exportCompareCsv">⬇ 导出对比表</el-button>
+            <el-button size="small" type="primary" plain @click="exportCompareCsv"><AppIcon class="icon-text"><Download /></AppIcon>导出对比表</el-button>
           </div>
 
           <!-- 指标对比表：每列最优高亮；缺数据显示「无数据」（不是 0） -->
           <div class="compare-table-block">
-            <h4 class="compare-block-title">📋 指标对比表</h4>
+            <h4 class="compare-block-title"><AppIcon class="icon-text"><Tickets /></AppIcon>指标对比表</h4>
             <el-table :data="compareRows" size="small" border stripe style="width:100%">
               <el-table-column label="门店" min-width="150" fixed show-overflow-tooltip>
                 <template #default="{ row }">
@@ -408,7 +408,7 @@
 
           <!-- 人口规模对比 -->
           <div class="compare-chart-block">
-            <h4 class="compare-block-title" style="margin-top:18px;">👥 人口规模对比（到访/居住/工作）</h4>
+            <h4 class="compare-block-title" style="margin-top:18px;"><AppIcon class="icon-text"><User /></AppIcon>人口规模对比（到访/居住/工作）</h4>
             <div ref="comparePopEl" class="compare-chart-box"></div>
           </div>
           <!-- 客流活跃度对比 -->
@@ -418,7 +418,7 @@
           </div>
           <!-- 消费能力对比 -->
           <div class="compare-chart-block">
-            <h4 class="compare-block-title" style="margin-top:18px;">💰 消费水平对比（居住+工作）</h4>
+            <h4 class="compare-block-title" style="margin-top:18px;"><AppIcon class="icon-text"><Money /></AppIcon>消费水平对比（居住+工作）</h4>
             <div ref="compareConsumeEl" class="compare-chart-box"></div>
           </div>
         </template>
@@ -432,7 +432,7 @@
     <el-dialog v-model="quotaHistoryDialogVisible" width="700px" class="dialog-fancy" :close-on-click-modal="false">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#faeeda;">📜</span>
+          <span class="dhf-icon" style="background:#faeeda;color:#916012;"><AppIcon><Memo /></AppIcon></span>
           <div>
             <div class="dhf-title">充值履历</div>
             <div class="dhf-sub">管理员分配 / 退款配额记录</div>
@@ -484,7 +484,7 @@
       <template #header>
         <div class="dialog-header-flex">
           <span>
-            📊 查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}
+            <AppIcon class="icon-text"><DataAnalysis /></AppIcon>查询结果详情 - {{ currentDetail?.store_name || '订单' + currentDetail?.id }}
             <!-- v1.13.157 集团可见域：打开的是子公司记录时明确标出来源（后端 /api/purchase/:id 已回传 is_self/owner_name） -->
             <el-tag v-if="currentDetail && currentDetail.is_self === false" size="small" effect="plain" type="success" style="margin-left:6px;">
               来源：{{ currentDetail.owner_name || '-' }}
@@ -492,30 +492,30 @@
           </span>
           <div class="dialog-header-actions">
             <el-button type="success" size="small" class="btn-ai-advice" @click="handleAiAdvice" :disabled="!resultData || aiAdviceLoading">
-              {{ isVipUser ? '🤖 AI 选址建议' : '🔒 AI 选址建议（VIP）' }}
+              <AppIcon class="icon-text"><Cpu v-if="isVipUser" /><Lock v-else /></AppIcon>{{ isVipUser ? 'AI 选址建议' : 'AI 选址建议（VIP）' }}
             </el-button>
             <el-button type="danger" size="small" @click="handleStoreScore" :disabled="detailLoading || !currentDetail">
-              ⭐ 商圈评分
+              <AppIcon class="icon-text"><StarFilled /></AppIcon>商圈评分
             </el-button>
             <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight" :disabled="!resultData || insightLoading">
-              {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
+              <AppIcon v-if="!insightLoading" class="icon-text"><Refresh v-if="insights.length > 0" /><Tickets v-else /></AppIcon>{{ insightLoading ? '分析中...' : (insights.length > 0 ? '重新分析' : '数据洞察') }}
             </el-button>
             <el-button type="primary" size="small" @click="handleExportPDF" :disabled="detailLoading || !currentDetail">
-              📄 PDF速览
+              <AppIcon class="icon-text"><DocumentCopy /></AppIcon>PDF速览
             </el-button>
             <!-- v1.13.157：分享只针对自己的记录（share-token 端点仍是自身口径 user_id = ?）；
                  集团打开子公司记录时隐藏，避免「点了报记录不存在」，也防止把子公司付费数据生成公开分享链接 -->
             <el-button v-if="currentDetail?.is_self !== false" type="warning" size="small" @click="handleShareToWeChat" :disabled="detailLoading || !currentDetail">
-              💬 微信分享
+              <AppIcon class="icon-text"><Share /></AppIcon>微信分享
             </el-button>
             <el-dropdown @command="handleExportDropdown" :disabled="detailLoading || !currentDetail" trigger="click">
               <el-button type="success" size="small">
-                📊 导出报表<el-icon><ArrowDown /></el-icon>
+                <AppIcon class="icon-text"><Document /></AppIcon>导出报表<el-icon><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="excel">📊 导出Excel</el-dropdown-item>
-                  <el-dropdown-item command="pdf">📄 导出PDF</el-dropdown-item>
+                  <el-dropdown-item command="excel"><AppIcon class="icon-text"><Document /></AppIcon>导出Excel</el-dropdown-item>
+                  <el-dropdown-item command="pdf"><AppIcon class="icon-text"><DocumentCopy /></AppIcon>导出PDF</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -538,7 +538,7 @@
           </div>
           <!-- 商圈评分（横向 5 指标评分卡，点击「商圈评分」按钮后显示） -->
           <div v-if="storeScoreVisible && storeScoreItems.length > 0" class="score-section">
-            <h4 style="margin:0 0 10px;font-size:14px;color:#333;">⭐ 商圈评分</h4>
+            <h4 style="margin:0 0 10px;font-size:14px;color:#333;"><AppIcon class="icon-text"><StarFilled /></AppIcon>商圈评分</h4>
             <div v-if="storeScoreInsufficient" class="score-insufficient">
               <span>⚠️</span>
               <span>评分用数据不足（所在城市、不同位置、相同半径的订单少于 10 次），评分结果仅供参考</span>
@@ -555,13 +555,13 @@
           </div>
           <!-- AI 选址建议 -->
           <div v-if="aiAdvice" class="ai-advice-section">
-            <h4 style="margin:0 0 6px;font-size:14px;color:#333;">🤖 AI 选址建议</h4>
+            <h4 style="margin:0 0 6px;font-size:14px;color:#333;"><AppIcon class="icon-text"><Cpu /></AppIcon>AI 选址建议</h4>
             <div v-if="aiAdviceBrand" style="font-size:12px;color:#909399;margin-bottom:8px;">品牌：{{ aiAdviceBrand }} · 业态：{{ aiAdviceCategory }}</div>
             <div style="font-size:13px;line-height:1.8;white-space:pre-wrap;color:#333;">{{ aiAdvice }}</div>
           </div>
           <!-- 数据洞察 -->
           <div v-if="insights.length > 0" class="insight-section">
-            <h4 style="margin:0 0 10px;font-size:14px;color:#333;">📋 数据洞察</h4>
+            <h4 style="margin:0 0 10px;font-size:14px;color:#333;"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>数据洞察</h4>
             <div v-for="(item, idx) in insights" :key="idx" :class="['insight-item', 'insight-' + item.type]">
               <span class="insight-icon">{{ item.type === 'positive' ? '✅' : item.type === 'warning' ? '⚠️' : '💡' }}</span>
               <span class="insight-text">{{ item.text }}</span>
@@ -576,7 +576,7 @@
         </div>
         <!-- 右栏：图表列表 -->
         <div class="detail-right" v-if="chartList.length > 0">
-          <h4 style="margin:0 0 12px;font-size:15px;color:#333;">📈 数据可视化</h4>
+          <h4 style="margin:0 0 12px;font-size:15px;color:#333;"><AppIcon class="icon-text"><TrendCharts /></AppIcon>数据可视化</h4>
           <div v-for="item in chartList" :key="item.serviceCode" class="chart-card">
             <h5 class="chart-title">{{ item.title }}</h5>
             <div :ref="el => registerChartEl(el, item.chartKey)" class="chart-box"></div>
@@ -594,7 +594,7 @@
     >
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e1f5ee;">💬</span>
+          <span class="dhf-icon" style="background:#e1f5ee;color:#17825d;"><AppIcon><ChatDotRound /></AppIcon></span>
           <div>
             <div class="dhf-title">微信分享</div>
             <div class="dhf-sub">生成分享卡片发送给好友</div>
@@ -605,15 +605,15 @@
         <img :src="shareImageData" alt="分享图片" style="width: 100%; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
       </div>
       <p class="share-hint">
-        📌 长按图片保存到相册，即可分享到微信
+        长按图片保存到相册，即可分享到微信
       </p>
       <template #footer>
         <div class="share-actions">
           <el-button type="primary" @click="copyImageToClipboard">
-            📋 复制图片
+            <AppIcon class="icon-text"><DocumentCopy /></AppIcon>复制图片
           </el-button>
           <el-button @click="downloadShareImage">
-            📥 保存图片
+            <AppIcon class="icon-text"><Download /></AppIcon>保存图片
           </el-button>
         </div>
         <p class="share-tip">电脑端：复制图片后到微信按 Ctrl+V 粘贴发送</p>
@@ -632,7 +632,8 @@ import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } fr
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location, Search, Close, ArrowDown } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown, Present, Medal, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
@@ -814,7 +815,7 @@ const handleStoreScore = async () => {
   try {
     await ElMessageBox.confirm(
       '建议所在城市、不同位置、相同半径数据查询 10 次以上使用。是否继续？',
-      '⭐ 商圈评分',
+      '商圈评分',
       { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
     )
     confirmed = true
@@ -3492,7 +3493,7 @@ function buildDataSummary(data) {
 const handleAiAdvice = async () => {
   // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
   if (!isVipUser.value) {
-    ElMessage.warning('🤖 AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
+    ElMessage.warning('AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
     return
   }
   if (!resultData.value) {
@@ -3927,7 +3928,7 @@ const copyImageToClipboard = async () => {
       new ClipboardItem({ 'image/png': blob })
     ])
     ElMessage.success({
-      message: '✅ 图片已复制，请到微信电脑版按 Ctrl+V 粘贴发送',
+      message: '图片已复制，请到微信电脑版按 Ctrl+V 粘贴发送',
       duration: 5000
     })
   } catch (e) {

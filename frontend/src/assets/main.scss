@@ -8,6 +8,65 @@
   --sidebar-width: 220px;
   --header-height: 60px;
   --toolbar-height: 50px;
+
+  /* ===== 图标 token（极薄版：只管「尺寸」与「颜色语义」）=====
+     颜色刻意不新造色值，只做「语义名 → Element Plus 变量」的转发 ⇒
+     以后换品牌色只需改 --el-color-primary，全站图标自动跟随 */
+  --icon-size-sm: 14px;   /* 密集区 / 表格内 */
+  --icon-size-md: 16px;   /* 默认：按钮、行内 */
+  --icon-size-lg: 20px;   /* 标题、卡片头、.dhf-icon 色块内 */
+  --icon-size-xl: 26px;   /* 特例：大号插图位 */
+
+  --icon-tone-inherit: currentColor;
+  --icon-tone-brand:   var(--el-color-primary);
+  --icon-tone-muted:   var(--el-text-color-placeholder);
+  --icon-tone-danger:  var(--el-color-danger);
+  --icon-tone-warning: var(--el-color-warning);
+  --icon-tone-success: var(--el-color-success);
+}
+
+/* ===== 图标基础类（配合 components/AppIcon.vue 使用）===== */
+.app-icon {
+  display: inline-flex;
+  vertical-align: -0.15em;
+}
+.app-icon--sm { font-size: var(--icon-size-sm); }
+.app-icon--md { font-size: var(--icon-size-md); }
+.app-icon--lg { font-size: var(--icon-size-lg); }
+.app-icon--xl { font-size: var(--icon-size-xl); }
+
+.app-icon--inherit { color: var(--icon-tone-inherit); }
+.app-icon--brand   { color: var(--icon-tone-brand); }
+.app-icon--muted   { color: var(--icon-tone-muted); }
+.app-icon--danger  { color: var(--icon-tone-danger); }
+.app-icon--warning { color: var(--icon-tone-warning); }
+.app-icon--success { color: var(--icon-tone-success); }
+
+.app-icon.is-spin { animation: app-icon-spin 1s linear infinite; }
+@keyframes app-icon-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .app-icon.is-spin { animation: none; } }
+
+/* ===== 图标 + 文字 混排：类加在【图标】上，inline 布局即可 =====
+   用法：<AppIcon class="icon-text"><Key /></AppIcon>API开放
+   为什么不做成「父级 flex 容器」：宿主是 h2 / el-button / el-card #header /
+   el-dialog #header 等异构元素，逐个加 class 并约束 align 反而扩大改动面；
+   加在图标上（右间距 + 基线微调）在任何 inline 上下文都成立。 */
+.icon-text {
+  margin-right: 6px;
+  vertical-align: -0.15em;
+}
+
+/* ===== el-dialog 改用 #header 插槽时的标题 =====
+   EP 的 title 属性只接受纯文本，要带图标必须换成 #header 插槽；
+   换插槽后 .el-dialog__title 的原生样式不再生效，故在此补回。 */
+.el-dialog__header .dlg-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--el-font-size-large);
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  line-height: 1.4;
 }
 
 body {
@@ -149,8 +208,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
+  font-size: 17px;   /* 保留：兼容可能遗留的字符形态 */
   flex-shrink: 0;
+}
+
+/* 色块内的图标（方案 A：尺寸与 34px 底色块完全不动，只接管图标大小）。
+   EP 图标自带内留白 ⇒ 20px 的视觉尺寸 ≈ 原 17px emoji。
+   ⛔ 这里刻意【不写 color】：色块用「同色系 600 级」，由各处的行内
+   `style="color:#xxx"` 给出，图标经 currentColor 继承。
+   若在此写死 color，选择器权重 (0,3,0) 会盖掉 .app-icon--inherit，
+   行内色就失效了。 */
+.dialog-header-fancy .dhf-icon .el-icon {
+  font-size: var(--icon-size-lg);
 }
 
 .dialog-header-fancy .dhf-title {

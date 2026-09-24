@@ -2,12 +2,12 @@
   <div class="resale-view">
     <div class="page-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🔑 API开放</h2>
+        <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><Key /></AppIcon>API开放</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           第三方调用联通人口数据（/api/v1/population）的 API Key 管理，按次计费 60 元/次，最低 100 次起充
         </p>
       </div>
-      <el-button type="primary" @click="openCreateDialog">➕ 创建客户</el-button>
+      <el-button type="primary" @click="openCreateDialog"><AppIcon class="icon-text"><Plus /></AppIcon>创建客户</el-button>
     </div>
 
     <!-- 配额池信息（与用户页共用同一批次上游配额） -->
@@ -32,7 +32,7 @@
         <span class="pool-label">剩余可分配</span>
         <span class="pool-value" :style="{ color: poolInfo.available <= 100 ? '#f56c6c' : '#67c23a', fontWeight: 600 }">{{ poolInfo.available }}</span>
       </div>
-      <span class="pool-tip">⚠️ 与用户页共用同一批次配额（测试模式不占用）</span>
+      <span class="pool-tip">与用户页共用同一批次配额（测试模式不占用）</span>
     </div>
 
     <!-- 客户列表 -->
@@ -85,7 +85,10 @@
     </el-table>
 
     <!-- 创建客户对话框 -->
-    <el-dialog v-model="createDialogVisible" title="➕ 创建转售客户" width="460px" :close-on-click-modal="false">
+    <el-dialog v-model="createDialogVisible" width="460px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Plus /></AppIcon>创建转售客户</span>
+      </template>
       <el-form label-width="90px">
         <el-form-item label="公司名称" required>
           <el-input v-model="createForm.companyName" placeholder="如：某某小程序科技有限公司" maxlength="50" />
@@ -106,7 +109,10 @@
     </el-dialog>
 
     <!-- 充值对话框 -->
-    <el-dialog v-model="rechargeDialogVisible" title="💰 充值次数" width="460px" :close-on-click-modal="false">
+    <el-dialog v-model="rechargeDialogVisible" width="460px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Money /></AppIcon>充值次数</span>
+      </template>
       <div style="margin-bottom:14px;font-size:13px;color:#606266;">
         为 <b>{{ currentClient?.company_name }}</b> 充值（当前余额 {{ currentClient?.balance }} 次）
       </div>
@@ -127,7 +133,10 @@
     </el-dialog>
 
     <!-- 扣减次数对话框 -->
-    <el-dialog v-model="deductDialogVisible" title="➖ 扣减次数" width="460px" :close-on-click-modal="false">
+    <el-dialog v-model="deductDialogVisible" width="460px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Minus /></AppIcon>扣减次数</span>
+      </template>
       <div style="margin-bottom:14px;font-size:13px;color:#606266;">
         为 <b>{{ currentClient?.company_name }}</b> 扣减（当前余额 {{ currentClient?.balance }} 次），扣减次数将归还配额池
       </div>
@@ -147,7 +156,7 @@
     <el-dialog v-model="usageDialogVisible" width="720px" class="dialog-fancy" :close-on-click-modal="false">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e1f5ee;">📊</span>
+          <span class="dhf-icon" style="background:#e1f5ee;color:#17825d;"><AppIcon><DataAnalysis /></AppIcon></span>
           <div>
             <div class="dhf-title">用量明细</div>
             <div class="dhf-sub">第三方 API 调用记录与扣费</div>
@@ -191,6 +200,8 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Key, Plus, Money, Minus, DataAnalysis } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const loading = ref(false)
 const keyList = ref([])

@@ -3,9 +3,9 @@
     <div class="panel-header">
       <span class="panel-title">候选点位 Top {{ candidates.length }}</span>
       <div class="panel-actions">
-        <el-button type="primary" size="small" @click="$emit('save')">💾 保存</el-button>
+        <el-button type="primary" size="small" @click="$emit('save')"><AppIcon class="icon-text"><Finished /></AppIcon>保存</el-button>
         <el-button size="small" @click="collapsed = !collapsed">{{ collapsed ? '展开' : '收起' }}</el-button>
-        <el-button size="small" @click="$emit('close')">✕</el-button>
+        <el-button size="small" @click="$emit('close')" title="关闭"><AppIcon label="关闭"><Close /></AppIcon></el-button>
       </div>
     </div>
 
@@ -38,6 +38,8 @@
 
 <script setup>
 import { ref } from 'vue'
+import { Finished, Close } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({
   candidates: { type: Array, default: () => [] },

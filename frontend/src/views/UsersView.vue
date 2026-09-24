@@ -39,10 +39,10 @@
           </div>
         </div>
         <el-button type="info" @click="showMonthlyStatsDialog">
-          📊 月度统计
+          <AppIcon class="icon-text"><DataAnalysis /></AppIcon>月度统计
         </el-button>
         <el-button type="info" plain @click="showOverviewDialog">
-          🧮 配额总览
+          <AppIcon class="icon-text"><Odometer /></AppIcon>配额总览
         </el-button>
         <!-- 公司筛选：下拉可浏览现有公司，也可直接输入关键词做模糊匹配
              （后端 GET /users 的 company 参数本就是 LIKE '%关键词%'，
@@ -214,7 +214,7 @@
         </el-form-item>
         <el-form-item v-if="form.role === 'vip' || form.role === 'trial'" label="VIP到期">
           <div style="width: 100%;">
-            <div class="quota-tip" style="color: #e6a23c;">{{ form.role === 'trial' ? '🎁 VIP 试用自保存之日起 30 天，到期后自动恢复为普通用户' : '👑 自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）' }}</div>
+            <div class="quota-tip" style="color: #e6a23c;">{{ form.role === 'trial' ? 'VIP 试用自保存之日起 30 天，到期后自动恢复为普通用户' : '自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）' }}</div>
             <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期：{{ form.vipUntilText }}</div>
           </div>
         </el-form-item>
@@ -323,7 +323,7 @@
     <el-dialog v-model="monthlyStatsDialogVisible" width="800px" class="dialog-fancy">
       <template #header>
         <div class="dialog-header-fancy">
-          <span class="dhf-icon" style="background:#e6f1fb;">📊</span>
+          <span class="dhf-icon" style="background:#e6f1fb;color:#0d579c;"><AppIcon><DataAnalysis /></AppIcon></span>
           <div>
             <div class="dhf-title">月度使用统计</div>
             <div class="dhf-sub">用户月度 token 与配额使用</div>
@@ -478,7 +478,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, RefreshRight } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
 import OrgBindingPanel from '@/components/org/OrgBindingPanel.vue'
@@ -542,8 +543,8 @@ const previewDeltaText = computed(() => {
 const previewHint = computed(() => {
   const d = previewDelta.value
   if (d > 0) return `本次新增 ${d} 次，剩余同步 +${d}`
-  if (d < 0) return `⚠ 输入值小于当前累计值，保存后剩余将减少 ${Math.abs(d)} 次`
-  return '⚠ 输入值等于当前累计值，保存后剩余不变；若刚采购了新配额，请填「原值 + 本次采购量」'
+  if (d < 0) return `输入值小于当前累计值，保存后剩余将减少 ${Math.abs(d)} 次`
+  return '输入值等于当前累计值，保存后剩余不变；若刚采购了新配额，请填「原值 + 本次采购量」'
 })
 
 // v1.13.133：新建用户弹窗的密码显隐开关状态（替代 EP 的 show-password，详见 main.scss .pwd-toggle）

@@ -1,7 +1,7 @@
 <template>
   <div v-if="visible" class="smartsteps-panel" :style="panelStyle" ref="panelRef">
     <div class="panel-header" style="cursor: grab;" @mousedown="startDrag">
-      <span class="panel-title">📊 联通人口数据</span>
+      <span class="panel-title"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>联通人口数据</span>
       <button class="close-btn" @click="close">×</button>
     </div>
     
@@ -11,10 +11,10 @@
         <div class="step-title">① 选择分析区域</div>
         <div class="step-hint">点击地图选择位置作为圆心</div>
         <div class="center-info" v-if="circleCenter">
-          <span>📍 圆心: {{ circleCenter.lat.toFixed(6) }}, {{ circleCenter.lng.toFixed(6) }}</span>
+          <span><AppIcon class="icon-text"><Location /></AppIcon>圆心: {{ circleCenter.lat.toFixed(6) }}, {{ circleCenter.lng.toFixed(6) }}</span>
         </div>
         <el-button type="primary" @click="startSelectLocation" :loading="isSelecting">
-          {{ isSelecting ? '选择中...' : '📍 选择位置' }}
+          <AppIcon v-if="!isSelecting" class="icon-text"><Location /></AppIcon>{{ isSelecting ? '选择中...' : '选择位置' }}
         </el-button>
       </div>
 
@@ -113,11 +113,11 @@
           @click="confirmPurchase"
           :disabled="!canPurchase || isLoading"
         >
-          {{ isLoading ? '🔄 处理中...' : '💳 购买' }}
+          <AppIcon v-if="!isLoading" class="icon-text"><CreditCard /></AppIcon>{{ isLoading ? '处理中...' : '购买' }}
         </el-button>
         <!-- 禁用原因提示 -->
         <div class="purchase-hint" v-if="!canPurchase && !isLoading">
-          <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">⚠️ 配额不足，请联系管理员分配配额</span>
+          <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">配额不足，请联系管理员分配配额</span>
           <span v-else-if="!circleCenter">请先选择位置</span>
           <span v-else-if="!hasRadius">请设置至少一个半径</span>
           <span v-else>请选择数据年月</span>
@@ -127,7 +127,7 @@
       <!-- 结果展示 -->
       <div v-if="queryResult" class="result-section">
         <div class="result-header">
-          <span class="result-title">📊 查询结果</span>
+          <span class="result-title"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>查询结果</span>
           <button class="clear-result" @click="queryResult = null">清除</button>
         </div>
         <div class="result-data" v-html="sanitizeHtml(formatResultData(queryResult.data))"></div>
@@ -163,6 +163,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { DataAnalysis, Location, CreditCard } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'

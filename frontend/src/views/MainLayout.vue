@@ -155,7 +155,10 @@
     </el-dialog>
 
     <!-- 导出报表对话框 -->
-    <el-dialog v-model="exportDialogVisible" title="📊 导出报表" width="900px" :close-on-click-modal="false">
+    <el-dialog v-model="exportDialogVisible" width="900px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><Document /></AppIcon>导出报表</span>
+      </template>
       <div class="export-dialog-tips" style="margin-bottom:10px;font-size:12px;color:#909399;">
         勾选要导出的购买记录（可多选），然后选择导出格式
       </div>
@@ -233,8 +236,8 @@
       </div>
       <template #footer>
         <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="success" :loading="exportLoading" @click="doExport('excel')">📊 导出Excel</el-button>
-        <el-button type="danger" :loading="exportLoading" @click="doExport('pdf')">📄 导出PDF</el-button>
+        <el-button type="success" :loading="exportLoading" @click="doExport('excel')"><AppIcon class="icon-text"><Document /></AppIcon>导出Excel</el-button>
+        <el-button type="danger" :loading="exportLoading" @click="doExport('pdf')"><AppIcon class="icon-text"><DocumentCopy /></AppIcon>导出PDF</el-button>
         <el-button type="primary" :loading="exportLoading" @click="doExport('both')">导出Excel+PDF</el-button>
       </template>
     </el-dialog>
@@ -245,7 +248,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
@@ -575,9 +579,13 @@ const doExport = async (type) => {
     }
     
     .logo-text {
+      /* h1 自带 margin，会把 30px 的 logo 挤偏 —— 置 0 后由 flex 居中接管 */
+      margin: 0;
       font-size: 14px;
-      font-weight: 600;
-      color: #333;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: .2px;
+      color: #1f2d3d;
       white-space: nowrap;
     }
   }

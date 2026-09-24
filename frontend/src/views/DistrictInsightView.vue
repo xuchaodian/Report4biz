@@ -3,7 +3,7 @@
     <!-- 页头 -->
     <div class="dv-header">
       <div>
-        <h2 style="margin:0;font-size:18px;">🏙️ {{ $t('nav.districtInsight') }}</h2>
+        <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><OfficeBuilding /></AppIcon>{{ $t('nav.districtInsight') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
           综合评分 = 人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（数据基准 2022-04）
         </p>
@@ -11,7 +11,7 @@
       <div class="dv-header-right">
         <el-tag type="warning" effect="light" size="small">数据时间 2022-04</el-tag>
         <el-button size="small" :disabled="compareList.length < 2" style="margin-left:10px;" @click="openCompare">
-          📊 商圈对比{{ compareList.length > 0 ? ` (${compareList.length})` : '' }}
+          <AppIcon class="icon-text"><DataAnalysis /></AppIcon>商圈对比{{ compareList.length > 0 ? ` (${compareList.length})` : '' }}
         </el-button>
       </div>
     </div>
@@ -62,7 +62,7 @@
           <div class="dv-detail-head">
             <b>{{ selectedDistrict.name }}</b>
             <el-tag size="small" :type="scoreTagType(selectedDistrict.score)" effect="dark">{{ selectedDistrict.score }} 分</el-tag>
-            <el-button text size="small" style="margin-left:auto;" @click="selectedDistrict = null">✕</el-button>
+            <el-button text size="small" style="margin-left:auto;" @click="selectedDistrict = null" title="关闭"><AppIcon label="关闭"><Close /></AppIcon></el-button>
           </div>
           <div class="dv-detail-info">
             <span>{{ selectedDistrict.province }} · {{ selectedDistrict.city }} · {{ selectedDistrict.district || '-' }}</span>
@@ -100,7 +100,10 @@
     </div>
 
     <!-- 对比弹窗 -->
-    <el-dialog v-model="compareVisible" title="📊 商圈对比" width="860px" :close-on-click-modal="false">
+    <el-dialog v-model="compareVisible" width="860px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><DataAnalysis /></AppIcon>商圈对比</span>
+      </template>
       <el-table :data="compareList" size="small" border stripe>
         <el-table-column prop="name" label="商圈" width="130" fixed />
         <el-table-column label="综合评分" width="90" align="center">
@@ -153,7 +156,8 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, OfficeBuilding, DataAnalysis, Close } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const mapRef = ref(null)
 let map = null

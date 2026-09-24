@@ -19,7 +19,7 @@
     <!-- 已购报表按钮 -->
     <div v-if="storePurchases.length > 0" class="history-section">
       <el-button type="warning" size="small" @click="showHistoryDialog">
-        📋 已购报表 ({{ storePurchases.length }})
+        <AppIcon class="icon-text"><Tickets /></AppIcon>已购报表 ({{ storePurchases.length }})
       </el-button>
     </div>
     <div v-else class="history-section">
@@ -108,10 +108,10 @@
         <span>{{ storeInfo?.name || '' }} - 查询结果</span>
         <span style="float:right;margin-right:28px;">
           <el-button type="success" size="small" :loading="exportingExcel" :disabled="!queryPurchaseId" @click="handleExportExcelResult" style="margin-right:8px;">
-            📊 导出Excel
+            <AppIcon class="icon-text"><Document /></AppIcon>导出Excel
           </el-button>
           <el-button type="danger" size="small" :loading="exportingPdf" :disabled="!queryPurchaseId" @click="handleExportPDFResult">
-            📄 PDF报表
+            <AppIcon class="icon-text"><DocumentCopy /></AppIcon>PDF报表
           </el-button>
         </span>
       </template>
@@ -213,13 +213,13 @@
   >
     <template #header>
       <div class="dialog-header-flex">
-        <span>📊 查询结果详情 - {{ currentDetail?.store_name || storeInfo?.name || '' }}</span>
+        <span><AppIcon class="icon-text"><DataAnalysis /></AppIcon>查询结果详情 - {{ currentDetail?.store_name || storeInfo?.name || '' }}</span>
         <div class="dialog-header-actions">
           <el-button type="success" size="small" class="btn-ai-advice" :loading="aiAdviceLoading" @click="handleAiAdvice">
-            {{ isVipUser ? '🤖 AI 选址建议' : '🔒 AI 选址建议（VIP）' }}
+            <AppIcon class="icon-text"><Cpu v-if="isVipUser" /><Lock v-else /></AppIcon>{{ isVipUser ? 'AI 选址建议' : 'AI 选址建议（VIP）' }}
           </el-button>
           <el-button type="primary" size="small" class="btn-insight" @click="handleDataInsight">
-            {{ insightLoading ? '分析中...' : (insights.length > 0 ? '🔄 重新分析' : '📋 数据洞察') }}
+            <AppIcon v-if="!insightLoading" class="icon-text"><Refresh v-if="insights.length > 0" /><Tickets v-else /></AppIcon>{{ insightLoading ? '分析中...' : (insights.length > 0 ? '重新分析' : '数据洞察') }}
           </el-button>
         </div>
       </div>
@@ -242,7 +242,7 @@
       </div>
       <!-- AI 选址建议 -->
       <div v-if="aiAdvice" class="ai-advice-section">
-        <h4>🤖 AI 选址建议</h4>
+        <h4><AppIcon class="icon-text"><Cpu /></AppIcon>AI 选址建议</h4>
         <div class="ai-advice-meta" v-if="aiAdviceBrand">
           <el-tag size="small" type="success">{{ aiAdviceBrand }}</el-tag>
           <el-tag v-if="aiAdviceCategory" size="small" type="warning">{{ aiAdviceCategory }}</el-tag>
@@ -251,14 +251,14 @@
       </div>
       <!-- 数据洞察 -->
       <div v-if="insights.length > 0" class="insight-section">
-        <h4>📋 数据洞察</h4>
+        <h4><AppIcon class="icon-text"><DataAnalysis /></AppIcon>数据洞察</h4>
         <div v-for="(item, idx) in insights" :key="idx" :class="['insight-item', 'insight-' + item.type]">
           <span class="insight-icon">{{ item.type === 'positive' ? '✅' : item.type === 'warning' ? '⚠️' : '💡' }}</span>
           <span class="insight-text">{{ item.text }}</span>
         </div>
       </div>
       <div class="detail-result" v-if="resultData">
-        <h4>📊 人口概览</h4>
+        <h4><AppIcon class="icon-text"><DataAnalysis /></AppIcon>人口概览</h4>
         <div class="result-grid" v-html="sanitizeHtml(formatResultData(resultData))"></div>
       </div>
       <div v-else class="no-result">
@@ -272,7 +272,8 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, Tickets, Document, DocumentCopy, Cpu, Lock, Refresh, DataAnalysis } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
@@ -513,7 +514,7 @@ const handleAiAdvice = async () => {
   // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
   const isVip = userStore.user?.role === 'vip' || userStore.user?.role === 'admin'
   if (!isVip) {
-    ElMessage.warning('🤖 AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
+    ElMessage.warning('AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
     return
   }
   if (!resultData.value) {

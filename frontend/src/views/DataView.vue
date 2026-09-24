@@ -43,7 +43,7 @@
           <el-icon><DataAnalysis /></el-icon>批量购买({{ selectedRows.length }})
         </el-button>
         <el-button type="success" plain @click="selectedRows.length > 0 ? openSaleDialog(selectedRows) : openSaleDialogForAll()" title="有勾选时录入勾选门店，否则录入当前筛选结果">
-          <el-icon><Money /></el-icon>📊 销售录入{{ selectedRows.length > 0 ? '(' + selectedRows.length + ')' : '' }}
+          <AppIcon class="icon-text"><DataAnalysis /></AppIcon>销售录入{{ selectedRows.length > 0 ? '(' + selectedRows.length + ')' : '' }}
         </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
@@ -659,7 +659,10 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" title="📊 门店年度销售录入" width="1000px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" width="1000px" :close-on-click-modal="false">
+      <template #header>
+        <span class="dlg-title"><AppIcon><EditPen /></AppIcon>门店年度销售录入</span>
+      </template>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
@@ -668,8 +671,8 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-        <el-button size="small" @click="downloadSaleTemplate">📥 下载模板</el-button>
-        <el-button size="small" type="primary" plain :loading="saleImporting" @click="saleFileInput?.click()">📤 上传 Excel</el-button>
+        <el-button size="small" @click="downloadSaleTemplate"><AppIcon class="icon-text"><Download /></AppIcon>下载模板</el-button>
+        <el-button size="small" type="primary" plain :loading="saleImporting" @click="saleFileInput?.click()"><AppIcon class="icon-text"><Upload /></AppIcon>上传 Excel</el-button>
         <input ref="saleFileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleSaleImport" />
         <span style="font-size:12px;color:#909399;">按「门店编号」匹配（编号优先，名称兜底）</span>
       </div>
@@ -721,7 +724,8 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import Papa from 'papaparse'
 import { escapeHtml } from '@/utils/escapeHtml'

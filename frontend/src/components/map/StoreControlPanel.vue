@@ -111,7 +111,7 @@ const userStore = useUserStore()
 const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
 const handleStoreCirclesClick = () => {
   if (!isVipUser.value) {
-    ElMessage.warning('🔒 网点优化为 VIP 用户专属功能，请联系管理员开通 VIP')
+    ElMessage.warning('网点优化为 VIP 用户专属功能，请联系管理员开通 VIP')
     return
   }
   emit('toggle-store-circles')

@@ -12,11 +12,11 @@
           <span class="score-label">总分</span>
         </div>
         <div class="score-info">
-          <div class="info-item"><span class="info-label">📊 联通精算人口</span></div>
+          <div class="info-item"><span class="info-label"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>联通精算人口</span></div>
         </div>
       </div>
 
-      <el-divider content-position="left">🏙 商圈特征（系统自动）</el-divider>
+      <el-divider content-position="left"><AppIcon class="icon-text"><OfficeBuilding /></AppIcon>商圈特征（系统自动）</el-divider>
       <div class="score-items">
         <div v-for="item in tradeAreaItems" :key="item.id" class="score-row auto">
           <div class="row-header">
@@ -30,7 +30,7 @@
         </div>
       </div>
 
-      <el-divider content-position="left">📍 立地特征（手动填写）</el-divider>
+      <el-divider content-position="left"><AppIcon class="icon-text"><Location /></AppIcon>立地特征（手动填写）</el-divider>
       <div class="score-items">
         <div v-for="item in siteItems" :key="item.id" class="score-row manual">
           <div class="row-header">
@@ -67,6 +67,8 @@
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
+import { DataAnalysis, OfficeBuilding, Location } from '@element-plus/icons-vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({})
 
