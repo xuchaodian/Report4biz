@@ -130,8 +130,8 @@ a { text-decoration: none; color: inherit; }
 .dashboard-screenshot {
   display: block;
   width: 100%;
-  height: 340px;
-  object-fit: cover;
+  height: auto;
+  object-fit: contain;
   object-position: center top;
 }
 .hero-visual { position: relative; }
@@ -166,8 +166,8 @@ a { text-decoration: none; color: inherit; }
 .float-card .fc-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 .float-card b { font-size: 13px; display: block; }
 .float-card span { color: var(--text-3); }
-.fc-1 { top: 40px; left: -24px; animation: float 4s ease-in-out infinite; }
-.fc-2 { bottom: 96px; right: -20px; animation: float 4s ease-in-out 1.5s infinite; }
+.fc-1 { top: -18px; left: -24px; animation: float 4s ease-in-out infinite; }
+.fc-2 { bottom: -18px; right: -20px; animation: float 4s ease-in-out 1.5s infinite; }
 @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
 
 /* ============ 通用 section ============ */
@@ -183,6 +183,39 @@ a { text-decoration: none; color: inherit; }
 .section-head p { font-size: 15px; color: var(--text-2); line-height: 1.8; }
 .section-head .sub-en { font-size: 12px; color: var(--text-3); letter-spacing: 2px; margin-bottom: 8px; text-transform: uppercase; }
 
+/* ============ 真实产品界面 ============ */
+.ui-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.ui-card {
+  background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  box-shadow: var(--shadow); transition: box-shadow .3s, transform .3s;
+  display: flex; flex-direction: column;
+}
+.ui-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
+.ui-shot {
+  display: block; width: 100%; height: 190px;
+  object-fit: cover; object-position: center top;
+  border-bottom: 1px solid var(--line); background: var(--bg-soft);
+}
+.ui-body { padding: 18px 20px 22px; flex: 1; }
+.ui-body h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.ui-body p { font-size: 13px; color: var(--text-2); line-height: 1.75; }
+.ui-tag {
+  display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  color: var(--primary); background: var(--primary-light);
+  padding: 3px 10px; border-radius: 999px; margin-bottom: 10px;
+}
+
+/* ============ 社会证明 ============ */
+.proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 900px; margin: 0 auto; }
+.proof-item {
+  text-align: center; padding: 36px 20px 32px; background: #fff;
+  border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+}
+.proof-num { font-size: 48px; font-weight: 800; color: var(--primary); line-height: 1; letter-spacing: -1.5px; }
+.proof-num span { font-size: 26px; font-weight: 700; margin-left: 1px; }
+.proof-label { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 12px; }
+.proof-desc { font-size: 12.5px; color: var(--text-3); margin-top: 6px; line-height: 1.6; }
+
 /* ============ 主视觉轮播 ============ */
 .banner-slider {
   position: relative; overflow: hidden; border-radius: 16px;
@@ -196,13 +229,21 @@ a { text-decoration: none; color: inherit; }
 }
 .banner-slide {
   width: 33.3333%; flex-shrink: 0; position: relative;
-  height: 240px; overflow: hidden; cursor: pointer;
+  height: 340px; overflow: hidden; cursor: pointer;
+  background: #0a1628;
 }
 .banner-slide svg { width: 100%; height: 100%; display: block; }
+.banner-img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; }
 .banner-text {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   padding: 40px 48px; z-index: 2;
   display: flex; flex-direction: column; justify-content: center;
+  background: linear-gradient(90deg,
+    rgba(7,22,48,0.95) 0%,
+    rgba(7,22,48,0.90) 30%,
+    rgba(7,22,48,0.62) 50%,
+    rgba(7,22,48,0.10) 72%,
+    rgba(7,22,48,0) 88%);
 }
 .banner-text .bt-tag {
   display: inline-flex; align-self: flex-start;
@@ -242,9 +283,17 @@ a { text-decoration: none; color: inherit; }
 }
 .banner-dots button.active { background: #fff; width: 26px; border-radius: 6px; }
 @media (max-width: 600px) {
-  .banner-slide { height: 190px; }
-  .banner-text { padding: 24px 24px; }
-  .banner-text h3 { font-size: 20px; }
+  .banner-slide { height: 250px; }
+  .banner-text {
+    padding: 22px 22px;
+    justify-content: flex-end;
+    background: linear-gradient(180deg,
+      rgba(7,22,48,0.28) 0%,
+      rgba(7,22,48,0.82) 52%,
+      rgba(7,22,48,0.96) 100%);
+  }
+  .banner-text h3 { font-size: 19px; }
+  .banner-text p { font-size: 12.5px; line-height: 1.6; }
   .banner-arrow { display: none; }
 }
 
@@ -406,6 +455,15 @@ a { text-decoration: none; color: inherit; }
 
 /* ============ 响应式 ============ */
 @media (max-width: 960px) {
+  .ui-grid { grid-template-columns: 1fr 1fr; }
+  .proof-grid { grid-template-columns: 1fr; max-width: 460px; }
+}
+@media (max-width: 640px) {
+  .ui-grid { grid-template-columns: 1fr; }
+  .ui-shot { height: 200px; }
+  .proof-num { font-size: 40px; }
+}
+@media (max-width: 960px) {
   .nav {
     display: none; position: absolute; top: 64px; left: 0; right: 0;
     flex-direction: column; align-items: stretch; gap: 0;
@@ -506,104 +564,34 @@ a { text-decoration: none; color: inherit; }
 
         <!-- Slide 1: 商圈人口分析 -->
         <div class="banner-slide">
-          <svg viewBox="0 0 1100 240" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#0b4fd0"/><stop offset="60%" stop-color="#1e6fff"/><stop offset="100%" stop-color="#3f8dff"/>
-              </linearGradient>
-            </defs>
-            <rect width="1100" height="240" fill="url(#bg1)"/>
-            <circle cx="920" cy="60" r="130" fill="rgba(255,255,255,0.05)"/>
-            <circle cx="1050" cy="180" r="90" fill="rgba(255,255,255,0.04)"/>
-            <g stroke="rgba(255,255,255,0.18)" stroke-width="1.5" fill="none">
-              <circle cx="850" cy="120" r="55" stroke-dasharray="6 5"/>
-              <circle cx="850" cy="120" r="36" stroke-dasharray="6 5"/>
-              <circle cx="850" cy="120" r="18"/>
-            </g>
-            <g fill="#fff">
-              <circle cx="850" cy="120" r="7"/>
-              <circle cx="800" cy="88" r="5" opacity="0.85"/>
-              <circle cx="905" cy="95" r="4.5" opacity="0.8"/>
-              <circle cx="890" cy="150" r="5" opacity="0.85"/>
-              <circle cx="795" cy="140" r="4" opacity="0.7"/>
-            </g>
-            <g font-family="Arial, sans-serif" font-weight="bold">
-              <text x="872" y="112" font-size="11" fill="#fff">12.6万</text>
-              <text x="872" y="128" font-size="10" fill="rgba(255,255,255,0.7)" font-weight="normal">商圈人口</text>
-            </g>
-            <rect x="1015" y="196" width="70" height="26" rx="13" fill="rgba(255,255,255,0.15)"/>
-            <text x="1050" y="214" font-size="12" fill="#fff" text-anchor="middle">网格人口</text>
-          </svg>
+          <img class="banner-img" src="assets/screen-district.jpg" alt="商圈洞察：商圈边界与人口评分">
           <div class="banner-text">
             <span class="bt-tag">商圈人口分析</span>
             <h3>圈定商圈，看懂人口</h3>
             <p>半径圈选 + 网格统计，常住人口、居住与工作人群分布一目了然，配套统计面板一键汇总。</p>
-            <span class="bt-cta">了解平台能力 →</span>
+            <a class="bt-cta" href="#ability">了解平台能力 →</a>
           </div>
         </div>
 
         <!-- Slide 2: 竞品追踪 -->
         <div class="banner-slide">
-          <svg viewBox="0 0 1100 240" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#0a7d52"/><stop offset="55%" stop-color="#0fa968"/><stop offset="100%" stop-color="#2fc98a"/>
-              </linearGradient>
-            </defs>
-            <rect width="1100" height="240" fill="url(#bg2)"/>
-            <circle cx="100" cy="40" r="120" fill="rgba(255,255,255,0.05)"/>
-            <circle cx="60" cy="200" r="80" fill="rgba(255,255,255,0.04)"/>
-            <g fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2">
-              <path d="M760,190 C800,150 830,140 870,120 C900,105 930,100 980,80"/>
-              <path d="M760,190 C800,180 850,160 900,150 C940,142 960,130 990,110"/>
-            </g>
-            <circle cx="760" cy="190" r="9" fill="#fff" stroke="#0a7d52" stroke-width="3"/>
-            <circle cx="870" cy="120" r="8" fill="#ffd166" stroke="#0a7d52" stroke-width="3"/>
-            <circle cx="990" cy="110" r="8" fill="#ffd166" stroke="#0a7d52" stroke-width="3"/>
-            <g font-family="Arial" fill="rgba(255,255,255,0.75)" font-size="11">
-              <text x="795" y="140">我的门店</text>
-              <text x="882" y="104">竞品 A</text>
-              <text x="1000" y="96">竞品 B</text>
-            </g>
-            <rect x="150" y="196" width="96" height="26" rx="13" fill="rgba(255,255,255,0.15)"/>
-            <text x="198" y="214" font-size="12" fill="#fff" text-anchor="middle">竞争追踪</text>
-          </svg>
+          <img class="banner-img" src="assets/screen-competitor.jpg" alt="竞品门店管理：品牌、价格与星级">
           <div class="banner-text">
             <span class="bt-tag">门店竞争分析</span>
             <h3>追踪竞品，洞察格局</h3>
             <p>门店重合度、竞争数量、竞争追踪三种模式，透视门店与竞品的空间关系，评估市场饱和度。</p>
-            <span class="bt-cta">查看竞争分析 →</span>
+            <a class="bt-cta" href="#ability">查看竞争分析 →</a>
           </div>
         </div>
 
         <!-- Slide 3: AI 助手 -->
         <div class="banner-slide">
-          <svg viewBox="0 0 1100 240" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#5b3fd4"/><stop offset="55%" stop-color="#7c5cf0"/><stop offset="100%" stop-color="#9d7dff"/>
-              </linearGradient>
-            </defs>
-            <rect width="1100" height="240" fill="url(#bg3)"/>
-            <circle cx="950" cy="30" r="110" fill="rgba(255,255,255,0.05)"/>
-            <circle cx="1020" cy="200" r="70" fill="rgba(255,255,255,0.04)"/>
-            <!-- 对话气泡 -->
-            <g>
-              <rect x="760" y="70" width="270" height="44" rx="12" fill="rgba(255,255,255,0.16)"/>
-              <text x="780" y="97" font-size="14" fill="#fff">帮我分析上海静安寺 2km 内竞品</text>
-              <rect x="800" y="128" width="230" height="44" rx="12" fill="#fff"/>
-              <text x="820" y="156" font-size="13" fill="#5b3fd4" font-weight="bold">3km 内发现 6 家竞品门店</text>
-            </g>
-            <circle cx="738" cy="92" r="18" fill="rgba(255,255,255,0.25)"/>
-            <text x="738" y="98" font-size="16" fill="#fff" text-anchor="middle">🤖</text>
-            <rect x="120" y="196" width="120" height="26" rx="13" fill="rgba(255,255,255,0.15)"/>
-            <text x="180" y="214" font-size="12" fill="#fff" text-anchor="middle">自然语言查询</text>
-          </svg>
+          <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地分析：高潜力区域筛选">
           <div class="banner-text">
-            <span class="bt-tag">AI 智能助手</span>
-            <h3>一句话，完成分析</h3>
-            <p>内置 AI 助手，自然语言即可驱动地图操作、POI 搜索、商圈分析、统计查询，无需记忆复杂操作。</p>
-            <span class="bt-cta">体验 AI 助手 →</span>
+            <span class="bt-tag">开店余地评估</span>
+            <h3>筛出高潜力的开店区域</h3>
+            <p>设定城市、半径、门店数与竞品品牌条件，一键在地图上圈出符合条件的高潜力网格。</p>
+            <a class="bt-cta" href="#ability">查看平台能力 →</a>
           </div>
         </div>
 
@@ -744,6 +732,73 @@ a { text-decoration: none; color: inherit; }
         <h3>周边竞争强度增强</h3>
         <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，一眼看清圈内竞品格局与最密集方向，辅助网点布局判断。</p>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 真实产品界面 ============ -->
+<section class="section" id="screens">
+  <div class="container">
+    <div class="section-head">
+      <div class="sub-en">Real interface</div>
+      <div class="section-tag">真实界面</div>
+      <h2>不是示意图，是产品本身</h2>
+      <p>以下截图为线上生产环境的真实界面，未做任何美化或数据改写。</p>
+    </div>
+    <div class="ui-grid">
+      <div class="ui-card">
+        <img class="ui-shot" src="assets/screen-dashboard.jpg" alt="数据大屏驾驶舱" loading="lazy">
+        <div class="ui-body">
+          <span class="ui-tag">数据大屏</span>
+          <h3>门店与竞品全国分布驾驶舱</h3>
+          <p>省级 / 城市级聚合、类型与品牌多色区分、KPI 实时统计，全屏投屏即可用于汇报与客户演示。</p>
+        </div>
+      </div>
+      <div class="ui-card">
+        <img class="ui-shot" src="assets/screen-forecast.jpg" alt="销售预测" loading="lazy">
+        <div class="ui-body">
+          <span class="ui-tag">销售预测</span>
+          <h3>候选门店年销售额预测</h3>
+          <p>基于已开业门店真实销售建模，输出年销售额预测、置信区间与特征相似样本门店对照。</p>
+        </div>
+      </div>
+      <div class="ui-card">
+        <img class="ui-shot" src="assets/screen-ai.jpg" alt="AI 智能助手" loading="lazy">
+        <div class="ui-body">
+          <span class="ui-tag">AI 智能助手</span>
+          <h3>一句话驱动地图与分析</h3>
+          <p>自然语言即可完成门店筛选、POI 搜索、商圈分析与统计查询，无需记忆复杂操作。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 社会证明 ============ -->
+<section class="section section-soft" id="trust">
+  <div class="container">
+    <div class="section-head">
+      <div class="sub-en">Track record</div>
+      <div class="section-tag">行业积累</div>
+      <h2>15 年位置数据积累</h2>
+      <p>从数据采集、清洗到商业分析，长期服务于连锁品牌与商业地产的选址决策。</p>
+    </div>
+    <div class="proof-grid">
+      <div class="proof-item">
+        <div class="proof-num">300<span>+</span></div>
+        <div class="proof-label">覆盖城市</div>
+        <div class="proof-desc">全国主要城市商圈与人口数据</div>
+      </div>
+      <div class="proof-item">
+        <div class="proof-num">500<span>+</span></div>
+        <div class="proof-label">服务客户</div>
+        <div class="proof-desc">连锁餐饮、零售与商业地产品牌</div>
+      </div>
+      <div class="proof-item">
+        <div class="proof-num">15<span>+</span></div>
+        <div class="proof-label">年行业深耕</div>
+        <div class="proof-desc">位置大数据与商圈研究经验</div>
       </div>
     </div>
   </div>
