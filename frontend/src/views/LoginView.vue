@@ -180,10 +180,15 @@ const handleLogin = async () => {
   a {
     color: #409eff;
     font-size: 13px;
-    text-decoration: none;
+    /* v1.13.173（WCAG 1.4.1 不能仅靠颜色区分）：原静置态 text-decoration:none，
+       与周围内容仅靠颜色区分 ⇒ 改为常显 1px 下划线 + 3px 偏移；悬停加粗到 2px 作反馈。
+       与 AuthCard.vue 页脚链接同规格（.auth-card__footer :deep(a)）。 */
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 
     &:hover {
-      text-decoration: underline;
+      text-decoration-thickness: 2px;
     }
   }
 }

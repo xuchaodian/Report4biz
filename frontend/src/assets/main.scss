@@ -378,6 +378,7 @@ body {
    ⚠️ 必须显式 type="button" —— 认证页表单是 <form @submit>，默认 type 会误提交。
    ⚠️ 样式写在全局而非各页 scoped：8 个密码框跨 6 个组件，避免重复定义。 */
 .pwd-toggle {
+  position: relative;   /* ::after 热区外扩的定位锚点（见下方规则） */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -392,6 +393,19 @@ body {
   pointer-events: auto;
   transition: color var(--el-transition-duration);
 }
+
+/* v1.13.173（WCAG 2.5.8 目标尺寸）：图标实占仅 14×14，低于 24×24 最小点击区。
+   用透明伪元素向外扩 7px ⇒ 实际热区 28×28，**完全不影响输入框排版**
+   （对比：直接给 min-width/min-height:28px 会把可输入区挤窄约 14px）。
+   ⚠️ 依赖 .el-input__wrapper 无 overflow:hidden —— 已实测确认（其规则仅 padding/box-shadow/
+   display，无裁剪）；若将来 EP 给 wrapper 加裁剪，外扩部分会失效，热区退回 14×14。
+   ⚠️ 左扩 7px 会盖住输入区边缘约 1px（按钮自带 margin-left:6px 已留出间隙），可接受。 */
+.pwd-toggle::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+
 .pwd-toggle:hover {
   color: var(--el-input-clear-hover-color, var(--el-text-color-regular));
 }
@@ -410,6 +424,24 @@ body {
    与 .pwd-toggle 同理：跨组件的同一视觉约定写在全局，避免再次分叉。
    背景层组件见 components/AuthBackground.vue，卡片见 components/AuthCard.vue。 */
 .auth-container {
+  /* ===== v1.13.173：认证页局部配色修正（只修可访问性，不动品牌主色） =====
+     覆写 EP 变量，**作用域仅限本容器**（认证页四页共用），不外溢到站内其它页面；
+     也刻意不动 --el-color-primary（那是全站品牌色，改动属「品牌色迁移」级别的大工程）。
+     ① placeholder：#a8abb2 对白底 2.30:1 → #6b7280 = 4.83:1（WCAG 1.4.3 文本对比度）
+        —— .el-input__inner::placeholder 取 var(--el-input-placeholder-color,
+           var(--el-text-color-placeholder))，而 --el-input-placeholder-color 在 .el-input 上
+           就声明为 var(--el-text-color-placeholder)，故在此覆写源头变量即可生效。
+     ② 输入框描边：#dcdfe6 对白底 1.33:1 → #8a8f98 = 3.25:1（WCAG 1.4.11 非文本对比度 ≥3:1）
+        —— .el-input__wrapper 的 box-shadow 取 var(--el-input-border-color, var(--el-border-color))。
+        ⚠️ 阈值临界值约 #949494(3.03:1)，此处留余量取 #8a8f98。
+     副作用评估：本容器内的 EP 组件只有 el-form / el-form-item / el-input / el-button(主色) /
+     el-dropdown；前三者受益，主按钮背景与描边同色不受影响，el-dropdown 菜单 teleport 到 body
+     本就不继承；ElMessage 亦挂 body（失败提示不涉及这两个色值）⇒ 影响可控。
+     顺带收益：输入框前置图标（--el-input-icon-color 回退到 placeholder 色）与 .pwd-toggle
+     图标色在认证页内一并加深，不再是近乎不可见的 #a8abb2。 */
+  --el-text-color-placeholder: #6b7280;
+  --el-border-color: #8a8f98;
+
   position: relative;
   width: 100%;
   height: 100%;

@@ -202,7 +202,9 @@ const goForgot = () => router.push('/forgot-password')
 
 .reset-tip {
   text-align: center;
-  color: #999;
+  /* v1.13.173：与 AuthCard 副标题/页脚同批修正 —— #999 对白底 2.85:1 → #6b7280 = 4.83:1。
+     本处虽未被外部审计报告覆盖，但与 P3 同色同字号同用途，不一起改会在四页内留下不一致。 */
+  color: #6b7280;
   font-size: 14px;
   padding: 16px 0;
 }
