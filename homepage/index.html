@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>选址赢家Online - WebGIS 商业智能分析平台</title>
+<meta name="description" content="选址赢家Online 是基于位置大数据的 WebGIS 商业智能分析平台：商圈人口分析、门店竞争洞察、开店余地评估、数据大屏驾驶舱与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变为「看数据」。">
+<link rel="canonical" href="https://mka-online.cn/home/">
+<link rel="icon" type="image/png" href="/favicon.png" sizes="190x176" />
+<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="选址赢家Online">
+<meta property="og:title" content="选址赢家Online - WebGIS 商业智能分析平台">
+<meta property="og:description" content="商圈人口分析 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
+<meta property="og:url" content="https://mka-online.cn/home/">
+<meta property="og:image" content="https://mka-online.cn/home/dashboard_screenshot.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="选址赢家Online - WebGIS 商业智能分析平台">
+<meta name="twitter:description" content="商圈人口分析 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
+<meta name="twitter:image" content="https://mka-online.cn/home/dashboard_screenshot.png">
 <style>
 :root {
   --primary: #1e6fff;
@@ -100,7 +114,26 @@ a { text-decoration: none; color: inherit; }
 .hero-cta { display: flex; gap: 14px; align-items: center; margin-bottom: 40px; flex-wrap: wrap; }
 .hero-note { font-size: 13px; color: var(--text-3); }
 
-/* Hero 右侧 mockup */
+/* Hero 右侧真实大屏截图 */
+.dashboard-frame {
+  position: relative;
+  background: #0a1628;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 70px rgba(30, 111, 255, 0.18);
+  overflow: hidden;
+  transition: transform 0.4s ease;
+}
+.dashboard-frame:hover {
+  transform: translateY(-4px);
+}
+.dashboard-screenshot {
+  display: block;
+  width: 100%;
+  height: 340px;
+  object-fit: cover;
+  object-position: center top;
+}
 .hero-visual { position: relative; }
 .mock {
   background: #fff; border-radius: 16px;
@@ -262,6 +295,7 @@ a { text-decoration: none; color: inherit; }
 
 /* ============ 功能 ============ */
 .func-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.func-grid-2 { grid-template-columns: repeat(2, 1fr); }
 .func-card {
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 28px 24px; transition: all .25s;
@@ -276,9 +310,11 @@ a { text-decoration: none; color: inherit; }
 .fi-green { background: #e8f7ee; }
 .fi-purple { background: #f2eaff; }
 .fi-red { background: #ffecec; }
+.fi-cyan { background: #e0f7fa; }
 .func-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
 .func-card p { font-size: 13.5px; color: var(--text-2); line-height: 1.75; }
-.func-more { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--primary); font-weight: 600; }
+.func-more { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--primary); font-weight: 600; cursor: pointer; }
+.func-more:hover { color: var(--primary-dark); text-decoration: underline; }
 .func-more::after { content: ' →'; }
 
 /* ============ 理由 ============ */
@@ -370,11 +406,19 @@ a { text-decoration: none; color: inherit; }
 
 /* ============ 响应式 ============ */
 @media (max-width: 960px) {
-  .nav { display: none; }
+  .nav {
+    display: none; position: absolute; top: 64px; left: 0; right: 0;
+    flex-direction: column; align-items: stretch; gap: 0;
+    background: #fff; border-bottom: 1px solid var(--line);
+    box-shadow: 0 14px 28px rgba(16,24,40,0.10); padding: 6px 0;
+  }
+  .nav.open { display: flex; }
+  .nav a { padding: 13px 24px; font-size: 15px; color: var(--text); }
+  .nav a:hover { background: var(--primary-light); color: var(--primary); }
   .menu-toggle { display: block; }
   .hero-grid { grid-template-columns: 1fr; gap: 40px; }
   .hero h1 { font-size: 34px; }
-  .cap-grid, .func-grid, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
+  .cap-grid, .func-grid, .func-grid-2, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
   .news-row { grid-template-columns: 1fr; }
   .flow { grid-template-columns: repeat(2, 1fr); gap: 32px; }
   .flow::before { display: none; }
@@ -384,7 +428,7 @@ a { text-decoration: none; color: inherit; }
   .fc-2 { right: -6px; }
 }
 @media (max-width: 600px) {
-  .cap-grid, .func-grid, .reason-grid, .scene-grid { grid-template-columns: 1fr; }
+  .cap-grid, .func-grid, .func-grid-2, .reason-grid, .scene-grid { grid-template-columns: 1fr; }
   .footer-grid { grid-template-columns: 1fr; }
   .mock-stats { grid-template-columns: repeat(2, 1fr); }
   .hero { padding-top: 48px; }
@@ -408,7 +452,6 @@ a { text-decoration: none; color: inherit; }
     </div>
     <nav class="nav">
       <a href="#ability">平台能力</a>
-      <a href="#function">主要功能</a>
       <a href="#reason">选择理由</a>
       <a href="#scene">应用场景</a>
       <a href="#flow">使用流程</a>
@@ -429,69 +472,19 @@ a { text-decoration: none; color: inherit; }
       <div class="hero-kicker">基于位置大数据的商业智能分析平台</div>
       <h1>让每一次选址决策，<br>都有<span class="grad">数据支撑</span></h1>
       <p class="hero-desc">
-        选址赢家Online 将商圈人口分布、门店管理、竞品追踪与地图可视化融为一体。
-        在浏览器中即可圈定商圈、透视人口画像、分析竞争格局，让开店决策从「凭经验」走向「看数据」。
+        选址赢家Online 将商圈人口分布、门店管理、竞品追踪、地图可视化与数据大屏融为一体。
+        在浏览器中即可圈定商圈、透视人口画像、分析竞争格局，一键投屏数据驾驶舱，让开店决策从「凭经验」走向「看数据」。
       </p>
       <div class="hero-cta">
         <a href="https://mka-online.cn/register" class="btn btn-primary btn-lg">注册</a>
         <a href="#ability" class="btn btn-outline btn-lg">查看平台能力</a>
       </div>
-      <div class="hero-note">✓ 无需安装 · 浏览器即用　✓ 门店/竞品数据一站式管理　✓ AI 智能分析助手</div>
+      <div class="hero-note">✓ 无需安装 · 浏览器即用　✓ 门店/竞品数据一站式管理　✓ AI 智能分析助手　✓ 数据大屏一键投屏</div>
     </div>
 
     <div class="hero-visual">
-      <div class="mock">
-        <div class="mock-bar">
-          <span class="mock-dot" style="background:#ff5f57"></span>
-          <span class="mock-dot" style="background:#febc2e"></span>
-          <span class="mock-dot" style="background:#28c840"></span>
-          <span class="mock-url">app.mka-online.com · 商圈人口分析</span>
-        </div>
-        <div class="mock-body">
-          <div class="mock-map">
-            <svg viewBox="0 0 560 320" xmlns="http://www.w3.org/2000/svg">
-              <!-- 地图底图 -->
-              <rect width="560" height="320" fill="#e8f1fc"/>
-              <path d="M0,120 C80,90 150,140 230,110 S390,60 470,100 S560,80 560,80 L560,0 L0,0 Z" fill="#d3e4f7"/>
-              <path d="M0,200 C90,180 170,230 260,200 S420,170 560,210 L560,320 L0,320 Z" fill="#d3e4f7" opacity="0.7"/>
-              <path d="M0,150 C100,160 200,120 300,150 S450,180 560,140" stroke="#b9d0ea" stroke-width="2" fill="none"/>
-              <path d="M180,0 C190,80 170,160 200,240 S230,300 210,320" stroke="#b9d0ea" stroke-width="2" fill="none"/>
-              <path d="M380,0 C370,100 400,180 380,320" stroke="#b9d0ea" stroke-width="1.5" fill="none"/>
-              <!-- 网格分析圆 -->
-              <circle cx="300" cy="150" r="70" fill="rgba(30,111,255,0.10)" stroke="#1e6fff" stroke-width="2" stroke-dasharray="6 4"/>
-              <circle cx="300" cy="150" r="45" fill="rgba(30,111,255,0.16)" stroke="#1e6fff" stroke-width="1.5"/>
-              <circle cx="300" cy="150" r="22" fill="rgba(30,111,255,0.28)" stroke="#1e6fff" stroke-width="1"/>
-              <!-- 人口密度网格点 -->
-              <g fill="#1e6fff">
-                <circle cx="270" cy="120" r="4" opacity="0.5"/><circle cx="330" cy="130" r="5" opacity="0.7"/>
-                <circle cx="310" cy="170" r="4" opacity="0.5"/><circle cx="255" cy="160" r="3.5" opacity="0.4"/>
-                <circle cx="345" cy="155" r="4.5" opacity="0.6"/><circle cx="285" cy="185" r="3" opacity="0.35"/>
-                <circle cx="320" cy="110" r="3.5" opacity="0.45"/><circle cx="350" cy="180" r="3" opacity="0.4"/>
-                <circle cx="260" cy="135" r="3" opacity="0.4"/><circle cx="295" cy="100" r="3.5" opacity="0.4"/>
-              </g>
-              <!-- 门店标记 -->
-              <g>
-                <circle cx="300" cy="150" r="10" fill="#1e6fff" stroke="#fff" stroke-width="3"/>
-                <circle cx="232" cy="118" r="8" fill="#ff8a00" stroke="#fff" stroke-width="3"/>
-                <circle cx="392" cy="172" r="8" fill="#ff8a00" stroke="#fff" stroke-width="3"/>
-                <circle cx="268" cy="212" r="7" fill="#ff8a00" stroke="#fff" stroke-width="2.5"/>
-                <circle cx="360" cy="96" r="7" fill="#ff8a00" stroke="#fff" stroke-width="2.5"/>
-              </g>
-              <!-- 图例 -->
-              <g transform="translate(420, 250)">
-                <rect width="130" height="60" rx="8" fill="#fff" stroke="#e6eaf2"/>
-                <circle cx="18" cy="18" r="6" fill="#1e6fff"/><text x="32" y="22" font-size="11" fill="#5a6472">我的门店</text>
-                <circle cx="18" cy="42" r="6" fill="#ff8a00"/><text x="32" y="46" font-size="11" fill="#5a6472">竞品门店</text>
-              </g>
-            </svg>
-          </div>
-          <div class="mock-stats">
-            <div class="mock-stat"><div class="n">12.6万</div><div class="l">3km 商圈人口</div></div>
-            <div class="mock-stat"><div class="n">4.8万</div><div class="l">常住人口</div></div>
-            <div class="mock-stat"><div class="n">326</div><div class="l">竞争门店</div></div>
-            <div class="mock-stat"><div class="n">87</div><div class="l">商圈评分</div></div>
-          </div>
-        </div>
+      <div class="dashboard-frame">
+        <img class="dashboard-screenshot" src="dashboard_screenshot.png" alt="选址赢家 Online 数据大屏" />
       </div>
       <div class="float-card fc-1">
         <div class="fc-icon" style="background:var(--primary-light)">🏪</div>
@@ -673,6 +666,40 @@ a { text-decoration: none; color: inherit; }
 })()
 </script>
 
+<!-- ============ 移动端导航菜单 ============ -->
+<script>
+(function () {
+  var toggle = document.querySelector('.menu-toggle')
+  var nav = document.querySelector('.nav')
+  if (!toggle || !nav) return
+  toggle.setAttribute('type', 'button')
+  toggle.setAttribute('aria-label', '展开导航菜单')
+  toggle.setAttribute('aria-expanded', 'false')
+  function close() {
+    nav.classList.remove('open')
+    toggle.setAttribute('aria-expanded', 'false')
+    toggle.setAttribute('aria-label', '展开导航菜单')
+    toggle.textContent = '☰'
+  }
+  toggle.addEventListener('click', function (e) {
+    e.stopPropagation()
+    var open = nav.classList.toggle('open')
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+    toggle.setAttribute('aria-label', open ? '收起导航菜单' : '展开导航菜单')
+    toggle.textContent = open ? '✕' : '☰'
+  })
+  nav.addEventListener('click', function (e) {
+    if (e.target && e.target.tagName === 'A') close()
+  })
+  document.addEventListener('click', function (e) {
+    if (!nav.contains(e.target) && !toggle.contains(e.target)) close()
+  })
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 960) close()
+  })
+})()
+</script>
+
 <!-- ============ 资讯 ============ -->
 <section class="section" style="padding:56px 0;">
   <div class="container">
@@ -742,55 +769,61 @@ a { text-decoration: none; color: inherit; }
         <p>查询结果一键导出 Excel / PDF 报表，包含地图截图与人口明细，输出即交付，汇报直接可用。</p>
         <div class="cap-tags"><span>Excel 导出</span><span>PDF 报表</span><span>地图截图</span></div>
       </div>
+      <div class="cap-card">
+        <div class="cap-no">07</div>
+        <h3>数据大屏驾驶舱</h3>
+        <p>深色科技风全屏数据驾驶舱：门店与竞品全国分布、省级/城市级聚合、类型与品牌多色区分、KPI 实时统计，客户演示与投屏汇报利器。</p>
+        <div class="cap-tags"><span>全屏大屏</span><span>省级/城市聚合</span><span>多色区分</span><span>实时刷新</span></div>
+      </div>
+      <div class="cap-card">
+        <div class="cap-no">08</div>
+        <h3>销售预测引擎</h3>
+        <p>录入已开业门店真实销售，候选门店年销售额智能预测：L1 类比 → L2 回归 → L3 机器学习三级引擎随样本自动升级，置信区间、特征归因与周边门店影响模拟辅助决策。</p>
+        <div class="cap-tags"><span>三级引擎</span><span>21 维特征</span><span>参照店圈定</span></div>
+      </div>
+      <div class="cap-card">
+        <div class="cap-no">09</div>
+        <h3>AI 选址建议</h3>
+        <p>查询结果一键生成品牌专属选址建议：自动识别品牌与业态（30+ 品牌映射），结合联通人口大数据与周边竞争，输出选址结论、客群匹配度、风险提示与运营建议。</p>
+        <div class="cap-tags"><span>30+ 品牌映射</span><span>客群匹配</span><span>风险提示</span></div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- ============ 主要功能 ============ -->
-<section class="section" id="function">
+<!-- ============ 最新功能 ============ -->
+<section class="section section-soft" id="latest">
   <div class="container">
     <div class="section-head">
-      <div class="sub-en">Features</div>
-      <div class="section-tag">主要功能</div>
-      <h2>从数据管理到分析决策，一站完成</h2>
-      <p>门店、竞品、品牌、购物中心多维数据统一管理，地图联动展示，分析随心所欲。</p>
+      <div class="sub-en">What's new</div>
+      <div class="section-tag">最新功能</div>
+      <h2>近期上新，让选址更聪明</h2>
+      <p>销售预测、AI 选址建议、商圈洞察增强、竞争雷达下钻，持续迭代中。</p>
     </div>
-    <div class="func-grid">
+    <div class="func-grid func-grid-2">
       <div class="func-card">
-        <div class="func-icon fi-blue">🗺️</div>
-        <h3>地图可视化</h3>
-        <p>高德/腾讯/影像多图层切换，门店、竞品、商圈图层自由叠加，聚合显示、视野裁剪，万级数据流畅渲染。</p>
-        <span class="func-more">了解详情</span>
+        <div class="func-icon fi-orange">🔮</div>
+        <h3>销售预测（AI 智能引擎）</h3>
+        <p>录入已开业门店真实销售，候选门店年销售额一键预测：L1 类比 → L2 回归 → L3 机器学习三级引擎随样本自动升级；面积、外卖占比、商圈画像、半径人口、竞争点位、联通画像 21 维特征建模，置信区间、特征归因与周边门店影响模拟，参照店圈定支持人工精调类比基准。</p>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </div>
       <div class="func-card">
-        <div class="func-icon fi-orange">🏪</div>
-        <h3>门店数据管理</h3>
-        <p>我的门店支持单个添加、CSV 批量导入，品牌/城市/区县/状态多维筛选，与地图实时联动定位。</p>
-        <span class="func-more">了解详情</span>
+        <div class="func-icon fi-green">🤖</div>
+        <h3>AI 选址建议</h3>
+        <p>查询结果一键生成品牌专属选址建议：自动识别门店品牌与业态（食其家→日式牛肉盖饭快餐等 30+ 品牌映射），结合联通智慧足迹人口大数据，由 AI 输出选址结论、客群匹配度、风险提示与运营建议。</p>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </div>
       <div class="func-card">
-        <div class="func-icon fi-green">📈</div>
-        <h3>竞品门店管理</h3>
-        <p>竞品品牌门店批量导入（单次上限 1 万条），品牌图标自定义，拖拽修正坐标，竞争分析一键发起。</p>
-        <span class="func-more">了解详情</span>
+        <div class="func-icon fi-cyan">🏙️</div>
+        <h3>商圈洞察增强</h3>
+        <p>商圈详情卡新增「商圈内购物中心」：数量、星级、地址一目了然，点击即可在地图上精准定位（红色图钉），快速判断商圈商业成熟度与招商参考。</p>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </div>
       <div class="func-card">
-        <div class="func-icon fi-purple">🧭</div>
-        <h3>门店商圈分析</h3>
-        <p>门店重合度（4 档阈值）、门店竞争数（品牌多选）、竞争追踪（指定品牌圆心）三种模式深度分析商圈。</p>
-        <span class="func-more">了解详情</span>
-      </div>
-      <div class="func-card">
-        <div class="func-icon fi-blue">🤖</div>
-        <h3>AI 助手</h3>
-        <p>「帮我查一下上海静安寺 2km 内的竞品分布」——自然语言驱动地图操作与数据查询，让分析更轻松。</p>
-        <span class="func-more">了解详情</span>
-      </div>
-      <div class="func-card">
-        <div class="func-icon fi-red">📊</div>
-        <h3>统计分析报表</h3>
-        <p>Shapefile 统计边界上传，城市分级查看检索；人口查询结果按模板输出专业 Excel / PDF 报表。</p>
-        <span class="func-more">了解详情</span>
+        <div class="func-icon fi-purple">📡</div>
+        <h3>周边竞争强度增强</h3>
+        <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，一眼看清圈内竞品格局与最密集方向，辅助网点布局判断。</p>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </div>
     </div>
   </div>
@@ -806,7 +839,7 @@ a { text-decoration: none; color: inherit; }
       </div>
       <div class="cta-actions">
         <a href="https://mka-online.cn/register" class="btn btn-white btn-lg">注册</a>
-        <a href="#" class="btn btn-lg" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);">联系我们</a>
+        <a href="https://youshi-tech.com/data.html" target="_blank" rel="noopener" class="btn btn-lg" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);">获取报价</a>
       </div>
     </div>
   </div>
@@ -962,28 +995,27 @@ a { text-decoration: none; color: inherit; }
       <div class="footer-col">
         <h4>平台</h4>
         <a href="#ability">平台能力</a>
-        <a href="#function">主要功能</a>
         <a href="#reason">选择理由</a>
         <a href="#scene">应用场景</a>
+        <a href="#flow">使用流程</a>
       </div>
       <div class="footer-col">
         <h4>支持</h4>
-        <a href="#flow">使用流程</a>
         <a href="#faq">常见问题</a>
-        <a href="#">使用手册</a>
-        <a href="#">新功能公告</a>
+        <a href="#latest">新功能公告</a>
+        <a href="mailto:jyo@youshi-tech.com">反馈建议</a>
       </div>
       <div class="footer-col">
         <h4>联系我们</h4>
-        <a href="#">商务合作</a>
-        <a href="#">反馈建议</a>
-        <a href="#">帮助中心</a>
-        <a href="#">更新日志</a>
+        <a href="mailto:jyo@youshi-tech.com">jyo@youshi-tech.com</a>
+        <a href="tel:13817791741">138 1779 1741</a>
+        <a href="https://youshi-tech.com/data.html" target="_blank" rel="noopener">商务合作 · 获取报价</a>
+        <a href="https://youshi-tech.com/" target="_blank" rel="noopener">上海优事商务咨询有限公司</a>
       </div>
     </div>
     <div class="footer-bottom">
       <span>© 2026 MKA Online · 选址赢家Online 位置智能分析平台</span>
-      <span>当前版本 v1.7.5-dev</span>
+      <span>上海优事商务咨询有限公司 技术支持</span>
     </div>
   </div>
 </footer>
