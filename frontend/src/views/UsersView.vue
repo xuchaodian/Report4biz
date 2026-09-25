@@ -14,7 +14,7 @@
               <span class="label">累计总配额</span>
             </el-tooltip>
             <span class="value">{{ quotaInfo.initialQuota }}</span>
-            <el-button type="primary" link size="small" @click="showQuotaDialog">
+            <el-button type="primary" link size="small" @click="showQuotaDialog" title="编辑累计总配额" aria-label="编辑累计总配额">
               <el-icon><Edit /></el-icon>
             </el-button>
             <el-tooltip content="查看历次向联通采购的明细" placement="top">
@@ -83,7 +83,8 @@
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="username" label="用户名" min-width="120">
           <template #default="{ row }">
-            <span v-if="row.role === 'vip'">👑 </span>{{ row.username }}
+            <!-- 👑 纯装饰：「角色」列已有 el-tag「VIP用户」表达同一语义 ⇒ 读屏忽略，避免念两遍 -->
+            <span v-if="row.role === 'vip'" aria-hidden="true">👑 </span>{{ row.username }}
           </template>
         </el-table-column>
         <el-table-column prop="email" label="邮箱" min-width="180" />
@@ -146,16 +147,19 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">
+            <!-- v1.13.177 A 档：操作列三个图标按钮此前零可访问名 -->
+            <el-button type="primary" link @click="handleEdit(row)" title="编辑" aria-label="编辑该用户">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button type="warning" link @click="handleResetPassword(row)">
+            <el-button type="warning" link @click="handleResetPassword(row)" title="重置密码" aria-label="重置该用户密码">
               <el-icon><RefreshRight /></el-icon>
             </el-button>
             <el-button
               type="danger"
               link
               :disabled="row.id === currentUserId"
+              title="删除"
+              aria-label="删除该用户"
               @click="handleDelete(row)"
             >
               <el-icon><Delete /></el-icon>

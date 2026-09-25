@@ -350,7 +350,7 @@
         }"
       >
         <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争门店追踪图例' : storeCircleMode === 'opportunity' ? '机会区分析图例' : '竞争关系图例' }}</span>
-        <el-button link size="small" @click="onStoreCircleLegendClose">
+        <el-button link size="small" @click="onStoreCircleLegendClose" title="关闭图例" aria-label="关闭图例">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -446,7 +446,7 @@
           <el-icon><Search /></el-icon>
           定位门店
         </span>
-        <el-button link @click="storeSearchVisible = false">
+        <el-button link @click="storeSearchVisible = false" title="关闭" aria-label="关闭定位门店面板">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -567,7 +567,7 @@
           <el-icon><Flag /></el-icon>
           查询行政界
         </span>
-        <el-button link @click="districtVisible = false">
+        <el-button link @click="districtVisible = false" title="关闭" aria-label="关闭查询行政界面板">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -629,7 +629,7 @@
           <el-icon><Shop /></el-icon>
           按商圈查询
         </span>
-        <el-button link @click="commerceVisible = false">
+        <el-button link @click="commerceVisible = false" title="关闭" aria-label="关闭按商圈查询面板">
           <el-icon><Close /></el-icon>
         </el-button>
       </div>
@@ -3122,7 +3122,7 @@ function addStorePopupHistoryCheck(marker, storeName) {
         if (titleEl && !titleEl.querySelector('.star-icon')) {
           // v1.13.105 S-H3d：不用 innerHTML 重拼（会把既有 h4 文本再次当 HTML 解析 → 门店名等用户可控文本可注入脚本）；
           // insertAdjacentHTML 仅解析新增片段（我们控制的静态 span），既有文本保持文本节点。
-          titleEl.insertAdjacentHTML('afterbegin', '<span class="star-icon" title="该门店有购买记录">⭐</span> ')
+          titleEl.insertAdjacentHTML('afterbegin', '<span class="star-icon" role="img" aria-label="该门店有购买记录" title="该门店有购买记录">⭐</span> ')
         }
       }
     } catch (e) {
@@ -6139,7 +6139,7 @@ const finishMeasure = () => {
         className: '',
         html: `<div style="display:flex;align-items:center;gap:6px;background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">
           总计: ${formatDistance(totalDist)}
-          <span onclick="window.clearMeasureResult()" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
+          <span onclick="window.clearMeasureResult()" aria-hidden="true" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
         </div>`,
         iconSize: null,
         // 总计标签显示在终点右上方，避免与终点右下角的"段距离/累计"节点标签重叠

@@ -9,7 +9,7 @@
     <div class="store-info" v-if="storeInfo">
       <div class="store-name-row">
         <span class="store-name">{{ storeInfo.name }}</span>
-        <span v-if="storePurchases.length > 0" class="has-history" title="该门店有购买记录">⭐</span>
+        <span v-if="storePurchases.length > 0" class="has-history" role="img" aria-label="该门店有购买记录" title="该门店有购买记录">⭐</span>
       </div>
       <div class="store-position">
         位置: {{ storeInfo.latitude.toFixed(6) }}, {{ storeInfo.longitude.toFixed(6) }}

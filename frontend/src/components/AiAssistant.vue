@@ -40,7 +40,7 @@
             :title="`本机操作指引已接住 ${faqHitCount} 次提问（未消耗 AI 额度、未调用豆包）`"
           >指引 ×{{ faqHitCount }}</span>
         </div>
-        <el-button type="info" link size="small" @click="clearMessages">
+        <el-button type="info" link size="small" @click="clearMessages" title="清空对话" aria-label="清空对话记录">
           <el-icon><Delete /></el-icon>
         </el-button>
       </div>
@@ -129,6 +129,8 @@
               type="primary"
               link
               :disabled="!inputText.trim() || loading"
+              title="发送"
+              aria-label="发送消息"
               @click="handleSend"
             >
               <el-icon><Position /></el-icon>

@@ -102,7 +102,10 @@
     </div>
 
     <!-- 数据表格 -->
-    <div class="data-table">
+    <!-- v1.13.177 A 档（外部审计复核）：给表格所在区域定名，读屏可跳转到「我的门店数据表」。
+         ⛔ 不要写 <caption> —— el-table 的默认插槽内容会被 EP 渲染进
+            <div class="hidden-columns">（display:none），并不在 <table> 元素内 ⇒ caption 完全无效 -->
+    <div class="data-table" role="region" :aria-label="`我的门店数据表，共 ${filteredMarkers.length} 条`">
       <el-table
         ref="tableRef"
         :data="paginatedMarkers"
@@ -113,6 +116,10 @@
         style="width: 100%"
         @selection-change="handleSelectionChange"
       >
+        <!-- ⛔ 不要给 selection 列补 label —— EP 对 type="selection" 走 cellForced.selection.renderHeader，
+             完全不读 column.label；表头渲染的是全选 checkbox，且它自带 aria-label
+             （EP i18n key el.table.selectAllLabel ⇒ 中文 locale 下为「选择所有行」）。
+             补 label 既不显示也不生效。 -->
         <el-table-column type="selection" width="45" reserve-selection :selectable="(row) => !isLocked(row)" />
         <el-table-column prop="store_code" label="编号" width="90" />
         <el-table-column prop="brand" label="品牌" width="100" />
@@ -171,19 +178,23 @@
         </el-table-column>
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button type="success" link @click="openSaleDialog([row])" title="录月度销售">
+            <!-- v1.13.177 A 档：操作列此前只有图标、无可访问名。
+                 title 保留作鼠标悬浮提示，aria-label 定可访问名（二者并存，改动面最小）。
+                 锁定行不整名替换（否则「编辑/删除」的功能语义消失）⇒ 用「编辑门店（已锁定）」 -->
+            <el-button type="success" link @click="openSaleDialog([row])" title="录月度销售" aria-label="录入月度销售">
               <el-icon><Money /></el-icon>
             </el-button>
-            <el-button type="primary" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '编辑'" @click="handleEdit(row)">
+            <el-button type="primary" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '编辑'" :aria-label="isLocked(row) ? '编辑门店（已锁定）' : '编辑门店'" @click="handleEdit(row)">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button type="success" link @click="handleLocate(row)">
+            <el-button type="success" link @click="handleLocate(row)" title="在地图中定位" aria-label="在地图中定位该门店">
               <el-icon><Location /></el-icon>
             </el-button>
-            <el-button type="warning" link @click="handleViewPurchase(row)">
-              📋
+            <!-- 📋 → Document 图标（174 emoji 清扫的存量遗漏；emoji 是按钮唯一内容时读屏只念「剪贴板」） -->
+            <el-button type="warning" link @click="handleViewPurchase(row)" title="查看购买记录" aria-label="查看购买记录">
+              <el-icon><Document /></el-icon>
             </el-button>
-            <el-button type="danger" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '删除'" @click="handleDelete(row)">
+            <el-button type="danger" link :disabled="isLocked(row)" :title="isLocked(row) ? LOCK_TIP : '删除'" :aria-label="isLocked(row) ? '删除门店（已锁定）' : '删除门店'" @click="handleDelete(row)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </template>
@@ -724,7 +735,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen, Document } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import Papa from 'papaparse'

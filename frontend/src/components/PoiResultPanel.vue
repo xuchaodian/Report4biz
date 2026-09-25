@@ -3,7 +3,7 @@
     <div class="panel-header" @mousedown.prevent="startDrag">
       <span class="title">POI搜索结果</span>
       <span class="count">{{ pois.length }} 个</span>
-      <el-button link @click="close">
+      <el-button link @click="close" title="关闭" aria-label="关闭 POI 搜索结果面板">
         <el-icon><Close /></el-icon>
       </el-button>
     </div>

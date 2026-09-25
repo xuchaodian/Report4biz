@@ -540,14 +540,17 @@
           <div v-if="storeScoreVisible && storeScoreItems.length > 0" class="score-section">
             <h4 style="margin:0 0 10px;font-size:14px;color:#333;"><AppIcon class="icon-text"><StarFilled /></AppIcon>商圈评分</h4>
             <div v-if="storeScoreInsufficient" class="score-insufficient">
-              <span>⚠️</span>
+              <!-- ⚠️ 纯装饰：紧随其后的文字已表达同一信息 ⇒ 读屏忽略 -->
+              <span aria-hidden="true">⚠️</span>
               <span>评分用数据不足（所在城市、不同位置、相同半径的订单少于 10 次），评分结果仅供参考</span>
             </div>
             <div class="score-grid">
               <div v-for="(item, idx) in storeScoreItems" :key="idx" class="score-card">
                 <div class="score-label">{{ item.label }}</div>
-                <div class="score-stars">
-                  <span v-for="n in 5" :key="n" class="star" :class="{ 'star-on': n <= item.stars, 'star-off': n > item.stars }">★</span>
+                <!-- v1.13.177 A 档：容器定名，内部 ★ 全部忽略
+                     —— 否则 5 个 ★ 会被读屏逐个念成「五角星」 -->
+                <div class="score-stars" role="img" :aria-label="`${item.label}：${item.stars} / 5 星`">
+                  <span v-for="n in 5" :key="n" class="star" aria-hidden="true" :class="{ 'star-on': n <= item.stars, 'star-off': n > item.stars }">★</span>
                 </div>
                 <div class="score-value">{{ item.value }}</div>
               </div>

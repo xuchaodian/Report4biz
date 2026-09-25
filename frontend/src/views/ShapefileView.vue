@@ -35,12 +35,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -49,7 +49,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -63,12 +63,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -77,7 +77,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -91,12 +91,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -105,7 +105,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -149,12 +149,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -163,7 +163,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -177,12 +177,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -191,7 +191,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -205,12 +205,12 @@
                   <template #default="{ row }">
                     <div v-if="renamingId === row.id" class="rename-inline">
                       <el-input ref="renameInputRef" v-model="renameValue" size="small" style="width: 100%" @keyup.enter="confirmRename(row)" @keyup.esc="cancelRename" />
-                      <el-button type="primary" size="small" link @click="confirmRename(row)"><el-icon><Check /></el-icon></el-button>
-                      <el-button type="info" size="small" link @click="cancelRename"><el-icon><Close /></el-icon></el-button>
+                      <el-button type="primary" size="small" link @click="confirmRename(row)" title="确认重命名" aria-label="确认重命名"><el-icon><Check /></el-icon></el-button>
+                      <el-button type="info" size="small" link @click="cancelRename" title="取消重命名" aria-label="取消重命名"><el-icon><Close /></el-icon></el-button>
                     </div>
                     <div v-else class="filename-cell" @dblclick="startRename(row)">
                       <span class="filename-text">{{ row.name }}</span>
-                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)"><el-icon><EditPen /></el-icon></el-button>
+                      <el-button type="primary" size="small" link class="rename-btn" @click="startRename(row)" title="重命名文件" aria-label="重命名文件"><el-icon><EditPen /></el-icon></el-button>
                     </div>
                   </template>
                 </el-table-column>
@@ -219,7 +219,7 @@
                 <el-table-column label="操作" width="180" align="center">
                   <template #default="{ row }">
                     <el-button type="primary" size="small" @click="openQueryDialog(row)"><el-icon><Search /></el-icon>检索</el-button>
-                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)"><el-icon><Delete /></el-icon></el-button>
+                    <el-button v-if="row.user_id == userStore.user?.id" type="danger" size="small" @click="handleDelete(row)" title="删除文件" aria-label="删除该图层文件"><el-icon><Delete /></el-icon></el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -322,7 +322,7 @@
                 <el-option label="!=" value="!=" />
               </el-select>
               <el-input-number v-model="condition.value" placeholder="数值" :precision="0" :controls="false" style="width: 140px" />
-              <el-button type="danger" size="small" @click="removeCondition(index)">
+              <el-button type="danger" size="small" @click="removeCondition(index)" title="删除该条件" aria-label="删除该筛选条件">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </div>

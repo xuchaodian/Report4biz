@@ -68,7 +68,8 @@
     </div>
 
     <!-- 数据表格 -->
-    <div class="data-table">
+    <!-- v1.13.177 A 档：区域定名（⛔ 不用 caption，见 DataView 同名注释） -->
+    <div class="data-table" role="region" aria-label="竞品门店数据表">
       <el-table
         ref="tableRef"
         :data="paginatedCompetitors"
@@ -124,21 +125,22 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
+            <!-- v1.13.177 A 档：锁定行不整名替换，用「（已锁定）」保留功能语义 -->
             <el-tooltip :disabled="!isLocked(row)" :content="LOCK_TIP" placement="top">
               <span>
-                <el-button type="primary" link :disabled="isLocked(row)" @click="handleEdit(row)">
+                <el-button type="primary" link :disabled="isLocked(row)" :aria-label="isLocked(row) ? '编辑竞品门店（已锁定）' : '编辑竞品门店'" @click="handleEdit(row)">
                   <el-icon><Edit /></el-icon>
                 </el-button>
               </span>
             </el-tooltip>
             <el-tooltip :disabled="!isLocked(row)" :content="LOCK_TIP" placement="top">
               <span>
-                <el-button type="danger" link :disabled="isLocked(row)" @click="handleDelete(row)">
+                <el-button type="danger" link :disabled="isLocked(row)" :aria-label="isLocked(row) ? '删除竞品门店（已锁定）' : '删除竞品门店'" @click="handleDelete(row)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </span>
             </el-tooltip>
-            <el-button type="success" link @click="handleLocate(row)">
+            <el-button type="success" link @click="handleLocate(row)" title="在地图中定位" aria-label="在地图中定位该门店">
               <el-icon><Location /></el-icon>
             </el-button>
           </template>

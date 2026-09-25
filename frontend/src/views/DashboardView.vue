@@ -76,7 +76,10 @@
           <!-- 图层开关（右上角） -->
           <div class="ds-layer-switch">
             <div class="ds-layer-level">{{ aggLevel === 'province' ? $t('dashboard.mapAggProvince') : $t('dashboard.mapAggCity') }}</div>
-            <div class="ds-layer-group">
+            <!-- L14（v1.13.177 B 档）：分组定名。此前 .ds-layer-group 是裸 <div>，
+                 读屏只会连报 3~4 个开关，无法知道哪几个属于「我的门店」、哪几个属于「竞品」。
+                 role="group" 是纯语义加法，不改任何布局/视觉 -->
+            <div class="ds-layer-group" role="group" :aria-label="$t('dashboard.kpiMyStores')">
               <div class="ds-layer-group-head">
                 <!-- L12（v1.13.175 A 档）：外层用 <label> 才能给 el-switch
                      提供隐式可访问名称（原 <span> ⇒ 读屏只报「开关」，不知是开哪一层）。
@@ -95,7 +98,7 @@
                 </label>
               </div>
             </div>
-            <div class="ds-layer-group">
+            <div class="ds-layer-group" role="group" :aria-label="$t('dashboard.kpiCompetitors')">
               <div class="ds-layer-group-head">
                 <!-- L12（v1.13.175 A 档）：同上，与子项既有写法保持一致 -->
                 <label class="ds-layer-item">

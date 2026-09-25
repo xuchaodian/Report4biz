@@ -60,7 +60,8 @@
       </el-button>
     </div>
 
-    <div class="data-table">
+    <!-- v1.13.177 A 档：区域定名（⛔ 不用 caption，见 DataView 同名注释） -->
+    <div class="data-table" role="region" aria-label="品牌门店数据表">
       <el-table
         ref="tableRef"
         :data="tableData"
@@ -85,15 +86,16 @@
         <el-table-column prop="description" label="备注" min-width="120" show-overflow-tooltip />
         <el-table-column label="操作" :width="userStore.isAdmin ? 120 : 60" fixed="right">
           <template #default="{ row }">
+            <!-- v1.13.177 A 档：此前 3 个按钮零可访问名（无文字、无 title、图标亦无名称） -->
             <template v-if="userStore.isAdmin">
-              <el-button type="primary" link @click="handleEdit(row)">
+              <el-button type="primary" link @click="handleEdit(row)" title="编辑" aria-label="编辑品牌门店">
                 <el-icon><Edit /></el-icon>
               </el-button>
-              <el-button type="danger" link @click="handleDelete(row)">
+              <el-button type="danger" link @click="handleDelete(row)" title="删除" aria-label="删除品牌门店">
                 <el-icon><Delete /></el-icon>
               </el-button>
             </template>
-            <el-button type="success" link @click="handleLocate(row)">
+            <el-button type="success" link @click="handleLocate(row)" title="在地图中定位" aria-label="在地图中定位该门店">
               <el-icon><Location /></el-icon>
             </el-button>
           </template>
