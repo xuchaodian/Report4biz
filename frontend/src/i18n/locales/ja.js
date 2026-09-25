@@ -128,7 +128,7 @@ export default {
     kpiClosed: '閉店店舗',
     kpiClosedRate: '閉店率',
     healthTitle: '店舗ヘルス',
-    compareTitle: '前月比（先月 vs 先々月）',
+    compareTitle: '新規店舗の前月比（先月 vs 先々月）',
     trendTitle: '直近12ヶ月の店舗データ推移',
     compareUnit: '店',
     operating: '営業中',

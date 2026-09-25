@@ -1,5 +1,10 @@
 <template>
   <div class="main-layout">
+    <!-- L9（v1.13.175 A 档）跳到主内容：键盘/读屏用户按 Tab 的首个焦点即命中，
+         一跳跳过顶栏全部导航直达 <main id="main-content">。
+         ⛔ 必须是最外层第一个可聚焦元素，插在 <header> 之前 -->
+    <a class="skip-link" href="#main-content">跳到主内容</a>
+
     <!-- 顶部导航栏 -->
     <header class="header">
       <div class="header-left">
@@ -8,34 +13,34 @@
       </div>
       
       <nav class="nav-menu">
-        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }" :aria-current="$route.path === '/' ? 'page' : undefined">
           <el-icon><MapLocation /></el-icon>
           <span>{{ $t('nav.map') }}</span>
         </router-link>
-        <router-link to="/data" class="nav-item" :class="{ active: $route.path === '/data' }">
+        <router-link to="/data" class="nav-item" :class="{ active: $route.path === '/data' }" :aria-current="$route.path === '/data' ? 'page' : undefined">
           <el-icon><DataAnalysis /></el-icon>
           <span>{{ $t('nav.myStores') }}</span>
         </router-link>
-        <router-link to="/competitors" class="nav-item" :class="{ active: $route.path === '/competitors' }">
+        <router-link to="/competitors" class="nav-item" :class="{ active: $route.path === '/competitors' }" :aria-current="$route.path === '/competitors' ? 'page' : undefined">
           <el-icon><DataLine /></el-icon>
           <span>{{ $t('nav.competitors') }}</span>
         </router-link>
-        <router-link v-if="userStore.isAdmin" to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }">
+        <router-link v-if="userStore.isAdmin" to="/brand-stores" class="nav-item" :class="{ active: $route.path === '/brand-stores' }" :aria-current="$route.path === '/brand-stores' ? 'page' : undefined">
           <el-icon><MapLocation /></el-icon>
           <span>{{ $t('nav.brandStores') }}</span>
         </router-link>
-        <router-link to="/shopping-centers" class="nav-item" :class="{ active: $route.path === '/shopping-centers' }">
+        <router-link to="/shopping-centers" class="nav-item" :class="{ active: $route.path === '/shopping-centers' }" :aria-current="$route.path === '/shopping-centers' ? 'page' : undefined">
           <el-icon><Shop /></el-icon>
           <span>{{ $t('nav.shoppingCenters') }}</span>
         </router-link>
-        <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }">
+        <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }" :aria-current="$route.path === '/shapefiles' ? 'page' : undefined">
           <el-icon><Document /></el-icon>
           <span>{{ $t('nav.statistics') }}</span>
         </router-link>
         <!-- trigger=click（非默认 hover）：触屏/共享终端上 hover 常需点两次才展开，
              与右上角个人下拉保持一致 -->
         <el-dropdown trigger="click" class="nav-item nav-dropdown" :class="{ active: $route.path.startsWith('/market-map') }">
-          <span class="nav-dropdown-trigger">
+          <span class="nav-dropdown-trigger" :aria-current="$route.path.startsWith('/market-map') ? 'page' : undefined">
             <el-icon><Compass /></el-icon>
             <span>{{ $t('nav.siteWorkbench') }}</span>
             <el-icon class="nav-dropdown-arrow"><ArrowDown /></el-icon>
@@ -54,7 +59,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }">
+        <router-link to="/dashboard" class="nav-item nav-item-right dashboard-nav" :class="{ active: $route.path === '/dashboard' }" :aria-current="$route.path === '/dashboard' ? 'page' : undefined">
           <el-icon><DataBoard /></el-icon>
           <span>{{ $t('nav.dashboard') }}</span>
         </router-link>
@@ -67,7 +72,7 @@
           <span class="user-info">
             <!-- v1.13.160：走 store 的 effectiveLogo —— 子公司账号无自有 Logo 时
                  自动显示所属集团的品牌 Logo（父级需求：子公司无需重复上传） -->
-            <el-avatar v-if="userStore.effectiveLogo" :size="32" :src="userStore.effectiveLogo" />
+            <el-avatar v-if="userStore.effectiveLogo" :size="32" :src="userStore.effectiveLogo" alt="" />
             <el-avatar v-else :size="32" :icon="UserFilled" />
             <span class="username">{{ userStore.username }}</span>
             <el-icon class="arrow"><ArrowDown /></el-icon>
@@ -121,7 +126,7 @@
     <OnboardingGuide />
 
     <!-- 主体内容区 -->
-    <main class="main-content">
+    <main id="main-content" class="main-content" tabindex="-1">
       <router-view />
     </main>
 
@@ -606,6 +611,7 @@ const doExport = async (type) => {
       font-size: 14px;
       transition: all 0.3s;
       white-space: nowrap;
+      position: relative;  /* v1.13.175：承载下方 .active::after 指示条 */
       
       &:hover {
         background: #f5f7fa;
@@ -615,6 +621,26 @@ const doExport = async (type) => {
       &.active {
         background: #ecf5ff;
         color: #409eff;
+        font-weight: 600;  /* v1.13.175（L8）：当前页除底色外再加「字重」维度 */
+      }
+
+      /* 当前页指示条（v1.13.175 · L8）：让「我在哪一页」不再只靠颜色区分。
+         ⛔ 不用 border-bottom —— 那会增加元素高度、顶掉顶栏中线对齐
+            （174 刚为 .logo-text 调过 margin:0 修过这处），改用 ::after 绝对定位。
+         ⛔ 排除 .dashboard-nav：它已有独立的深色胶囊 + 蓝色描边高亮，
+            再叠一条蓝条会显脏。
+         ⚠️ 条色用 #0d579c（项目「同色系 600 级」蓝）而非 #409eff：
+            WCAG 1.4.11 对「表示状态的图形」要求 3:1，
+            #409eff on #ecf5ff 仅 2.53:1 ❌；#0d579c on #ecf5ff = 6.67:1 ✅ */
+      &.active:not(.dashboard-nav)::after {
+        content: '';
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 4px;
+        height: 2px;
+        border-radius: 1px;
+        background: #0d579c;
       }
 
       &.nav-item-right {

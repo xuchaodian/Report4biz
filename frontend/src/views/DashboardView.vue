@@ -1,11 +1,15 @@
 <template>
-  <div class="dashboard-screen">
+  <!-- L1+L7（v1.13.175 A 档）：数据大屏是独立路由（不在 MainLayout 之下），
+       此前整页无任何地标；包 <main> 让读屏用户能定位「主内容区」 -->
+  <main class="dashboard-screen">
     <!-- 顶部标题栏 -->
     <div class="ds-header">
       <div class="ds-title-left">
         <div class="ds-logo-bar"></div>
         <h1 class="ds-title">{{ $t('dashboard.title') }}</h1>
-        <span v-if="compare" class="ds-compare-tag" :class="compare.change >= 0 ? 'up' : 'down'">
+        <!-- L6（v1.13.175 A 档）：compare.change 为 null（上上月无数据、对比基准不存在）
+             时整块隐藏 —— 铁律「缺数据恒 null，绝不填假值」 -->
+        <span v-if="compare && compare.change !== null && compare.change !== undefined" class="ds-compare-tag" :class="compare.change >= 0 ? 'up' : 'down'">
           {{ $t('dashboard.compareTitle') }}：{{ compare.change >= 0 ? '↑' : '↓' }}{{ Math.abs(compare.change) }}%
         </span>
       </div>
@@ -38,12 +42,7 @@
       <div class="ds-col ds-col-left">
         <div class="ds-panel ds-kpi-grid">
           <div v-for="k in kpiList" :key="k.label" class="ds-kpi">
-            <div class="ds-kpi-num" :style="{ color: k.color }">
-              {{ k.value }}
-              <span v-if="k.change !== undefined" class="ds-kpi-change" :class="k.change >= 0 ? 'up' : 'down'">
-                {{ k.change >= 0 ? '↑' : '↓' }}{{ Math.abs(k.change) }}%
-              </span>
-            </div>
+            <div class="ds-kpi-num" :style="{ color: k.color }">{{ k.value }}</div>
             <div class="ds-kpi-label">{{ k.label }}</div>
           </div>
         </div>
@@ -56,7 +55,15 @@
       <!-- 中列：地图 -->
       <div class="ds-col ds-col-center">
         <div class="ds-panel ds-map-panel">
-          <div id="ds-map" ref="mapRef" class="ds-map"></div>
+          <!-- L1（v1.13.175 A 档）：地图是纯展示（zoomControl/attribution 关、底图与聚合标签
+               均 interactive:false，无任何可交互标记）⇒ 给整体文本替代比暴露内部图形更有用 -->
+          <div
+            id="ds-map"
+            ref="mapRef"
+            class="ds-map"
+            role="img"
+            :aria-label="`门店与竞品分布地图：${$t('dashboard.kpiOperating')} ${data?.kpi?.markers ?? 0} 家，${$t('dashboard.kpiCompetitors')} ${data?.kpi?.competitors ?? 0} 家`"
+          ></div>
           <div class="ds-map-overlay">
             <span class="ds-map-title">{{ $t('dashboard.chartMapTitle') }}</span>
             <span class="ds-map-sub">{{ $t('dashboard.kpiOperating') }} {{ data?.kpi?.markers ?? 0 }} · {{ $t('dashboard.kpiCompetitors') }} {{ data?.kpi?.competitors ?? 0 }}</span>
@@ -66,11 +73,14 @@
             <div class="ds-layer-level">{{ aggLevel === 'province' ? $t('dashboard.mapAggProvince') : $t('dashboard.mapAggCity') }}</div>
             <div class="ds-layer-group">
               <div class="ds-layer-group-head">
-                <span class="ds-layer-item">
+                <!-- L12（v1.13.175 A 档）：外层用 <label> 才能给 el-switch
+                     提供隐式可访问名称（原 <span> ⇒ 读屏只报「开关」，不知是开哪一层）。
+                     .ds-layer-item 已显式 display:flex ⇒ 换标签视觉零变化 -->
+                <label class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#40c4ff;"></span>
                   <span>{{ $t('dashboard.kpiMyStores') }}</span>
                   <el-switch v-model="showMyLayer" size="small" @change="renderMap" />
-                </span>
+                </label>
               </div>
               <div v-if="showMyLayer" class="ds-layer-subs">
                 <label v-for="t in myTypeKeys" :key="t" class="ds-layer-item ds-layer-sub">
@@ -82,11 +92,12 @@
             </div>
             <div class="ds-layer-group">
               <div class="ds-layer-group-head">
-                <span class="ds-layer-item">
+                <!-- L12（v1.13.175 A 档）：同上，与子项既有写法保持一致 -->
+                <label class="ds-layer-item">
                   <span class="ds-layer-dot" style="background:#ff6b6b;"></span>
                   <span>{{ $t('dashboard.kpiCompetitors') }}</span>
                   <el-switch v-model="showCompLayer" size="small" @change="renderMap" />
-                </span>
+                </label>
               </div>
               <div v-if="showCompLayer" class="ds-layer-subs">
                 <label v-for="b in compBrandKeys" :key="b" class="ds-layer-item ds-layer-sub">
@@ -122,7 +133,7 @@
         <span class="ds-marquee-text">{{ marqueeText }}</span>
       </div>
     </div>
-  </div>
+  </main>
 </template>
 
 <script setup>
@@ -139,7 +150,7 @@ import { setAppLocale } from '@/i18n'
 // 本页仅用 饼图(pie) + 横向柱状(bar)，组件需 grid/tooltip/legend，渲染器 Canvas。
 import * as echarts from 'echarts/core'
 import { PieChart, BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent, LegendComponent, AriaComponent } from 'echarts/components'
 import { LabelLayout } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 
@@ -149,6 +160,7 @@ echarts.use([
   GridComponent,
   TooltipComponent,
   LegendComponent,
+  AriaComponent,   // L1（v1.13.175 A 档）：canvas 无文本替代 ⇒ 开 ECharts aria
   LabelLayout,
   CanvasRenderer
 ])
@@ -260,6 +272,8 @@ const renderCharts = () => {
     const c = echarts.init(typeChartRef.value)
     const types = data.value?.charts?.markerTypes || []
     c.setOption({
+      // L1（v1.13.175 A 档）：给 canvas 图生成 role="img" + 中文描述供读屏读取
+      aria: { enabled: true, label: { description: `门店类型分布：${types.length ? types.map(i => `${i.name} ${i.value} 家`).join('，') : '暂无数据'}` } },
       backgroundColor: 'transparent',
       tooltip: { trigger: 'item' },
       legend: { textStyle: { color: '#a8b4c8' }, bottom: 0, itemWidth: 10, itemHeight: 10 },
@@ -280,6 +294,7 @@ const renderCharts = () => {
     const c = echarts.init(cityChartRef.value)
     const cities = (data.value?.charts?.markerCityTop || []).slice().reverse()
     c.setOption({
+      aria: { enabled: true, label: { description: `门店城市 TOP10：${cities.length ? cities.map(i => `${i.name} ${i.value} 家`).join('，') : '暂无数据'}` } },
       backgroundColor: 'transparent',
       grid: { left: 10, right: 30, top: 10, bottom: 10, containLabel: true },
       tooltip: { trigger: 'axis' },
@@ -301,6 +316,7 @@ const renderCharts = () => {
     const c = echarts.init(brandChartRef.value)
     const brands = (data.value?.charts?.compBrandTop || []).slice().reverse()
     c.setOption({
+      aria: { enabled: true, label: { description: `竞品品牌 TOP10：${brands.length ? brands.map(i => `${i.name} ${i.value} 家`).join('，') : '暂无数据'}` } },
       backgroundColor: 'transparent',
       grid: { left: 10, right: 30, top: 10, bottom: 10, containLabel: true },
       tooltip: { trigger: 'axis' },
@@ -592,9 +608,6 @@ onBeforeUnmount(() => {
 }
 .ds-kpi-num { font-size: 26px; font-weight: 700; font-family: 'Courier New', monospace; }
 .ds-kpi-label { font-size: 12px; color: #8fa3c0; margin-top: 4px; }
-.ds-kpi-change { font-size: 12px; font-weight: 600; margin-left: 4px; }
-.ds-kpi-change.up { color: #2ed573; }
-.ds-kpi-change.down { color: #ff6b6b; }
 .ds-compare-tag { font-size: 11px; font-weight: 500; margin-left: 8px; padding: 1px 8px; border-radius: 10px; }
 .ds-compare-tag.up { color: #2ed573; background: rgba(46, 213, 115, 0.12); }
 .ds-compare-tag.down { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }

@@ -540,3 +540,39 @@ body {
   font-size: 16px;
   letter-spacing: 4px;
 }
+
+/* ===== 跳到主内容（skip-link · WCAG 2.4.1「绕过块」）=====
+   键盘 / 读屏用户按 Tab 的首个焦点即命中，可一跳跳过顶栏 8 个导航项直达内容区。
+   （v1.13.175 A 档：此前全站 0 处 skip-link）
+
+   ⛔ 不能用 display:none / visibility:hidden 隐藏 —— 那会让元素不可聚焦，
+      skip-link 就彻底失去意义。必须用「移出视口 + :focus 时归位」。
+   ⛔ 底色不用 var(--el-color-primary)（#409eff，白字仅 2.78:1 不达标）；
+      用 #0d579c（项目「同色系 600 级」蓝，白字 7.34:1 ✅），与 174 图标色板同源。
+   ⚠️ z-index 必须高于 .header 的 100，否则聚焦滑入时被顶栏盖住。 */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: -9999px;
+  z-index: 3000;
+  padding: 8px 16px;
+  background: #0d579c;
+  color: #ffffff;
+  font-size: 14px;
+  border-radius: 4px;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+
+  &:focus {
+    left: 8px;
+    outline: 2px solid #1f2d3d;
+    outline-offset: 2px;
+  }
+}
+
+/* <main id="main-content" tabindex="-1">：tabindex="-1" 让 skip-link 跳转后
+   焦点真正落到主内容（<main> 默认不可聚焦，浏览器只会滚动、不移动焦点）。
+   ⛔ 去掉 main 自身焦点圈 —— 它是整块内容区，描边会糊住整个页面且无意义。 */
+#main-content:focus {
+  outline: none;
+}

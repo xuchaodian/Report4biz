@@ -128,7 +128,7 @@ export default {
     kpiClosed: 'Closed',
     kpiClosedRate: 'Closure rate',
     healthTitle: 'Store Health',
-    compareTitle: 'MoM (last vs prev month)',
+    compareTitle: 'New stores MoM (last vs prev month)',
     trendTitle: '12-month store trend',
     compareUnit: '',
     operating: 'Operating',

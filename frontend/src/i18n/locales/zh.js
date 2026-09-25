@@ -128,7 +128,7 @@ export default {
     kpiClosed: '闭店门店',
     kpiClosedRate: '闭店率',
     healthTitle: '门店健康度',
-    compareTitle: '环比（上月 vs 上上月）',
+    compareTitle: '新增门店环比（上月 vs 上上月）',
     trendTitle: '近 12 个月门店数据趋势',
     compareUnit: '家',
     operating: '在营',

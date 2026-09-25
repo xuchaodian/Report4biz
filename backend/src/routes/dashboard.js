@@ -274,12 +274,18 @@ router.get('/summary', authenticate, async (req, res) => {
     `).all(userId, isAdmin, months[0])
     const trendMap = Object.fromEntries(trendRows.map(r => [r.m, r.c]))
     const storeTrend = months.map(m => ({ month: m, count: trendMap[m] || 0 }))
+    // 环比变化率。🔴 铁律「缺数据恒 null，绝不填假值」（v1.13.166 定）：
+    // newPrevMonth === 0 时对比基准不存在，环比在数学上无定义
+    // ⇒ 必须返回 null，由前端 v-if 隐藏；⛔ 不得兜底成 100 / 0 伪装成真实值
+    const compareChange = newPrevMonth > 0
+      ? Math.round((newLastMonth - newPrevMonth) / newPrevMonth * 1000) / 10
+      : null
     const compare = {
       lastMonth,
       prevMonth,
       newLastMonth,
       newPrevMonth,
-      change: newPrevMonth > 0 ? Math.round((newLastMonth - newPrevMonth) / newPrevMonth * 1000) / 10 : (newLastMonth > 0 ? 100 : 0),
+      change: compareChange,
       storeTrend
     }
 
