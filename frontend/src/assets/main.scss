@@ -572,7 +572,72 @@ body {
 
 /* <main id="main-content" tabindex="-1">：tabindex="-1" 让 skip-link 跳转后
    焦点真正落到主内容（<main> 默认不可聚焦，浏览器只会滚动、不移动焦点）。
-   ⛔ 去掉 main 自身焦点圈 —— 它是整块内容区，描边会糊住整个页面且无意义。 */
+   ⛔ 去掉 main 自身焦点圈 —— 它是整块内容区，描边会糊住整个页面且无意义。
+   ⚠️ tabindex="-1" 的元素**不可 Tab 到达**，只接受程序性 focus() ⇒ 去掉描边
+      不会影响键盘用户（他们永远 Tab 不到这里）。
+   （v1.13.176 B 档：`/dashboard` 也在用这个 id —— 见下方“主内容地标”说明） */
 #main-content:focus {
   outline: none;
+}
+
+/* ==========================================================================
+   B 档（v1.13.176）：不碰品牌主色，只把「文字压在自家浅底上」的对比度做达标
+   ========================================================================== */
+
+/* ===== el-tag 文字色加深（WCAG 1.4.3 正文 4.5:1）=====
+   EP 的 5 类标签，文字用的是**品牌原色**压在「同色 light-9 浅底」上，实测全部不达标：
+
+     success #67c23a on #f0f9eb = 2.08:1 ❌      info    #909399 on #f4f4f5 = 2.80:1 ❌
+     warning #e6a23c on #fdf6ec = 2.04:1 ❌      primary #409eff on #ecf5ff = 2.53:1 ❌
+     danger  #f56c6c on #fef0f0 = 2.61:1 ❌
+
+   这里**只改文字色**，浅底（bg-color）与描边（border-color）一字不动
+   ⇒ 视觉语言仍是 EP 默认的轻量标记，不会变成报告建议的那种「深色块」。
+   这条路本项目已有成功先例：自定义 VIP 紫标签（#7c3aed on #f3e8ff = 4.83:1 ✅）。
+
+   ⛔ 不改成「深底白字」（报告 §四② 的路线）：那会把全站 100 个标签从
+      「行内轻量状态标记」变成「重色块」，与用法冲突；且报告给的替换色
+      自身不达标（复算 3.49:1 / 3.64:1）。
+   ⛔ 不动 --el-color-success / --el-color-primary 等品牌变量：那会连带
+      按钮、进度条、表单校验、开关、分页……全站所有用到该色的组件
+      （＝本项目 C 档「主色迁移」要专门处理的问题，不在这里做）。
+   ⛔ 不直接搬 174 图标用的 600 级色：那是配图标底（#e1f5ee 等）算的，
+      搬过来复算不达标 —— #17825d on #f0f9eb 只有 4.43:1（差 0.07）。
+      **必须用标签自己的浅底复算**，所以 success 要再深一档到 #14724f。
+
+   ⚠️ 权重说明：EP 的 light/plain 文字色选择器是 `.el-tag.el-tag--success`（权重 0,2,0）。
+      若照写同权选择器，就变成拼 CSS 打包顺序（main.scss 与按需注入的组件样式
+      谁先谁后不稳定，见本文件尾部 .auth-submit 那条同样的教训）。
+      ⇒ 显式加 `:not(.el-tag--dark)` 提到 (0,3,0)：顺序无关、恒生效，
+      且**顺带把 effect="dark"（深底白字）排除在外** —— 它的白字由 EP 的
+      `.el-tag--dark.el-tag--success` 保留，深底上的白字本来就达标，不要动。 */
+.el-tag.el-tag--success:not(.el-tag--dark) { --el-tag-text-color: #14724f; }  /* on #f0f9eb 5.48:1 ✅ */
+.el-tag.el-tag--warning:not(.el-tag--dark) { --el-tag-text-color: #916012; }  /* on #fdf6ec 5.04:1 ✅ */
+.el-tag.el-tag--danger:not(.el-tag--dark)  { --el-tag-text-color: #b91c1c; }  /* on #fef0f0 5.83:1 ✅ */
+.el-tag.el-tag--error:not(.el-tag--dark)   { --el-tag-text-color: #b91c1c; }  /* EP 里 error 与 danger 同色，一并对齐 */
+.el-tag.el-tag--info:not(.el-tag--dark)    { --el-tag-text-color: #4b5563; }  /* on #f4f4f5 6.88:1 ✅ */
+.el-tag.el-tag--primary:not(.el-tag--dark) { --el-tag-text-color: #0d579c; }  /* on #ecf5ff 6.67:1 ✅ */
+
+/* ⚠️ 上面 6 条同时覆盖 `effect="plain"`（白底）：EP 的 plain 只重设
+   bg-color / border-color，**不重设文字色** ⇒ 文字色仍走这几个变量
+   ⇒ plain 在白底上的新对比度：success 5.92 / warning 5.40 / danger 6.47 /
+   info 7.56 / primary 7.34，全部 ✅（原来是 2.78 / 2.19 不达标）。
+   ⛔ 唯一带自定义颜色的标签是 UsersView 的 `.vip-role-tag`（#7c3aed），
+      它是 scoped 样式 ⇒ 编译成 `.vip-role-tag[data-v-xxx]`（权重 0,2,0），
+      恒高于 `.el-tag` 的 (0,1,0)，不受本次改动影响，且本就达标（4.83:1）。 */
+
+/* ===== 表头文字（WCAG 1.4.3）=====
+   变量链：`.el-table th` → var(--el-table-header-text-color)
+           → var(--el-text-color-secondary) = #909399
+   压在表头底 #fafafa 上只有 2.95:1（白底 3.08:1）❌。
+
+   取「精准变量」而不是 --el-text-color-secondary：后者会连带改掉全站次要文字
+   （空状态 / 分页总数 / 表单帮助文字）与分页禁用箭头（虽顺带修 L4，但副作用面太大）。
+   #4b5563 在 #fafafa 上 7.24:1 ✅。
+
+   ⚠️ 为什么写成 `.el-table.el-table`（重复类名）：EP 在 `.el-table` 里声明了同一个
+      变量，权重同为 (0,1,0) —— 只写一遍就得拼打包顺序。重复类名把权重提到 (0,2,0)，
+      顺序无关、恒生效。（这是提高权重的常见写法，不是笔误。） */
+.el-table.el-table {
+  --el-table-header-text-color: #4b5563;
 }

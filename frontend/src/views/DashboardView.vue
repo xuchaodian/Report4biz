@@ -1,7 +1,12 @@
 <template>
   <!-- L1+L7（v1.13.175 A 档）：数据大屏是独立路由（不在 MainLayout 之下），
-       此前整页无任何地标；包 <main> 让读屏用户能定位「主内容区」 -->
-  <main class="dashboard-screen">
+       此前整页无任何地标；包 <main> 让读屏用户能定位「主内容区」
+       L13（v1.13.176 B 档）：补 id + tabindex="-1" —— 路由切换后
+       `router.afterEach` 要把焦点送进主内容地标，而 <main> 默认不可聚焦
+       （无 tabindex 时 focus() 是空操作）。id 与 MainLayout 的 `#main-content`
+       同名是**刻意**的：两者分属互斥路由（`/dashboard` 与 `/` 平级、不在其 children 内），
+       永不同时挂载，全站始终只有一个 `#main-content`。 -->
+  <main id="main-content" class="dashboard-screen" tabindex="-1">
     <!-- 顶部标题栏 -->
     <div class="ds-header">
       <div class="ds-title-left">
