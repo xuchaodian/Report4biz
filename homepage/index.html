@@ -297,23 +297,6 @@ a { text-decoration: none; color: inherit; }
   .banner-arrow { display: none; }
 }
 
-/* ============ 资讯 ============ */
-.news-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.news-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 20px; transition: all .25s; cursor: pointer;
-}
-.news-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-3px); border-color: transparent; }
-.news-badge {
-  display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px;
-  border-radius: 999px; margin-bottom: 12px;
-}
-.nb-new { background: #fff1e6; color: #e36a00; }
-.nb-release { background: var(--primary-light); color: var(--primary); }
-.nb-case { background: #e8f7ee; color: #18944e; }
-.news-card h3 { font-size: 15px; line-height: 1.5; margin-bottom: 10px; font-weight: 600; }
-.news-card .date { font-size: 12px; color: var(--text-3); }
-
 /* ============ 能力（能看见什么） ============ */
 .cap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .cap-card {
@@ -364,6 +347,9 @@ a { text-decoration: none; color: inherit; }
 .tl-green  { background: #e8f7ee; border-color: #cdeeda; }
 .tl-cyan   { background: #e0f7fa; border-color: #c3ecf2; }
 .tl-purple { background: #f2eaff; border-color: #e2d5ff; }
+/* v1.13.180：资讯区合并进来的 2 条（竞品追踪 / 报表增强）各配一色，凑满 6 条 6 色。 */
+.tl-red    { background: #ffecec; border-color: #ffd9d9; }
+.tl-blue   { background: var(--primary-light); border-color: #cfe0ff; }
 .tl-body h3 { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
 .tl-body p { font-size: 13.5px; color: var(--text-2); line-height: 1.7; margin: 0; }
 .func-more { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--primary); font-weight: 600; cursor: pointer; }
@@ -482,7 +468,6 @@ a { text-decoration: none; color: inherit; }
   .hero-grid { grid-template-columns: 1fr; gap: 40px; }
   .hero h1 { font-size: 34px; }
   .cap-grid, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
-  .news-row { grid-template-columns: 1fr; }
   .flow { grid-template-columns: repeat(2, 1fr); gap: 32px; }
   .flow::before { display: none; }
   .cta { flex-direction: column; text-align: center; padding: 44px 28px; }
@@ -618,29 +603,6 @@ a { text-decoration: none; color: inherit; }
   </div>
 </section>
 
-<!-- ============ 资讯 ============ -->
-<section class="section" style="padding:56px 0;">
-  <div class="container">
-    <div class="news-row">
-      <div class="news-card">
-        <span class="news-badge nb-new">NEWS</span>
-        <h3>门店商圈功能升级：新增「竞争追踪」模式，支持指定竞品品牌为圆心展开分析</h3>
-        <div class="date">2026.08.01</div>
-      </div>
-      <div class="news-card">
-        <span class="news-badge nb-release">RELEASE</span>
-        <h3>开店余地分析上线：品牌筛选 + 高德 POI 检索，一键评估新店选址空间</h3>
-        <div class="date">2026.07.28</div>
-      </div>
-      <div class="news-card">
-        <span class="news-badge nb-case">CASE</span>
-        <h3>报表导出增强：竞品品牌汇总 + 上网标签分布三组人群一键导出 Excel</h3>
-        <div class="date">2026.07.15</div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ============ 平台能力：能看见什么 ============ -->
 <section class="section section-soft" id="ability">
   <div class="container">
@@ -716,11 +678,15 @@ a { text-decoration: none; color: inherit; }
       <div class="sub-en">What's new</div>
       <div class="section-tag">最新功能</div>
       <h2>近期上新，让选址更聪明</h2>
-      <p>销售预测、AI 选址建议、商圈洞察增强、竞争雷达下钻，持续迭代中。</p>
+      <p>销售预测、AI 选址建议、商圈洞察、竞争强度、竞品追踪、报表增强 —— 持续迭代中。</p>
     </div>
     <!-- ⭐ P2-2（v1.13.179）：4 张大卡 → 「一行一条」的紧凑时间线。
          原 4 张卡的正文与上方「平台能力」区近乎逐字重复（销售预测 / AI 选址建议两组），
-         本版改为「一句话上新」并保留原有转化入口（免费体验 → register），既减屏又消重。 -->
+         本版改为「一句话上新」并保留原有转化入口（免费体验 → register），既减屏又消重。
+         ⭐ P2-4（v1.13.180）：删除首页「资讯」区（原 3 张 news-card），其中 2 条有净增量者并入本时间线
+         （竞品品牌追踪 ← NEWS 2026.08.01；报表导出增强 ← CASE 2026.07.15），随条目一起**不带绝对日期**
+         ⇒ 从根上消除「日期过期」观感；另 1 条（开店余地分析上线）与「平台能力 04」正文逐字级重复
+         ⇒ 判定已被覆盖，不再下沉（避免三重复）。 -->
     <ol class="func-timeline">
       <li class="tl-item">
         <span class="tl-node tl-orange" aria-hidden="true"><img src="assets/icons/magic-stick.svg" alt="" width="16" height="16"></span>
@@ -751,6 +717,22 @@ a { text-decoration: none; color: inherit; }
         <div class="tl-body">
           <h3>周边竞争强度增强</h3>
           <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，看清圈内竞品格局。</p>
+        </div>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
+      </li>
+      <li class="tl-item">
+        <span class="tl-node tl-red" aria-hidden="true"><img src="assets/icons/aim.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>竞品品牌追踪</h3>
+          <p>以指定竞品品牌为圆心展开分析，追踪该品牌在目标商圈的门店分布与重合度，看清竞品加密动向。</p>
+        </div>
+        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
+      </li>
+      <li class="tl-item">
+        <span class="tl-node tl-blue" aria-hidden="true"><img src="assets/icons/collection.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>报表导出增强</h3>
+          <p>竞品品牌汇总、上网标签分布三组人群一键导出 Excel，报表维度更细，汇报直接可用。</p>
         </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </li>
