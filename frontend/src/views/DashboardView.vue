@@ -52,7 +52,38 @@
           </div>
         </div>
         <div class="ds-panel ds-chart-panel">
-          <div class="ds-chart-title">{{ $t('dashboard.chartTypeDist') }}</div>
+          <div class="ds-chart-head">
+            <div class="ds-chart-title">{{ $t('dashboard.chartTypeDist') }}</div>
+            <!-- R2-5①（v1.13.178 B 档）：图表的**数据表等价物**。
+                 默认收起 ⇒ 驾驶舱观感零变化（弹层绝对定位、不参与布局）；<details>/<summary>
+                 原生键盘可达（Enter/Space），零 JS、零后端。数据与图表同源（charts.markerTypes），
+                 占比由 withShare() 单一口径算出 —— ⛔ 别每张图各写一份百分比算法（158 式分裂）。 -->
+            <details class="ds-dv">
+              <summary class="ds-dv-summary">{{ $t('dashboard.dataTable') }}</summary>
+              <div class="ds-dv-body">
+                <table class="ds-dv-table">
+                  <caption class="ds-sr-only">{{ $t('dashboard.chartTypeDist') }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ $t('dashboard.colName') }}</th>
+                      <th scope="col">{{ $t('dashboard.colCount') }}</th>
+                      <th scope="col">{{ $t('dashboard.colShare') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in typeTableRows" :key="r.name">
+                      <th scope="row">{{ r.name }}</th>
+                      <td>{{ r.value }}</td>
+                      <td>{{ r.share }}</td>
+                    </tr>
+                    <tr v-if="!typeTableRows.length">
+                      <td colspan="3">{{ $t('dashboard.noData') }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
           <div ref="typeChartRef" class="ds-chart"></div>
         </div>
       </div>
@@ -115,6 +146,24 @@
                 </label>
               </div>
             </div>
+            <!-- R2-5②（v1.13.178 B 档）：地图标记的**文本等价物**，同时修掉「42 个假按钮」。
+                 实测（生产 admin）：地图上 42 个 `.leaflet-marker-icon` 全带 `role="button" tabindex="0"`
+                 （Leaflet 默认 keyboard:true），但**没有任何点击行为**；可访问名分别是省名与**裸数字**
+                 （`519`/`235`/`90`…）。Tab 一路穿过地图要按 44 次，读屏听到 42 个按不动的「按钮」。
+                 处置：① marker 全部 `keyboard:false`（摘掉假按钮）② 用本列表承载数据（与地图同一数据源）。
+                 ⚠️ 省级名称标签是底图装饰（无数据）⇒ 只在图上可见，不入本列表。 -->
+            <details class="ds-dv ds-dv-map">
+              <summary class="ds-dv-summary">{{ $t('dashboard.markerList') }}（{{ markerRows.length }}）</summary>
+              <div class="ds-dv-body">
+                <ul class="ds-marker-list" :aria-label="$t('dashboard.markerList')">
+                  <li v-for="(m, i) in markerRows" :key="i">
+                    <span class="ds-marker-dot" :style="{ background: m.color }" aria-hidden="true"></span>
+                    <span>{{ m.label }}</span>
+                  </li>
+                  <li v-if="!markerRows.length" class="ds-marker-empty">{{ $t('dashboard.noData') }}</li>
+                </ul>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -123,11 +172,65 @@
       <div class="ds-col ds-col-right">
         <div class="ds-chart-grid">
           <div class="ds-panel ds-chart-panel ds-chart-panel-lg">
-            <div class="ds-chart-title">{{ $t('dashboard.chartCityTop') }}</div>
+            <div class="ds-chart-head">
+              <div class="ds-chart-title">{{ $t('dashboard.chartCityTop') }}</div>
+              <details class="ds-dv">
+                <summary class="ds-dv-summary">{{ $t('dashboard.dataTable') }}</summary>
+                <div class="ds-dv-body">
+                  <table class="ds-dv-table">
+                    <caption class="ds-sr-only">{{ $t('dashboard.chartCityTop') }}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{{ $t('dashboard.colName') }}</th>
+                        <th scope="col">{{ $t('dashboard.colCount') }}</th>
+                        <th scope="col">{{ $t('dashboard.colShare') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in cityTableRows" :key="r.name">
+                        <th scope="row">{{ r.name }}</th>
+                        <td>{{ r.value }}</td>
+                        <td>{{ r.share }}</td>
+                      </tr>
+                      <tr v-if="!cityTableRows.length">
+                        <td colspan="3">{{ $t('dashboard.noData') }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
             <div ref="cityChartRef" class="ds-chart"></div>
           </div>
           <div class="ds-panel ds-chart-panel">
-            <div class="ds-chart-title">{{ $t('dashboard.chartBrandDist') }}</div>
+            <div class="ds-chart-head">
+              <div class="ds-chart-title">{{ $t('dashboard.chartBrandDist') }}</div>
+              <details class="ds-dv">
+                <summary class="ds-dv-summary">{{ $t('dashboard.dataTable') }}</summary>
+                <div class="ds-dv-body">
+                  <table class="ds-dv-table">
+                    <caption class="ds-sr-only">{{ $t('dashboard.chartBrandDist') }}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{{ $t('dashboard.colName') }}</th>
+                        <th scope="col">{{ $t('dashboard.colCount') }}</th>
+                        <th scope="col">{{ $t('dashboard.colShare') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in brandTableRows" :key="r.name">
+                        <th scope="row">{{ r.name }}</th>
+                        <td>{{ r.value }}</td>
+                        <td>{{ r.share }}</td>
+                      </tr>
+                      <tr v-if="!brandTableRows.length">
+                        <td colspan="3">{{ $t('dashboard.noData') }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
             <div ref="brandChartRef" class="ds-chart"></div>
           </div>
         </div>
@@ -202,6 +305,9 @@ const BRAND_COLOR_POOL = ['#ff6b6b', '#9b8cff', '#06d6a0', '#ff9f43', '#f98fb4',
 const brandColors = {}
 const showCompBrands = reactive({})
 const compBrandKeys = ref([])
+// R2-5②（v1.13.178）：地图标记的文本等价物。**只在 renderMap 里赋值**，与地图同一对
+// myTypePoints/compBrandPoints 派生 ⇒ 不另写一套筛选逻辑（避免 158 式「两处口径分裂」）。
+const markerRows = ref([])
 let clockTimer = null
 let refreshTimer = null
 let map = null
@@ -240,6 +346,21 @@ const marqueeText = computed(() => {
   const k = data.value?.kpi || {}
   return t('dashboard.marquee', { markers: k.markers ?? 0, competitors: k.competitors ?? 0, cities: k.markerCities ?? 0, purchases: k.myPurchases ?? 0 })
 })
+
+// R2-5①（v1.13.178）：图表数据表的三列口径。**单一函数**（三个图表共用）⇒
+// 占比算法只有一处，改口径不会漏改某个图。缺数据时占比给 `—` 而非 `0%`（铁律：缺数据恒 null）。
+const withShare = (arr) => {
+  const list = arr || []
+  const total = list.reduce((s, i) => s + (Number(i.value) || 0), 0)
+  return list.map(i => ({
+    name: i.name,
+    value: i.value,
+    share: total > 0 ? `${((Number(i.value) || 0) / total * 100).toFixed(1)}%` : '—'
+  }))
+}
+const typeTableRows = computed(() => withShare(data.value?.charts?.markerTypes))
+const cityTableRows = computed(() => withShare(data.value?.charts?.markerCityTop))
+const brandTableRows = computed(() => withShare(data.value?.charts?.compBrandTop))
 
 const updateClock = () => {
   const d = new Date()
@@ -385,7 +506,9 @@ const renderMap = async () => {
           iconSize: [88, 24],
           iconAnchor: [44, 12]
         })
-        L.marker([center.lat, center.lng], { icon, interactive: false }).addTo(provinceLabelLayer)
+        // R2-5②（v1.13.178）：省名标签是**底图装饰**（无数据、不可点）。Leaflet 默认 keyboard:true
+        // 会白送 32 个 `role="button" tabindex="0"` 的假按钮 ⇒ 显式关掉（视觉零变化）。
+        L.marker([center.lat, center.lng], { icon, interactive: false, keyboard: false }).addTo(provinceLabelLayer)
       })
       provinceLabelLayer.addTo(map)
       chinaLoaded = true
@@ -480,22 +603,33 @@ const renderMap = async () => {
     })
   }
 
+  // R2-5②（v1.13.178）：地图标记的文本等价物 —— 与下面真正渲染的 marker **同一对数组**派生
+  //（myTypePoints/compBrandPoints 已按图层开关过滤），顺序也一致 ⇒ 可逐条与地图对账。
+  const labelOf = (c) => `${c.name || c.city}（${c.group_key}）：${c.value} ${suffix}`
+  markerRows.value = [
+    ...myTypePoints.map(c => ({ label: labelOf(c), color: typeColors[c.group_key] || '#40c4ff' })),
+    ...compBrandPoints.map(c => ({ label: labelOf(c), color: brandColors[c.group_key] || '#ff6b6b' }))
+  ]
+
   markerLayer = L.layerGroup()
   // 多色渲染（省级/城市级统一：我的按类型、竞品按品牌）
+  // ⚠️ `keyboard: false` 是**刻意**的：这些标记**没有任何点击行为**，而 Leaflet 默认会额外挂上
+  //    `role="button" tabindex="0"`（可访问名还只是裸数字，如「519」）⇒ 纯属假按钮。
+  //    文本等价物由上面的 markerRows 列表 ＋ 地图容器自身的 role="img" 摘要承担。
   myTypePoints.forEach(c => {
     const size = sizeOf(c.value)
     const color = typeColors[c.group_key] || '#40c4ff'
     const icon = makeIcon(c, size, color)
-    L.marker([c.lat, c.lng], { icon })
-      .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} ${suffix}`, { direction: 'top' })
+    L.marker([c.lat, c.lng], { icon, keyboard: false })
+      .bindTooltip(labelOf(c), { direction: 'top' })
       .addTo(markerLayer)
   })
   compBrandPoints.forEach(c => {
     const size = sizeOf(c.value)
     const color = brandColors[c.group_key] || '#ff6b6b'
     const icon = makeIcon(c, size, color)
-    L.marker([c.lat, c.lng], { icon })
-      .bindTooltip(`${c.name || c.city}（${c.group_key}）：${c.value} ${suffix}`, { direction: 'top' })
+    L.marker([c.lat, c.lng], { icon, keyboard: false })
+      .bindTooltip(labelOf(c), { direction: 'top' })
       .addTo(markerLayer)
   })
   if (markerLayer.getLayers().length > 0) {
@@ -671,6 +805,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* 兜底：面板是 position:absolute（不参与布局）⇒ 这里限高 + 内部滚动，
+     保证「图层开关 + 展开后的标记列表」在任何视口下都可达（父级 .ds-map-panel 有 overflow:hidden） */
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
 }
 .ds-layer-item {
   display: flex;
@@ -741,5 +879,120 @@ onBeforeUnmount(() => {
 @keyframes ds-marquee {
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
+}
+
+/* ===== 数据表折叠 / 标记列表（v1.13.178 B 档 R2-5） ===== */
+/* 图表标题行：标题 + 「数据表」同排 ⇒ 收起态与改动前的标题行等高 */
+.ds-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ds-chart-head .ds-chart-title { margin-bottom: 0; }
+
+/* <details>/<summary>：原生语义 + 原生键盘可达（Enter/Space），零 JS、零后端 */
+.ds-dv { position: relative; }
+.ds-dv-summary {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #7e8ca6;
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 8px;
+  border: 1px solid rgba(140, 180, 230, 0.25);
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.ds-dv-summary::-webkit-details-marker { display: none; }
+.ds-dv-summary:hover { color: #40c4ff; border-color: rgba(64, 196, 255, 0.6); }
+.ds-dv-summary:focus-visible { outline: 2px solid #40c4ff; outline-offset: 1px; }
+/* 展开态：用「实心高亮」表达状态（刻意不用 ::before 箭头 —— 伪元素文本可能进可访问名） */
+.ds-dv[open] > .ds-dv-summary {
+  color: #0a1a2f;
+  background: #40c4ff;
+  border-color: #40c4ff;
+}
+
+/* 弹层：**绝对定位** ⇒ 展开/收起不引起任何布局位移（驾驶舱里这条很关键）；
+   max-height + overflow 兜住长列表 */
+.ds-dv-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 1200;
+  min-width: 176px;
+  max-width: 260px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: rgba(10, 26, 47, 0.97);
+  border: 1px solid rgba(64, 196, 255, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+}
+
+.ds-dv-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ds-dv-table th,
+.ds-dv-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  font-weight: 400;
+  color: #c6d4ea;
+}
+.ds-dv-table thead th { color: #7e8ca6; font-weight: 600; }
+.ds-dv-table tbody th { color: #a8c6ea; font-weight: 500; }
+.ds-dv-table th:not(:first-child),
+.ds-dv-table td:not(:first-child) { text-align: right; }
+.ds-dv-table tbody tr:last-child th,
+.ds-dv-table tbody tr:last-child td { border-bottom: 0; }
+
+/* 图层开关面板里的标记列表。
+   ⚠️ 这里**刻意不用** `.ds-dv-body` 的「绝对弹层」：`.ds-map-panel` 是 overflow:hidden
+   且高度受 flex 约束 ⇒ 向下弹的浮层会在地图面板下沿被裁掉，最后几条永远看不到。
+   改为「面板内联展开 + 自身限高滚动」⇒ 内容恒可达、不引起任何布局位移
+   （`.ds-layer-switch` 是 position:absolute，只长它自己的盒子）。 */
+.ds-dv-map {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(64, 196, 255, 0.2);
+}
+.ds-dv-map .ds-dv-summary { display: block; text-align: center; }
+.ds-dv-map .ds-dv-body {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  margin-top: 6px;
+  max-height: min(40vh, 300px);
+  overflow: auto;
+}
+.ds-marker-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.ds-marker-list li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b8c9e4;
+  white-space: nowrap;
+}
+.ds-marker-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ds-marker-empty { color: #7e8ca6; }
+
+/* 仅供读屏（原生 <table> 的 caption）：本项目首次引入，用 ds- 前缀避免与全局工具类冲突。
+   ⚠️ 只对**原生 <table>** 有意义 —— EP 的 el-table 会把 caption 渲染进 .hidden-columns（见记忆铁律⑧）。 */
+.ds-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>
