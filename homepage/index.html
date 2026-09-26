@@ -342,29 +342,34 @@ a { text-decoration: none; color: inherit; }
   padding: 4px 10px; border-radius: 6px;
 }
 
-/* ============ 功能 ============ */
-.func-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-.func-grid-2 { grid-template-columns: repeat(2, 1fr); }
-.func-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 28px 24px; transition: all .25s;
+/* ============ 最新功能 · 紧凑时间线（v1.13.179 P2-2 由 4 张大卡降级） ============ */
+.func-timeline { list-style: none; position: relative; }
+/* 时间线主干：上下各内缩 16px。两端略微出头是刻意的「线在延续」观感。
+   ⚠️ 颜色不能用 var(--line)(#e6eaf2)：本区底是 --bg-soft(#f6f8fc)，压在上面对比仅 1.37 几乎看不见。
+   单独取 #b9c7e2（蓝灰系、对比约 1.7）——够辨识、又不抢节点。 */
+.func-timeline::before {
+  content: ''; position: absolute; left: 15px; top: 16px; bottom: 16px;
+  width: 2px; background: #b9c7e2;
 }
-.func-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-4px); border-color: transparent; }
-.func-icon {
-  width: 52px; height: 52px; border-radius: 13px; margin-bottom: 18px;
-  display: flex; align-items: center; justify-content: center; font-size: 24px;
+.tl-item {
+  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center; gap: 0 18px; padding: 14px 0;
 }
-.fi-blue { background: var(--primary-light); }
-.fi-orange { background: #fff3e0; }
-.fi-green { background: #e8f7ee; }
-.fi-purple { background: #f2eaff; }
-.fi-red { background: #ffecec; }
-.fi-cyan { background: #e0f7fa; }
-.func-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
-.func-card p { font-size: 13.5px; color: var(--text-2); line-height: 1.75; }
+.tl-node {
+  position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid var(--line);
+}
+.tl-orange { background: #fff3e0; border-color: #ffe6c7; }
+.tl-green  { background: #e8f7ee; border-color: #cdeeda; }
+.tl-cyan   { background: #e0f7fa; border-color: #c3ecf2; }
+.tl-purple { background: #f2eaff; border-color: #e2d5ff; }
+.tl-body h3 { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+.tl-body p { font-size: 13.5px; color: var(--text-2); line-height: 1.7; margin: 0; }
 .func-more { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--primary); font-weight: 600; cursor: pointer; }
 .func-more:hover { color: var(--primary-dark); text-decoration: underline; }
 .func-more::after { content: ' →'; }
+.tl-item .func-more { margin-top: 0; white-space: nowrap; }
 
 /* ============ 理由 ============ */
 .reason-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
@@ -476,7 +481,7 @@ a { text-decoration: none; color: inherit; }
   .menu-toggle { display: block; }
   .hero-grid { grid-template-columns: 1fr; gap: 40px; }
   .hero h1 { font-size: 34px; }
-  .cap-grid, .func-grid, .func-grid-2, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
+  .cap-grid, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
   .news-row { grid-template-columns: 1fr; }
   .flow { grid-template-columns: repeat(2, 1fr); gap: 32px; }
   .flow::before { display: none; }
@@ -486,7 +491,12 @@ a { text-decoration: none; color: inherit; }
   .fc-2 { right: -6px; }
 }
 @media (max-width: 600px) {
-  .cap-grid, .func-grid, .func-grid-2, .reason-grid, .scene-grid { grid-template-columns: 1fr; }
+  .cap-grid, .reason-grid, .scene-grid { grid-template-columns: 1fr; }
+  /* 时间线在窄屏改为两列：图标 + 正文，链接落到正文下方 */
+  .func-timeline::before { left: 13px; }
+  .tl-item { grid-template-columns: 28px minmax(0, 1fr); gap: 0 14px; padding: 12px 0; }
+  .tl-node { width: 28px; height: 28px; }
+  .tl-item .func-more { grid-column: 2; margin-top: 6px; }
   .footer-grid { grid-template-columns: 1fr; }
   .mock-stats { grid-template-columns: repeat(2, 1fr); }
   .hero { padding-top: 48px; }
@@ -517,7 +527,7 @@ a { text-decoration: none; color: inherit; }
     </nav>
     <div class="nav-actions">
       <a href="https://mka-online.cn/login" class="btn btn-outline">登录</a>
-      <a href="https://mka-online.cn/register" class="btn btn-primary">注册</a>
+      <a href="https://mka-online.cn/register" class="btn btn-primary">免费注册</a>
       <button class="menu-toggle">☰</button>
     </div>
   </div>
@@ -534,7 +544,7 @@ a { text-decoration: none; color: inherit; }
         在浏览器中即可圈定商圈、透视人口画像、分析竞争格局，一键投屏数据驾驶舱，让开店决策从「凭经验」走向「看数据」。
       </p>
       <div class="hero-cta">
-        <a href="https://mka-online.cn/register" class="btn btn-primary btn-lg">注册</a>
+        <a href="https://mka-online.cn/register" class="btn btn-primary btn-lg">免费注册</a>
         <a href="#ability" class="btn btn-outline btn-lg">查看平台能力</a>
       </div>
       <div class="hero-note">✓ 无需安装 · 浏览器即用　✓ 门店/竞品数据一站式管理　✓ AI 智能分析助手　✓ 数据大屏一键投屏</div>
@@ -708,32 +718,43 @@ a { text-decoration: none; color: inherit; }
       <h2>近期上新，让选址更聪明</h2>
       <p>销售预测、AI 选址建议、商圈洞察增强、竞争雷达下钻，持续迭代中。</p>
     </div>
-    <div class="func-grid func-grid-2">
-      <div class="func-card">
-        <div class="func-icon fi-orange"><img src="assets/icons/magic-stick.svg" alt="" width="26" height="26"></div>
-        <h3>销售预测（AI 智能引擎）</h3>
-        <p>录入已开业门店真实销售，候选门店年销售额一键预测：L1 类比 → L2 回归 → L3 机器学习三级引擎随样本自动升级；面积、外卖占比、商圈画像、半径人口、竞争点位、联通画像 21 维特征建模，置信区间、特征归因与周边门店影响模拟，参照店圈定支持人工精调类比基准。</p>
+    <!-- ⭐ P2-2（v1.13.179）：4 张大卡 → 「一行一条」的紧凑时间线。
+         原 4 张卡的正文与上方「平台能力」区近乎逐字重复（销售预测 / AI 选址建议两组），
+         本版改为「一句话上新」并保留原有转化入口（免费体验 → register），既减屏又消重。 -->
+    <ol class="func-timeline">
+      <li class="tl-item">
+        <span class="tl-node tl-orange" aria-hidden="true"><img src="assets/icons/magic-stick.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>销售预测（AI 智能引擎）</h3>
+          <p>录入已开业门店真实销售，候选门店年销售额一键预测，L1→L2→L3 三级引擎随样本自动升级。</p>
+        </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </div>
-      <div class="func-card">
-        <div class="func-icon fi-green"><img src="assets/icons/cpu.svg" alt="" width="26" height="26"></div>
-        <h3>AI 选址建议</h3>
-        <p>查询结果一键生成品牌专属选址建议：自动识别门店品牌与业态（食其家→日式牛肉盖饭快餐等 30+ 品牌映射），结合联通智慧足迹人口大数据，由 AI 输出选址结论、客群匹配度、风险提示与运营建议。</p>
+      </li>
+      <li class="tl-item">
+        <span class="tl-node tl-green" aria-hidden="true"><img src="assets/icons/cpu.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>AI 选址建议</h3>
+          <p>一键生成品牌专属选址建议，自动识别品牌与业态，结合联通人口大数据输出结论、客群匹配与风险提示。</p>
+        </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </div>
-      <div class="func-card">
-        <div class="func-icon fi-cyan"><img src="assets/icons/office-building.svg" alt="" width="26" height="26"></div>
-        <h3>商圈洞察增强</h3>
-        <p>商圈详情卡新增「商圈内购物中心」：数量、星级、地址一目了然，点击即可在地图上精准定位（红色图钉），快速判断商圈商业成熟度与招商参考。</p>
+      </li>
+      <li class="tl-item">
+        <span class="tl-node tl-cyan" aria-hidden="true"><img src="assets/icons/office-building.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>商圈洞察增强</h3>
+          <p>商圈详情卡新增「商圈内购物中心」，数量、星级、地址一目了然，点击即在地图精准定位。</p>
+        </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </div>
-      <div class="func-card">
-        <div class="func-icon fi-purple"><img src="assets/icons/compass.svg" alt="" width="26" height="26"></div>
-        <h3>周边竞争强度增强</h3>
-        <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，一眼看清圈内竞品格局与最密集方向，辅助网点布局判断。</p>
+      </li>
+      <li class="tl-item">
+        <span class="tl-node tl-purple" aria-hidden="true"><img src="assets/icons/compass.svg" alt="" width="16" height="16"></span>
+        <div class="tl-body">
+          <h3>周边竞争强度增强</h3>
+          <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，看清圈内竞品格局。</p>
+        </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </div>
-    </div>
+      </li>
+    </ol>
   </div>
 </section>
 
@@ -813,7 +834,7 @@ a { text-decoration: none; color: inherit; }
         <p>免费注册账号，即刻体验商圈分析、竞品追踪与 AI 智能助手。</p>
       </div>
       <div class="cta-actions">
-        <a href="https://mka-online.cn/register" class="btn btn-white btn-lg">注册</a>
+        <a href="https://mka-online.cn/register" class="btn btn-white btn-lg">免费注册</a>
         <a href="https://youshi-tech.com/data.html" target="_blank" rel="noopener" class="btn btn-lg" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);">获取报价</a>
       </div>
     </div>
