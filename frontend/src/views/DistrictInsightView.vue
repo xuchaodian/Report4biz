@@ -19,7 +19,7 @@
     <div class="dv-body">
       <!-- 左：城市 + 商圈列表 -->
       <div class="dv-side">
-        <el-select v-model="selectedCity" placeholder="选择城市" filterable style="width:100%" @change="onCityChange">
+        <el-select v-model="selectedCity" placeholder="选择城市" aria-label="选择城市" filterable style="width:100%" @change="onCityChange">
           <el-option-group v-for="g in cityGroups" :key="g.tier" :label="g.tier">
             <el-option v-for="c in g.cities" :key="c.name" :value="c.name" :label="`${c.name}（${c.districtCount} 商圈）`" />
           </el-option-group>

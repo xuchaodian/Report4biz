@@ -157,6 +157,7 @@
         <el-input
           v-model="filterKeywords"
           placeholder="搜索门店名称"
+          aria-label="搜索门店名称"
           style="width: 180px"
           clearable
           @input="handleFilterChange"
@@ -165,21 +166,21 @@
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        <el-select v-model="filterStoreType" placeholder="门店类型" style="width: 120px" clearable @change="handleFilterChange">
+        <el-select v-model="filterStoreType" placeholder="门店类型" aria-label="按门店类型筛选" style="width: 120px" clearable @change="handleFilterChange">
           <el-option label="已开业" value="已开业" />
           <el-option label="重点候选" value="重点候选" />
           <el-option label="一般候选" value="一般候选" />
         </el-select>
-        <el-select v-model="filterCity" placeholder="城市" style="width: 120px" clearable @change="handleFilterChange">
+        <el-select v-model="filterCity" placeholder="城市" aria-label="按城市筛选" style="width: 120px" clearable @change="handleFilterChange">
           <el-option v-for="city in cityOptions" :key="city" :label="city" :value="city" />
         </el-select>
-        <el-select v-model="filterDistrict" placeholder="区县" style="width: 120px" clearable @change="handleFilterChange">
+        <el-select v-model="filterDistrict" placeholder="区县" aria-label="按区县筛选" style="width: 120px" clearable @change="handleFilterChange">
           <el-option v-for="d in districtOptions" :key="d" :label="d" :value="d" />
         </el-select>
-        <el-select v-model="filterRadius" placeholder="半径" style="width: 120px" clearable @change="handleFilterChange">
+        <el-select v-model="filterRadius" placeholder="半径" aria-label="按半径筛选" style="width: 120px" clearable @change="handleFilterChange">
           <el-option v-for="r in radiusOptions" :key="r" :label="r" :value="r" />
         </el-select>
-        <el-select v-model="filterCityMonth" placeholder="数据年月" style="width: 130px" clearable @change="handleFilterChange">
+        <el-select v-model="filterCityMonth" placeholder="数据年月" aria-label="按数据年月筛选" style="width: 130px" clearable @change="handleFilterChange">
           <el-option v-for="m in cityMonthOptions" :key="m" :label="m" :value="m" />
         </el-select>
         <!-- v1.13.157 集团可见域：「来源」筛选 —— 可见域含多个账号（集团 owner 看到子公司履历）时才出现，与「导出报表」弹窗同款 -->

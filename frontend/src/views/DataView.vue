@@ -56,6 +56,7 @@
       <el-input
         v-model="searchKeyword"
         placeholder="搜索门店名称/地址"
+        aria-label="搜索门店名称或地址"
         style="width: 200px"
         clearable
         @input="handleSearch"
@@ -65,33 +66,33 @@
         </template>
       </el-input>
 
-      <el-select v-model="filterStoreType" placeholder="按门店类型" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterStoreType" placeholder="按门店类型" aria-label="按门店类型筛选" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option label="已开业" value="已开业" />
         <el-option label="重点候选" value="重点候选" />
         <el-option label="一般候选" value="一般候选" />
       </el-select>
 
-      <el-select v-model="filterCity" placeholder="按城市" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterCity" placeholder="按城市" aria-label="按城市筛选" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="city in cityList" :key="city" :label="city" :value="city" />
       </el-select>
 
-      <el-select v-model="filterDistrict" placeholder="按区县" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterDistrict" placeholder="按区县" aria-label="按区县筛选" style="width: 150px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterStoreCategory" placeholder="按门店区分" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterStoreCategory" placeholder="按门店区分" aria-label="按门店区分筛选" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
-      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterBrand" placeholder="按品牌" aria-label="按品牌筛选" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
-      <el-select v-model="filterStoreStatus" placeholder="按门店状态" style="width: 190px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterStoreStatus" placeholder="按门店状态" aria-label="按门店状态筛选" style="width: 190px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="s in storeStatusList" :key="s" :label="s" :value="s" />
       </el-select>
 
-      <el-select v-model="filterMallType" placeholder="按商场类型" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterMallType" placeholder="按商场类型" aria-label="按商场类型筛选" style="width: 160px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="m in mallTypeList" :key="m" :label="m" :value="m" />
       </el-select>
 

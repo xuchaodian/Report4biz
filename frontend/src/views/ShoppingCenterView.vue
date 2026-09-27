@@ -34,6 +34,7 @@
       <el-input
         v-model="searchKeyword"
         placeholder="搜索名称/地址/编号"
+        aria-label="搜索购物中心名称、地址或编号"
         style="width: 200px"
         clearable
         @input="handleSearch"
@@ -43,21 +44,22 @@
         </template>
       </el-input>
 
-      <el-select v-model="filterCity" placeholder="按城市" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterCity" placeholder="按城市" aria-label="按城市筛选" style="width: 120px" clearable @change="handleSearch">
         <el-option v-for="city in cityList" :key="city" :label="city" :value="city" />
       </el-select>
 
-      <el-select v-model="filterDistrict" placeholder="按区县" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterDistrict" placeholder="按区县" aria-label="按区县筛选" style="width: 120px" clearable @change="handleSearch">
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
+      <el-select v-model="filterCategory" placeholder="按分类" aria-label="按分类筛选" style="width: 140px" clearable @change="handleSearch">
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 
       <el-input-number
         v-model="filterStarsMin"
         placeholder="星级≥"
+        aria-label="最低星级"
         :min="0"
         :max="5"
         :precision="1"
@@ -71,6 +73,7 @@
       <el-input-number
         v-model="filterCommentsMin"
         placeholder="评论数≥"
+        aria-label="最少评论数"
         :min="0"
         :step="100"
         controls-position="right"
@@ -371,22 +374,22 @@
           </div>
         </div>
         <div class="filter-bar">
-          <el-input v-model="tenantKeyword" placeholder="搜索商场名称" style="width:200px" clearable>
+          <el-input v-model="tenantKeyword" placeholder="搜索商场名称" aria-label="搜索商场名称" style="width:200px" clearable>
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
-          <el-select v-model="tenantFilterCity" placeholder="按城市" style="width:120px" clearable>
+          <el-select v-model="tenantFilterCity" placeholder="按城市" aria-label="按城市筛选（商户列表）" style="width:120px" clearable>
             <el-option v-for="c in tenantCityOptions" :key="c" :label="c" :value="c" />
           </el-select>
-          <el-select v-model="tenantFilterDistrict" placeholder="按区县" style="width:120px" clearable>
+          <el-select v-model="tenantFilterDistrict" placeholder="按区县" aria-label="按区县筛选（商户列表）" style="width:120px" clearable>
             <el-option v-for="d in tenantDistrictOptions" :key="d" :label="d" :value="d" />
           </el-select>
-          <el-select v-model="tenantFilterBizCircle" placeholder="按商圈" style="width:120px" clearable>
+          <el-select v-model="tenantFilterBizCircle" placeholder="按商圈" aria-label="按商圈筛选（商户列表）" style="width:120px" clearable>
             <el-option v-for="b in tenantBizCircleOptions" :key="b" :label="b" :value="b" />
           </el-select>
-          <el-select v-model="tenantFilterType" placeholder="按类型" style="width:120px" clearable>
+          <el-select v-model="tenantFilterType" placeholder="按类型" aria-label="按类型筛选（商户列表）" style="width:120px" clearable>
             <el-option v-for="t in tenantTypeOptions" :key="t" :label="t" :value="t" />
           </el-select>
-          <el-select v-model="tenantFilterClassification" placeholder="按归类" style="width:120px" clearable>
+          <el-select v-model="tenantFilterClassification" placeholder="按归类" aria-label="按归类筛选（商户列表）" style="width:120px" clearable>
             <el-option v-for="c in tenantClassificationOptions" :key="c" :label="c" :value="c" />
           </el-select>
           <span class="统计">共 {{ tenantMallCount }} 家商场 ｜ {{ tenantTotal }} 家商户</span>

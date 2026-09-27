@@ -24,13 +24,13 @@
 
       <!-- 候选门店选择 -->
       <div class="fc-toolbar">
-        <el-input v-model="keyword" placeholder="搜索候选门店" style="width: 220px" clearable>
+        <el-input v-model="keyword" placeholder="搜索候选门店" aria-label="搜索候选门店" style="width: 220px" clearable>
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <el-select v-model="filterCity" placeholder="按城市" style="width: 150px" clearable>
+        <el-select v-model="filterCity" placeholder="按城市" aria-label="按城市筛选" style="width: 150px" clearable>
           <el-option v-for="c in cityList" :key="c" :label="c" :value="c" />
         </el-select>
-        <el-select v-model="filterBought" placeholder="已购联通人口" style="width: 160px" clearable>
+        <el-select v-model="filterBought" placeholder="已购联通人口" aria-label="已购联通人口筛选" style="width: 160px" clearable>
           <el-option label="已购联通人口" value="1" />
           <el-option label="未购买" value="0" />
         </el-select>
@@ -72,7 +72,7 @@
         </div>
         <div v-if="refOpen" class="fc-ref-body">
           <div class="fc-toolbar">
-            <el-input v-model="refKeyword" placeholder="搜索参照店" style="width: 200px" size="small" clearable>
+            <el-input v-model="refKeyword" placeholder="搜索参照店" aria-label="搜索参照店" style="width: 200px" size="small" clearable>
               <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
             <el-button size="small" @click="resetRefSelection">恢复系统推荐</el-button>

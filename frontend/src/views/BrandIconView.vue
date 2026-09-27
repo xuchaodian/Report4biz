@@ -73,6 +73,7 @@
             size="small"
             style="width: 100px;"
             :placeholder="'使用我的默认 ' + (globalIconSize || 32) + 'px'"
+            :aria-label="'为品牌 ' + brand + ' 选择图标尺寸'"
           >
             <el-option label="使用我的默认" :value="0" />
             <el-option v-for="s in sizeOptions" :key="s" :label="s + 'px'" :value="s" />

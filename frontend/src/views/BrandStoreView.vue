@@ -29,6 +29,7 @@
       <el-input
         v-model="searchKeyword"
         placeholder="搜索名称/地址/编号"
+        aria-label="搜索品牌门店名称、地址或编号"
         style="width: 200px"
         clearable
         @input="handleSearch"
@@ -38,19 +39,19 @@
         </template>
       </el-input>
 
-      <el-select v-model="filterCity" placeholder="按城市" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterCity" placeholder="按城市" aria-label="按城市筛选" style="width: 120px" clearable @change="handleSearch">
         <el-option v-for="city in cityList" :key="city" :label="city" :value="city" />
       </el-select>
 
-      <el-select v-model="filterDistrict" placeholder="按区县" style="width: 120px" clearable @change="handleSearch">
+      <el-select v-model="filterDistrict" placeholder="按区县" aria-label="按区县筛选" style="width: 120px" clearable @change="handleSearch">
         <el-option v-for="d in districtList" :key="d" :label="d" :value="d" />
       </el-select>
 
-      <el-select v-model="filterBrand" placeholder="按品牌" style="width: 200px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
+      <el-select v-model="filterBrand" placeholder="按品牌" aria-label="按品牌筛选" style="width: 200px" multiple collapse-tags collapse-tags-tooltip clearable @change="handleSearch">
         <el-option v-for="b in brandList" :key="b" :label="b" :value="b" />
       </el-select>
 
-      <el-select v-model="filterCategory" placeholder="按分类" style="width: 140px" clearable @change="handleSearch">
+      <el-select v-model="filterCategory" placeholder="按分类" aria-label="按分类筛选" style="width: 140px" clearable @change="handleSearch">
         <el-option v-for="c in categoryList" :key="c" :label="c" :value="c" />
       </el-select>
 

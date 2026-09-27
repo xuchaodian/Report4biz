@@ -50,6 +50,7 @@
         <el-select
           v-model="filterCompany"
           placeholder="按公司筛选（可输入关键词，如：泉盛）"
+          aria-label="按公司筛选"
           clearable
           filterable
           allow-create
