@@ -26,6 +26,23 @@ export function overLimit(key, max, windowMs = MAX_WINDOW_MS) {
   return false
 }
 
+/**
+ * **只读**判断是否已超限（不记录本次）。
+ *
+ * 用途（v1.13.182 · 登录限流）：需要「先于昂贵操作（bcrypt）拦截」、
+ * 但又**不能把成功请求也算进配额**时使用 —— 调用方自己决定何时 `overLimit()` 记账。
+ * 典型写法：
+ *   if (peekLimit(k, max, win)) return 429          // 拦截在前，省掉 bcrypt
+ *   ...若业务失败... overLimit(k, max, win)          // 只有失败才记账
+ *
+ * ⚠️ 与 `overLimit` 的语义差异：本函数**不写入**，连续调用不改变计数。
+ */
+export function peekLimit(key, max, windowMs = MAX_WINDOW_MS) {
+  const now = Date.now()
+  const arr = hits.get(key) || []
+  return arr.filter((t) => now - t < windowMs).length >= max
+}
+
 // 定期清理过期限流记录，避免 Map 无限增长（unref 不阻塞进程退出）
 const cleaner = setInterval(() => {
   const now = Date.now()

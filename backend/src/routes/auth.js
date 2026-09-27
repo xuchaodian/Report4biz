@@ -5,7 +5,7 @@ import crypto from 'crypto'
 import { getDb } from '../models/database.js'
 import { JWT_SECRET, APP_BASE_URL } from '../config.js'
 import { sendPasswordResetMail, isMailEnabled } from '../utils/mailer.js'
-import { overLimit } from '../utils/rateLimit.js'
+import { overLimit, peekLimit } from '../utils/rateLimit.js'
 import {
   signToken, verifyTokenPayload, revokeToken, bumpTokenVersion, currentTokenVersion,
   SESSION_EXPIRED_MESSAGE
@@ -127,6 +127,38 @@ router.post('/register', async (req, res) => {
   }
 })
 
+// ============================================================================
+// 登录限流（v1.13.182 · M1 加固）
+//
+// 背景：外部《全方位测试报告》实测 `/login` 可被「8 连击」试密码且**无任何惩罚**
+//   ⇒ 暴力破解 / 撞库零成本。项目**刻意零 rate-limit 依赖**（见 registerGuard.js 头注），
+//   故复用 v1.13.149 已有的进程内滑动窗口（utils/rateLimit.js），零新依赖。
+//
+// 🔒 三处刻意设计，勿改：
+//   ① **只计失败**：预检（`peekLimit`，只读）在 bcrypt **之前** ⇒ 超频请求不消耗昂贵哈希；
+//      但只有**认证失败**才记账（`bumpLoginFailure`）⇒ 计数实际只累积「失败」。
+//      正常用户哪怕一天登录几十次也**永远不会**被误封；被封者必然是密码连续错。
+//      （这也是测试基线不受影响的原因：测试全部用正确密码。）
+//   ② **双维度**（账号 + IP），缺一不可：
+//      · 账号维度挡「针对某一个账号猜密码」；
+//      · IP 维度挡「同一来源对大量账号撞库」。
+//      只做 IP 会被「多 IP 慢速分布式」绕过；只做账号会放过「广撒网撞库」。
+//   ③ **「用户不存在」也算失败**：否则不存在的用户名可被无限试探（用户名枚举）。
+//
+// ⚠️ 已知取舍（接受）：攻击者可用他人用户名刷失败，把该账号锁 15 分钟。
+//    解封＝重启进程（计数在内存 Map）⇒ `pm2 restart webgis-backend` 即时解除，不动库。
+// ⚠️ 部署前提：pm2 单实例（fork）。若改 cluster，计数不共享、额度被放大 N 倍（同 rateLimit.js）。
+// ============================================================================
+const LOGIN_WINDOW_MS = 15 * 60 * 1000   // 滑动窗口：15 分钟
+const LOGIN_MAX_PER_ACCOUNT = 5          // 每账号每窗口：5 次失败
+const LOGIN_MAX_PER_IP = 20              // 每 IP 每窗口：20 次失败（容忍共用出口 IP 的小团队）
+
+/** 记一次登录失败（账号 + IP 双维度）。只在预检未超限时被调用 ⇒ 必然写入。 */
+function bumpLoginFailure(acctKey, ipKey) {
+  overLimit(acctKey, LOGIN_MAX_PER_ACCOUNT, LOGIN_WINDOW_MS)
+  overLimit(ipKey, LOGIN_MAX_PER_IP, LOGIN_WINDOW_MS)
+}
+
 // 登录
 router.post('/login', (req, res) => {
   try {
@@ -136,17 +168,30 @@ router.post('/login', (req, res) => {
       return res.status(400).json({ message: '请输入用户名和密码' })
     }
 
+    // ⓪ 限流预检（只读；位置刻意在 bcrypt 之前 —— 见文件头 ①）
+    const ip = clientIpOf(req)
+    const acctKey = `login:u:${String(username).trim().toLowerCase()}`
+    const ipKey = `login:ip:${ip}`
+    if (peekLimit(acctKey, LOGIN_MAX_PER_ACCOUNT, LOGIN_WINDOW_MS) ||
+        peekLimit(ipKey, LOGIN_MAX_PER_IP, LOGIN_WINDOW_MS)) {
+      console.warn('[auth][login] 限流命中:', ip, String(username).slice(0, 32))
+      res.set('Retry-After', String(Math.ceil(LOGIN_WINDOW_MS / 1000)))
+      return res.status(429).json({ message: '登录尝试过于频繁，请 15 分钟后再试' })
+    }
+
     const db = getDb()
 
     // 查找用户
     const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
     if (!user) {
+      bumpLoginFailure(acctKey, ipKey)   // 见文件头 ③：失败也要计入
       return res.status(401).json({ message: '用户名或密码错误' })
     }
 
     // 验证密码
     const isValid = bcrypt.compareSync(password, user.password)
     if (!isValid) {
+      bumpLoginFailure(acctKey, ipKey)
       return res.status(401).json({ message: '用户名或密码错误' })
     }
 

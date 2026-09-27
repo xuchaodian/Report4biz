@@ -168,8 +168,51 @@ export const useUserStore = defineStore('user', {
       this.orgRole = null
       this.orgRoleLoaded = false
       sessionStorage.removeItem('token')
+      // ⚠️ 必须在移除 userId **之前**清扫（清扫要读 userId 定位命名空间）
+      this.sweepUserLocalState()
       localStorage.removeItem('userId')
       delete axios.defaults.headers.common['Authorization']
+    },
+
+    /**
+     * v1.13.182（外部测试报告 L3）—— 登出时清扫**本账号**在 localStorage 的残留。
+     *
+     * 由来：报告只点出「登出后 `markerFilters_*` 仍在」这 **1 个** key；实测该类 key
+     *   共 **6 个按 uid 命名的家族**，另有 1 个**不带 uid 的全局定位缓存**
+     *   （`__ip_location`，含 lat/lng/city）—— 后者最严重：它**跨账号可读**，
+     *   共用设备上下一个使用者能在 devtools 里直接拿到上一个账号的定位。
+     *   AI 对话历史（`aiChatHistory_<uid>`）是内容型隐私，量最大。
+     *
+     * 🔒 只清「内容 / 数据类」。**刻意保留**下列键，避免登出→再登录时体验突变：
+     *     app_lang ／ mapIconSize_*（品牌图标尺寸）／ guide_done_* 与
+     *     guide_banner_closed_*（新手引导标记）／ panel_smartsteps_radii ／
+     *     store_smartsteps_radii ／ aiEgressAllowed_v1 ／ aiEgressNoticeSeen_v1 ／
+     *     myStoreStatusFilter ／ mapLocked ／ aiFaqHits_*（运营埋点计数）
+     *   ⚠️ 理由：这些多是「设备级偏好」或运营埋点；即便带 uid 前缀，它们也**只对本账号可见**
+     *      （读取时按当前 uid 取），**不构成跨账号泄漏面**，清了反而会被用户感知为「又弹引导」。
+     */
+    sweepUserLocalState() {
+      // ① 按 uid 命名的「内容类」家族：命中 `前缀 + 当前uid` 才删（不误删他人命名空间）
+      const uid = localStorage.getItem('userId')
+      if (uid) {
+        const FAMILIES = [
+          'markerFilters_',      // DataView —— 我的门店筛选
+          'competitorFilters_',  // CompetitorView —— 竞品筛选
+          'brandStoreFilters_',  // BrandStoreView —— 品牌门店筛选
+          'refSelection_',       // SalesForecastView —— 参照店选择
+          'overlapThresholds_',  // MapView —— 重叠阈值
+          'aiChatHistory_'       // AiAssistant —— 对话历史 ★隐私（内容型，量最大）
+        ]
+        // 先收集再删除：边遍历边 removeItem 会打乱索引
+        const doomed = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k && FAMILIES.some((p) => k === p + uid)) doomed.push(k)
+        }
+        doomed.forEach((k) => localStorage.removeItem(k))
+      }
+      // ② 全局键（不带 uid ⇒ 会跨账号残留，最该清的一项）
+      localStorage.removeItem('__ip_location')   // MapView —— IP 定位缓存（lat/lng/city，30 天）
     },
 
     /**
