@@ -176,7 +176,8 @@
         <el-descriptions-item label="数据年月">{{ selectedPurchase.city_month }}</el-descriptions-item>
         <el-descriptions-item label="购买时间">{{ formatDate(selectedPurchase.created_at) }}</el-descriptions-item>
         <el-descriptions-item label="门店类型">{{ selectedPurchase.store_type }}</el-descriptions-item>
-        <el-descriptions-item label="半径">{{ selectedPurchase.radius }}</el-descriptions-item>
+        <!-- v1.13.183：同列表列，改用 radius_display（原来渲染 '[2000]' 原始串） -->
+        <el-descriptions-item label="半径">{{ selectedPurchase.radius_display || (selectedPurchase.radius ? selectedPurchase.radius + '米' : '-') }}</el-descriptions-item>
       </el-descriptions>
       <div style="margin-top: 15px;">
         <el-button type="primary" @click="loadPurchaseDetail(selectedPurchase.id)">查看详情</el-button>
@@ -194,7 +195,13 @@
         <el-table-column prop="city_month" label="数据年月" width="100" />
         <el-table-column prop="created_at" label="购买时间" width="150" :formatter="(row) => formatDate(row.created_at)" />
         <el-table-column prop="store_type" label="门店类型" width="100" />
-        <el-table-column prop="radius" label="半径" />
+        <!-- v1.13.183：原来直接 prop="radius" ⇒ 渲染 purchases.radius 原始 JSON 串 '[2000]'。
+             改用后端补出的 radius_display（与「购买履历」页 / MainLayout 同一写法）。 -->
+        <el-table-column label="半径" min-width="130">
+          <template #default="{ row }">
+            <span style="white-space:nowrap;">{{ row.radius_display || (row.radius ? row.radius + '米' : '-') }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="80">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="selectedPurchase = row">查看</el-button>

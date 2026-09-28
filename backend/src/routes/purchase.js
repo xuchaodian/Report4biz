@@ -75,6 +75,33 @@ function visiblePurchaseOwner(db, viewerId, purchaseId) {
 }
 
 /**
+ * 半径展示文本（v1.13.183）。
+ *
+ * ★ 为什么抽成单一函数：这段逻辑原先**只内联在 `GET /history` 里**（产出 `radius_display`），
+ *   而 `GET /by-store/:storeName` 未产出该字段 ⇒ 门店弹窗「已购报表」只能渲染原始列值，
+ *   直接显示成 `[2000]`（`purchases.radius` 存的是 `JSON.stringify([2000])` 串）。
+ *   ⇒ 按项目铁律「**派生/解析算法必须抽成单一函数共用**」（158 根因）把两处合一。
+ *
+ * 兼容三种存量形态：JSON 数组串 `'[2000]'` / JSON 数字 `2000` / 纯数字字符串 `'2000'`。
+ * ⚠️ 与抽取前的 `/history` 内联版相比，仅统一了「数字分支」的单位写法（原写 `' 米'` 带空格；
+ *    该分支要求 `radius` 已是 number，而两条 INSERT 路径都写 JSON 串 ⇒ 实际不可达，零行为变化）。
+ *
+ * @param {*} raw `purchases.radius` 原始列值
+ * @returns {string} 如 `'2000米'`、`'500米, 1000米'`；识别不出时原样返回（不抛错、不返回 undefined）
+ */
+export function formatRadiusDisplay(raw) {
+  if (raw === null || raw === undefined || raw === '') return ''
+  let display = raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) display = parsed.map((r) => r + '米').join(', ')
+    else display = parsed
+  } catch (e) { /* 非 JSON 串（如老数据 '2000'）：保持原值走下方兜底 */ }
+  if (typeof display === 'number') display = display + '米'
+  return display
+}
+
+/**
  * 获取用户配额信息
  */
 router.get('/quota', authenticate, (req, res) => {
@@ -256,23 +283,11 @@ router.get('/history', authenticate, (req, res) => {
       }
     })
 
-    // 解析半径显示
-    const enriched = formatted.map(p => {
-      let radiusDisplay = p.radius
-      try {
-        const radii = JSON.parse(p.radius)
-        if (Array.isArray(radii)) {
-          radiusDisplay = radii.map(r => r + '米').join(', ')
-        }
-      } catch (e) {}
-      if (typeof radiusDisplay === 'number') {
-        radiusDisplay = radiusDisplay + ' 米'
-      }
-      return {
-        ...p,
-        radius_display: radiusDisplay
-      }
-    })
+    // 解析半径显示（v1.13.183：抽成 formatRadiusDisplay()，与 /by-store 共用同一实现）
+    const enriched = formatted.map((p) => ({
+      ...p,
+      radius_display: formatRadiusDisplay(p.radius)
+    }))
 
     res.json({ purchases: enriched, ...scopeSummary(db, req.user.id) })
   } catch (error) {
@@ -368,6 +383,10 @@ router.get('/by-store/:storeName', authenticate, (req, res) => {
         const label = labels.get(Number(p.user_id)) || { name: `#${p.user_id}`, isSelf: false }
         return {
           ...p,
+          // v1.13.183：补 radius_display —— 此前本接口缺该字段，门店弹窗「已购报表」
+          // 只能直接渲染 purchases.radius 原始值，把 '[2000]' 原样显示给用户。
+          // 与 /history 共用 formatRadiusDisplay()，两处口径必须一致。
+          radius_display: formatRadiusDisplay(p.radius),
           owner_user_id: Number(p.user_id),
           owner_name: label.name,
           is_self: !!label.isSelf
