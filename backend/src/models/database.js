@@ -96,6 +96,16 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 为已有数据库添加 sales_band 字段（如果不存在）——v1.13.186 档位录入。
+  // NULL = 精确值录入（sales_amount 即用户所填）；非 NULL = 档位录入
+  // （sales_amount 存【区间中点】，仅供下游做量级计算）。
+  // 定义表见 `utils/salesBand.js`（与前端 `frontend/src/utils/salesBand.js` 由守卫测试钉死一致）。
+  try {
+    db.run(`ALTER TABLE store_sales ADD COLUMN sales_band TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 为已有数据库添加 vip_until 字段（如果不存在）——VIP 到期时间（YYYY-MM-DD）
   try {
     db.run(`ALTER TABLE users ADD COLUMN vip_until TEXT`)
@@ -875,6 +885,7 @@ export async function initDatabase() {
       store_area REAL,
       delivery_ratio INTEGER,
       customer_count INTEGER,
+      sales_band TEXT,
       remark TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

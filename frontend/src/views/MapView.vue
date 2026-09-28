@@ -1612,6 +1612,7 @@ import {
   calculateDistance, formatDistance, calculateArea, formatArea
 } from '@/utils/map'
 import axios from 'axios'
+import { bandLabel } from '@/utils/salesBand'
 import echarts from '@/utils/echarts'
 // M1（v1.13.107）：turf 按函数引入——`import * as turf from '@turf/turf'` 会把整个 turf 包
 // （约 200 个 CJS 子模块，Rollup 无法 tree-shake CJS）打进 vendor-maps；本文件实际只用 6 个函数。
@@ -3133,25 +3134,36 @@ async function loadStoreSalesIntoPopup(storeId) {
     const el = document.getElementById(`store-sales-${storeId}`)
     if (!el) return
     if (!d || !d.success) { el.innerHTML = '📊 销售数据加载失败'; return }
+    // v1.13.186：admin 查非自己名下门店时，后端只回答「有没有记录」、不回金额
+    if (d.restricted) {
+      el.innerHTML = `<div style="color:#909399;">🔒 销售数据仅门店归属账号可见${d.recordCount > 0 ? `（该店有 ${d.recordCount} 条记录）` : ''}</div>`
+      return
+    }
     const has = (d.series || []).filter(s => s.salesAmount != null)
     // 仅有年度记录（month=0 按年录入）：直接显示年度销售额
     if (has.length === 0) {
       if (d.annual && d.annual.salesAmount) {
         const a = d.annual
-        el.innerHTML = `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ¥${(a.salesAmount / 10000).toFixed(1)}万</div>`
+        // v1.13.186：档位录入时金额是【区间中点】⇒ 显示 ≈ 并给出区间，⛔ 不可当精确值展示
+        const bl = a.band ? bandLabel(a.band) : null
+        el.innerHTML = bl
+          ? `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ≈¥${(a.salesAmount / 10000).toFixed(1)}万</div><div style="font-size:11px;color:#e6a23c;margin-top:2px;">档位估值：${bl}</div>`
+          : `<div style="font-weight:500;color:#333;">📊 ${a.year} 年销售额 ¥${(a.salesAmount / 10000).toFixed(1)}万</div>`
       } else {
         el.innerHTML = '📊 暂无销售记录'
       }
       return
     }
     const max = Math.max(...has.map(s => s.salesAmount), 1)
-    let html = `<div style="font-weight:500;color:#333;">📊 本年累计 ¥${(d.yearTotal / 10000).toFixed(1)}万</div>`
+    const anyBand = d.series.some(s => s.band)
+    let html = `<div style="font-weight:500;color:#333;">📊 本年累计 ¥${(d.yearTotal / 10000).toFixed(1)}万${anyBand ? '<span style="font-size:11px;color:#e6a23c;font-weight:400;">（含档位估值）</span>' : ''}</div>`
     html += `<div style="display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:6px;">`
     d.series.forEach(s => {
       const filled = s.salesAmount != null
       const h = filled ? Math.max(5, Math.round(s.salesAmount / max * 30)) : 2
-      const tip = `${s.year}-${String(s.month).padStart(2, '0')}：${filled ? '¥' + Number(s.salesAmount).toLocaleString() : '无'}`
-      html += `<div title="${tip}" style="width:14px;height:${h}px;background:${filled ? '#409eff' : '#e3e6ea'};border-radius:2px;flex-shrink:0;"></div>`
+      const bl = s.band ? bandLabel(s.band) : null
+      const tip = `${s.year}-${String(s.month).padStart(2, '0')}：${filled ? (bl ? `档位估值 ${bl}（≈¥${Number(s.salesAmount).toLocaleString()}）` : '¥' + Number(s.salesAmount).toLocaleString()) : '无'}`
+      html += `<div title="${tip}" style="width:14px;height:${h}px;background:${filled ? (s.band ? '#e6a23c' : '#409eff') : '#e3e6ea'};border-radius:2px;flex-shrink:0;"></div>`
     })
     html += `</div>`
     el.innerHTML = html

@@ -654,8 +654,18 @@ router.get('/stats', authenticate, (req, res) => {
          GROUP BY s.store_id, s.year
        )`
     ).get(...(isAdmin ? [] : [userId])).c
+    // v1.13.186：含【档位估值】的样本数 —— 这些样本的金额是档位区间中点，
+    // 不是用户填的精确值，前端须据此标注「预测不确定度偏大」，⛔ 不能当作等精度样本。
+    const bandSamples = db.prepare(
+      `SELECT COUNT(*) c FROM (
+         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id
+         WHERE ${isAdmin ? '1=1' : 'm.user_id = ?'} AND m.store_type = '已开业'
+           AND s.sales_band IS NOT NULL
+         GROUP BY s.store_id, s.year
+       )`
+    ).get(...(isAdmin ? [] : [userId])).c
     const l2 = 50, l3 = L3_MIN
-    res.json({ success: true, stores, samples, l2, l3, l2Gap: Math.max(l2 - samples, 0), l3Gap: Math.max(l3 - samples, 0) })
+    res.json({ success: true, stores, samples, bandSamples, l2, l3, l2Gap: Math.max(l2 - samples, 0), l3Gap: Math.max(l3 - samples, 0) })
   } catch (e) {
     console.error('[sales-forecast] stats 失败:', e.message)
     res.status(500).json({ message: '样本统计失败' })

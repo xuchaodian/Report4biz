@@ -671,16 +671,24 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="saleDialogVisible" width="1000px" :close-on-click-modal="false">
+    <el-dialog v-model="saleDialogVisible" width="1040px" :close-on-click-modal="false">
       <template #header>
         <span class="dlg-title"><AppIcon><EditPen /></AppIcon>门店年度销售录入</span>
       </template>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
         <span style="font-size:13px;color:#555;">年份</span>
         <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
           <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
         </el-select>
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:12px;padding:8px 10px;background:#f4f8ff;border-radius:6px;">
+        <AppIcon style="color:#409eff;"><Lock /></AppIcon>
+        <span style="font-size:12px;color:#5a6b85;line-height:1.6;">
+          销售数据<b>仅您本人账号可见</b>——平台侧只统计「录入条数」、看不到金额；集团「同步下发」不含销售记录，报告与导出均不含销售额。
+          <span style="color:#e6a23c;">（门店若被划拨给集团其他成员，销售记录会随门店一并转移）</span><br/>
+          不便填精确值时，可切换为<b>「档位」</b>录入：只给金额区间，系统按区间中点参与测算，精度略低但不会暴露具体营业额。
+        </span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
         <el-button size="small" @click="downloadSaleTemplate"><AppIcon class="icon-text"><Download /></AppIcon>下载模板</el-button>
@@ -689,29 +697,39 @@
         <span style="font-size:12px;color:#909399;">按「门店编号」匹配（编号优先，名称兜底）</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
-        <el-table-column label="门店" width="340">
+        <el-table-column label="门店" width="270">
           <template #default="{ row }">
             <div>{{ row.name }}</div>
             <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
-              <template v-for="(y, i) in saleYearOptions" :key="y">
-                <span :style="getSaleYearAmount(row.id, y) ? 'color:#409eff;' : ''">{{ y }}: {{ getSaleYearAmount(row.id, y) ? getSaleYearAmount(row.id, y) + '万' : '-' }}</span><template v-if="i < saleYearOptions.length - 1"><span style="margin:0 5px;">·</span></template>
+              <template v-for="(c, i) in row.yearCells" :key="c.year">
+                <span :style="c.text === '-' ? '' : (c.isBand ? 'color:#e6a23c;' : 'color:#409eff;')" :title="c.title">{{ c.year }}: {{ c.text }}</span><template v-if="i < row.yearCells.length - 1"><span style="margin:0 5px;">·</span></template>
               </template>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="年销售(万元)" width="230">
+        <el-table-column label="年销售额" width="320">
           <template #default="{ row }">
-            <el-input-number v-model="row.salesAmount" :min="0" :controls="false" style="width:200px" placeholder="万元" />
+            <el-radio-group v-model="row.saleMode" size="small" style="margin-bottom:6px" @change="onSaleModeChange(row)">
+              <el-radio value="exact">精确值</el-radio>
+              <el-radio value="band">档位</el-radio>
+            </el-radio-group>
+            <el-input-number v-if="row.saleMode === 'exact'" v-model="row.salesAmount" :min="0" :controls="false" style="width:180px" placeholder="万元" />
+            <el-select v-else v-model="row.salesBand" placeholder="选择金额区间" style="width:180px">
+              <el-option v-for="o in SALES_BAND_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <div v-if="row.saleMode === 'band'" style="font-size:11px;color:#e6a23c;margin-top:4px;line-height:1.4;">
+              档位估值：按区间中点参与测算，精度低于精确值
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="面积(㎡)" width="160">
+        <el-table-column label="面积(㎡)" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:130px" placeholder="自动带出" />
+            <el-input-number v-model="row.storeArea" :min="0" :controls="false" style="width:120px" placeholder="自动带出" />
           </template>
         </el-table-column>
-        <el-table-column label="外卖占比(%)" width="150">
+        <el-table-column label="外卖占比(%)" width="140">
           <template #default="{ row }">
-            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:120px" placeholder="选填" />
+            <el-input-number v-model="row.deliveryRatio" :min="0" :max="100" :controls="false" style="width:110px" placeholder="选填" />
           </template>
         </el-table-column>
       </el-table>
@@ -736,12 +754,13 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen, Document } from '@element-plus/icons-vue'
+import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen, Document, Lock } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import Papa from 'papaparse'
 import { escapeHtml } from '@/utils/escapeHtml'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
+import { SALES_BAND_OPTIONS, bandLabel } from '@/utils/salesBand'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -1144,22 +1163,62 @@ const saleYearOptions = (() => {
   const cur = new Date().getFullYear()
   return [cur - 2, cur - 1, cur]
 })()
+/**
+ * v1.13.186：构造一行录入数据。
+ * `saleMode` = 'exact' | 'band'，由**已有记录**决定回显哪种模式：
+ *   库里 sales_band 非空 ⇒ 上次就是档位录入，回显档位。
+ *   ⛔ 不能回显成精确值 —— 否则用户一保存就把「档位」悄悄升级成精确值，属静默语义漂移。
+ */
+const buildSaleRow = (s, year) => {
+  const rec = saleSummaryByStore[s.id]
+  const exist = rec ? (rec.annual[year] || null) : null
+  const band = exist ? (exist.sales_band || null) : null
+  return {
+    id: s.id,
+    name: s.name || s.store_name || '',
+    brand: s.brand || '',
+    saleMode: band ? 'band' : 'exact',
+    salesBand: band,
+    salesAmount: (exist && !band) ? Math.round(exist.sales_amount / 10000) : null,
+    storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
+    deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[s.brand] ?? null) : (DELIVERY_RATIO_MAP[s.brand] ?? null),
+    customerCount: null,
+    yearCells: buildYearCells(s.id)
+  }
+}
+
+/** 三年摘要（预计算，避免模板重复调用）；档位行加 ≈ 前缀并给完整区间 tooltip */
+const buildYearCells = (storeId) => {
+  const rec = saleSummaryByStore[storeId]
+  return saleYearOptions.map((y) => {
+    const annual = rec ? rec.annual[y] : null
+    let amount = null
+    let band = null
+    if (annual) {
+      amount = annual.sales_amount
+      band = annual.sales_band || null
+    } else if (rec) {
+      const sum = Object.keys(rec.months)
+        .filter(k => k.startsWith(y + '-'))
+        .reduce((acc, k) => acc + (rec.months[k].sales_amount || 0), 0)
+      if (sum > 0) amount = sum
+    }
+    if (!(amount > 0)) return { year: y, text: '-', isBand: false, title: '' }
+    const wan = (amount / 10000).toFixed(1)
+    if (band) return { year: y, text: '≈' + wan + '万', isBand: true, title: `档位估值：${bandLabel(band) || band}（按区间中点 ${wan} 万计）` }
+    return { year: y, text: wan + '万', isBand: false, title: '精确录入' }
+  })
+}
+
+/** 切换录入方式：清掉另一侧残留，避免「选了档位却还带着旧精确值」 */
+const onSaleModeChange = (row) => {
+  if (row.saleMode === 'band') row.salesAmount = null
+  else row.salesBand = null
+}
 const openSaleDialog = (stores) => {
   if (!stores || stores.length === 0) return
   saleYear.value = new Date().getFullYear()
-  saleRows.value = stores.map(s => {
-    const rec = saleSummaryByStore[s.id]
-    const exist = rec ? (rec.annual[saleYear.value] || null) : null
-    return {
-      id: s.id,
-      name: s.name || s.store_name || '',
-      brand: s.brand || '',
-      salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
-      storeArea: exist ? (exist.store_area || s.store_area || s.area || null) : (s.store_area || s.area || null),
-      deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[s.brand] ?? null) : (DELIVERY_RATIO_MAP[s.brand] ?? null),
-      customerCount: null
-    }
-  })
+  saleRows.value = stores.map(s => buildSaleRow(s, saleYear.value))
   saleDialogVisible.value = true
 }
 // ===== 销售记录展示 =====
@@ -1191,17 +1250,9 @@ const loadAllSales = async () => {
     })
   } catch (e) { console.error('销售记录加载失败:', e) }
 }
-// 某店某年销售额（万元，1 位小数；年度记录优先，无则月度汇总）
-const getSaleYearAmount = (storeId, year) => {
-  const rec = saleSummaryByStore[storeId]
-  if (!rec) return null
-  if (rec.annual[year]) return (rec.annual[year].sales_amount / 10000).toFixed(1)
-  const sum = Object.keys(rec.months)
-    .filter(k => k.startsWith(year + '-'))
-    .reduce((acc, k) => acc + (rec.months[k].sales_amount || 0), 0)
-  if (sum <= 0) return null
-  return (sum / 10000).toFixed(1)
-}
+// 注：原 getSaleYearAmount() 已由 buildYearCells() 取代（v1.13.186）——
+// 档位录入的销售金额是【区间中点】，不再是一个可以直接显示的裸数字，
+// 必须连区间一起给出（否则会把估值显示成精确值）。
 
 // 无勾选时：录入当前筛选结果（>100 家提醒缩小范围）
 // ===== Excel 批量导入 =====
@@ -1250,16 +1301,20 @@ const handleSaleImport = async (e) => {
   }
 }
 
-// 切换年份：按新年份回显（有记录显示，无则清空）
+// 切换年份：按新年份回显（有记录显示，无则清空）；档位记录回显为档位模式
 const onSaleYearChange = () => {
   saleRows.value = saleRows.value.map(r => {
     const rec = saleSummaryByStore[r.id]
     const exist = rec ? (rec.annual[saleYear.value] || null) : null
+    const band = exist ? (exist.sales_band || null) : null
     return {
       ...r,
-      salesAmount: exist ? Math.round(exist.sales_amount / 10000) : null,
+      saleMode: band ? 'band' : 'exact',
+      salesBand: band,
+      salesAmount: (exist && !band) ? Math.round(exist.sales_amount / 10000) : null,
       storeArea: exist ? (exist.store_area || r.storeArea || null) : r.storeArea,
-      deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[r.brand] ?? null) : (DELIVERY_RATIO_MAP[r.brand] ?? null)
+      deliveryRatio: exist ? (exist.delivery_ratio ?? DELIVERY_RATIO_MAP[r.brand] ?? null) : (DELIVERY_RATIO_MAP[r.brand] ?? null),
+      yearCells: buildYearCells(r.id)
     }
   })
 }
@@ -1277,12 +1332,18 @@ const openSaleDialogForAll = () => {
   openSaleDialog(filteredMarkers.value)
 }
 const submitSales = async () => {
-  const items = saleRows.value.map(r => ({
-    storeId: r.id, year: saleYear.value, month: 0,
-    salesAmount: r.salesAmount * 10000, storeArea: r.storeArea, deliveryRatio: r.deliveryRatio  // 万元 → 元 存储
-  }))
-  if (items.some(it => !it.salesAmount || it.salesAmount <= 0)) {
-    ElMessage.warning('请填写所有门店的销售额（> 0）')
+  // v1.13.186：档位行传 salesBand（后端按区间中点落库）；精确行传 salesAmount（万元 → 元 存储）
+  const items = saleRows.value.map(r => (r.saleMode === 'band'
+    ? { storeId: r.id, year: saleYear.value, month: 0, salesBand: r.salesBand, storeArea: r.storeArea, deliveryRatio: r.deliveryRatio }
+    : { storeId: r.id, year: saleYear.value, month: 0, salesAmount: r.salesAmount * 10000, storeArea: r.storeArea, deliveryRatio: r.deliveryRatio }
+  ))
+  // 逐行点名「哪一家」没填（批量录入时笼统提示很折磨）
+  const badIdx = saleRows.value.findIndex((r, i) => (r.saleMode === 'band' ? !items[i].salesBand : !(items[i].salesAmount > 0)))
+  if (badIdx >= 0) {
+    const bad = saleRows.value[badIdx]
+    ElMessage.warning(bad.saleMode === 'band'
+      ? `「${bad.name}」请选择销售档位`
+      : `「${bad.name}」请填写销售额（> 0），或切换为档位录入`)
     return
   }
   saleSubmitting.value = true

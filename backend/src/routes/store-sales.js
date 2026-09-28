@@ -4,24 +4,75 @@ import fs from 'fs'
 import * as XLSX from 'xlsx'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { bandByKey, bandMidYuan, parseBandInput } from '../utils/salesBand.js'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
 
-// 门店月度销售：按用户隔离；admin 可通过 ?all=1 查看全部
+// 门店月度销售：按用户隔离；admin 可通过 ?all=1 查看【聚合】（不出金额）
 // 唯一键 (user_id, store_id, year, month) → 同店同月重复提交 = 幂等覆盖
+
+/**
+ * v1.13.186：admin 的 `?all=1` 收窄为【只出聚合、不出金额】。
+ *
+ * 背景：原实现 `all === '1' && role === 'admin'` 会把**全部客户**的销售明细
+ * （含属保密信息的 sales_amount）直接返回给平台侧，这与 `utils/visibleScope.js`
+ * 写下的既有原则直接冲突 ——「admin 是平台运维角色，放开等于让平台能读所有
+ * 客户的付费数据，与数据隐私最高优先级冲突」。
+ *
+ * 现在只回答「有多少」，**绝不回答「是多少」**：
+ *   · 条数 / 账号数 / 门店数 / 年度分布 / 覆盖率 / 档位录入占比
+ *   · ⛔ 不含 sales_amount 的任何形式（SUM/AVG/MAX 一律不出）
+ *
+ * 留痕走 pm2 日志而**不落表** —— 本项目每次 saveNow() 都是整库写盘（160MB+），
+ * 为一行日志付这个代价会拖垮 2C 小机（见 database.js 的写放大注释）。
+ */
+function buildSalesAggregate(db) {
+  const t = db.prepare(`
+    SELECT COUNT(*) AS records,
+           COUNT(DISTINCT user_id) AS accounts,
+           COUNT(DISTINCT store_id) AS stores,
+           SUM(CASE WHEN sales_band IS NOT NULL THEN 1 ELSE 0 END) AS bandRecords,
+           MIN(year) AS minYear, MAX(year) AS maxYear
+      FROM store_sales`).get() || {}
+  const years = db.prepare(`
+    SELECT year,
+           COUNT(*) AS records,
+           COUNT(DISTINCT store_id) AS stores,
+           COUNT(DISTINCT user_id) AS accounts
+      FROM store_sales GROUP BY year ORDER BY year DESC`).all()
+  const openStores = (db.prepare(
+    `SELECT COUNT(*) AS n FROM markers WHERE store_type = '已开业'`
+  ).get() || {}).n || 0
+  const withSales = t.stores || 0
+  return {
+    records: t.records || 0,
+    accounts: t.accounts || 0,
+    stores: withSales,
+    bandRecords: t.bandRecords || 0,
+    minYear: t.minYear || null,
+    maxYear: t.maxYear || null,
+    openStores,
+    coverage: openStores > 0 ? Number((withSales / openStores).toFixed(4)) : null,
+    years
+  }
+}
 
 // 获取销售记录列表（可按门店/年/月筛选）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const { storeId, year, month, all } = req.query
+    // admin 视角：只给聚合，不给明细与金额（v1.13.186 收窄）
+    if (all === '1' && req.user.role === 'admin') {
+      const summary = buildSalesAggregate(db)
+      console.log(`[audit][store-sales] admin 聚合查阅 user=${req.user.id} ip=${req.ip || '-'} records=${summary.records} accounts=${summary.accounts} stores=${summary.stores}`)
+      return res.json({ success: true, aggregate: true, summary })
+    }
     const conds = []
     const params = []
-    if (!(all === '1' && req.user.role === 'admin')) {
-      conds.push('user_id = ?')
-      params.push(req.user.id)
-    }
+    conds.push('user_id = ?')
+    params.push(req.user.id)
     if (storeId) {
       conds.push('store_id = ?')
       params.push(Number(storeId))
@@ -55,8 +106,20 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
     if (req.user.role !== 'admin' && store.user_id !== req.user.id) {
       return res.status(403).json({ message: '无权查看该门店' })
     }
+    // ⚠️ v1.13.186：admin 对**非自己名下**门店不再返回金额 —— 原实现在这里只做
+    // 「admin 放行」判断，平台侧仍可逐店读明文金额，与 `?all=1` 是同一扇门的
+    // 另一条缝，一并收窄。保留「有没有记录」这一事实（排查仍够用），但不给数值。
+    if (req.user.role === 'admin' && Number(store.user_id) !== Number(req.user.id)) {
+      const n = (db.prepare('SELECT COUNT(*) AS n FROM store_sales WHERE store_id = ?').get(storeId) || {}).n || 0
+      console.log(`[audit][store-sales] admin 查阅他店历史被收窄 user=${req.user.id} store=${storeId} ip=${req.ip || '-'} rows=${n}`)
+      return res.json({
+        success: true, storeId, restricted: true, recordCount: n,
+        yearTotal: null, curYear: new Date().getFullYear(), series: [], annual: null,
+        message: '销售数据仅门店归属账号可见'
+      })
+    }
     const rows = db.prepare(
-      `SELECT year, month, sales_amount, store_area, delivery_ratio, customer_count
+      `SELECT year, month, sales_amount, store_area, delivery_ratio, customer_count, sales_band
        FROM store_sales WHERE store_id = ? ORDER BY year, month`
     ).all(storeId)
     // 汇总本年累计 + 近 N 月序列
@@ -78,11 +141,12 @@ router.get('/stores/:storeId/history', authenticate, (req, res) => {
       const y = Math.floor((k - 1) / 12)
       const m = ((k - 1) % 12) + 1
       const hit = rows.find(r => r.year === y && r.month === m)
-      series.push({ year: y, month: m, salesAmount: hit ? hit.sales_amount : null, storeArea: hit ? hit.store_area : null })
+      // band：档位录入时非 null ⇒ 前端须展示区间并标注「档位估值」（salesAmount 只是中点）
+      series.push({ year: y, month: m, salesAmount: hit ? hit.sales_amount : null, storeArea: hit ? hit.store_area : null, band: hit ? (hit.sales_band || null) : null })
     }
     res.json({
       success: true, storeId, yearTotal, curYear, series,
-      annual: latestAnnual ? { year: latestAnnual.year, salesAmount: latestAnnual.sales_amount, storeArea: latestAnnual.store_area, deliveryRatio: latestAnnual.delivery_ratio } : null
+      annual: latestAnnual ? { year: latestAnnual.year, salesAmount: latestAnnual.sales_amount, storeArea: latestAnnual.store_area, deliveryRatio: latestAnnual.delivery_ratio, band: latestAnnual.sales_band || null } : null
     })
   } catch (e) {
     console.error('[store-sales] 历史失败:', e.message)
@@ -99,13 +163,14 @@ router.post('/', authenticate, (req, res) => {
     if (items.length === 0) return res.status(400).json({ message: '没有要保存的数据' })
 
     const upsert = db.prepare(`INSERT INTO store_sales
-      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, customer_count, remark)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, customer_count, sales_band, remark)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, store_id, year, month) DO UPDATE SET
         sales_amount = excluded.sales_amount,
         store_area = excluded.store_area,
         delivery_ratio = excluded.delivery_ratio,
         customer_count = excluded.customer_count,
+        sales_band = excluded.sales_band,
         remark = excluded.remark,
         updated_at = CURRENT_TIMESTAMP`)
 
@@ -119,8 +184,23 @@ router.post('/', authenticate, (req, res) => {
         const year = Number(it.year)
         // month=0 表示年度汇总记录（按年录入）；1-12 为月度
         const month = it.month === undefined || it.month === null || it.month === '' ? 0 : Number(it.month)
-        const amount = Number(it.salesAmount)
-        if (!storeId || !year || isNaN(month) || month < 0 || month > 12 || isNaN(amount)) {
+        // v1.13.186：档位录入（salesBand）优先于精确值。
+        // 档位命中 ⇒ 金额取【区间中点】落库（下游销售预测/坪效零改动），
+        // 同时把 key 记进 sales_band，供展示端标注「档位估值」。
+        // ⛔ 给了无法识别的档位时【直接报错】，绝不静默落回精确值 ——
+        //    否则用户以为存了档位、实际存了精确值，属静默语义漂移（比报错危险得多）。
+        let band = null
+        const rawBand = it.salesBand
+        if (rawBand !== undefined && rawBand !== null && String(rawBand).trim() !== '') {
+          band = bandByKey(rawBand)
+          if (!band) {
+            results.push({ storeId, ok: false, reason: `未知档位：${rawBand}` })
+            continue
+          }
+        }
+        const amount = band ? bandMidYuan(band.key) : Number(it.salesAmount)
+        // ⚠️ 沿用原判据 isNaN（保留「允许 0」的既有语义），只额外挡住 Infinity
+        if (!storeId || !year || isNaN(month) || month < 0 || month > 12 || isNaN(amount) || !Number.isFinite(amount)) {
           results.push({ storeId, ok: false, reason: '参数不完整或格式错误' })
           continue
         }
@@ -143,6 +223,7 @@ router.post('/', authenticate, (req, res) => {
           it.storeArea !== undefined && it.storeArea !== null && it.storeArea !== '' ? Number(it.storeArea) : (store.store_area || null),
           (dr !== null && dr >= 0 && dr <= 100) ? Math.round(dr) : null,
           it.customerCount !== undefined && it.customerCount !== null && it.customerCount !== '' ? Number(it.customerCount) : null,
+          band ? band.key : null,
           it.remark || null
         )
         okCount++
@@ -183,11 +264,11 @@ router.delete('/:id', authenticate, (req, res) => {
 router.get('/template', authenticate, (req, res) => {
   try {
     const data = [
-      ['门店编号', '门店名称', '年份', '年销售额(万元)', '面积(㎡)', '外卖占比(%)', '备注'],
-      ['2508', '周浦新田360广场店', 2026, 600, 120, 40, '示例行（导入前请删除）']
+      ['门店编号', '门店名称', '年份', '年销售额(万元)', '销售档位', '面积(㎡)', '外卖占比(%)', '备注'],
+      ['2508', '周浦新田360广场店', 2026, 600, '', 120, 40, '示例行（导入前请删除）。销售档位可选填：< 200 万 / 200 – 400 万 / 400 – 600 万 / 600 – 1000 万 / 1000 – 2000 万 / > 2000 万；填了档位则忽略「年销售额」']
     ]
     const ws = XLSX.utils.aoa_to_sheet(data)
-    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 20 }]
+    ws['!cols'] = [{ wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 12 }, { wch: 40 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '销售录入')
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
@@ -220,12 +301,13 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
     ).all(...(isAdmin ? [] : [userId]))
 
     const upsert = db.prepare(`INSERT INTO store_sales
-      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, remark)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+      (user_id, store_id, store_name, brand, city, year, month, sales_amount, store_area, delivery_ratio, sales_band, remark)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, store_id, year, month) DO UPDATE SET
         sales_amount = excluded.sales_amount,
         store_area = excluded.store_area,
         delivery_ratio = excluded.delivery_ratio,
+        sales_band = excluded.sales_band,
         remark = excluded.remark,
         updated_at = CURRENT_TIMESTAMP`)
 
@@ -250,6 +332,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         const name = String(r['门店名称'] || '').trim()
         const year = Number(r['年份'])
         const amountW = Number(r['年销售额(万元)'])
+        const bandRaw = String(r['销售档位'] || '').trim()
         const areaRaw = String(r['面积(㎡)'] || '').trim()
         const drRaw = String(r['外卖占比(%)'] || '').trim()
         const remark = String(r['备注'] || '').trim() || null
@@ -258,7 +341,14 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
         const matched = findStore(code, name)
         if (matched.err) { results.push({ row: rowNo, reason: matched.err }); return }
         if (!year || year < 2000 || year > 2100) { results.push({ row: rowNo, reason: `年份无效：${r['年份']}` }); return }
-        if (isNaN(amountW) || amountW <= 0) { results.push({ row: rowNo, reason: `年销售额无效（需>0）：${r['年销售额(万元)']}` }); return }
+        // v1.13.186：档位列优先——填了档位就忽略「年销售额」（给不想上传精确值的用户一条路）。
+        // ⛔ 档位文本识别不了时直接报错，不静默退回按精确值处理。
+        let bandKey = null
+        if (bandRaw) {
+          bandKey = parseBandInput(bandRaw)
+          if (!bandKey) { results.push({ row: rowNo, reason: `销售档位无法识别（可填：< 200 万 / 200 – 400 万 / 400 – 600 万 / 600 – 1000 万 / 1000 – 2000 万 / > 2000 万）：${bandRaw}` }); return }
+        }
+        if (!bandKey && (isNaN(amountW) || amountW <= 0)) { results.push({ row: rowNo, reason: `年销售额无效（需>0，或改填「销售档位」）：${r['年销售额(万元)']}` }); return }
         let dr = null
         if (drRaw !== '') {
           dr = Number(drRaw)
@@ -266,8 +356,9 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
           dr = Math.round(dr)
         }
         const area = areaRaw !== '' ? Number(areaRaw) : (matched.store.store_area || null)
+        const amountYuan = bandKey ? bandMidYuan(bandKey) : Math.round(amountW * 10000)
         upsert.run(userId, matched.store.id, matched.store.name || '', matched.store.brand || '', matched.store.city || '',
-          year, Math.round(amountW * 10000), isNaN(area) ? null : area, dr, remark)
+          year, amountYuan, isNaN(area) ? null : area, dr, bandKey, remark)
         okCount++
         results.push({ row: rowNo, ok: true })
       })

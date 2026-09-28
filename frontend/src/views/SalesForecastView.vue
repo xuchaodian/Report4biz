@@ -22,6 +22,12 @@
         </template>
       </el-alert>
 
+      <el-alert v-if="stats && stats.bandSamples > 0" type="warning" :closable="false" style="margin-bottom: 12px;">
+        <template #title>
+          <AppIcon class="icon-text"><WarningFilled /></AppIcon>其中 <b>{{ stats.bandSamples }}</b> 行是「档位估值」（只填了金额区间，系统按区间中点参与测算）——预测误差范围会比纯精确样本更大
+        </template>
+      </el-alert>
+
       <!-- 候选门店选择 -->
       <div class="fc-toolbar">
         <el-input v-model="keyword" placeholder="搜索候选门店" aria-label="搜索候选门店" style="width: 220px" clearable>
@@ -171,7 +177,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '../utils/api.js'
 import { ElMessage } from 'element-plus'
-import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools } from '@element-plus/icons-vue'
+import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 const loading = ref(false)
