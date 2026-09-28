@@ -3043,6 +3043,56 @@ const openStorePoiSearch = async (lat, lng) => {
   }
 }
 
+/**
+ * 🔴🔴 铁律（v1.13.184 立）：Leaflet 动态拼的 HTML 里 **绝对禁止写内联事件属性**（`onclick` / `onerror` / `onload` …）。
+ *
+ * 为什么：主站 nginx 自 v1.13.139 起下发 CSP `script-src 'self'`（既无 `'unsafe-inline'`、也无 `'unsafe-hashes'`）。
+ * 按 CSP 规范，这会拦掉**所有内联事件处理器** —— 浏览器在「给元素设置内联事件属性」这一步就直接拒绝编译，于是：
+ *   · DOM 上 `onclick` 属性**看起来还在**（`hasAttribute('onclick') === true`）
+ *   · 但 `el.onclick` 恒为 `null`，点击**什么都不发生**
+ *   · 页面无报错、无提示，只有控制台一条 `securitypolicyviolation` —— **极难排查**
+ * 实测（生产 mka-online.cn）：同样两个按钮，`addEventListener` 版点一次 fired=1；
+ * `innerHTML` 内联版点一次 fired=0 且 `typeof el.onclick === 'object'`（即 null）。
+ * 受影响面：本文件 7 个门店弹窗按钮 + 测量结果标签的 ❌（v1.13.139~v1.13.183 期间全部失效）。
+ *
+ * ⇒ 统一改法：动态 HTML 只输出 `data-*` 属性，事件由**地图容器级委托**在此统一分发。
+ *   Leaflet 的 `disableClickPropagation()` 只拦 `mousedown/touchstart/dblclick/contextmenu`，
+ *   **不拦 `click`** ⇒ 弹窗/图钉里的 click 仍会冒泡到 `.leaflet-container`，委托成立。
+ *   ⛔ 别去给 CSP 加 `'unsafe-inline'` / `'unsafe-hashes'`：那是把整站 XSS 防线拆掉来换几个按钮。
+ *
+ * @param {MouseEvent} e 地图容器（.leaflet-container）上的 click
+ */
+function onLeafletHtmlClick(e) {
+  const t = e.target
+  if (!t || typeof t.closest !== 'function') return
+
+  // ① 门店弹窗的 7 个按钮：编辑 / 删除 / 联通人口 / 相似店 / 人口分布 / 竞品分布 / 周边检索
+  const btn = t.closest('button[data-store-act]')
+  if (btn) {
+    const act = btn.getAttribute('data-store-act')
+    const id = Number(btn.getAttribute('data-store-id'))
+    const lat = parseFloat(btn.getAttribute('data-store-lat'))
+    const lng = parseFloat(btn.getAttribute('data-store-lng'))
+    switch (act) {
+      case 'edit': return editMarker(id)
+      case 'delete': return deleteMarker(id)
+      case 'smartsteps': return openStoreSmartsteps(id)
+      case 'similar': return openStoreSimilarStores(id)
+      case 'population': return openStorePopulationDistribution(lat, lng)
+      case 'competitors': return openStoreCompetitors(lat, lng)
+      case 'poi': return openStorePoiSearch(lat, lng)
+      default: return
+    }
+  }
+
+  // ② 测量结果标签上的 ❌：一键清除距离线段与测量结果（等价于原 window.clearMeasureResult）
+  if (t.closest('[data-measure-act="clear"]')) {
+    clearDrawings()
+    measurementResult.value = ''
+    activeTool.value = ''
+  }
+}
+
 // 门店评分表（从门店popup调用）
 // ====== 共用门店弹窗HTML（三处统一，改一处即全部生效） ======
 function getStorePopupHtml(markerData) {
@@ -3063,13 +3113,13 @@ function getStorePopupHtml(markerData) {
       ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
       <div id="store-sales-${markerData.id}" style="margin: 8px 0 2px; padding: 6px 8px; background: #f5f7fa; border-radius: 6px; font-size: 12px; color: #909399;">销售数据加载中…</div>
       <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
-        <button onclick="window.editMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
-        <button onclick="window.deleteMarkerExternal(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
-        <button onclick="window.openStoreSmartsteps(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px; font-size: 12px;">联通人口</button>
-        <button onclick="window.openStoreSimilarStores(${markerData.id})" style="padding: 4px 10px; cursor: pointer; background: #e6a23c; color: white; border: none; border-radius: 4px; font-size: 12px;">相似店</button>
-        <button onclick="window.openStorePopulationDistribution(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">人口分布</button>
-        <button onclick="window.openStoreCompetitors(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">竞品分布</button>
-        <button onclick="window.openStorePoiSearch(${markerData.latitude}, ${markerData.longitude})" style="padding: 4px 10px; cursor: pointer; background: #6366f1; color: white; border: none; border-radius: 4px; font-size: 12px;">周边检索</button>
+        <button type="button" data-store-act="edit" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
+        <button type="button" data-store-act="delete" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
+        <button type="button" data-store-act="smartsteps" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px; font-size: 12px;">联通人口</button>
+        <button type="button" data-store-act="similar" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #e6a23c; color: white; border: none; border-radius: 4px; font-size: 12px;">相似店</button>
+        <button type="button" data-store-act="population" data-store-lat="${markerData.latitude}" data-store-lng="${markerData.longitude}" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">人口分布</button>
+        <button type="button" data-store-act="competitors" data-store-lat="${markerData.latitude}" data-store-lng="${markerData.longitude}" style="padding: 4px 10px; cursor: pointer; background: #1abc9c; color: white; border: none; border-radius: 4px; font-size: 12px;">竞品分布</button>
+        <button type="button" data-store-act="poi" data-store-lat="${markerData.latitude}" data-store-lng="${markerData.longitude}" style="padding: 4px 10px; cursor: pointer; background: #6366f1; color: white; border: none; border-radius: 4px; font-size: 12px;">周边检索</button>
       </div>
       </div>
     </div>`
@@ -4526,6 +4576,16 @@ const initMap = async () => {
   // 地图右键菜单：document 捕获阶段监听（捕获先于任何 stopPropagation 执行，
   // 彻底规避 Leaflet 内部元素对 contextmenu 的 stopPropagation 拦截）
   const mapContainerEl = map.getContainer()
+
+  // v1.13.184：Leaflet 动态 HTML（门店弹窗 7 按钮 / 测量标签 ❌）的统一事件委托落点。
+  // 见 onLeafletHtmlClick() 头部的铁律说明 —— 动态 HTML 一律输出 data-* 属性，禁止内联 on*。
+  // 容器元素会被复用（map.remove() 只清空子节点，不销毁容器本身），
+  // 故用标记位防重复绑定，否则组件二次挂载会把同一个 click 双触发。
+  if (!mapContainerEl.__r4bLeafletDelegated) {
+    mapContainerEl.__r4bLeafletDelegated = true
+    mapContainerEl.addEventListener('click', onLeafletHtmlClick)
+  }
+
   const onMapContextMenu = (ev) => {
     // 只响应地图区域内的右键（含地图内部 panes/marker）
     if (!mapContainerEl.contains(ev.target) && ev.target !== mapContainerEl) return
@@ -6139,7 +6199,7 @@ const finishMeasure = () => {
         className: '',
         html: `<div style="display:flex;align-items:center;gap:6px;background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">
           总计: ${formatDistance(totalDist)}
-          <span onclick="window.clearMeasureResult()" aria-hidden="true" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
+          <span data-measure-act="clear" aria-hidden="true" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
         </div>`,
         iconSize: null,
         // 总计标签显示在终点右上方，避免与终点右下角的"段距离/累计"节点标签重叠
