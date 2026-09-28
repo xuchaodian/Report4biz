@@ -9327,7 +9327,26 @@ const editMarker = async (id) => {
 }
 
 // 删除点位
+// v1.13.185：补二次确认。后端 `DELETE /api/markers/:id` 是【硬删除且无级联】，而弹窗里的
+// 「删除」按钮此前**无任何确认**直接调用（v1.13.184 真机验证时曾因此误删生产 1 行门店 10249）。
+// ⚠️ 反查不到门店名时【也必须】弹确认框 —— 绝不能因「取不到名字」就跳过确认。
 const deleteMarker = async (id) => {
+  const target = markerStore.markers.find((m) => Number(m.id) === Number(id))
+  const label = target && target.name ? `「${target.name}」` : '该门店'
+  // 只读镜像行（集团下发）后端会拒删，先本地拦一道，避免用户白点一次
+  if (target && Number(target.sync_readonly) === 1) {
+    ElMessage.warning(`${label}由集团统一维护，只读`)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定要删除门店${label}吗？删除后不可恢复。`, '提示', {
+      type: 'warning',
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return // 用户取消
+  }
   const result = await markerStore.deleteMarker(id)
   if (result.success) {
     ElMessage.success('删除成功')
