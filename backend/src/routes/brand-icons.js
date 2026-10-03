@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { authenticate } from '../middleware/auth.js'
 import { getDb } from '../models/database.js'
+import { groupOwnerUserId, tagIconSource, sortByPrecedence } from '../utils/brandIconScope.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -48,30 +49,54 @@ const upload = multer({
 
 const router = express.Router()
 
-// 获取品牌图标（用户自己的 + 管理员上传的共享图标）
+// 获取品牌图标（自己的 + **集团总部继承的** + 管理员上传的共享图标）
+//
+// v1.13.191：非 admin 多一路 —— 所属集团总部账号上传的图标（读时继承，零复制）。
+//   详见 utils/brandIconScope.js 文件头。每行回带 `source`（'self'|'group'|'admin'），
+//   并按「我 > 集团 > admin」定序 ⇒ **同品牌并列时列表首条＝实际生效的那条**。
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const userId = req.user.id
     const isAdmin = req.user.role === 'admin'
 
-    let icons
+    // admin 视角维持原样（看全部），刻意不参与集团继承 —— 它是平台侧，不属于任何集团
+    const groupOwnerId = isAdmin ? null : groupOwnerUserId(db, userId)
+
+    let rows
     if (isAdmin) {
       // 管理员：看到所有图标
-      icons = db.prepare(`
+      rows = db.prepare(`
         SELECT id, brand, filename, original_name, created_at, user_id
         FROM brand_icons
-        ORDER BY brand ASC
+        ORDER BY brand ASC, id ASC
       `).all()
     } else {
       // 普通用户：看到自己上传的 + 所有管理员上传的
-      icons = db.prepare(`
+      rows = db.prepare(`
         SELECT id, brand, filename, original_name, created_at, user_id
         FROM brand_icons
         WHERE user_id = ? OR user_id IN (SELECT id FROM users WHERE role = 'admin')
-        ORDER BY brand ASC
+        ORDER BY brand ASC, id ASC
       `).all(userId)
+
+      // v1.13.191：再加上「集团总部账号上传的」。无集团 / 总部自身 / 已解散 ⇒ groupOwnerId=null，跳过
+      if (groupOwnerId) {
+        rows = rows.concat(
+          db.prepare(`
+            SELECT id, brand, filename, original_name, created_at, user_id
+            FROM brand_icons
+            WHERE user_id = ?
+            ORDER BY brand ASC, id ASC
+          `).all(groupOwnerId)
+        )
+      }
     }
+
+    // 标来源 + 定序（纯读；不写任何一行）
+    const icons = sortByPrecedence(
+      rows.map(row => ({ ...row, source: tagIconSource(row, userId, groupOwnerId) }))
+    )
 
     res.json({ success: true, icons })
   } catch (error) {
@@ -144,7 +169,9 @@ router.post('/', authenticate, (req, res) => {
         `).run(req.file.filename, req.file.originalname, userId, existing.id)
 
         const icon = db.prepare(`SELECT * FROM brand_icons WHERE id = ?`).get(existing.id)
-        return res.json({ success: true, message: '图标已更新', icon })
+        // v1.13.191：回包也带 source —— 前端 store 用它做「我 > 集团 > admin」定序，
+        // 少这个字段刚上传的图标会被排到低优先级（见 utils/brandIcons.js 的兜底）
+        return res.json({ success: true, message: '图标已更新', icon: { ...icon, source: 'self' } })
       }
 
       // 插入新记录
@@ -154,7 +181,7 @@ router.post('/', authenticate, (req, res) => {
       `).run(brand.trim(), req.file.filename, req.file.originalname, userId)
 
       const icon = db.prepare(`SELECT * FROM brand_icons WHERE id = ?`).get(result.lastInsertRowid)
-      res.json({ success: true, message: '图标上传成功', icon })
+      res.json({ success: true, message: '图标上传成功', icon: { ...icon, source: 'self' } })
     } catch (error) {
       console.error('保存品牌图标失败:', error)
       // 清理上传的文件

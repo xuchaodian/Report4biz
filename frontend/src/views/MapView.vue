@@ -1677,11 +1677,15 @@ const aiContext = computed(() => ({
 }))
 
 // 品牌图标映射 brand -> iconUrl
+//
+// v1.13.191：改走 store 的 `byBrand`（唯一口径：我 > 集团 > admin）。
+// 原来是 `forEach` 覆盖 ⇒「最后一条胜」，与「设置图标」页的 `.find()`（第一条胜）
+// 不一致 —— 同一品牌谁生效取决于 SQL 返回顺序（碰运气）。详见 utils/brandIcons.js。
 const brandIconMap = computed(() => {
   const map = {}
-  brandIconStore.icons.forEach(icon => {
-    map[icon.brand] = `/uploads/brand-icons/${icon.filename}`
-  })
+  for (const [brand, icon] of Object.entries(brandIconStore.byBrand)) {
+    map[brand] = `/uploads/brand-icons/${icon.filename}`
+  }
   return map
 })
 

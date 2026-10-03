@@ -4,13 +4,14 @@
       <h2>品牌管理</h2>
       <div class="header-tip">
         <span>已设置 {{ setCount }} / {{ allBrands.length }} 个品牌</span>
+        <span v-if="inheritedCount" class="inherited-tip">其中 {{ inheritedCount }} 个继承自集团</span>
       </div>
     </div>
 
     <!-- 说明 -->
     <div class="tip-box">
       <el-icon><InfoFilled /></el-icon>
-      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标。您上传的图标仅自己可见。支持 JPG、PNG、GIF、WebP、SVG 格式。可在下方调节您自己的默认图标大小或单个品牌的大小（所有设置仅对您当前账号生效，不影响其他用户）。</span>
+      <span>上传品牌 Logo 后，地图上该品牌所有门店/竞品将自动显示对应图标。您上传的图标仅自己可见；<b>若您属于集团，集团总部上传的图标会自动继承过来（子公司无需重复上传，自己上传的优先）</b>。支持 JPG、PNG、GIF、WebP、SVG 格式。可在下方调节您自己的默认图标大小或单个品牌的大小（所有设置仅对您当前账号生效，不影响其他用户）。</span>
     </div>
 
     <!-- 地图图标大小 -->
@@ -49,15 +50,15 @@
         </div>
 
         <div class="brand-icon-area">
-          <!-- 已设置图标：显示预览 -->
-          <div v-if="hasIcon(brand)" class="icon-preview">
+          <!-- 已设置图标：显示预览（角标区分来源：我的 / 集团 / 共享） -->
+          <div v-if="hasIcon(brand)" class="icon-preview" :title="iconHint(brand)">
             <img
               :src="getIconUrl(brand)"
               :alt="brand"
               class="preview-img"
             />
-            <span class="icon-label" :class="{ 'my-icon': isMyIcon(brand) }">
-              {{ isMyIcon(brand) ? '我的' : '共享' }}
+            <span class="icon-label" :class="'src-' + iconSource(brand)">
+              {{ iconLabel(brand) }}
             </span>
           </div>
           <!-- 未设置：显示上传按钮 -->
@@ -115,6 +116,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Delete, InfoFilled, Aim } from '@element-plus/icons-vue'
+import { resolveSource, iconUrl, currentSelfId } from '@/utils/brandIcons'
 import { useBrandIconStore } from '@/stores/brandIcon'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -178,27 +180,38 @@ const allBrands = computed(() => {
   return [...new Set([...markerBrands, ...competitorBrands, ...brandStoreBrands])].sort()
 })
 
-// 已设置图标的品牌数量
-const setCount = computed(() => {
-  return allBrands.value.filter(b => hasIcon(b)).length
-})
+// ── 图标取值：**一律走 store 的 byBrand**（唯一口径：我 > 集团 > admin）──────────
+// v1.13.191：原来是 `icons.find(...)`＝「第一条胜」，与地图的 `forEach`（最后一条胜）
+// 不一致。集团继承上线后同一品牌可能有 3 条并列（我/集团/admin），必须先定序。
+// 详见 utils/brandIcons.js 文件头。
+const iconOf = (brand) => brandIconStore.byBrand[brand] || null
+const hasIcon = (brand) => !!iconOf(brand)
 
-// 判断品牌是否有图标
-const hasIcon = (brand) => {
-  return !!brandIconStore.icons.find(i => i.brand === brand)
+// 图标来源：'self' | 'group' | 'admin'（缺 source 时由 resolveSource 兜底）
+const iconSource = (brand) => {
+  const icon = iconOf(brand)
+  return icon ? resolveSource(icon, currentSelfId()) : null
 }
+// 只有「我自己传的」才允许删除
+const isMyIcon = (brand) => iconSource(brand) === 'self'
+// 角标文案：我的 / 集团 / 共享
+const iconLabel = (brand) => {
+  const s = iconSource(brand)
+  return s === 'self' ? '我的' : s === 'group' ? '集团' : '共享'
+}
+// 悬浮提示：说清这个图标从哪来、要不要自己再传
+const iconHint = (brand) => {
+  const s = iconSource(brand)
+  if (s === 'group') return '图标继承自集团总部（子公司无需重复上传；上传自己的即可覆盖）'
+  if (s === 'admin') return '图标由平台管理员共享，所有账号可见'
+  return '这是您自己上传的图标（可更换或删除）'
+}
+const getIconUrl = (brand) => iconUrl(iconOf(brand))
 
-// 判断图标是否是当前用户上传的
-const isMyIcon = (brand) => {
-  const icon = brandIconStore.icons.find(i => i.brand === brand)
-  return icon ? icon.user_id === userStore.user?.id : false
-}
-
-// 获取图标 URL
-const getIconUrl = (brand) => {
-  const icon = brandIconStore.icons.find(i => i.brand === brand)
-  return icon ? `/uploads/brand-icons/${icon.filename}` : ''
-}
+// 已设置图标的品牌数量（**含集团继承来的**）
+const setCount = computed(() => allBrands.value.filter(b => hasIcon(b)).length)
+// 其中来自集团继承的数量 —— 头部提示用，让用户明白「这几个不是我设的」
+const inheritedCount = computed(() => allBrands.value.filter(b => iconSource(b) === 'group').length)
 
 // 上传前校验
 const beforeUpload = (file, brand) => {
@@ -232,8 +245,10 @@ const handleUpload = async (opt, brand) => {
 
 // 删除图标
 const handleDelete = async (brand) => {
-  const icon = brandIconStore.icons.find(i => i.brand === brand)
-  if (!icon) return
+  // ⚠️ 必须确认取到的是「我自己的那一行」——同一品牌可能还并列着集团 / admin 的行，
+  //    只按 brand 找容易删到别人的（后端也会 403 拦下，但没必要发那次请求）
+  const icon = iconOf(brand)
+  if (!icon || !isMyIcon(brand)) return
 
   try {
     await ElMessageBox.confirm(`确定要删除「${brand}」的图标吗？`, '提示', {
@@ -286,6 +301,19 @@ onMounted(async () => {
   .header-tip {
     color: #666;
     font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    // 「其中 N 个继承自集团」——橙色小标签，明示这几个不是本账号设的
+    .inherited-tip {
+      font-size: 12px;
+      color: #e6a23c;
+      background: #fdf6ec;
+      border: 1px solid #f5dab1;
+      border-radius: 4px;
+      padding: 1px 8px;
+    }
   }
 }
 
@@ -377,10 +405,14 @@ onMounted(async () => {
 
     .icon-label {
       font-size: 11px;
-      color: #909399;
-      
-      &.my-icon {
-        color: #67c23a;
+      color: #909399;          // 默认灰：admin 共享的图标
+
+      &.src-self {
+        color: #67c23a;        // 绿：我自己传的
+      }
+
+      &.src-group {
+        color: #e6a23c;        // 橙：继承自集团总部
       }
     }
   }
@@ -423,27 +455,3 @@ onMounted(async () => {
   white-space: nowrap;
 }
 </style>
-
-.icon-size-box {
-  background: #fffbe6;
-  border: 1px solid #ffe58f;
-  border-radius: 6px;
-  padding: 12px 15px;
-  margin-bottom: 15px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.icon-size-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #606266;
-  white-space: nowrap;
-}
-.icon-size-tip {
-  font-size: 12px;
-  color: #909399;
-  white-space: nowrap;
-}

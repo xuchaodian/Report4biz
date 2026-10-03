@@ -4,13 +4,20 @@
  * 纯函数实现，不依赖组件实例；瓦片通过 /api/tile-proxy 代理加载
  */
 import axios from 'axios'
+import { buildIconMap, currentSelfId } from './brandIcons'
 
-// 加载品牌图标映射（当前用户可见的图标：自己的 + 管理员共享的）
+// 加载品牌图标映射（当前用户可见的图标：自己的 + **集团继承的** + 管理员共享的）
+//
+// v1.13.191：与地图 / 设置图标页用**同一个**口径（我 > 集团 > admin）。
+// 原来这里是 forEach 覆盖 ⇒「最后一条胜」，截图里出的图标会与地图上看到的不一致。
 const loadBrandIcons = async () => {
   try {
     const { data } = await axios.get('/api/brand-icons')
+    const byBrand = buildIconMap(data.icons || [], currentSelfId())
     const map = {}
-    ;(data.icons || []).forEach(ic => { map[ic.brand] = `/uploads/brand-icons/${ic.filename}` })
+    for (const [brand, ic] of Object.entries(byBrand)) {
+      map[brand] = `/uploads/brand-icons/${ic.filename}`
+    }
     return map
   } catch (e) {
     console.warn('[截图] 品牌图标加载失败:', e)
