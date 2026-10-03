@@ -163,11 +163,16 @@ const brandColorMap = {
   '米村拌饭': '#9c27b0'
 }
 
-// 合并所有品牌（显示我的门店、竞品门店和品牌门店的品牌）
+// 合并所有品牌（我的门店 + 竞品门店；品牌门店的品牌仅管理员纳入）
+// 「品牌门店」页面（/brand-stores）仅管理员可见 ⇒ 普通账号在「设置图标」里
+// 列出这些品牌也没有对应入口可管，故不展示。注意：仅影响**列表展示**，
+// 这些品牌若已有共享图标，仍会按品牌名在地图上生效（未改任何下发逻辑）。
 const allBrands = computed(() => {
   const markerBrands = (markerStore.markers || []).map(m => m.brand).filter(Boolean)
   const competitorBrands = (competitorStore.competitors || []).map(c => c.brand).filter(Boolean)
-  const brandStoreBrands = (brandStoreStore.brandStores || []).map(b => b.brand).filter(Boolean)
+  const brandStoreBrands = userStore.isAdmin
+    ? (brandStoreStore.brandStores || []).map(b => b.brand).filter(Boolean)
+    : []
   
   // 合并所有品牌
   return [...new Set([...markerBrands, ...competitorBrands, ...brandStoreBrands])].sort()
