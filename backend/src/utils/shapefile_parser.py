@@ -18,6 +18,16 @@ import shapefile
 # 支持的编码列表，按优先级尝试
 ENCODINGS = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'latin-1']
 
+# DBF 读取时逐个尝试的编码候选（顺序不可随意调整）
+# 🔴 utf-8 必须排在 gb18030 / gbk 之前：
+#   - utf-8 是自校验编码，遇到非 utf-8 字节必然解码失败 ⇒ 会正确回退到 GB 系；
+#   - 反之 gb18030 字符集极宽，能把 utf-8 中文的 3 字节序列「重新配对」成合法序列，
+#     解成功后就锁定该编码 ⇒ 字段名变乱码（名称 -> 鍚嶇О）、属性值取不到，
+#     且全程不报错；而商圈搜索是按字段名精确匹配的（routes/shapefiles.js），
+#     一处乱码会直接导致商圈搜索失效。
+#   实测：utf-8 数据在旧顺序下 20 个真实地名只有 3 个正确、17 个静默乱码。
+DBF_ENCODING_CANDIDATES = ['utf-8', 'gb18030', 'gbk']
+
 # 坐标转换开关：默认转换 WGS84→GCJ-02，设为 True 则跳过
 SKIP_COORD_CONVERT = False
 
@@ -79,6 +89,34 @@ def try_decode_field_name(name):
     return str(name)
 
 
+def open_shapefile_with_best_encoding(shp_path):
+    """按 DBF_ENCODING_CANDIDATES 逐个尝试打开 Shapefile
+
+    返回 (reader, last_error)：全部失败时 reader 为 None。
+
+    🔴 校验必须「全量」，不能只试 record(0)：
+    旧实现只读第一条记录，会漏掉「字段名与首条记录都是 ASCII、后续记录才含中文」
+    的文件 —— 那种文件在 utf-8 优先时会被误选为 utf-8，随后在第 N 条记录抛异常，
+    整包解析失败（比乱码更糟：用户直接看到上传报错）。
+    """
+    last_error = None
+    for dbf_encoding in DBF_ENCODING_CANDIDATES:
+        try:
+            sf = shapefile.Reader(shp_path, encoding=dbf_encoding)
+            # 触发字段名解码
+            _ = [field_info[0] for field_info in sf.fields]
+            # 触发全部属性值解码（任一条失败即视为该编码不可用）
+            for _record in sf.iterRecords():
+                pass
+            return sf, None
+        except Exception as e:
+            # pyshp 抛的是 ShapefileException(dbfFileException) 而非 UnicodeDecodeError，
+            # 故这里必须兜住 Exception
+            last_error = e
+            continue
+    return None, last_error
+
+
 # WGS84 to GCJ-02 转换算法
 def wgs84_to_gcj02(lng, lat):
     """将 WGS84 坐标转换为 GCJ-02 坐标"""
@@ -129,25 +167,8 @@ def parse_shapefile_from_zip(zip_path):
 
             shp_path = os.path.join(tmpdir, shp_files[0])
             
-            # 尝试使用多种编码读取 Shapefile
-            sf = None
-            encoding_error = None
-            
-            # 首先尝试 GB18030（支持中文 Windows）
-            for dbf_encoding in ['gb18030', 'gbk', 'utf-8']:
-                try:
-                    sf = shapefile.Reader(shp_path, encoding=dbf_encoding)
-                    # 测试读取第一个记录
-                    if len(sf.fields) > 1:
-                        test_record = sf.record(0)
-                        encoding_error = None
-                        break
-                except UnicodeDecodeError as e:
-                    encoding_error = e
-                    continue
-                except Exception as e:
-                    encoding_error = e
-                    continue
+            # 读取 Shapefile：按 DBF_ENCODING_CANDIDATES 逐个尝试编码（含全量解码校验）
+            sf, encoding_error = open_shapefile_with_best_encoding(shp_path)
             
             # 如果都失败，使用默认方式
             if sf is None:
