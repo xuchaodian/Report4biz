@@ -43,6 +43,8 @@
       v-model:show-brand="showBrandStoreLayer"
       v-model:show-center="showShoppingCenterLayer"
       v-model:store-status-filter="myStoreStatusFilter"
+      v-model:brand-selection="brandLayerSelection"
+      :brand-options="brandLayerOptions"
       :active-tool="activeTool"
       :store-search-visible="storeSearchVisible"
       :district-visible="districtVisible"
@@ -4633,6 +4635,10 @@ const initMap = async () => {
     if (map) map.invalidateSize({ pan: false })
   }, 100)
 
+  // v1.13.193：恢复「显示品牌」图层勾选（按 userId 命名，纯本地同步读、无网络）。
+  // 必须放在拉数据之前，否则品牌门店会先按「全部」渲染再跳变。
+  brandStoreStore.initLayerBrands()
+
   // 【性能优化】并行拉取所有数据 + 品牌图标
   await Promise.all([
     markerStore.fetchMarkers(),
@@ -5043,17 +5049,19 @@ const buildAllStoreCluster = () => {
   
   // 3. 品牌门店（只有开关开启时才聚合）
   if (showBrandStoreLayer.value && brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
-    console.log('[聚合] 品牌门店原始:', brandStoreStore.brandStores?.length || 0)
-    const visibleIds = brandStoreStore.visibleIds
-    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
-      ? brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
-      : brandStoreStore.brandStores
+    // v1.13.193：可见域走 store 的单一口径。
+    // ⚠️ 原实现在 visibleIds 为空数组时当作「无筛选 ⇒ 显示全部」，与建图层处（空数组 = 0 条）
+    //    不一致 ⇒ 统一为「空数组 = 0 条」。
+    // 🔴 顺带修 bug：原 `store.brand` 引用了本作用域不存在的变量（本回调形参是 s）——
+    //    只要该品牌有图标（brandIconUrl 为真）即抛 ReferenceError，聚合视图下品牌门店
+    //    整体丢失。生产 6 个品牌全有图标 ⇒ 必然触发。
+    const data = brandStoreStore.visibleStores
     console.log('[聚合] 品牌门店:', data.length)
     data.forEach(s => {
       if (s.latitude && s.longitude) {
         const brandColor = s.icon_color || '#888888'
         const brandIconUrl = brandIconMap.value[s.brand]
-        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, false, null, null, store.brand) : createSvgIcon(brandColor, 'dot', 1.2)
+        const icon = brandIconUrl ? createBrandImageIcon(brandIconUrl, false, null, null, s.brand) : createSvgIcon(brandColor, 'dot', 1.2)
         const marker = L.marker([s.latitude, s.longitude], { icon })
         marker.bindPopup(`<div style="color:${brandColor}"><b>品牌门店</b><br/>${s.brand || ''} ${s.name}<br/>${(s.city || '') + (s.district || '') + (s.address || '-')}</div>`)
         allStoreClusterGroup.addLayer(marker)
@@ -5460,11 +5468,8 @@ const loadBrandStores = async (skipFetch = false) => {
     return
   }
 
-  // 根据 visibleIds 过滤
-  const visibleIds = brandStoreStore.visibleIds
-  const dataToShow = (visibleIds === null || visibleIds === undefined)
-    ? brandStoreStore.brandStores
-    : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+  // v1.13.193：可见域走 store 的单一口径（visibleIds ∩ 图层品牌勾选）
+  const dataToShow = brandStoreStore.visibleStores
 
   brandStoreLayer = dataToShow.length > 500
     ? L.markerClusterGroup({ chunkedLoading: true, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 50 })
@@ -5539,10 +5544,8 @@ const loadBrandStores = async (skipFetch = false) => {
 // 重载品牌门店图层（供 watcher 调用）
 const reloadBrandStoreLayer = () => {
   if (!map || !brandStoreStore.brandStores || brandStoreStore.brandStores.length === 0) return
-  const visibleIds = brandStoreStore.visibleIds
-  const dataToShow = (visibleIds === null || visibleIds === undefined)
-    ? brandStoreStore.brandStores
-    : brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
+  // v1.13.193：可见域走 store 的单一口径
+  const dataToShow = brandStoreStore.visibleStores
 
   const wasOnMap = map.hasLayer(brandStoreLayer)
   if (brandStoreLayer) { try { map.removeLayer(brandStoreLayer) } catch(e) {} }
@@ -5892,9 +5895,19 @@ watch(() => competitorStore.visibleIds, () => {
   if (map) reloadCompetitorLayer()
   if (showCluster.value) buildAllStoreCluster()
 })
-watch(() => brandStoreStore.visibleIds, () => {
+// v1.13.193：visibleIds（定位门店筛选）与 layerBrands（图层品牌勾选）任一变化都重载
+watch([() => brandStoreStore.visibleIds, () => brandStoreStore.layerBrands], () => {
   if (map) reloadBrandStoreLayer()
   if (showCluster.value) buildAllStoreCluster()
+})
+
+// v1.13.193：品牌全不选 ⇒ 自动关闭「品牌门店」图层开关
+// （避免出现「开关是开的、地图上却什么都没有」的困惑）
+watch(() => brandStoreStore.layerBrands, (v) => {
+  if (Array.isArray(v) && v.length === 0 && showBrandStoreLayer.value) {
+    showBrandStoreLayer.value = false
+    ElMessage.info('未选择任何品牌，已关闭「品牌门店」图层')
+  }
 })
 watch(() => shoppingCenterStore.visibleIds, () => {
   if (map) reloadShoppingCenterLayer()
@@ -6476,10 +6489,8 @@ const buildAllStoreHeatmap = () => {
   
   // 3. 品牌门店（只有开关开启时才包含）
   if (showBrandStoreLayer.value && brandStoreStore.brandStores && brandStoreStore.brandStores.length > 0) {
-    const visibleIds = brandStoreStore.visibleIds
-    const data = (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0)
-      ? brandStoreStore.brandStores.filter(s => visibleIds.includes(s.id))
-      : brandStoreStore.brandStores
+    // v1.13.193：可见域走 store 的单一口径（同聚合：空数组 = 0 条）
+    const data = brandStoreStore.visibleStores
     data.forEach(s => {
       if (s.latitude && s.longitude) {
         hmData.push([s.latitude, s.longitude, 1])
@@ -6640,10 +6651,8 @@ const applyStoreCircles = () => {
 
   // 3. 品牌门店（开关开启且可见）
   if (showBrandStoreLayer.value && brandStoreStore.brandStores) {
-    let bs = brandStoreStore.brandStores
-    if (brandStoreStore.visibleIds !== null && brandStoreStore.visibleIds !== undefined) {
-      bs = bs.filter(b => brandStoreStore.visibleIds.includes(b.id))
-    }
+    // v1.13.193：可见域走 store 的单一口径（含图层品牌勾选）
+    const bs = brandStoreStore.visibleStores
     bs.forEach(b => {
       if (b.latitude && b.longitude) {
         allStores.push({ latitude: b.latitude, longitude: b.longitude, name: b.name, _type: '品牌门店', city: b.city || '' })
@@ -8138,6 +8147,26 @@ const brandDistrictList = computed(() => {
   return [...new Set(brandStoreStore.brandStores.filter(m => !city || m.city === city).map(m => m.district).filter(Boolean))].sort()
 })
 const brandBrandList = computed(() => [...new Set(brandStoreStore.brandStores.map(m => m.brand).filter(Boolean))].sort())
+
+// v1.13.193：图层「显示品牌」复选框选项（品牌 + 门店数 + 图标），按门店数降序（大品牌在前更好判断）
+const brandLayerOptions = computed(() => {
+  const counts = new Map()
+  for (const s of brandStoreStore.brandStores) {
+    if (!s.brand) continue
+    counts.set(s.brand, (counts.get(s.brand) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([brand, count]) => ({ brand, count, icon: brandIconMap.value[brand] || '' }))
+    .sort((a, b) => b.count - a.count)
+})
+
+// 当前勾选的品牌（layerBrands 为 null ⇒ 全部；与面板双向绑定）
+const brandLayerSelection = computed({
+  get: () => (brandStoreStore.layerBrands === null || brandStoreStore.layerBrands === undefined)
+    ? brandLayerOptions.value.map(o => o.brand)
+    : brandStoreStore.layerBrands,
+  set: (v) => brandStoreStore.setLayerBrands(v)
+})
 
 const shopCityList = computed(() => [...new Set(shoppingCenterStore.shoppingCenters.map(m => m.city).filter(Boolean))].sort())
 const shopDistrictList = computed(() => {

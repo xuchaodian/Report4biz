@@ -7,14 +7,22 @@ const API_URL = '/api'
 const FRESH_MS = 60 * 1000
 let brandStoresInFlight = null
 
+// v1.13.193：地图「显示门店 → 品牌门店 → 显示品牌」的图层品牌勾选。
+// 按 userId 命名，换账号不串档（与 markerFilters_ / competitorFilters_ 同惯例）。
+const LAYER_KEY = () => `brandLayerFilter_${localStorage.getItem('userId') || 'anon'}`
+
 export const useBrandStoreStore = defineStore('brandStore', {
   state: () => ({
     brandStores: [],
     loading: false,
     loaded: false,
     loadedAt: 0,
-    // visibleIds: null = 显示全部；数组 = 仅显示这些ID
+    // visibleIds: null = 显示全部；数组 = 仅显示这些ID（空数组 = 0 条）
     visibleIds: null,
+    // v1.13.193 layerBrands: null = 全部品牌；数组 = 仅显示这些品牌（空数组 = 0 条）
+    // ⚠️ 与 visibleIds 刻意分离：「定位门店」面板的单选筛选走 visibleIds，
+    //    本面板的复选走 layerBrands，两者做 AND —— 若共用 visibleIds 会互相覆盖。
+    layerBrands: null,
     // 筛选条件（持久化，切换页面后保留）
     filters: {
       searchKeyword: '',
@@ -24,6 +32,27 @@ export const useBrandStoreStore = defineStore('brandStore', {
       filterCategory: ''
     }
   }),
+
+  getters: {
+    // v1.13.193：地图图层 / 统一聚合 / 热力图 / 网点优化 / 截图导出的**唯一**可见域口径。
+    // 原实现 5 处各写一遍三元过滤，且两套口径不一致（聚合与热力图把「空数组」当
+    // 「无筛选 ⇒ 显示全部」，建图层却当「0 条」）—— 收成单一函数后口径统一为：
+    // visibleIds 为 null/undefined ⇒ 不限；否则按数组过滤（空数组 = 0 条）。品牌维度同理。
+    visibleStores(state) {
+      let list = state.brandStores
+      const vids = state.visibleIds
+      if (vids !== null && vids !== undefined) {
+        const idSet = new Set(vids)
+        list = list.filter(s => idSet.has(s.id))
+      }
+      const brands = state.layerBrands
+      if (brands !== null && brands !== undefined) {
+        const brandSet = new Set(brands)
+        list = list.filter(s => brandSet.has(s.brand))
+      }
+      return list
+    }
+  },
 
   actions: {
     async fetchBrandStores(force = false) {
@@ -114,12 +143,40 @@ export const useBrandStoreStore = defineStore('brandStore', {
       this.visibleIds = ids
     },
 
+    // v1.13.193：从 localStorage 恢复图层品牌勾选（按 userId 命名）。
+    // 刻意不在 state 初始化时读——store 可能先于登录创建，那时 uid 还是空的。
+    initLayerBrands() {
+      try {
+        const raw = localStorage.getItem(LAYER_KEY())
+        if (!raw) return
+        const arr = JSON.parse(raw)
+        this.layerBrands = Array.isArray(arr) ? arr : null
+      } catch (e) {
+        this.layerBrands = null
+      }
+    },
+
+    // v1.13.193：设置图层品牌勾选。选满当前全部品牌 ⇒ 存 null（=「全部」不再是一次性快照，
+    // 将来新增品牌会自动纳入）；未选满 ⇒ 存数组（空数组 = 全不选）。
+    setLayerBrands(brands) {
+      const all = [...new Set(this.brandStores.map(s => s.brand).filter(Boolean))]
+      const arr = Array.isArray(brands) ? [...new Set(brands)] : []
+      const value = (all.length > 0 && arr.length >= all.length) ? null : arr
+      this.layerBrands = value
+      try {
+        localStorage.setItem(LAYER_KEY(), JSON.stringify(value))
+      } catch (e) {
+        // localStorage 不可用（隐私模式/配额满）⇒ 仅本次会话生效
+      }
+    },
+
     // 设置筛选条件
     setFilters(filters) {
       this.filters = { ...this.filters, ...filters }
     },
 
     // 清除所有筛选条件
+    // ⚠️ 刻意不动 layerBrands：那是「图层显示哪些品牌」的独立维度，与内容筛选无关
     clearFilters() {
       this.filters = {
         searchKeyword: '',

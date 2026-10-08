@@ -34,6 +34,46 @@
           <span class="toggle-label">品牌门店</span>
           <el-switch :model-value="showBrand" @update:model-value="$emit('update:show-brand', $event)" />
         </div>
+        <!-- v1.13.193：品牌门店按品牌勾选（默认全选 = 与开启前行为一致） -->
+        <div v-show="showBrand" class="toggle-row toggle-sub-row">
+          <span class="toggle-label-sub">显示品牌</span>
+          <el-popover placement="right" :width="248" trigger="click" popper-class="brand-layer-popover">
+            <template #reference>
+              <span class="brand-filter-btn" :class="{ 'is-empty': brandSelection.length === 0 }">
+                {{ brandFilterText }}
+              </span>
+            </template>
+
+            <div class="brand-pop-head">
+              <span class="brand-pop-title">显示品牌</span>
+              <span class="brand-pop-actions">
+                <el-button link size="small" @click="selectAllBrands">全选</el-button>
+                <el-button link size="small" @click="clearAllBrands">清空</el-button>
+              </span>
+            </div>
+            <div class="brand-pop-hint">已选 {{ brandSelection.length }} / {{ brandOptions.length }}</div>
+            <el-checkbox-group
+              :model-value="brandSelection"
+              class="brand-pop-list"
+              @update:model-value="onBrandSelectionChange"
+            >
+              <el-checkbox
+                v-for="opt in brandOptions"
+                :key="opt.brand"
+                :label="opt.brand"
+                :value="opt.brand"
+                class="brand-pop-item"
+              >
+                <span class="brand-pop-row">
+                  <img v-if="opt.icon" :src="opt.icon" class="brand-pop-logo" :alt="opt.brand" />
+                  <span v-else class="brand-pop-logo brand-pop-logo--ph">{{ opt.brand.slice(0, 1) }}</span>
+                  <span class="brand-pop-name">{{ opt.brand }}</span>
+                  <span class="brand-pop-num">{{ opt.count }}</span>
+                </span>
+              </el-checkbox>
+            </el-checkbox-group>
+          </el-popover>
+        </div>
         <div class="toggle-row">
           <span class="toggle-label">购物中心</span>
           <el-switch :model-value="showCenter" @update:model-value="$emit('update:show-center', $event)" />
@@ -124,6 +164,7 @@ const emit = defineEmits([
   'update:show-brand',
   'update:show-center',
   'update:store-status-filter',
+  'update:brand-selection',
   'set-tool',
   'toggle-store-search',
   'toggle-district',
@@ -133,7 +174,7 @@ const emit = defineEmits([
   'toggle-cluster'
 ])
 
-defineProps({
+const props = defineProps({
   toggleExpanded: Boolean,
   toolsExpanded: Boolean,
   showBusiness: Boolean,
@@ -147,8 +188,25 @@ defineProps({
   commerceVisible: Boolean,
   showStoreCircles: Boolean,
   showHeatmap: Boolean,
-  showCluster: Boolean
+  showCluster: Boolean,
+  // v1.13.193：品牌门店「显示品牌」复选——选项 [{ brand, count, icon }] 与当前勾选
+  brandOptions: { type: Array, default: () => [] },
+  brandSelection: { type: Array, default: () => [] }
 })
+
+// v1.13.193：按钮文案
+const brandFilterText = computed(() => {
+  const total = props.brandOptions.length
+  const sel = props.brandSelection.length
+  if (total === 0) return '无品牌'
+  if (sel === 0) return '未选择品牌'
+  if (sel >= total) return '全部品牌'
+  return `已选 ${sel} 个`
+})
+
+const selectAllBrands = () => emit('update:brand-selection', props.brandOptions.map(o => o.brand))
+const clearAllBrands = () => emit('update:brand-selection', [])
+const onBrandSelectionChange = (val) => emit('update:brand-selection', Array.isArray(val) ? val : [])
 </script>
 
 <style scoped>
@@ -313,5 +371,125 @@ defineProps({
   margin-left: 4px;
   white-space: nowrap;
   line-height: 14px;
+}
+
+/* v1.13.193：品牌门店「显示品牌」按钮 */
+.brand-filter-btn {
+  font-size: 12px;
+  padding: 1px 8px;
+  border: 1px solid #409eff;
+  border-radius: 4px;
+  color: #409eff;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.brand-filter-btn:hover {
+  background: #ecf5ff;
+}
+
+.brand-filter-btn.is-empty {
+  border-color: #e6a23c;
+  color: #e6a23c;
+}
+
+.brand-filter-btn.is-empty:hover {
+  background: #fdf6ec;
+}
+
+/* 弹层内部（元素在本组件模板内 ⇒ scoped 命中；EP 内部结构用 :deep 穿透） */
+.brand-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 6px;
+  border-bottom: 0.5px solid #ebeef5;
+}
+
+.brand-pop-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #606266;
+}
+
+.brand-pop-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.brand-pop-hint {
+  padding: 6px 4px 2px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.brand-pop-list {
+  display: block;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.brand-pop-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 28px;
+  margin-right: 0;
+}
+
+.brand-pop-item :deep(.el-checkbox__label) {
+  flex: 1;
+  min-width: 0;
+  padding-left: 8px;
+  overflow: visible;
+}
+
+.brand-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-pop-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+  background: #f5f7fa;
+  flex: 0 0 auto;
+}
+
+.brand-pop-logo--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #909399;
+}
+
+.brand-pop-name {
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand-pop-num {
+  margin-left: auto;
+  font-size: 12px;
+  color: #c0c4cc;
+}
+</style>
+
+<style>
+/* el-popover 默认 teleport 到 body ⇒ 外层样式必须非 scoped；
+   已用 brand-layer-popover 前缀限定作用域，不影响其它弹层。 */
+.brand-layer-popover.el-popover.el-popper {
+  padding: 8px 10px 6px;
 }
 </style>

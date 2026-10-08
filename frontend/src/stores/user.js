@@ -199,6 +199,7 @@ export const useUserStore = defineStore('user', {
           'markerFilters_',      // DataView —— 我的门店筛选
           'competitorFilters_',  // CompetitorView —— 竞品筛选
           'brandStoreFilters_',  // BrandStoreView —— 品牌门店筛选
+          'brandLayerFilter_',   // MapView —— 图层「显示品牌」勾选（v1.13.193）
           'refSelection_',       // SalesForecastView —— 参照店选择
           'overlapThresholds_',  // MapView —— 重叠阈值
           'aiChatHistory_'       // AiAssistant —— 对话历史 ★隐私（内容型，量最大）
