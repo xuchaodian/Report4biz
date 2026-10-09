@@ -153,6 +153,32 @@ export function writeGeoText(id, text) {
 }
 
 /**
+ * 收养一个**已经落盘的** geojson 文件（v1.13.194）。
+ *
+ * ── 为什么需要它 ──────────────────────────────────────────────────────
+ * 250m 网格人口单城产物约 95MiB（10.8 万要素 / 35 字段）。
+ * 若沿用「Python 走 stdout → Node JSON.parse → JSON.stringify → writeGeoText」，
+ * 实测该链路进程峰值 RSS 达 1.13GiB（parse 后 606MB，stringify 后 1156MB），
+ * 而生产服务器总内存只有 1.6GB、`free` 显示 available 609MB ⇒ 必然 OOM。
+ *
+ * 现在改由 Python 侧**流式**直接写进 GEO_DIR 下的临时文件，这边只做一次 rename
+ * 把它转正：零解析、零拷贝、不经过 JS 字符串 ⇒ Node 侧降为常数级内存。
+ *
+ * ── 契约 ──────────────────────────────────────────────────────────────
+ * 🔴 srcPath 必须与目标**同处一个文件系统**（调用方应把临时文件建在 geoDir() 内），
+ *    否则 rename 抛 EXDEV。
+ * 与 writeGeoText 一致：转正后必须 clearGeoCache，避免旧缓存命中。
+ */
+export function adoptGeoFile(id, srcPath) {
+  const key = String(id)
+  ensureDir()
+  const target = geoFilePath(key)
+  clearGeoCache(key)
+  fs.renameSync(srcPath, target)
+  return fs.statSync(target).size
+}
+
+/**
  * 删除 geojson 文件。返回是否真的删掉了。
  */
 export function removeGeoFile(id) {

@@ -10,8 +10,11 @@ import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
 import { textSearchAll } from '../utils/amapPoi.js'
+// ⚠️ 本文件**不再使用 writeGeoText**：上传改由 Python 流式直写 + adoptGeoFile 转正
+//    （见 upload 路由与 geoStore::adoptGeoFile 的注释）。writeGeoText 仍供其他模块使用。
 import {
-  writeGeoText, removeGeoFile, getGeoObject, attachGeo
+  removeGeoFile, getGeoObject, attachGeo,
+  adoptGeoFile, geoDir
 } from '../models/geoStore.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -58,6 +61,15 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB 限制
 })
+
+// 允许的 shapefile 类别。
+// ⛔ 刻意做成白名单而非「任意字符串」：category 决定这份数据会被哪些消费点读到
+//    （例如 calculate-potential 只查 category='population'，districts/sales-forecast 只查 'other'），
+//    写错一个值就可能让几十万网格混进逐要素求交的计算里，或让新数据被旧逻辑误命中。
+// · population     —— 1km 网格人口（七普系，WGS84→GCJ-02）
+// · other          —— 城市商圈面（高德坐标，跳过转换）
+// · population_hd  —— 高精度人口 250m 网格（v1.13.194 新增；WGS84→GCJ-02）
+const ALLOWED_CATEGORIES = new Set(['population', 'other', 'population_hd'])
 
 // 上传并解析 Shapefile (ZIP格式，仅管理员可上传)
 router.post('/upload', authenticate, upload.single('file'), async (req, res) => {
@@ -113,55 +125,83 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
     // 获取类别参数（默认 population），放在前面供解析时使用
     const category = req.body.category || 'population'
 
+    // 白名单校验必须在「调用解析脚本」之前：非法类别尽早拒绝，
+    // 并顺手清掉 multer 刚落地的临时文件，避免 uploads 目录堆积孤儿 zip
+    if (!ALLOWED_CATEGORIES.has(category)) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path)
+      return res.status(400).json({ message: `不支持的类别: ${category}` })
+    }
+
     // 调用 Python 脚本解析 shapefile (使用 execFile，避免 shell 命令注入)
     const pythonScript = path.join(__dirname, '../utils/shapefile_parser.py')
 
+    // 🔴 v1.13.194：让 Python **直接把 geojson 流式写进文件**，stdout 只回元信息。
+    // 原因（详见 utils/shapefile_parser.py 与 models/geoStore.js::adoptGeoFile 的头注释）：
+    //   250m 网格单城产物 95MiB，若让它走 stdout，Node 侧必须 JSON.parse + JSON.stringify，
+    //   实测进程峰值 RSS 1.13GiB，而本机总内存 1.6GB ⇒ 必然 OOM。
+    // 临时文件必须落在 geoDir() 内（同一文件系统），否则 adoptGeoFile 的 rename 会抛 EXDEV。
+    const tmpGeoPath = path.join(
+      geoDir(), `.upload-${Date.now()}-${Math.round(Math.random() * 1e9)}.geojson.part`
+    )
+
     // 使用 execFile 传参数数组（不经过 shell），杜绝命令注入
     // citynd 七普人口数据(WGS84)需转 GCJ-02；other 城市商圈数据已是高德坐标，跳过转换
-    const args = [pythonScript, filePath]
+    const args = [pythonScript, filePath, '--out', tmpGeoPath]
     if (category === 'other') args.push('--skip-convert')
-    const pythonResult = await new Promise((resolve, reject) => {
-      execFile('python3', args, {
-        encoding: 'utf-8',
-        maxBuffer: 100 * 1024 * 1024  // 100MB 缓冲区
-      }, (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(stderr || error.message))
-        } else {
-          resolve(stdout)
-        }
-      })
-    })
 
-    const parseResult = JSON.parse(pythonResult)
+    let pythonResult
+    try {
+      pythonResult = await new Promise((resolve, reject) => {
+        execFile('python3', args, {
+          encoding: 'utf-8',
+          // 元信息只有几十字节；8MB 足够兜住异常时带 traceback 的 error 文本。
+          // ⛔ 不要把「整份 geojson」放回 stdout —— 那正是本次改造要消除的 1.13GiB 峰值来源。
+          maxBuffer: 8 * 1024 * 1024
+        }, (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(stderr || error.message))
+          } else {
+            resolve(stdout)
+          }
+        })
+      })
+    } catch (e) {
+      // 解析进程本身失败：zip 与半成品 geojson 都要清掉
+      try { fs.unlinkSync(filePath) } catch (e2) { /* 忽略 */ }
+      try { fs.unlinkSync(tmpGeoPath) } catch (e2) { /* 忽略 */ }
+      throw e
+    }
+
+    const meta = JSON.parse(pythonResult)
 
     // 删除临时上传文件
     fs.unlinkSync(filePath)
 
-    if (!parseResult.success) {
-      return res.status(400).json({ message: parseResult.error || '解析失败' })
+    if (!meta.success) {
+      try { fs.unlinkSync(tmpGeoPath) } catch (e2) { /* 忽略 */ }
+      return res.status(400).json({ message: meta.error || '解析失败' })
     }
 
     // 保存到数据库（v1.13.143：geojson 外置成文件，主库该列只留空串占位）
     const db = getDb()
-    const geojsonData = JSON.stringify(parseResult.data)
 
-    // 顺序很关键：先 INSERT 拿 id → 再写 geojson 文件 → 最后统一提交。
-    // 写文件失败就回滚并删掉刚落地的文件，不会留下「有行无文件」的破窗。
+    // 顺序很关键：先 INSERT 拿 id → 再把临时 geojson 转正 → 最后统一提交。
+    // 任一步失败就回滚并删掉刚转正的文件，不会留下「有行无文件」的破窗。
     let insertId = null
     db.beginTx()
     try {
       const insertResult = db.prepare(
         `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
          VALUES (?, '', ?, ?, ?, ?, datetime('now', 'localtime'))`
-      ).run(originalName, JSON.stringify(parseResult.data.metadata.fields), parseResult.data.features.length, userId, category)
+      ).run(originalName, JSON.stringify(meta.fields || []), meta.featureCount || 0, userId, category)
 
       insertId = insertResult.lastInsertRowid
-      writeGeoText(insertId, geojsonData)
+      adoptGeoFile(insertId, tmpGeoPath)   // 一次 rename 转正，零解析零拷贝
       db.commitTx()   // 内含统一落盘（替代原先的 db.saveNow()，且写入合并为一次）
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 忽略 */ }
       try { if (insertId) removeGeoFile(insertId) } catch (e3) { /* 忽略 */ }
+      try { fs.unlinkSync(tmpGeoPath) } catch (e3) { /* 忽略：adopt 未执行时文件还在 */ }
       throw e
     }
 
@@ -171,8 +211,8 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       data: {
         id: insertId,
         name: originalName,
-        featureCount: parseResult.data.features.length,
-        fields: parseResult.data.metadata.fields,
+        featureCount: meta.featureCount,
+        fields: meta.fields,
         category
       }
     })
@@ -488,8 +528,13 @@ router.post('/calculate-population', authenticate, (req, res) => {
         `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
       ).all(shapefileId, ...vis.params)
     } else {
+      // 🔴🔴 兜底分支必须锁定 category！
+      // 该分支是「不指定文件 ⇒ 用全部人口网格」的语义，MapView 商圈人口分布
+      // （MapView.vue 里 radius 批量调用那次）走的正是这条、不传 shapefileId。
+      // 若不限制，v1.13.194 新增的 population_hd（单城 95MB / 10.8 万格 / 35 字段）
+      // 会被全量 getGeoObject + 逐要素 turf.intersect ⇒ 单次请求数百 MB 内存，服务器必 OOM。
       rows = db.prepare(
-        `SELECT id, name, field_names FROM shapefiles WHERE ${vis.clause}`
+        `SELECT id, name, field_names FROM shapefiles WHERE category = 'population' AND ${vis.clause}`
       ).all(...vis.params)
     }
 
