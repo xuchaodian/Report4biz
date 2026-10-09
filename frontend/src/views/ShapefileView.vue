@@ -34,7 +34,8 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="高精度人口" name="population_hd">
+      <!-- 「高精度人口」仅管理员可见（250m 网格，尚在试点：普通/VIP 账户暂不展示） -->
+      <el-tab-pane v-if="userStore.isAdmin" label="高精度人口" name="population_hd">
         <!-- 上传区域（仅管理员可见） -->
         <div class="upload-section" v-if="userStore.isAdmin">
           <el-upload
@@ -333,6 +334,8 @@ const loadFileList = async (category) => {
 
 // Tab 切换
 const onTabChange = (tab) => {
+  // 二道闸门：「高精度人口」tab 对非管理员已 v-if 隐藏，此处防御未来重构时被直接调用
+  if (tab === 'population_hd' && !userStore.isAdmin) return
   if (tab === 'citydata') {
     loadCityData()
   } else {
