@@ -2,6 +2,7 @@ import express from 'express'
 import path from 'path'
 import fs from 'fs'
 import multer from 'multer'
+import { readCsvText } from '../utils/csvEncoding.js'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
@@ -95,7 +96,7 @@ router.get('/', authenticate, (req, res) => {
 router.post('/import', authenticate, requireAdmin, upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传 CSV 文件' })
-    const csvRaw = fs.readFileSync(req.file.path, 'utf-8')
+    const csvRaw = readCsvText(req.file.path)
     const lines = csvRaw.trim().split('\n')
     if (lines.length < 2) return res.status(400).json({ success: false, message: 'CSV 文件为空' })
     

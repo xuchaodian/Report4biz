@@ -2,6 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
+import { readCsvText } from '../utils/csvEncoding.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -254,7 +255,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
       return res.status(400).json({ message: '请上传文件' })
     }
 
-    const fileContent = fs.readFileSync(req.file.path, 'utf-8')
+    const fileContent = readCsvText(req.file.path)
 
     Papa.parse(fileContent, {
       header: true,

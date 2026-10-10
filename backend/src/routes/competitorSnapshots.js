@@ -8,6 +8,7 @@ import express from 'express'
 import multer from 'multer'
 import Papa from 'papaparse'
 import fs from 'fs'
+import { decodeCsvBuffer } from '../utils/csvEncoding.js'
 import { getDb, saveDatabase } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import {
@@ -43,8 +44,8 @@ function readUploadedFile(req, res) {
   if (!req.file) { res.status(400).json({ message: '请上传文件' }); return null }
   try {
     const buf = fs.readFileSync(req.file.path)
-    let content = buf.toString('utf-8')
-    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1) // strip BOM
+    let content = decodeCsvBuffer(buf) // v1.13.197：自动识别 UTF-8 / UTF-8-BOM / UTF-16 / GB18030
+    if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1) // strip BOM（解码器已去，此处兜底）
     const results = Papa.parse(content, { header: true, skipEmptyLines: true })
     if (results.errors && results.errors.some(e => e.type === 'Delimiter')) {
       cleanup(req); res.status(400).json({ message: 'CSV 解析失败，请检查文件格式（分隔符/编码）' }); return null
