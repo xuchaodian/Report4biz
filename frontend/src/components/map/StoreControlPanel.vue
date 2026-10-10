@@ -32,12 +32,21 @@
         </div>
         <div class="toggle-row">
           <span class="toggle-label">品牌门店</span>
-          <el-switch :model-value="showBrand" @update:model-value="$emit('update:show-brand', $event)" />
+          <el-switch :model-value="showBrand" @update:model-value="onBrandToggle" />
         </div>
-        <!-- v1.13.193：品牌门店按品牌勾选（默认全选 = 与开启前行为一致） -->
+        <!-- v1.13.193：品牌门店按品牌勾选 -->
+        <!-- v1.13.196：打开开关不再「默认显示全部品牌」——未选择过则自动弹出本浮层让用户勾选，
+             已选择过则沿用上次勾选（不再打扰）。浮层改为受控可见，供开关主动打开。 -->
         <div v-show="showBrand" class="toggle-row toggle-sub-row">
           <span class="toggle-label-sub">显示品牌</span>
-          <el-popover placement="right" :width="248" trigger="click" popper-class="brand-layer-popover">
+          <el-popover
+            :visible="brandPopVisible"
+            placement="right"
+            :width="248"
+            trigger="click"
+            popper-class="brand-layer-popover"
+            @update:visible="$emit('update:brand-pop-visible', $event)"
+          >
             <template #reference>
               <span class="brand-filter-btn" :class="{ 'is-empty': brandSelection.length === 0 }">
                 {{ brandFilterText }}
@@ -165,6 +174,7 @@ const emit = defineEmits([
   'update:show-center',
   'update:store-status-filter',
   'update:brand-selection',
+  'update:brand-pop-visible',
   'set-tool',
   'toggle-store-search',
   'toggle-district',
@@ -191,7 +201,10 @@ const props = defineProps({
   showCluster: Boolean,
   // v1.13.193：品牌门店「显示品牌」复选——选项 [{ brand, count, icon }] 与当前勾选
   brandOptions: { type: Array, default: () => [] },
-  brandSelection: { type: Array, default: () => [] }
+  brandSelection: { type: Array, default: () => [] },
+  // v1.13.196：浮层受控可见（供点开关时主动弹出）+ 是否已选择过（决定「首次弹窗 / 沿用上次」）
+  brandPopVisible: Boolean,
+  brandInitialized: Boolean
 })
 
 // v1.13.193：按钮文案
@@ -207,6 +220,22 @@ const brandFilterText = computed(() => {
 const selectAllBrands = () => emit('update:brand-selection', props.brandOptions.map(o => o.brand))
 const clearAllBrands = () => emit('update:brand-selection', [])
 const onBrandSelectionChange = (val) => emit('update:brand-selection', Array.isArray(val) ? val : [])
+
+// v1.13.196：点「品牌门店」开关。
+// - 关 ⇒ 收起浮层；
+// - 开且从未选择过 ⇒ 自动弹出「显示品牌」浮层，并把勾选置空（阻止「默认显示全部品牌」）；
+// - 开且已选择过 ⇒ 直接沿用上次勾选，不再打扰。
+const onBrandToggle = (val) => {
+  emit('update:show-brand', val)
+  if (!val) {
+    emit('update:brand-pop-visible', false)
+    return
+  }
+  if (!props.brandInitialized) {
+    emit('update:brand-pop-visible', true)
+    emit('update:brand-selection', [])
+  }
+}
 </script>
 
 <style scoped>

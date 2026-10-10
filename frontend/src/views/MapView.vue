@@ -44,7 +44,9 @@
       v-model:show-center="showShoppingCenterLayer"
       v-model:store-status-filter="myStoreStatusFilter"
       v-model:brand-selection="brandLayerSelection"
+      v-model:brand-pop-visible="brandPopVisible"
       :brand-options="brandLayerOptions"
+      :brand-initialized="brandStoreStore.layerBrandsInitialized"
       :active-tool="activeTool"
       :store-search-visible="storeSearchVisible"
       :district-visible="districtVisible"
@@ -2048,6 +2050,7 @@ watch(myStoreStatusFilter, () => {
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
 const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
 const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
+const brandPopVisible = ref(false)      // v1.13.196：「显示品牌」浮层受控可见（首次打开开关时主动弹出）
 const showShoppingCenterLayer = ref(false)  // 购物中心图层显示控制（默认隐藏）
 const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
 const storeToolsExpanded = ref(false) // 门店工具面板展开/收起
@@ -5903,12 +5906,18 @@ watch([() => brandStoreStore.visibleIds, () => brandStoreStore.layerBrands], () 
 
 // v1.13.193：品牌全不选 ⇒ 自动关闭「品牌门店」图层开关
 // （避免出现「开关是开的、地图上却什么都没有」的困惑）
-watch(() => brandStoreStore.layerBrands, (v) => {
-  if (Array.isArray(v) && v.length === 0 && showBrandStoreLayer.value) {
+// v1.13.196：加两个前提，避免与「首次打开自动弹层」打架——
+//   ① 浮层打开中不关：首次打开开关会写入空数组以阻止「默认显示全部」，此时不能把用户刚开的图层关掉；
+//   ② 浮层关闭时单独判一次：首次打开后一个都没勾就把浮层关掉 ⇒ 把开关也收回去。
+const closeBrandLayerIfEmptySelection = () => {
+  const v = brandStoreStore.layerBrands
+  if (Array.isArray(v) && v.length === 0 && showBrandStoreLayer.value && !brandPopVisible.value) {
     showBrandStoreLayer.value = false
     ElMessage.info('未选择任何品牌，已关闭「品牌门店」图层')
   }
-})
+}
+watch(() => brandStoreStore.layerBrands, closeBrandLayerIfEmptySelection)
+watch(brandPopVisible, closeBrandLayerIfEmptySelection)
 watch(() => shoppingCenterStore.visibleIds, () => {
   if (map) reloadShoppingCenterLayer()
   if (showCluster.value) buildAllStoreCluster()

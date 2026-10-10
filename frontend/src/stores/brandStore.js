@@ -23,6 +23,9 @@ export const useBrandStoreStore = defineStore('brandStore', {
     // ⚠️ 与 visibleIds 刻意分离：「定位门店」面板的单选筛选走 visibleIds，
     //    本面板的复选走 layerBrands，两者做 AND —— 若共用 visibleIds 会互相覆盖。
     layerBrands: null,
+    // v1.13.196：是否「已选择过」——用于区分「从未选过」（首次打开开关时弹层让用户勾选、不默认全量）
+    // 与「选满 ⇒ 存 null（= 全部）」。仅凭 layerBrands === null 无法区分这两者。
+    layerBrandsInitialized: false,
     // 筛选条件（持久化，切换页面后保留）
     filters: {
       searchKeyword: '',
@@ -151,6 +154,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
         if (!raw) return
         const arr = JSON.parse(raw)
         this.layerBrands = Array.isArray(arr) ? arr : null
+        this.layerBrandsInitialized = true   // v1.13.196：key 存在即代表「用户选择过」（存 null 亦算）
       } catch (e) {
         this.layerBrands = null
       }
@@ -163,6 +167,7 @@ export const useBrandStoreStore = defineStore('brandStore', {
       const arr = Array.isArray(brands) ? [...new Set(brands)] : []
       const value = (all.length > 0 && arr.length >= all.length) ? null : arr
       this.layerBrands = value
+      this.layerBrandsInitialized = true    // v1.13.196：写过即算「已选择过」
       try {
         localStorage.setItem(LAYER_KEY(), JSON.stringify(value))
       } catch (e) {
