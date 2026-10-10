@@ -2567,7 +2567,6 @@ const openPopulationDistribution = async () => {
   console.log('开始异步加载字段选项')
   setTimeout(async () => {
     try {
-      const userId = localStorage.getItem('userId') || 1
       const listRes = await fetch(`/api/shapefiles?category=population`, {
         headers: { Authorization: `Bearer ${userStore.token}` }
       })
@@ -2731,7 +2730,6 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
 
   // 加载统计字段选项（使用轻量级字段端点）
   try {
-    const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles?category=population`, {
       headers: { Authorization: `Bearer ${userStore.token}` }
     })
@@ -3345,7 +3343,6 @@ const analyzePopulationDistribution = async () => {
   }
 
   try {
-    const userId = localStorage.getItem('userId') || 1
     const panelId = 'panel-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) // 唯一ID用于关闭按钮
     
     // 添加超时控制（总超时30秒）
@@ -7145,7 +7142,6 @@ const openCityTradeArea = async () => {
   cityTradeAreaLoading.value = true
   cityTradeAreaList.value = []
   try {
-    const userId = userStore.user?.id || 1
     const res = await fetch(`/api/shapefiles?category=other`, {
       headers: { Authorization: `Bearer ${userStore.token}` }
     })
@@ -7187,7 +7183,6 @@ const loadCityTradeArea = async (selectedCities) => {
     cityTradeAreaLayer = null
   }
   try {
-    const userId = userStore.user?.id || 1
     // 先获取所有 other 类 shapefile
     const listRes = await fetch(`/api/shapefiles?category=other`, {
       headers: { Authorization: `Bearer ${userStore.token}` }
@@ -9499,7 +9494,6 @@ const startPopulationCompare = async () => {
 
   try {
     // 获取所有shapefile
-    const userId = localStorage.getItem('userId') || 1
     const listRes = await fetch(`/api/shapefiles?category=population`, {
       headers: { Authorization: `Bearer ${userStore.token}` }
     })

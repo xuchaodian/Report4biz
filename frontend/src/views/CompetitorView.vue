@@ -304,6 +304,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
+import { currentUidOr } from '@/utils/currentUser.js'
 import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
 import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.vue'
 
@@ -323,7 +324,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 
 // localStorage 持久化（按用户隔离，userId 从 localStorage 读取保证跨刷新稳定）
-const LS_KEY = () => `competitorFilters_${localStorage.getItem('userId') || 'anon'}`
+const LS_KEY = () => `competitorFilters_${currentUidOr('anon')}`
 const SAVE_FIELDS = () => ({
   searchKeyword: searchKeyword.value,
   filterCity: filterCity.value,

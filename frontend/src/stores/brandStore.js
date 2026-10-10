@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '../utils/api.js'
+import { currentUidOr } from '../utils/currentUser.js'
 
 const API_URL = '/api'
 
@@ -8,8 +9,9 @@ const FRESH_MS = 60 * 1000
 let brandStoresInFlight = null
 
 // v1.13.193：地图「显示门店 → 品牌门店 → 显示品牌」的图层品牌勾选。
-// 按 userId 命名，换账号不串档（与 markerFilters_ / competitorFilters_ 同惯例）。
-const LAYER_KEY = () => `brandLayerFilter_${localStorage.getItem('userId') || 'anon'}`
+// 🔴 v1.13.198：命名空间**必须**走 currentUser（按标签页隔离）——
+//    原先读 localStorage.userId 是全局共享的，多标签页登不同账号会互相串档。
+const LAYER_KEY = () => `brandLayerFilter_${currentUidOr('anon')}`
 
 export const useBrandStoreStore = defineStore('brandStore', {
   state: () => ({

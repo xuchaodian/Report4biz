@@ -151,6 +151,7 @@ import { useUserStore } from '@/stores/user'
 import { setAppLocale } from '@/i18n'
 import { getActionDescription } from '@/utils/aiExecutor'
 import { matchFaq, listFaqs } from '@/utils/faqMatch'
+import { currentUidOr } from '@/utils/currentUser.js'
 
 const { locale } = useI18n()
 // 语言按钮缩写：中 / 日 / EN
@@ -189,7 +190,7 @@ const MAX_TOTAL_MSGS = 24  // 总消息上限
 const HISTORY_KEY = 'aiChatHistory'
 
 const historyStorageKey = () => {
-  const uid = localStorage.getItem('userId') || 'anonymous'
+  const uid = currentUidOr('anonymous')
   return `${HISTORY_KEY}_${uid}`
 }
 
@@ -198,7 +199,7 @@ const historyStorageKey = () => {
 // 用途：运营者据此判断这条链路接住了多少提问、是否值得扩充 FAQ。
 const FAQ_HIT_KEY = 'aiFaqHits'
 const faqHitStorageKey = () => {
-  const uid = localStorage.getItem('userId') || 'anonymous'
+  const uid = currentUidOr('anonymous')
   return `${FAQ_HIT_KEY}_${uid}`
 }
 const faqHitCount = ref(0)

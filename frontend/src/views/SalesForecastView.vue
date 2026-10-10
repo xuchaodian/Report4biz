@@ -176,6 +176,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import api from '../utils/api.js'
+import { currentUidOr } from '../utils/currentUser.js'
 import { ElMessage } from 'element-plus'
 import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -286,7 +287,7 @@ const refTable = ref(null)
 const predictRefMode = ref('auto')
 const predictRefCount = ref(0)
 let refRestoring = false
-const savedKey = () => 'refSelection_' + (localStorage.getItem('userId') || '0')
+const savedKey = () => 'refSelection_' + currentUidOr('0')
 
 const filteredRefPool = computed(() => {
   let list = refPool.value

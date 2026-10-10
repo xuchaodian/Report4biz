@@ -229,6 +229,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
+import { currentUidOr } from '@/utils/currentUser.js'
 
 const userStore = useUserStore()
 const brandStoreStore = useBrandStoreStore()
@@ -248,7 +249,7 @@ const tableData = ref([])
 const tableTotal = ref(0)
 const tableLoading = ref(false)
 
-const LS_KEY = () => `brandStoreFilters_${localStorage.getItem('userId') || 'anon'}`
+const LS_KEY = () => `brandStoreFilters_${currentUidOr('anon')}`
 
 // 保存筛选条件到 localStorage（持久化，按用户隔离）
 const saveFiltersToLS = () => {

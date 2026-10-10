@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
+import { getCurrentUserId } from '../utils/currentUser.js'
 
 const API_URL = '/api'
 
@@ -50,7 +51,11 @@ export const useUserStore = defineStore('user', {
         this.token = data.token
         this.user = data.user
         sessionStorage.setItem('token', data.token)
-        localStorage.setItem('userId', String(data.user.id || ''))  // 持久化 userId，供筛选隔离key使用
+        // 🔴 v1.13.198：userId 存 **sessionStorage**（按标签页隔离）。
+        //    存 localStorage 是全局共享的 ⇒ 多标签页登不同账号时后者覆盖前者，
+        //    导致所有「按 uid 命名」的本地数据读写到别人的命名空间（串档事故）。
+        sessionStorage.setItem('userId', String(data.user.id ?? ''))
+        localStorage.removeItem('userId')   // 清历史脏数据，防止旧值继续被误读
         axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
         // 登录后获取配额
         await this.fetchQuota()
@@ -170,7 +175,8 @@ export const useUserStore = defineStore('user', {
       sessionStorage.removeItem('token')
       // ⚠️ 必须在移除 userId **之前**清扫（清扫要读 userId 定位命名空间）
       this.sweepUserLocalState()
-      localStorage.removeItem('userId')
+      sessionStorage.removeItem('userId')
+      localStorage.removeItem('userId')   // v1.13.198：userId 已不再存 localStorage，顺手清脏数据
       delete axios.defaults.headers.common['Authorization']
     },
 
@@ -193,7 +199,7 @@ export const useUserStore = defineStore('user', {
      */
     sweepUserLocalState() {
       // ① 按 uid 命名的「内容类」家族：命中 `前缀 + 当前uid` 才删（不误删他人命名空间）
-      const uid = localStorage.getItem('userId')
+      const uid = getCurrentUserId()
       if (uid) {
         const FAMILIES = [
           'markerFilters_',      // DataView —— 我的门店筛选

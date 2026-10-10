@@ -759,6 +759,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import Papa from 'papaparse'
 import { escapeHtml } from '@/utils/escapeHtml'
+import { currentUidOr } from '@/utils/currentUser.js'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { SALES_BAND_OPTIONS, bandLabel } from '@/utils/salesBand'
 
@@ -788,7 +789,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 
 // localStorage 持久化（按用户隔离，userId 从 localStorage 读取保证跨刷新稳定）
-const LS_KEY = () => `markerFilters_${localStorage.getItem('userId') || 'anon'}`
+const LS_KEY = () => `markerFilters_${currentUidOr('anon')}`
 const SAVE_FIELDS = () => ({
   searchKeyword: searchKeyword.value,
   filterStoreType: filterStoreType.value,

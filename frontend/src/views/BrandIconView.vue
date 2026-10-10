@@ -122,10 +122,11 @@ import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
+import { currentUidOr } from '@/utils/currentUser.js'
 
 const userStore = useUserStore()
 // 图标大小按用户隔离（key 带 userId，各账号设置互不影响）
-const iconUid = () => localStorage.getItem('userId') || 'guest'
+const iconUid = () => currentUidOr('guest')
 const iconSizeKey = () => `mapIconSize_${iconUid()}`
 const brandIconSizeKey = (brand) => `mapIconSize_${brand}_${iconUid()}`
 

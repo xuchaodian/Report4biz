@@ -1,4 +1,5 @@
 import L from 'leaflet'
+import { currentUidOr } from './currentUser.js'
 
 // 自定义图标颜色配置
 const colors = {
@@ -165,7 +166,7 @@ export function createOldIcon(color = 'default', icon = '📍') {
 export function createBrandImageIcon(url, gray = false, borderColor = null, size = null, brand = null) {
   if (!size) {
     // 图标大小按用户隔离（key 带 userId，各账号设置互不影响）
-    const uid = localStorage.getItem('userId') || 'guest'
+    const uid = currentUidOr('guest')
     // 单品牌独立大小（localStorage: mapIconSize_<brand>_<uid>）
     let brandSize = brand ? Number(localStorage.getItem(`mapIconSize_${brand}_${uid}`)) : NaN
     if (brandSize >= 20 && brandSize <= 48) {

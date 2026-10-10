@@ -105,6 +105,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useUserStore } from '@/stores/user'
+import { currentUidOr } from '@/utils/currentUser.js'
 
 const router = useRouter()
 const markerStore = useMarkerStore()
@@ -117,9 +118,9 @@ const showBanner = ref(false)
 const bannerClosed = ref(false)
 
 // 引导完成标记 key（按用户隔离）
-const guideDoneKey = () => `guide_done_${localStorage.getItem('userId') || 'anon'}`
+const guideDoneKey = () => `guide_done_${currentUidOr('anon')}`
 // 引导条关闭标记 key（按用户隔离）
-const bannerClosedKey = () => `guide_banner_closed_${localStorage.getItem('userId') || 'anon'}`
+const bannerClosedKey = () => `guide_banner_closed_${currentUidOr('anon')}`
 
 /**
  * 子公司成员（orgRole === 'member'）：数据由集团下发，不该引导「自己添加门店」。

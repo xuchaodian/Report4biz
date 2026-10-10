@@ -21,12 +21,14 @@
  */
 
 /** 来源优先级：数字越小越优先（与后端 brandIconScope.js 保持一致） */
+import { getCurrentUserIdNumber } from './currentUser.js'
+
 export const SOURCE_RANK = { self: 0, group: 1, admin: 2 }
 
 /** 非浏览器环境（如将来做 SSR/单测）读不到 localStorage ⇒ 返回 0 */
 export function currentSelfId() {
   try {
-    return Number(globalThis.localStorage && globalThis.localStorage.getItem('userId')) || 0
+    return getCurrentUserIdNumber()
   } catch (e) {
     return 0
   }
