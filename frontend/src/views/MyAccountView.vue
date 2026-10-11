@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
-            <template v-if="isTrial"><AppIcon class="icon-text"><Present /></AppIcon>VIP 试用</template><template v-else><AppIcon class="icon-text"><Medal /></AppIcon>VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
+            <template v-if="isTrial"><AppIcon class="icon-text"><Present /></AppIcon>VIP 试用</template><template v-else><AppIcon class="icon-text"><GoldMedal /></AppIcon>VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
           </span>
         </div>
       </template>
@@ -636,7 +636,7 @@ import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } fr
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location, Search, Close, ArrowDown, Present, Medal, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
@@ -4092,6 +4092,33 @@ const handleExportExcel = async () => {
   .card-header {
     font-size: 18px;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .vip-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: #b8860b;
+    background: linear-gradient(135deg, #fff7e6, #ffe7ba);
+    border: 1px solid #f5d78e;
+    border-radius: 20px;
+    padding: 3px 12px;
+    white-space: nowrap;
+  }
+  .vip-badge .app-icon {
+    color: #8a5e00;
+  }
+  .vip-badge.vip-expired {
+    color: #f56c6c;
+    background: #fef0f0;
+    border-color: #fbc4c4;
+  }
+  .vip-badge.vip-expiring {
+    color: #e6a23c;
+    background: #fdf6ec;
+    border-color: #f5dab1;
   }
 }
 
@@ -4110,26 +4137,6 @@ const handleExportExcel = async () => {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-  }
-  .vip-badge {
-    font-size: 12px;
-    font-weight: 600;
-    color: #b8860b;
-    background: linear-gradient(135deg, #fff7e6, #ffe7ba);
-    border: 1px solid #f5d78e;
-    border-radius: 20px;
-    padding: 3px 12px;
-    white-space: nowrap;
-  }
-  .vip-badge.vip-expired {
-    color: #f56c6c;
-    background: #fef0f0;
-    border-color: #fbc4c4;
-  }
-  .vip-badge.vip-expiring {
-    color: #e6a23c;
-    background: #fdf6ec;
-    border-color: #f5dab1;
   }
 }
 
