@@ -4098,7 +4098,7 @@ const handleExportExcel = async () => {
     gap: 10px;
   }
   .vip-badge {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: #b8860b;
     background: linear-gradient(135deg, #fff7e6, #ffe7ba);
@@ -4109,6 +4109,8 @@ const handleExportExcel = async () => {
   }
   .vip-badge .app-icon {
     color: #8a5e00;
+    /* 尺寸 token 只有 14/16/20/26 四档，此处需 18px 随徽章文字放大，故直接覆盖 .app-icon--md */
+    font-size: 18px;
   }
   .vip-badge.vip-expired {
     color: #f56c6c;
