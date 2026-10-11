@@ -211,11 +211,17 @@
         </el-form-item>
         <el-form-item label="角色" prop="role">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
-            <el-option label="普通用户" value="user" />
-            <el-option label="VIP试用" value="trial" />
-            <el-option label="VIP用户" value="vip" />
+            <el-option label="普通用户" value="user" :disabled="isLastAdminTarget" />
+            <el-option label="VIP试用" value="trial" :disabled="isLastAdminTarget" />
+            <el-option label="VIP用户" value="vip" :disabled="isLastAdminTarget" />
             <el-option label="管理员" value="admin" />
           </el-select>
+          <!-- v1.13.202：「最后一个管理员」保护（前端侧；后端 PUT /users/:id 才是权威）。
+               缘由：requireAdmin 判的是 JWT 载荷（req.user = decoded，读 token 不读库）⇒ 把唯一
+               管理员改成非 admin 后当前会话仍可用，但下次登录即 403 ⇒ 永久失去后台入口。 -->
+          <div v-if="isLastAdminTarget" class="quota-tip" style="color: #e6a23c;">
+            该账号是系统唯一的管理员，不能改为其他角色（否则下次登录将无法再进入后台）。如需降级，请先新建一个管理员。
+          </div>
         </el-form-item>
         <el-form-item v-if="form.role === 'vip' || form.role === 'trial'" label="VIP到期">
           <div style="width: 100%;">
@@ -495,6 +501,10 @@ const userStore = useUserStore()
 const activeTab = ref('users')
 
 const users = ref([])
+// v1.13.202：「最后一个管理员」保护所需 —— 库内管理员总数（来自 GET /users，**不受公司筛选影响**）。
+// ⚠️ 权威校验在后端 PUT /users/:id，这里只用于禁用非 admin 选项 + 说明原因。
+// 默认 0（＝不拦截）⇒ 请求异常/字段缺失时退回改动前行为，绝不误禁用。
+const adminCount = ref(0)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -585,6 +595,15 @@ const rules = {
 }
 
 const currentUserId = computed(() => userStore.user?.id)
+
+// v1.13.202：正在编辑的账号是否为「当前唯一的管理员」。
+// 唯一 ⇒ 禁止改成其他角色（下拉禁用 + 提示），缘由见 adminCount 注释与后端 PUT 的同名守卫。
+// ⚠️ 判据是 `=== 1`（不是 `<= 1`）：异常态退回「不拦截」＝改动前行为（后端始终是权威）。
+const isLastAdminTarget = computed(() => {
+  if (!isEdit.value) return false
+  const target = users.value.find(u => u.id === editingId.value)
+  return !!target && target.role === 'admin' && adminCount.value === 1
+})
 
 // 公司列表（去重）
 const companyList = computed(() => {
@@ -755,6 +774,10 @@ const fetchUsers = async () => {
     }
     const data = await api.get('/users', { params })
     users.value = data.users
+    // v1.13.202：库内管理员总数（不受公司筛选影响）——「最后一个管理员」保护用
+    if (typeof data.adminCount === 'number') {
+      adminCount.value = data.adminCount
+    }
     // 更新配额信息
     if (data.quotaInfo) {
       quotaInfo.value = data.quotaInfo

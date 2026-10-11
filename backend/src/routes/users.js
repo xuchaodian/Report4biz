@@ -65,6 +65,10 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
       return { ...user, remainingQuota, usedQuota, cumulativeTotal, cumulativeUsed }
     })
 
+    // v1.13.202：库内管理员总数（**全表计数，不受 company 筛选影响**）——供前端「最后一个管理员」
+    // 保护使用（禁用非 admin 选项 + 提示）。后端 PUT 的校验才是权威，两处口径必须一致。
+    const adminCount = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`).get()?.c || 0
+
     // 计算已分配的配额总和（不包括管理员）
     const allocatedResult = db.prepare(`SELECT COALESCE(SUM(quota), 0) as total FROM users WHERE role != 'admin'`).get()
     const allocatedQuota = allocatedResult?.total || 0
@@ -88,6 +92,7 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
 
     res.json({ 
       users: usersWithQuota,
+      adminCount,
       quotaInfo: {
         initialQuota,     // 初始总配额（我手动输入的值）
         remainingQuota,   // 当前剩余配额（实际可查询的次数）
@@ -371,6 +376,19 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     const existingUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
     if (!existingUser) {
       return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // v1.13.202：「最后一个管理员」保护 —— 禁止把系统中唯一的管理员改成其他角色。
+    // 背景：middleware/auth.js 里 req.user = decoded ⇒ requireAdmin 判的是 **JWT 载荷**（读 token
+    // 不读库）。把管理员自己改成 trial/user 后当前会话仍可用（库里已变、token 未变），
+    // 但**下次登录**签发的新 token 载荷即非 admin ⇒ /users 直接 403；若全站只剩这一个管理员
+    // ⇒ 永久失去后台入口，且无处可改回来。故此处按「库内管理员总数」兜住（与 GET / 的
+    // adminCount 同一口径）。⛔ 别改成按 req.user 判断 —— 那正是失效的判据。
+    if (role && role !== 'admin' && existingUser.role === 'admin') {
+      const adminCount = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`).get()?.c || 0
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: '系统必须保留至少一个管理员：不能把最后一个管理员改为其他角色' })
+      }
     }
 
     // 如果要更新配额，检查配额限制（设定模式）
