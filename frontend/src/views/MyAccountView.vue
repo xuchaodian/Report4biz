@@ -6,6 +6,8 @@
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
             <template v-if="isTrial"><AppIcon class="icon-text"><Present /></AppIcon>VIP 试用</template><template v-else><AppIcon class="icon-text"><GoldMedal /></AppIcon>VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
           </span>
+          <span v-else-if="isAdmin" class="role-badge"><AppIcon class="icon-text"><Setting /></AppIcon>管理员</span>
+          <span v-else class="role-badge"><AppIcon class="icon-text"><User /></AppIcon>普通用户</span>
         </div>
       </template>
 
@@ -636,7 +638,7 @@ import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } fr
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
@@ -671,6 +673,9 @@ const onImportDone = async () => {
 // ===== VIP 身份标识 =====
 const isVip = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial')
 const isTrial = computed(() => userStore.user?.role === 'trial')
+// v1.13.201：非 VIP 两态也要有身份标识 —— 此前个人中心卡片头部仅 isVip 为真才渲染，
+// user / admin 该位置全空白（admin 功能上等同 VIP 却同样无标识）。文案沿用 UsersView 既有四态口径。
+const isAdmin = computed(() => userStore.user?.role === 'admin')
 // 是否 VIP（管理员视为 VIP，用于 AI 选址建议门禁按钮显示）
 const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial' || userStore.user?.role === 'admin')
 // v1.13.158：vip_until 为空的语义统一为「长期有效（不过期）」—— 与后端 ai.js 的 VIP 门禁判定
@@ -4121,6 +4126,22 @@ const handleExportExcel = async () => {
     color: #e6a23c;
     background: #fdf6ec;
     border-color: #f5dab1;
+  }
+  /* v1.13.201：非 VIP 身份标识（普通用户 / 管理员）—— 中性灰，不抢 VIP 金色；
+     红色语义保留给 .vip-badge.vip-expired 的「已过期」警示，此处刻意不用红。 */
+  .role-badge {
+    font-size: 14px;
+    font-weight: 600;
+    color: #606266;
+    background: #f4f4f5;
+    border: 1px solid #e9e9eb;
+    border-radius: 20px;
+    padding: 3px 12px;
+    white-space: nowrap;
+  }
+  .role-badge .app-icon {
+    color: #606266;
+    font-size: 18px;
   }
 }
 
