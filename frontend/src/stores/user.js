@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
 import { getCurrentUserId } from '../utils/currentUser.js'
+import { isVipRoleActive } from '../utils/vipUntil.js'
 
 const API_URL = '/api'
 
@@ -37,8 +38,16 @@ export const useUserStore = defineStore('user', {
      *
      * ⚠️ 与「VIP 徽章」语义不同，勿合并：MyAccountView 的 isVip / isTrial 用于**展示**
      *    身份标签（admin 不显示 VIP 徽章），本 getter 只答「能不能用 VIP 功能」。
+     *
+     * 🔴 v1.13.213 补读 `vip_until`（211/212 挂账的遗留 B）：
+     *   208 收敛时**只搬了角色白名单、漏了有效期** ⇒ 正式 vip 到期后（role 恒 'vip'、
+     *   vip_until 已过）本判据仍为 true ⇒ 前端全放行（MainLayout 的 🔒VIP 角标不显示、
+     *   销售预测不出空态），用户点进去才被**后端 403**。
+     *   现改为调用 `utils/vipUntil.js::isVipRoleActive` —— 与后端
+     *   `aiQuota.js::isVipActive` 逐行同口径（含「空 vip_until = 长期有效」）。
+     *   守卫：backend/tests/vipUntilParity.test.js（行为级逐条比对，非关键词匹配）。
      */
-    isVipActive: (state) => ['vip', 'trial', 'admin'].includes(state.user?.role),
+    isVipActive: (state) => isVipRoleActive(state.user),
     username: (state) => state.user?.username || '',
     availableQuota: (state) => state.quota?.available ?? 0,
     /**

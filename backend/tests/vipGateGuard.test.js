@@ -135,8 +135,16 @@ describe('VIP 门禁：前后端 isVipActive 口径必须一致', () => {
   const store = fs.readFileSync(path.join(FRONTEND_SRC, 'stores/user.js'), 'utf8')
   const aiQuota = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/utils/aiQuota.js'), 'utf8')
 
-  it('前端 getter 覆盖 vip / trial / admin 三角色', () => {
-    expect(store).toMatch(/isVipActive\s*:\s*\(state\)\s*=>\s*\[\s*'vip'\s*,\s*'trial'\s*,\s*'admin'\s*\]/)
+  it('前端 getter 覆盖 vip / trial / admin 三角色（经单一判据；行为级覆盖见 vipUntilParity）', () => {
+    // v1.13.213：前端门禁收敛到 utils/vipUntil.js::isVipRoleActive 后，
+    //   角色白名单字面量已从本 getter **移走**（改由该模块的 VIP_ROLES 常量持有）。
+    // ⚠️ 本条原先断言「getter 里字面写着 ['vip','trial','admin']」—— 那其实是
+    //    **字面量匹配**，不是「口径一致」，正是「假绿灯」的形态：
+    //    它只保证那三个字符串还出现在源码里，**对 vip_until 有效期完全无感**，
+    //    所以遗留 B（前端漏读 vip_until）能在这条断言下长期绿着。
+    // ⇒ 三角色的**行为级**覆盖已迁至 tests/vipUntilParity.test.js 的「三角色覆盖」那条
+    //    （既验「有效期内均放行」也验「已过期均拦截」，比原断言更强）。
+    expect(store).toMatch(/isVipActive\s*:\s*\(state\)\s*=>\s*isVipRoleActive\(state\.user\)/)
   })
 
   it('后端 isVipActive 覆盖 vip / trial / admin 三角色', () => {

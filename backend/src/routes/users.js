@@ -348,7 +348,12 @@ router.put('/me', authenticate, (req, res) => {
       applyUpdate()   // 单次写：不包事务（包了反而多一次落盘）
     }
 
-    const user = db.prepare('SELECT id, username, email, role, company, logo, created_at FROM users WHERE id = ?').get(userId)
+    // v1.13.213：本 SELECT **必须带 vip_until** —— 前端 userStore.isVipActive 依赖它判有效期。
+    // 此前漏带 ⇒ 用户在「我的账户」保存一次个人资料（改公司名/邮箱/Logo），
+    // 前端 `this.user` 就被替换成不含 vip_until 的对象 ⇒ VIP 门禁回退到「长期有效」
+    // （`!vip_until ⇒ true`）而**静默放行**；同时徽章的「已过期」标注也会退回「长期有效」。
+    // 守卫：backend/tests/vipUntilParity.test.js 的「数据通路」组。
+    const user = db.prepare('SELECT id, username, email, role, vip_until, company, logo, created_at FROM users WHERE id = ?').get(userId)
 
     res.json({
       message: '修改成功',
@@ -585,6 +590,25 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
       if (adminCount <= 1) {
         return res.status(400).json({ message: '系统必须保留至少一个管理员：不能删除最后一个管理员' })
       }
+    }
+
+    // v1.13.213：集团 owner 保护 —— 禁止删除「仍是一个未解散集团总部」的账号。
+    // 背景：本库**未开** PRAGMA foreign_keys（见 models/database.js 中 org_members 处注释：
+    //   「本库未开 PRAGMA foreign_keys，不会报错，只会静默脏掉」）⇒ DELETE users **不级联**，
+    //   只会留下一堆孤儿行。其中 `organizations.owner_user_id` 悬空最致命：
+    //   requireOrgOwner 靠 `req.user.id === org.owner_user_id` 匹配，悬空后**谁都匹配不上**
+    //   ⇒ 该集团永久无法解散、无法增删成员；而成员又受 `org_members.user_id UNIQUE`
+    //   （一账号只能属一个集团）约束，**再也加不进别的集团** ⇒ 账号被永久锁死。
+    // ⚠️ 已解散（立碑）的集团不算：`dissolved_at` 非空后不再接受任何管理操作，owner 悬空无害。
+    // 与上面「最后一个管理员」同风格 —— 都是「删之前先挡住会产生不可逆后果的那一类账号」。
+    // 查询照抄 routes/orgs.js 的 GET /me 同款写法，保持一致。
+    const ownedOrg = db.prepare(
+      `SELECT name FROM organizations WHERE owner_user_id = ? AND dissolved_at IS NULL ORDER BY id LIMIT 1`
+    ).get(userId)
+    if (ownedOrg) {
+      return res.status(400).json({
+        message: `该账号是集团「${ownedOrg.name}」的总部账号，删除后该集团将无法再被管理：请先解散该集团或转移总部账号`
+      })
     }
 
     // 删除用户
