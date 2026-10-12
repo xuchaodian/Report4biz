@@ -53,8 +53,12 @@
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/district-insight' }" @click="$router.push('/district-insight')">
                 <el-icon><Shop /></el-icon>{{ $t('nav.districtInsight') }}
               </el-dropdown-item>
+              <!-- v1.13.209：销售预测升为 VIP 专属。非 VIP 显示 🔒VIP 角标
+                   （判据与「AI 选址建议 / 开店余地 / 网点优化」共用 userStore.isVipActive，
+                    切勿就地写 role 判等 —— backend/tests/vipGateGuard.test.js 会判红） -->
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/sales-forecast' }" @click="$router.push('/sales-forecast')">
                 <el-icon><TrendCharts /></el-icon>{{ $t('nav.salesForecast') }}
+                <span v-if="!userStore.isVipActive" class="vip-only-tag">🔒VIP</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -764,6 +768,22 @@ const doExport = async (type) => {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* v1.13.209：销售预测 VIP 角标（位于「选址工作台」下拉菜单内）。
+   ⚠️ el-dropdown 的 #dropdown 插槽内容会被 teleport 到 body 下渲染，但元素是在**本组件模板**
+      里直写的 ⇒ 编译期已带本组件 scopeId（data-v-*），类名直写即可命中，无需 :deep()。
+      （此为推断，上线后须用 getComputedStyle 实测字号/底色确认，见 §6.35 scoped 死样式教训。）
+   与 BusinessCirclePanel / StoreControlPanel 的同名类视觉保持一致：紫色胶囊。 */
+.vip-only-tag {
+  font-size: 9px;
+  color: #fff;
+  background: #7c3aed;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  white-space: nowrap;
+  line-height: 14px;
 }
 
 /* 配额显示项（下拉菜单渲染在body下，需全局样式） */

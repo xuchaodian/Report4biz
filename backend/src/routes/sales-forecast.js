@@ -6,8 +6,42 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { readableUserIds, placeholders } from '../utils/visibleScope.js'
+import { isVipActive, loadAiUser } from '../utils/aiQuota.js'
 
 const router = express.Router()
+
+/**
+ * ★ v1.13.209 —— 销售预测 VIP 门禁（本 router 下 4 个端点共用）。
+ *
+ * 口径与「AI 选址建议 / 开店余地 / 网点优化」完全一致：
+ *   vip（正式）/ trial（30 天试用）/ admin 三者均放行 —— 判据复用
+ *   utils/aiQuota.js::isVipActive，⛔ 不在此处另写一套角色判等
+ *   （前端侧的同一判据是 stores/user.js::isVipActive）。
+ *
+ * 🔴 必须**读库**取 role / vip_until（loadAiUser），不能用 `req.user` 判：
+ *   `req.user` 来自 JWT，是**签发时的快照**。管理员批准 VIP 试用申请时
+ *   `routes/vipApplications.js::approve` 刻意 **不 bump token_version**
+ *   （否则会把刚通过申请的用户当场登出），所以库里的 role='trial' 与旧 token 里的
+ *   role='user' 会**长期并存**。若按 JWT 判，用户刷新页面后前端已放行、后端仍 403
+ *   —— 正是 v1.13.208 那类「前后端口径分叉」bug 的翻版。
+ *   （205 起的既有约定：审批/门禁一律以**库内 role 为准**。）
+ *
+ * ⚠️ 必须排在 authenticate **之后**（需要 req.user.id 定位账号），故各端点写作
+ *    `authenticate, requireVip`；⛔ 不可改用 router.use() 前置——那时 req.user 还是空的，
+ *    会导致 loadAiUser(db, undefined) → 全站 403。
+ */
+function requireVip(req, res, next) {
+  const user = loadAiUser(getDb(), req.user?.id)
+  if (!isVipActive(user)) {
+    return res.status(403).json({
+      success: false,
+      code: 'vip_required',
+      message: '销售预测为 VIP 用户专属功能，请联系管理员开通 VIP'
+    })
+  }
+  req.vipUser = user
+  next()
+}
 
 // ===================== 空间判定 =====================
 function pointInPolygon(pt, ring) {
@@ -405,7 +439,7 @@ function refPingxiao(r) {
 }
 
 // ===================== 候选门店列表 =====================
-router.get('/candidates', authenticate, (req, res) => {
+router.get('/candidates', authenticate, requireVip, (req, res) => {
   try {
     const db = getDb()
     const isAdmin = req.user.role === 'admin'
@@ -638,7 +672,7 @@ function buildXForRef(db, ref, userId, isAdmin, profileIds = null) {
 }
 
 // 样本统计（前端提示用）：已开业店数 + 已录入销售样本行数（店×年）+ L2/L3 门槛
-router.get('/stats', authenticate, (req, res) => {
+router.get('/stats', authenticate, requireVip, (req, res) => {
   try {
     const db = getDb()
     const isAdmin = req.user.role === 'admin'
@@ -674,7 +708,7 @@ router.get('/stats', authenticate, (req, res) => {
 
 // ===================== 参照店圈定（可选精调，双轨：不圈定=全自动） =====================
 // 返回全量参照池 + 系统自动推荐列表（供前端圈定面板默认勾选）
-router.get('/ref-stores', authenticate, (req, res) => {
+router.get('/ref-stores', authenticate, requireVip, (req, res) => {
   try {
     const db = getDb()
     const storeId = Number(req.query.storeId)
@@ -740,7 +774,7 @@ router.get('/ref-stores', authenticate, (req, res) => {
   }
 })
 
-router.post('/predict', authenticate, async (req, res) => {
+router.post('/predict', authenticate, requireVip, async (req, res) => {
   try {
     const db = getDb()
     const storeId = Number(req.body.storeId)

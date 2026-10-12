@@ -1,5 +1,5 @@
 /**
- * VIP 功能门禁守卫（v1.13.208）
+ * VIP 功能门禁守卫（v1.13.208 立，v1.13.209 扩围）
  *
  * 背景 bug（2026-10-12 线上实测）：
  *   普通用户 test_xu（id=38）提交 VIP 试用申请 → 管理员在「用户管理」点通过 ⇒
@@ -22,9 +22,18 @@
  *   （`['vip','trial','admin'].includes(state.user?.role)`），4 处一律引用它，
  *   并与后端 isVipActive 保持**同口径**（vip 正式 / trial 试用 / admin 三者均放行）。
  *
+ * ★ v1.13.209 扩围：**销售预测**（/sales-forecast）也升为 VIP 专属。
+ *   · 前端入口角标：views/MainLayout.vue（「选址工作台」下拉里的销售预测项）
+ *   · 前端页面门禁：views/SalesForecastView.vue（非 VIP 只渲染专属空态，不发请求）
+ *   · 后端：routes/sales-forecast.js 的 4 个端点统一经 requireVip 放行，
+ *     且**必须读库取角色**（loadAiUser + isVipActive），⛔ 不得用 `req.user` ——
+ *     JWT 是签发时快照，而 approve 刻意不 bump token_version，按 JWT 判会让
+ *     「前端放行、后端 403」的 208 式分叉原样重演。
+ *
  * 本文件是**回归钉子**：
  *   ① 谁再就地写「含 admin 却漏 trial」的门禁 → 立刻红；
- *   ② 前后端 isVipActive 的口径被改到不一致 → 立刻红。
+ *   ② 前后端 isVipActive 的口径被改到不一致 → 立刻红；
+ *   ③ 后端销售预测门禁绕过单一判据 / 退回按 JWT 判 → 立刻红。
  * （前端无独立测试框架，故与 cspInlineHandlerGuard.test.js 等一致，挂在 backend 的 vitest 下。）
  */
 import { describe, it, expect } from 'vitest'
@@ -72,6 +81,9 @@ const GATE_FILES = [
   'components/map/StoreControlPanel.vue',
   'components/StoreSmartstepsDialog.vue',
   'views/MyAccountView.vue',
+  // v1.13.209：销售预测升为 VIP 专属 —— 菜单角标在 MainLayout，页面门禁在 SalesForecastView
+  'views/SalesForecastView.vue',
+  'views/MainLayout.vue',
 ]
 
 describe('VIP 门禁：不得就地写含 admin 却漏 trial 的判据', () => {
@@ -105,7 +117,7 @@ describe('VIP 门禁：不得就地写含 admin 却漏 trial 的判据', () => {
     ).toEqual([])
   })
 
-  it('4 个 VIP 门禁文件全部引用 isVipActive 单一判据', () => {
+  it('6 个 VIP 门禁文件全部引用 isVipActive 单一判据', () => {
     const missing = []
     for (const rel of GATE_FILES) {
       const p = path.join(FRONTEND_SRC, rel)
@@ -136,6 +148,18 @@ describe('VIP 门禁：前后端 isVipActive 口径必须一致', () => {
   it('后端「AI 选址建议」门禁确实走 isVipActive（而非就地判等）', () => {
     const ai = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/routes/ai.js'), 'utf8')
     expect(ai).toMatch(/isVipActive\(\s*loadAiUser\(/)
+  })
+
+  it('后端「销售预测」4 个端点全部走 requireVip + 读库取角色（禁用 JWT 快照）', () => {
+    const sf = stripComments(fs.readFileSync(path.join(REPO_ROOT, 'backend/src/routes/sales-forecast.js'), 'utf8'))
+    // ① 判据必须复用单一函数，不得就地判等
+    expect(sf).toMatch(/isVipActive\(/)
+    // ② 必须现查库（req.user 是签发时快照：approve 不 bump token_version，
+    //    改角色后旧 token 里的 role 仍是 user ⇒ 按 JWT 判会让试用用户被后端 403）
+    expect(sf).toMatch(/loadAiUser\(\s*getDb\(\)\s*,\s*req\.user\?\.id\s*\)/)
+    // ③ 4 个端点（candidates / stats / ref-stores / predict）一个都不能漏
+    const gated = sf.match(/authenticate,\s*requireVip/g) || []
+    expect(gated.length, '销售预测端点未全部挂 requireVip').toBe(4)
   })
 
   it('trial 的 AI 月额度必须小于 vip（防止「功能门禁」被误写成「计费档位」）', () => {

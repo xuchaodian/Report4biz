@@ -1,6 +1,24 @@
 <template>
   <div class="sales-forecast-view">
-    <el-card shadow="never" class="fc-card">
+    <!-- v1.13.209：VIP 功能门禁 —— 非 VIP 只渲染专属空态，且**不发起任何数据请求** -->
+    <el-card v-if="!isVip" shadow="never" class="fc-card fc-locked-card">
+      <div class="fc-locked">
+        <div class="fc-locked-icon"><AppIcon size="xl" tone="muted"><Lock /></AppIcon></div>
+        <div class="fc-locked-title">销售预测为 VIP 用户专属功能</div>
+        <div class="fc-locked-desc">
+          基于已开业门店的真实销售，按样本量自动升级预测引擎（L1 类比 → L2 回归 → L3 机器学习），
+          预测候选门店的年销售额与置信区间，并模拟新店开业对周边门店的蚕食影响。
+        </div>
+        <div class="fc-locked-desc">
+          普通用户可在「个人中心」提交申请，通过后可开通 30 天 VIP 试用。
+        </div>
+        <el-button type="warning" @click="$router.push('/account')">
+          <AppIcon class="icon-text"><GoldMedal /></AppIcon>前往个人中心申请试用
+        </el-button>
+      </div>
+    </el-card>
+
+    <el-card v-else shadow="never" class="fc-card">
       <template #header>
         <div class="fc-header">
           <span><AppIcon class="icon-text"><TrendCharts /></AppIcon>销售预测</span>
@@ -178,8 +196,16 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../utils/api.js'
 import { currentUidOr } from '../utils/currentUser.js'
 import { ElMessage } from 'element-plus'
-import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled } from '@element-plus/icons-vue'
+import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled, Lock, GoldMedal } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { useUserStore } from '@/stores/user'
+
+const userStore = useUserStore()
+// ★ v1.13.209 VIP 功能门禁判据：与「AI 选址建议 / 开店余地 / 网点优化」共用
+//   stores/user.js::isVipActive（vip 正式 / trial 试用 / admin 三者均放行）。
+//   ⛔ 不得就地写 role === 'vip' || role === 'admin' —— 那会漏掉 trial 试用用户，
+//      正是 v1.13.208 线上 bug 的成因；backend/tests/vipGateGuard.test.js 会判红。
+const isVip = computed(() => userStore.isVipActive)
 
 const loading = ref(false)
 const candidates = ref([])
@@ -358,7 +384,13 @@ const openRefPanel = () => {
   if (refOpen.value && refPool.value.length === 0) loadRefStores()
 }
 
-onMounted(() => { loadStats(); loadCandidates(); loadRefStores() })
+// ⛔ 非 VIP 不发起任何请求（页面此时只渲染专属空态，避免无谓后端开销与 403 噪音）
+onMounted(() => {
+  if (!isVip.value) return
+  loadStats()
+  loadCandidates()
+  loadRefStores()
+})
 </script>
 
 <style scoped>
@@ -464,5 +496,38 @@ onMounted(() => { loadStats(); loadCandidates(); loadRefStores() })
 .fc-ref-body {
   border-top: 1px dashed #e4e7ed;
   padding: 12px 14px;
+}
+
+/* ===== v1.13.209：VIP 专属空态（非 VIP 仅渲染此卡片，不发任何请求） ===== */
+.fc-locked-card {
+  border: 1px solid #f0e2c8;
+  background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
+}
+.fc-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 44px 24px 36px;
+}
+.fc-locked-icon {
+  margin-bottom: 14px;
+  line-height: 1;
+}
+.fc-locked-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 12px;
+}
+.fc-locked-desc {
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.9;
+  max-width: 560px;
+  margin-bottom: 6px;
+}
+.fc-locked .el-button {
+  margin-top: 14px;
 }
 </style>
