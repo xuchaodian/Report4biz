@@ -260,7 +260,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
 import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
@@ -352,6 +352,7 @@ const handleTemplateUpload = async () => {
 
 // ===== v1.13.205：VIP 试用申请入口红点（管理端）=====
 const vipPendingCount = ref(0)
+let vipPendingTimer = null
 
 /**
  * 待处理 VIP 试用申请数量 —— 个人下拉「用户管理」旁的红点。
@@ -370,10 +371,37 @@ const fetchVipPendingCount = async () => {
   }
 }
 
+// ★ v1.13.210：刷新时机修复。
+//   旧版只在 onMounted 拉一次 ⇒ 用户（别人）提交新申请后，管理员停在页面上**看不到红点**，
+//   必须手动刷新整个页面。补两路：
+//     ① 每 60s 轮询兜底（`pending-count` 是本地库的轻量 COUNT，无第三方费用、无副作用）；
+//     ② 标签页从后台恢复可见时立即补拉一次（避免"刚切回来还要等一个 tick"）。
+//   ⛔ 页面隐藏期间不发请求（document.hidden 早退）；组件卸载必须清定时器与监听，防泄漏。
+const VIP_PENDING_POLL_MS = 60000
+
+/** visibilitychange 处理器（命名以便卸载时精确移除） */
+const handleVisibilityForVip = () => {
+  if (!document.hidden) fetchVipPendingCount()
+}
+
 onMounted(() => {
   userStore.fetchUser().then(fetchVipPendingCount)
   // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
   userStore.fetchOrgRole()
+
+  vipPendingTimer = setInterval(() => {
+    if (document.hidden) return
+    fetchVipPendingCount()
+  }, VIP_PENDING_POLL_MS)
+  document.addEventListener('visibilitychange', handleVisibilityForVip)
+})
+
+onBeforeUnmount(() => {
+  if (vipPendingTimer) {
+    clearInterval(vipPendingTimer)
+    vipPendingTimer = null
+  }
+  document.removeEventListener('visibilitychange', handleVisibilityForVip)
 })
 
 const handleCommand = async (command) => {

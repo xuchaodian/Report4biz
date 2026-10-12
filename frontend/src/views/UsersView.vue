@@ -71,11 +71,20 @@
       </div>
     </div>
 
-    <!-- v1.13.205：VIP 试用申请待处理提示条（管理端）—— 与右上角个人下拉里的入口红点同一数据源 -->
+    <!-- v1.13.205：VIP 试用申请待处理提示条（管理端）—— 与右上角个人下拉里的入口红点同一数据源
+         ★ v1.13.210：入口改为**常驻**。旧版整条写 `v-if="vipPendingCount > 0"`，
+           而「去审核」按钮是打开审核弹窗的**全局唯一入口**（openVipReview 仅此一处被调用）
+           ⇒ pending=0 时整条消失 ⇒ 历史申请单在 UI 上**永久不可达**（2026-10-12 真机取证）。
+           现拆两支：有待处理＝原橙色提示条；无待处理＝低饱和常驻入口，仍可查历史记录。 -->
     <div v-if="vipPendingCount > 0" class="vip-pending-bar" role="status">
       <el-icon class="vip-pending-icon"><BellFilled /></el-icon>
       <span>有 <b>{{ vipPendingCount }}</b> 条 VIP 试用申请待处理</span>
       <el-button type="warning" size="small" @click="openVipReview">去审核</el-button>
+    </div>
+    <div v-else class="vip-pending-bar vip-pending-bar--quiet">
+      <el-icon class="vip-pending-icon"><Document /></el-icon>
+      <span>VIP 试用申请记录</span>
+      <el-button size="small" plain @click="openVipReview">查看记录</el-button>
     </div>
 
     <!-- 用户表格 -->
@@ -573,7 +582,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled, Document } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
@@ -862,8 +871,14 @@ const fetchVipApplications = async () => {
   }
 }
 
+/**
+ * 打开「VIP 试用申请审核」弹窗 —— 全站唯一入口（提示条 / 常驻记录入口共用）。
+ * ★ v1.13.210：默认页签改为「有 pending 就看 pending，没有就看全部」。
+ *   ⛔ 旧版恒置 'pending' ⇒ 从常驻入口进来（此时 pending=0）只会显示「暂无申请记录」，
+ *      用户依旧拿不到历史申请 —— 等于把本次要修的病灶留在弹窗里。
+ */
 const openVipReview = async () => {
-  vipReviewStatus.value = 'pending'
+  vipReviewStatus.value = vipPendingCount.value > 0 ? 'pending' : 'all'
   vipReviewVisible.value = true
   await fetchVipApplications()
 }
@@ -1543,6 +1558,13 @@ onMounted(() => {
 .vip-pending-bar b { color: #e6a23c; font-size: 15px; }
 /* margin-left:auto ⇒ 按钮靠右，与左侧文案拉开 */
 .vip-pending-bar .el-button { margin-left: auto; }
+/* ★ v1.13.210：无待处理时的常驻入口 —— 保持可点，但刻意低饱和，不与真正待办抢注意力 */
+.vip-pending-bar--quiet {
+  background: #fafafa;
+  border-color: #ebeef5;
+  color: #909399;
+}
+.vip-pending-bar--quiet .vip-pending-icon { color: #c0c4cc; }
 
 .vip-review-toolbar {
   display: flex;
