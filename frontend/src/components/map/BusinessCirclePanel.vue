@@ -49,8 +49,10 @@ const emit = defineEmits([
   'toggle-smartsteps',
   'toggle-potential'
 ])
-// VIP 门禁：开店余地仅 VIP 用户可用（管理员视为 VIP）
-const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
+// VIP 门禁：开店余地仅 VIP 用户可用（管理员视为 VIP；VIP 试用 trial 同权）
+// v1.13.208：改用 userStore.isVipActive 单一判据 —— 原先就地判 vip/admin，**漏了 trial**，
+//   导致申请通过后的试用用户点「开店余地」仍被拦。详见 stores/user.js 的注释。
+const isVipUser = computed(() => userStore.isVipActive)
 const handlePotentialClick = () => {
   if (!isVipUser.value) {
     ElMessage.warning('开店余地为 VIP 用户专属功能，请联系管理员开通 VIP')

@@ -288,8 +288,10 @@ import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { parseP0S1001, get1001Dict, pick1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
 
 const userStore = useUserStore()
-// VIP 用户（管理员视为 VIP）
-const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'admin')
+// VIP 用户（管理员视为 VIP；VIP 试用 trial 同权）
+// v1.13.208：改用 userStore.isVipActive 单一判据 —— 原先就地判 vip/admin，**漏了 trial**，
+//   导致试用用户看到的仍是「AI 选址建议（VIP）」锁定态。详见 stores/user.js 的注释。
+const isVipUser = computed(() => userStore.isVipActive)
 
 const props = defineProps({
   visible: Boolean,
@@ -518,8 +520,9 @@ async function ensureAiEgressConsent() {
 
 // 处理 AI 选址建议
 const handleAiAdvice = async () => {
-  // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
-  const isVip = userStore.user?.role === 'vip' || userStore.user?.role === 'admin'
+  // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP；试用 trial 同权）
+  // v1.13.208：统一走 store 判据 —— 原先漏 trial ⇒ 试用用户点击恒被拦。
+  const isVip = userStore.isVipActive
   if (!isVip) {
     ElMessage.warning('AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
     return

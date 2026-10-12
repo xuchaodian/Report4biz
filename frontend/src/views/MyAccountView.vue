@@ -741,7 +741,8 @@ const isTrial = computed(() => userStore.user?.role === 'trial')
 // user / admin 该位置全空白（admin 功能上等同 VIP 却同样无标识）。文案沿用 UsersView 既有四态口径。
 const isAdmin = computed(() => userStore.user?.role === 'admin')
 // 是否 VIP（管理员视为 VIP，用于 AI 选址建议门禁按钮显示）
-const isVipUser = computed(() => userStore.user?.role === 'vip' || userStore.user?.role === 'trial' || userStore.user?.role === 'admin')
+// v1.13.208：统一指向 store 的唯一判据（本处本就含 trial，但同样收敛以防再分叉）
+const isVipUser = computed(() => userStore.isVipActive)
 // v1.13.158：vip_until 为空的语义统一为「长期有效（不过期）」—— 与后端 ai.js 的 VIP 门禁判定
 // （`!vip_until || 未过期`）保持一致。此前这三处各自把空值当「已过期/剩余 0 天」，会把
 // 权限正常的账号显示成红色「已过期」，误导客户以为需要续费。

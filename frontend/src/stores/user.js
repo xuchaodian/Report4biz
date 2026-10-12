@@ -18,6 +18,27 @@ export const useUserStore = defineStore('user', {
   getters: {
     isLoggedIn: (state) => !!state.token,
     isAdmin: (state) => state.user?.role === 'admin',
+    /**
+     * ★ v1.13.208 —— VIP 功能门禁判据，**全站唯一来源**。
+     *
+     * 与后端 `backend/src/utils/aiQuota.js::isVipActive` 刻意同口径：
+     *   vip（正式）/ trial（30 天试用）/ admin 三者均放行。
+     *
+     * 🔴 为什么要收敛到这里（2026-10-12 线上 bug）：
+     *   本判据原先在 **4 个组件里各写一份**（BusinessCirclePanel / StoreControlPanel /
+     *   StoreSmartstepsDialog 的 2 处），且全部漏了 v1.13.205 才新增的 `'trial'`。
+     *   后果：普通用户的 VIP 试用申请被批准后，库内 role 确实已变 `trial`
+     *   （后端 isVipActive 也放行），但前端仍判「非 VIP」⇒
+     *   **「AI 选址建议 / 开店余地 / 网点优化」三项全部被拦下**，试用体验名不副实。
+     *   这正是「同一判据多处拷贝必然分叉」的又一实例，故按项目铁律抽为单一入口。
+     *
+     * ⛔ 调用方一律用本 getter，**不得**再就地写 `role === 'vip' || role === 'admin'`
+     *    —— backend/tests/vipGateGuard.test.js 会扫源码把这个写法判红。
+     *
+     * ⚠️ 与「VIP 徽章」语义不同，勿合并：MyAccountView 的 isVip / isTrial 用于**展示**
+     *    身份标签（admin 不显示 VIP 徽章），本 getter 只答「能不能用 VIP 功能」。
+     */
+    isVipActive: (state) => ['vip', 'trial', 'admin'].includes(state.user?.role),
     username: (state) => state.user?.username || '',
     availableQuota: (state) => state.quota?.available ?? 0,
     /**
