@@ -544,6 +544,18 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
       return res.status(400).json({ message: '不能删除自己的账号' })
     }
 
+    // v1.13.203：「最后一个管理员」保护（与 PUT /:id 同口径）—— 禁止删除系统中唯一的管理员。
+    // 背景同 PUT：requireAdmin 判 **JWT 载荷**而非库，且 PUT 改 role **不 bump token_version** ⇒ 存在
+    // 这条真实路径：① 两个管理员 A/B ② A 把自己降级为 user（202 允许，因 adminCount=2）
+    // 但 A 的旧 token 载荷仍是 admin ③ A 用旧 token 删 B ⇒ 全站 0 管理员、永久失去后台入口。
+    // ⚠️ 第 ③ 步**不是「删自己」**——「不能删除自己」拦不住 ⇒ 必须按「库内管理员总数」兜住。
+    if (existingUser.role === 'admin') {
+      const adminCount = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`).get()?.c || 0
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: '系统必须保留至少一个管理员：不能删除最后一个管理员' })
+      }
+    }
+
     // 删除用户
     db.prepare('DELETE FROM users WHERE id = ?').run(userId)
 

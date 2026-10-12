@@ -158,8 +158,8 @@
             <el-button
               type="danger"
               link
-              :disabled="row.id === currentUserId"
-              title="删除"
+              :disabled="row.id === currentUserId || isLastAdminRow(row)"
+              :title="deleteDisabledReason(row) || '删除'"
               aria-label="删除该用户"
               @click="handleDelete(row)"
             >
@@ -604,6 +604,19 @@ const isLastAdminTarget = computed(() => {
   const target = users.value.find(u => u.id === editingId.value)
   return !!target && target.role === 'admin' && adminCount.value === 1
 })
+
+// v1.13.203：删除按钮的禁用判据与原因（与后端 DELETE /:id 守卫同口径）。
+// ① 不能删自己（后端同有）；② 系统唯一的管理员不可删 —— 后端才是权威，前端同口径禁用并**写出原因**，
+//    免得用户对着灰按钮猜（此前「不能删自己」是**静默**禁用、无任何提示）。
+// ⚠️ isLastAdminRow 用 `=== 1`（不是 `<= 1`）：异常态退回「不拦截」＝改动前行为，后端始终兜底。
+const isLastAdminRow = (row) => !!row && row.role === 'admin' && adminCount.value === 1
+
+const deleteDisabledReason = (row) => {
+  if (!row) return ''
+  if (row.id === currentUserId.value) return '不能删除自己的账号'
+  if (isLastAdminRow(row)) return '该账号是系统唯一的管理员，不能删除（否则将永久失去后台入口）'
+  return ''
+}
 
 // 公司列表（去重）
 const companyList = computed(() => {
