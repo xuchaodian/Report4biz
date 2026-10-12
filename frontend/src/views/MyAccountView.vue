@@ -654,7 +654,7 @@
     >
       <div class="vip-apply-intro">
         <AppIcon class="icon-text"><GoldMedal /></AppIcon>
-        <span>提交以下信息后，我们将为您的账号开通 <strong>30 天 VIP 试用</strong>（解锁 AI 选址建议、开店余地、网络优化）。管理员确认后即时生效。</span>
+        <span>提交以下信息后，我们将为您的账号开通 <strong>30 天 VIP 试用</strong>。</span>
       </div>
       <el-form
         ref="vipApplyFormRef"
@@ -674,6 +674,12 @@
         </el-form-item>
         <el-form-item label="电子邮箱" prop="contact_email">
           <el-input v-model="vipApplyForm.contact_email" placeholder="name@company.com" maxlength="120" />
+          <!-- v1.13.206：建议公司域名邮箱（软提示，**不阻断提交**）—— 小客户常只有 QQ/163 邮箱，
+               硬拦会直接丢线索；是否放行交给管理员审核时人工甄别。 -->
+          <div v-if="showPublicEmailHint" class="vip-email-hint">
+            <el-icon><WarningFilled /></el-icon>
+            <span>建议填写公司域名邮箱，便于审核通过</span>
+          </div>
         </el-form-item>
         <el-form-item label="联系电话" prop="contact_phone">
           <el-input v-model="vipApplyForm.contact_phone" placeholder="如：13800138000 / 021-12345678" maxlength="30" />
@@ -793,6 +799,25 @@ const vipApplyRules = {
     { pattern: /^[0-9+\-() #转ext.]{6,24}$/i, message: '联系电话格式不正确', trigger: 'blur' }
   ]
 }
+// v1.13.206：电子邮箱「建议公司域名」软提示。命中下列主流免费邮箱域名 ⇒ 显示黄字提示，
+// **但绝不阻断提交**（表单校验仍只查格式）——硬拦的代价是直接丢掉只有 QQ/163 邮箱的小客户，
+// 而管理员审核环节本身就是人工甄别点，故这里只做引导。
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  'qq.com', 'vip.qq.com', 'foxmail.com',
+  '163.com', 'vip.163.com', '126.com', 'vip.126.com', 'yeah.net', 'yeah.com', '188.com',
+  'sina.com', 'sina.cn', 'sohu.com', '21cn.com', '139.com', '189.cn', 'aliyun.com', 'tom.com',
+  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+  'icloud.com', 'me.com', 'aol.com', 'yahoo.com', 'yahoo.com.cn', 'yahoo.cn', 'ymail.com',
+  'protonmail.com', 'proton.me', 'zoho.com', 'yandex.com', 'mail.ru'
+])
+const vipApplyEmailDomain = computed(() => {
+  const v = String(vipApplyForm.contact_email || '').trim().toLowerCase()
+  const at = v.lastIndexOf('@')
+  return at === -1 ? '' : v.slice(at + 1)
+})
+const showPublicEmailHint = computed(() =>
+  !!vipApplyEmailDomain.value && PUBLIC_EMAIL_DOMAINS.has(vipApplyEmailDomain.value)
+)
 // 未申请 / 被驳回 ⇒ 显示按钮（驳回后可改完重提）；pending / approved ⇒ 显示状态文案
 const showVipApplyBtn = computed(() =>
   isPlainUser.value && vipApplyLoaded.value && (!vipApply.value || vipApply.value.status === 'rejected')
@@ -4321,6 +4346,21 @@ const handleExportExcel = async () => {
     align-items: flex-start;
     gap: 4px;
   }
+}
+
+/* v1.13.206：VIP 申请弹窗内 —— 电子邮箱「建议公司域名」软提示。
+   ⚠️ 必须用单类选择器：el-dialog 的 class 落在 .el-dialog 上、不继承父组件 scopeId，
+      若写成 .vip-apply-dialog .vip-email-hint 会因 data-v-* 落不到而**静默失效**（铁律 §6.35）。 */
+.vip-email-hint {
+  flex: 1 0 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: #e6a23c;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .account-form {
