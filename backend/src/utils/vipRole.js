@@ -28,3 +28,40 @@ export const calcVipUntil = (role) => {
   if (!days) return null
   return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString().slice(0, 10)
 }
+
+/**
+ * 角色权限位阶（v1.13.211 · 单一权威来源）
+ *
+ *   user(0) < trial(1) < vip(2) < admin(3)
+ *
+ * 用途：判断一次「改角色」到底是**降权**还是**提权**。
+ *
+ * 🔴 为什么必须区分：middleware/auth.js 里 `req.user = decoded` ⇒ requireAdmin 等
+ *    判的是 **JWT 载荷**，不是库。所以「把某人从 vip/admin 改回 user」若不同时把
+ *    该账号的 token_version +1，旧 token 里的旧角色会在 **TOKEN_TTL=7d** 内继续放行
+ *    —— 后台点了「收回权限」，对方其实还在用。这就是 v1.13.150 起挂账的治本项。
+ *
+ * ⚠️ trial 与 vip 位阶**刻意不同**：功能门禁上两者等价（isVipActive 均放行），但
+ *    额度档位不同（AI 月额度 trial 50 次 / vip 1000 次）⇒ `vip → trial` 属降权，要撤。
+ *    反之 `trial → vip` 是提权，不必撤（提权不会多放行任何东西）。
+ */
+export const ROLE_RANK = { user: 0, trial: 1, vip: 2, admin: 3 }
+
+/**
+ * 改角色是否为降权（⇒ 需要撤销该账号**全部**已签发 token）。
+ *
+ * @param {string} fromRole 库内当前角色
+ * @param {string} toRole   即将写入的角色
+ * @returns {boolean}
+ *
+ * 未知角色（脏值 / 拼写错 / 新增了角色却没同步进 ROLE_RANK）一律按**降权**处理：
+ * fail-closed —— 宁可多踢一次让对方重登，也不能漏撤把权限留在手里 7 天。
+ */
+export function isPrivilegeDowngrade(fromRole, toRole) {
+  if (!fromRole || !toRole) return false
+  if (fromRole === toRole) return false
+  const from = ROLE_RANK[fromRole]
+  const to = ROLE_RANK[toRole]
+  if (from === undefined || to === undefined) return true
+  return to < from
+}

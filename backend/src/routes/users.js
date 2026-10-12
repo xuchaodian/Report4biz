@@ -16,7 +16,9 @@ const router = express.Router()
 // app.js 的降级条件带 `vip_until IS NOT NULL` 而永远不会到期降级（永久白嫖 VIP）。
 // v1.13.205：本函数与 VIP_DAYS 已抽到 utils/vipRole.js —— 该批次新增的「VIP 试用申请
 // 审批」链路同样要按角色算到期日，就地复制会产生第三份拷贝（历史上已分叉过一次）。
-import { calcVipUntil } from '../utils/vipRole.js'
+// v1.13.211：同文件再补 isPrivilegeDowngrade —— 「改角色是否降权」也必须有单一判据，
+// 否则 PUT /:id 与 app.js 的 trial 到期降级会各写一套位阶表（同一类分叉）。
+import { calcVipUntil, isPrivilegeDowngrade } from '../utils/vipRole.js'
 
 // 获取用户列表（包含配额信息）
 router.get('/', authenticate, requireAdmin, (req, res) => {
@@ -462,6 +464,26 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     params.push(userId)
+
+    // v1.13.211：「降权」必须撤销该账号**全部**已签发 token。
+    // 背景（v1.13.150 起挂账的治本项）：middleware/auth.js 里 `req.user = decoded` ⇒
+    // requireAdmin 等判的是 **JWT 载荷**，不是库。原先只有「改密码」会 bump，于是
+    //   管理员把 vip/admin 改成 user ⇒ 库里已降级，但对方手上那枚旧 token 里
+    //   仍写着 role:'vip'/'admin' ⇒ 最长 7 天（TOKEN_TTL）继续按旧角色放行。
+    //   也就是「后台收回权限」这个动作实际上没有生效。
+    // 判据只认 utils/vipRole.js::isPrivilegeDowngrade（单一权威来源，⛔ 勿就地写位阶表）：
+    //   降权（user→ 的反向：vip→user / admin→user / vip→trial …）⇒ bump；
+    //   提权（user→vip/trial、vip→admin …）⇒ 不 bump。
+    // 为什么提权不 bump：提权不会多放行任何东西，而 bump 会把对方当场踢下线；
+    //   前端判据走 GET /auth/me（**读库**）⇒ 提权后刷新页面即可见，无需重登。
+    const roleChanged = role !== undefined && role !== existingUser.role
+    const roleDowngrade = roleChanged && isPrivilegeDowngrade(existingUser.role, role)
+    const revokeAllSessions = !!password || roleDowngrade
+    // 改的是**自己** ⇒ bump 会把自己当场踢下线，故按新角色/新版本号回签一枚替换
+    // （沿用 PUT /me 的 refreshedToken 范式；signToken / currentTokenVersion 文件顶部已 import）
+    const isSelfEdit = String(existingUser.id) === String(req.user?.id)
+    let refreshedToken = null
+
     // v1.13.142：容器化写入 —— 原先 UPDATE users 与 quota_history INSERT 各自
     // prepare().run()，而 database.js 的 run() 在非事务态下每次都会触发一次
     // 「db.export() 全库导出 + 整文件写盘」。本库 166MB（其中 141MB 是不可变的
@@ -484,8 +506,17 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
       }
       db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params)
       // v1.13.150：管理员改了该用户密码 ⇒ 其所有会话立即作废（含 TA 当前登录的设备）。
-      // 并入既有事务：不额外增加落盘次数。改角色/邮箱/配额等不触发。
-      if (password) bumpTokenVersion(db, userId)
+      // v1.13.211：改角色「降权」同理。
+      // 并入既有事务：不额外增加落盘次数。改邮箱/配额/公司等不触发。
+      if (revokeAllSessions) {
+        bumpTokenVersion(db, userId)
+        if (isSelfEdit) {
+          refreshedToken = signToken(
+            { id: existingUser.id, username: existingUser.username, role: finalRole },
+            currentTokenVersion(db, userId)
+          )
+        }
+      }
       db.commitTx()   // 内含统一落盘
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
@@ -515,7 +546,10 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
         availableQuota,
         apiAllocatedQuota,
         poolAvailableQuota
-      }
+      },
+      // v1.13.211：仅当「改的是自己」且触发了账号级撤销（降权/改密）时才回签 ——
+      // 前端据此替换本地凭据，避免管理员把自己降权后当场 401 掉线（自锁）。
+      ...(refreshedToken ? { token: refreshedToken } : {})
     })
   } catch (error) {
     console.error('更新用户错误:', error)

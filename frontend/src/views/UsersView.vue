@@ -1142,6 +1142,13 @@ const handleSave = async () => {
         updateData.password = form.password
       }
       const data = await api.put(`/users/${editingId.value}`, updateData)
+      // v1.13.211：后端若因「降权 / 改密」撤销了该账号的全部 token，且改的正是**自己**时，
+      // 会回签一枚新 token（载荷已是新角色）⇒ 必须立刻替换本地凭据并同步自身角色，
+      // 否则下一次请求即 401 被踢（自锁）。改别人时后端不返回 token，此处天然跳过。
+      if (data.token) {
+        userStore.applyToken(data.token)
+        await userStore.fetchUser()   // GET /auth/me 读库 ⇒ 导航立刻切为普通用户视图
+      }
       ElMessage.success('更新成功')
       // 更新配额信息
       if (data.quotaInfo) {
@@ -1152,7 +1159,9 @@ const handleSave = async () => {
       ElMessage.success('添加成功')
     }
     dialogVisible.value = false
-    fetchUsers()
+    // v1.13.211：自降权后本页已无权访问（GET /users 会 403）⇒ 不再刷新列表，
+    // 免得弹出误导性的「获取用户列表失败」。isAdmin 由上面的 fetchUser 同步。
+    if (userStore.isAdmin) fetchUsers()
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '操作失败')
   } finally {

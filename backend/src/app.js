@@ -39,6 +39,9 @@ import storeScoresRoutes from './routes/store-scores.js'
 import templateRoutes from './routes/template.js'
 import orgsRoutes from './routes/orgs.js'
 import syncRoutes from './routes/sync.js'
+// v1.13.211：trial 到期自动降级属于「降权」⇒ 必须同时撤销该账号已签发 token，
+// 否则旧 token 里的 role='trial' 还能按旧身份放行最长 7 天（详见 utils/vipRole.js）
+import { bumpTokenVersion } from './utils/tokenAuth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -170,10 +173,23 @@ async function start() {
       try {
         const db = getDb()
         const today = new Date().toISOString().slice(0, 10)
-        const r = db.prepare(`UPDATE users SET role = 'user', vip_until = NULL WHERE role = 'trial' AND vip_until IS NOT NULL AND vip_until < ?`).run(today)
-        if (r.changes > 0) {
-          console.log(`[TrialExpire] ${r.changes} 个 VIP 试用已到期，自动降级为普通用户`)
+        // v1.13.211：降权必须同时撤销 token。先取出受影响账号（通常 0～几个）——
+        // UPDATE 之后 role 已变，就再也无从知道该 bump 谁了。
+        // 不做的话：到期用户库内 role='user'，但旧 token 里的 role='trial' 仍会在
+        // TOKEN_TTL(7d) 内被按试用身份放行（与 PUT /:id 的降权漏洞同源）。
+        const expired = db.prepare(`SELECT id FROM users WHERE role = 'trial' AND vip_until IS NOT NULL AND vip_until < ?`).all(today)
+        if (expired.length === 0) return
+        // ≥2 次写（1 次 UPDATE + N 次 bump）⇒ 包事务压成一次落盘（落盘铁律）
+        db.beginTx()
+        try {
+          db.prepare(`UPDATE users SET role = 'user', vip_until = NULL WHERE role = 'trial' AND vip_until IS NOT NULL AND vip_until < ?`).run(today)
+          for (const u of expired) bumpTokenVersion(db, u.id)
+          db.commitTx()
+        } catch (e) {
+          try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+          throw e
         }
+        console.log(`[TrialExpire] ${expired.length} 个 VIP 试用已到期，自动降级为普通用户（并已撤销其登录态）`)
       } catch (e) {
         console.error('[TrialExpire] 检查失败:', e.message)
       }
