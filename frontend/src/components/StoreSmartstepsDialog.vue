@@ -282,6 +282,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, Tickets, Document, DocumentCopy, Cpu, Lock, Refresh, DataAnalysis } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
+import { requireVip } from '@/utils/vipGate'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
@@ -522,11 +523,8 @@ async function ensureAiEgressConsent() {
 const handleAiAdvice = async () => {
   // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP；试用 trial 同权）
   // v1.13.208：统一走 store 判据 —— 原先漏 trial ⇒ 试用用户点击恒被拦。
-  const isVip = userStore.isVipActive
-  if (!isVip) {
-    ElMessage.warning('AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
-    return
-  }
+  // v1.13.214：拦截后的引导（「前往个人中心申请」）收敛到 utils/vipGate.js 单一入口
+  if (!(await requireVip('aiAdvice'))) return
   if (!resultData.value) {
     ElMessage.info('暂无数据可供分析')
     return

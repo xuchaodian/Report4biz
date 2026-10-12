@@ -36,8 +36,8 @@
 
 <script setup>
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { requireVip } from '@/utils/vipGate'
 
 const userStore = useUserStore()
 const emit = defineEmits([
@@ -53,11 +53,9 @@ const emit = defineEmits([
 // v1.13.208：改用 userStore.isVipActive 单一判据 —— 原先就地判 vip/admin，**漏了 trial**，
 //   导致申请通过后的试用用户点「开店余地」仍被拦。详见 stores/user.js 的注释。
 const isVipUser = computed(() => userStore.isVipActive)
-const handlePotentialClick = () => {
-  if (!isVipUser.value) {
-    ElMessage.warning('开店余地为 VIP 用户专属功能，请联系管理员开通 VIP')
-    return
-  }
+// v1.13.214：门禁提示与「前往个人中心申请」跳转收敛到 utils/vipGate.js（单一入口）
+const handlePotentialClick = async () => {
+  if (!(await requireVip('openingRoom'))) return
   emit('toggle-potential')
 }
 

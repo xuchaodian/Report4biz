@@ -144,10 +144,19 @@ export default defineConfig({
           // 不显式分组时 Rollup 会把它们塞进 smartsteps-panel chunk（实测如此），
           // 而该 chunk 又静态依赖 leaflet ⇒ store-dialog / SharedPurchaseView 等
           // 无地图页面反向把这 8KB 工具连同 52KB gz 的地图库一起拖进首屏。
+          //
+          // ⚠️ v1.13.214 踩到同一坑的第三种形态：新增 utils/vipGate.js（被 4 个门禁点共用，
+          //    且它静态 import '@/router'）。若**不**在此分组，Rollup 会把 store-dialog /
+          //    smartsteps-panel 反向提升进**入口** chunk 的静态闭包，连带 vendor-maps
+          //    （53.46KB gz）一起进首屏 —— 实测入口静态依赖由 6 个 chunk 涨到 10 个。
+          //    分组到 app-shared 后恢复正常（入口不含 app-shared 静态依赖 ⇒ 无回边、不成环）。
+          //    判据：任何「被 ≥2 个路由 chunk 共用 + 依赖入口侧模块（router/stores）」的新 util
+          //    都必须登记在此。
           if (
             id.includes('/src/utils/smartsteps1001') ||
             id.includes('/src/utils/smartstepsMonths') ||
-            id.includes('/src/utils/sanitizeHtml')
+            id.includes('/src/utils/sanitizeHtml') ||
+            id.includes('/src/utils/vipGate')
           ) {
             return 'app-shared'
           }

@@ -152,19 +152,17 @@
 
 <script setup>
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { requireVip } from '@/utils/vipGate'
 
 const userStore = useUserStore()
 // VIP 门禁：网点优化仅 VIP 用户可用（管理员视为 VIP；VIP 试用 trial 同权）
 // v1.13.208：改用 userStore.isVipActive 单一判据 —— 原先就地判 vip/admin，**漏了 trial**，
 //   导致申请通过后的试用用户点「网点优化」仍被拦。详见 stores/user.js 的注释。
 const isVipUser = computed(() => userStore.isVipActive)
-const handleStoreCirclesClick = () => {
-  if (!isVipUser.value) {
-    ElMessage.warning('网点优化为 VIP 用户专属功能，请联系管理员开通 VIP')
-    return
-  }
+// v1.13.214：门禁提示与「前往个人中心申请」跳转收敛到 utils/vipGate.js（单一入口）
+const handleStoreCirclesClick = async () => {
+  if (!(await requireVip('storeCircles'))) return
   emit('toggle-store-circles')
 }
 const emit = defineEmits([

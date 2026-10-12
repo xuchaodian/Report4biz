@@ -702,6 +702,7 @@ import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } fr
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+import { requireVip } from '@/utils/vipGate'
 import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
@@ -3678,10 +3679,8 @@ function buildDataSummary(data) {
 // 处理 AI 选址建议
 const handleAiAdvice = async () => {
   // VIP 门禁：AI 选址建议仅 VIP 用户可用（管理员视为 VIP）
-  if (!isVipUser.value) {
-    ElMessage.warning('AI 选址建议为 VIP 用户专属功能，请联系管理员开通 VIP')
-    return
-  }
+  // v1.13.214：拦截后的引导收敛到 utils/vipGate.js（已在个人中心时只做就地指路，不再跳转）
+  if (!(await requireVip('aiAdvice'))) return
   if (!resultData.value) {
     ElMessage.info('暂无数据可供分析')
     return
