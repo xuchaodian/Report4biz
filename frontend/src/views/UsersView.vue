@@ -110,7 +110,8 @@
         <el-table-column prop="company" label="公司" min-width="150" sortable :sort-method="sortByCompany" />
         <el-table-column prop="role" label="角色" width="100" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : row.role === 'trial' ? 'primary' : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' }">
+            <!-- v1.13.212：VIP 家族配色统一到金 —— trial 也纳入 .vip-role-tag（原为 el-tag primary 蓝） -->
+            <el-tag :type="row.role === 'admin' ? 'danger' : row.role === 'vip' ? undefined : row.role === 'trial' ? 'primary' : 'info'" :class="{ 'vip-role-tag': row.role === 'vip' || row.role === 'trial' }">
               {{ row.role === 'admin' ? '管理员' : row.role === 'vip' ? 'VIP用户' : row.role === 'trial' ? 'VIP试用' : '普通用户' }}
             </el-tag>
           </template>
@@ -542,7 +543,8 @@
           </el-table-column>
           <el-table-column label="当前身份" width="104" align="center">
             <template #default="{ row }">
-              <el-tag size="small" :type="vipRoleTag(row.current_role)">{{ vipRoleLabel(row.current_role) }}</el-tag>
+              <!-- v1.13.212：审核弹窗的「当前角色」标签也走同一套金色（否则 vip/trial 仍显示为 EP primary 蓝） -->
+              <el-tag size="small" :type="vipRoleTag(row.current_role)" :class="{ 'vip-role-tag': row.current_role === 'vip' || row.current_role === 'trial' }">{{ vipRoleLabel(row.current_role) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="96" align="center">
@@ -1430,15 +1432,24 @@ onMounted(() => {
   }
 }
 
-/* VIP 到期提醒：30 天内橙色，已过期红色 */
-.vip-expiring { color: #e6a23c; font-weight: 600; }
-.vip-expired { color: #f56c6c; font-weight: 600; }
+/* VIP 到期提醒：30 天内橙、已过期红。
+   v1.13.212：改用与个人中心徽章**同一口径**的达标值 —— 原 #e6a23c on #fff
+   仅 2.19:1、#f56c6c on #fff 仅 2.90:1，都不过 WCAG AA(4.5:1)。
+   新值 = main.scss a11y B 档给 el-tag 定的同款（#916012 5.40:1 / #b91c1c 6.47:1）。 */
+.vip-expiring { color: #916012; font-weight: 600; }
+.vip-expired { color: #b91c1c; font-weight: 600; }
 
-/* VIP 角色：紫色 */
+/* VIP 家族统一金色（v1.13.212；原为紫 #7c3aed on #f3e8ff）。
+   文字取深金 #8a5e00：on #fff7e6 = 5.35:1 ✅ 过 WCAG AA(4.5:1)，
+   与个人中心 `.vip-badge` 同色 ⇒ 全站 VIP 家族一个颜色。
+   ⛔ 勿改成 #b8860b（徽章旧色）—— on #fff7e6 仅 3.05:1 ❌，会引入对比度回归。
+   ⚠️ 选择器**刻意不写** `.el-tag` 前缀：scoped 会补 `[data-v-x]` ⇒ (0,2,0)，
+      恒高于 EP 的 `.el-tag`(0,1,0)。main.scss 那 6 条只改 `--el-tag-text-color`
+      变量、不声明 `color`，故与此处无冲突，也不受打包顺序影响。 */
 .vip-role-tag {
-  background: #f3e8ff;
-  border-color: #d8b4fe;
-  color: #7c3aed;
+  background: #fff7e6;
+  border-color: #f5d78e;
+  color: #8a5e00;
 }
 
 /* ===== 配额采购履历（v1.13.115）===== */

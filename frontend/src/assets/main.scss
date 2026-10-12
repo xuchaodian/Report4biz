@@ -639,9 +639,11 @@ body {
    bg-color / border-color，**不重设文字色** ⇒ 文字色仍走这几个变量
    ⇒ plain 在白底上的新对比度：success 5.92 / warning 5.40 / danger 6.47 /
    info 7.56 / primary 7.34，全部 ✅（原来是 2.78 / 2.19 不达标）。
-   ⛔ 唯一带自定义颜色的标签是 UsersView 的 `.vip-role-tag`（#7c3aed），
+   ⛔ 唯一带自定义颜色的标签是 UsersView 的 `.vip-role-tag`
+      （v1.13.212 起改为深金 #8a5e00 on #fff7e6 = 5.35:1；此前是紫
+       #7c3aed on #f3e8ff = 4.83:1 —— 两版都达标，改色是为全站 VIP 家族统一金色），
       它是 scoped 样式 ⇒ 编译成 `.vip-role-tag[data-v-xxx]`（权重 0,2,0），
-      恒高于 `.el-tag` 的 (0,1,0)，不受本次改动影响，且本就达标（4.83:1）。 */
+      恒高于 `.el-tag` 的 (0,1,0)，不受上面 6 条影响，且本就达标。 */
 
 /* ===== 表头文字（WCAG 1.4.3）=====
    变量链：`.el-table th` → var(--el-table-header-text-color)

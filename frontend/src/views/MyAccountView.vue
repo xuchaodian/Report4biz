@@ -4283,10 +4283,15 @@ const handleExportExcel = async () => {
     flex-wrap: wrap;
     gap: 10px;
   }
+  /* v1.13.212：VIP 金色统一为「深金 #8a5e00」（文字与图标同色）。
+     ⛔ 原为 #b8860b —— on #fff7e6 仅 3.05:1，不过 WCAG AA(4.5:1)；
+        且 #b8860b 在任何浅底上都到不了 4.5（它本身过亮）⇒ 不能当统一基准。
+     #8a5e00 on #fff7e6 = 5.35:1 ✅（渐变深端 #ffe7ba 上 4.72:1 ✅）。
+     与后台 UsersView 的 `.vip-role-tag` 用同一个金，见 vipColorUnifyGuard.test.js。 */
   .vip-badge {
     font-size: 14px;
     font-weight: 600;
-    color: #b8860b;
+    color: #8a5e00;
     background: linear-gradient(135deg, #fff7e6, #ffe7ba);
     border: 1px solid #f5d78e;
     border-radius: 20px;
@@ -4298,15 +4303,29 @@ const handleExportExcel = async () => {
     /* 尺寸 token 只有 14/16/20/26 四档，此处需 18px 随徽章文字放大，故直接覆盖 .app-icon--md */
     font-size: 18px;
   }
+  /* v1.13.212：两态的**文字色**一并拉到达标 —— 原 #f56c6c(2.61:1) / #e6a23c(2.04:1)
+     都不过 WCAG AA。改用 main.scss a11y B 档（v1.13.176）给 el-tag 定下的同款
+     达标值（#b91c1c 5.83:1 / #916012 5.04:1）⇒ 全站红/橙告警一个口径。
+     浅底（bg）与描边（border-color）一字不动，视觉仍是「轻量状态标记」。 */
   .vip-badge.vip-expired {
-    color: #f56c6c;
+    color: #b91c1c;
     background: #fef0f0;
     border-color: #fbc4c4;
   }
   .vip-badge.vip-expiring {
-    color: #e6a23c;
+    color: #916012;
     background: #fdf6ec;
     border-color: #f5dab1;
+  }
+  /* v1.13.212：图标随状态变色。原先 `.vip-badge .app-icon` 是**无条件**深金
+     ⇒「已过期」态底色/文字/边框都转红了，图标却还顶着金字。
+     权重 (0,4,0) > 上方无条件那条的 (0,3,0)，与书写顺序无关，恒生效。
+     颜色取同态文字同一个值（WCAG 1.4.11 非文本对比 ≥3:1）。 */
+  .vip-badge.vip-expired .app-icon {
+    color: #b91c1c;
+  }
+  .vip-badge.vip-expiring .app-icon {
+    color: #916012;
   }
   /* v1.13.201：非 VIP 身份标识（普通用户 / 管理员）—— 中性灰，不抢 VIP 金色；
      红色语义保留给 .vip-badge.vip-expired 的「已过期」警示，此处刻意不用红。 */
