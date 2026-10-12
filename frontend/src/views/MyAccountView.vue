@@ -4348,6 +4348,15 @@ const handleExportExcel = async () => {
   }
 }
 
+/* v1.13.207：VIP 申请弹窗 —— intro 提示语与表单之间的行间距。
+   基线实测：intro bottom=196 / 首个输入框 top=197 ⇒ 实际间距仅 1px，视觉上完全贴合。
+   取 18px 与 el-form-item 之间的默认间距同节奏。
+   ⚠️ 本元素由本组件模板直写（el-dialog 内容区）⇒ 自带 data-v-*，单类选择器即可命中；
+      与 el-form 相邻时会有 margin 折叠，但 form margin-top=0 ⇒ max(18,0)=18 照常生效。 */
+.vip-apply-intro {
+  margin-bottom: 18px;
+}
+
 /* v1.13.206：VIP 申请弹窗内 —— 电子邮箱「建议公司域名」软提示。
    ⚠️ 必须用单类选择器：el-dialog 的 class 落在 .el-dialog 上、不继承父组件 scopeId，
       若写成 .vip-apply-dialog .vip-email-hint 会因 data-v-* 落不到而**静默失效**（铁律 §6.35）。 */
