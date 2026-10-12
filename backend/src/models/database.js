@@ -1071,6 +1071,35 @@ export async function initDatabase() {
     console.warn('创建门店评分表失败:', e.message)
   }
 
+  // VIP 试用申请表（v1.13.205）
+  // 普通用户在 /account 提交「体验 VIP 用户」申请，管理员在用户管理页审核；
+  // 通过 ⇒ 该账号 role 置为 'trial' 且 vip_until = 今天 + 30 天（到期由 app.js 定时器自动降级）。
+  // 幂等零迁移：CREATE TABLE IF NOT EXISTS —— 生产重启即建表，无需手工 ALTER 脚本。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS vip_applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      username TEXT,
+      company TEXT,
+      department TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at DATETIME,
+      reviewed_by INTEGER,
+      reviewed_by_name TEXT,
+      review_note TEXT
+    )
+  `)
+  // 管理端按「待处理」列表 + 时间倒序 ⇒ (status, created_at) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_vip_app_status ON vip_applications(status, created_at DESC)`)
+  // 申请侧「我有没有待审的」⇒ (user_id, status) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_vip_app_user ON vip_applications(user_id, status)`)
+  // 🔴 同一账号同时只能有 1 条 pending（存储层兜底；路由会先行返回 400 友好提示）
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_vip_app_pending ON vip_applications(user_id) WHERE status = 'pending'`)
+
   // 保存数据库
   saveDatabase()
 

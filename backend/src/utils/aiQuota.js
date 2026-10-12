@@ -134,12 +134,20 @@ export function dayStartStamp(now = new Date()) {
 }
 
 /**
- * VIP 是否在有效期内（管理员视为 VIP）。
+ * VIP 权益是否在有效期内（管理员视为 VIP；**VIP 试用 trial 同权**）。
  * ★ 原为 `routes/ai.js` 内联两份逻辑，按项目铁律抽成单一函数供多处共用。
+ *
+ * v1.13.205 修正：trial 纳入。此前本函数只认 'vip' / 'admin'，而
+ *   ① 前端 `MyAccountView.vue::isVipUser` 把 trial 视为 VIP（AI 选址建议按钮不加锁）
+ *   ② `AI_ROLE_CALL_LIMIT.trial = 50` 也为 trial 留了档位
+ *   ⇒ 三者自相矛盾：trial 用户点「AI 选址建议」**恒 403**「VIP 用户专属功能」，
+ *     即「VIP 试用」体验名不副实。现网 trial 用户为 0，故该矛盾从未在生产暴露。
+ *   本函数是**功能门禁**判据（`routes/ai.js` 的 site-advice），故 trial 必须放行；
+ *   trial 与 vip 的**额度差异**由下面的 aiCallLimitFor 单独表述，不要混在一起。
  */
 export function isVipActive(user, now = new Date()) {
   if (!user) return false
-  if (user.role !== 'vip' && user.role !== 'admin') return false
+  if (user.role !== 'vip' && user.role !== 'trial' && user.role !== 'admin') return false
   if (!user.vip_until) return true
   return new Date(String(user.vip_until) + 'T23:59:59') >= now
 }
@@ -148,11 +156,20 @@ export function isAdmin(user) {
   return !!user && user.role === 'admin'
 }
 
-/** 角色 → 月额度（vip 已过期按普通用户对待） */
+/**
+ * 角色 → 月额度（vip 已过期按普通用户对待）。
+ *
+ * 🔴 v1.13.205 顺序陷阱（改动前请先读）：
+ *   `isVipActive` 现在把 trial 也算作「VIP 权益生效」，所以 **trial 必须排在
+ *   isVipActive 之前判断** —— 否则 trial 会顺着 vip 分支拿到 1000 次，
+ *   等于把试用档额度**悄悄放大 20 倍**（50 → 1000），且不报任何错、单测也不会红，
+ *   只是账单变贵。这正是「把功能门禁与计费档位写成一个判据」的典型代价。
+ *   已由 tests/aiQuota.test.js 的 A4 / A4b 钉死。
+ */
 export function aiCallLimitFor(user) {
   if (isAdmin(user)) return Infinity
-  if (isVipActive(user)) return AI_ROLE_CALL_LIMIT.vip
   if (user && user.role === 'trial') return AI_ROLE_CALL_LIMIT.trial
+  if (isVipActive(user)) return AI_ROLE_CALL_LIMIT.vip
   return AI_ROLE_CALL_LIMIT.user
 }
 

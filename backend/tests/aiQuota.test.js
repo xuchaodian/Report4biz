@@ -179,6 +179,9 @@ beforeAll(async () => {
   ids.vipNoExpiry = mkUser('aq_vip_ne', 'vip', null)
   ids.vipExpired = mkUser('aq_vip_exp', 'vip', '2020-01-01')
   ids.trial = mkUser('aq_trial', 'trial')
+  // v1.13.205：VIP 试用的真实态是 role='trial' 且 vip_until 已写成「今天+30d」；
+  // 这里再补一个**已过期**的 trial，用来证明放行不是「只要叫 trial 就免检」。
+  ids.trialExpired = mkUser('aq_trial_exp', 'trial', '2020-01-01')
   ids.ghost = mkUser('aq_ghost', 'user')        // 只用来承载「全局熔断」的 token 量
 
   for (const k of Object.keys(ids)) {
@@ -231,6 +234,20 @@ describe('A 额度分层（L1）', () => {
 
   it('A4 trial → 50 次/月', () => {
     expect(aiCallLimitFor({ id: ids.trial, role: 'trial' })).toBe(AI_ROLE_CALL_LIMIT.trial)
+  })
+
+  // v1.13.205：「VIP 试用」体验修复 —— trial 纳入 isVipActive（功能门禁），
+  // 但**额度档位不得跟着放大**。下面两条互为对照，钉死 aiCallLimitFor 的判定顺序。
+  it('A4b ★ trial 权益放行不得连带把额度档放大成 vip（否则 50 → 1000，账单变贵且不报错）', () => {
+    expect(isVipActive({ role: 'trial', vip_until: '2030-01-01' })).toBe(true)
+    expect(aiCallLimitFor({ id: ids.trial, role: 'trial', vip_until: '2030-01-01' })).toBe(AI_ROLE_CALL_LIMIT.trial)
+    expect(aiCallLimitFor({ id: ids.trial, role: 'trial', vip_until: null })).toBe(AI_ROLE_CALL_LIMIT.trial)
+  })
+
+  it('A4c trial 与 vip 同权：未过期/无到期日放行，已过期不放行（AI 选址建议门禁判据）', () => {
+    expect(isVipActive({ role: 'trial', vip_until: null })).toBe(true)
+    expect(isVipActive({ role: 'trial', vip_until: '2030-01-01' })).toBe(true)
+    expect(isVipActive({ role: 'trial', vip_until: '2020-01-01' })).toBe(false)
   })
 
   it('A5 普通 user → 100 次/月', () => {
@@ -688,6 +705,30 @@ describe('J /site-advice 与 AI 助手共用同一闸门', () => {
   it('J6 端到端：quota=0 的 VIP 也能用（L0 解耦对 site-advice 同样成立）', () => {
     assertQuotaIsZero()
     expect(gate(ids.vip).allowed).toBe(true)
+  })
+
+  // v1.13.205：修「VIP 试用」点 AI 选址建议恒 403 的自相矛盾
+  it('J7 ★ VIP 试用（trial，有效期内）⇒ 放行，不再 403 VIP 专属文案', async () => {
+    const r = await call('POST', '/api/ai/site-advice', {
+      token: tokens.trial,
+      body: { storeName: '测试店', brand: '测试品牌' }
+    })
+    expect(r.status).toBe(200)
+    expect(r.body.success).toBe(true)
+  })
+
+  it('J8 trial 已过期 ⇒ 仍按非 VIP 拒绝（放行受 vip_until 约束，不是「叫 trial 就免检」）', async () => {
+    const r = await call('POST', '/api/ai/site-advice', {
+      token: tokens.trialExpired,
+      body: { storeName: '测试店', brand: '测试品牌' }
+    })
+    expect(r.status).toBe(403)
+    expect(r.body.message).toContain('VIP')
+  })
+
+  it('J9 ★ trial 走的仍是 50 次/月的试用档，不因门禁放行而变成 vip 的 1000 次', () => {
+    expect(gate(ids.trial).limit).toBe(AI_ROLE_CALL_LIMIT.trial)
+    expect(gate(ids.trial).limit).not.toBe(AI_ROLE_CALL_LIMIT.vip)
   })
 })
 

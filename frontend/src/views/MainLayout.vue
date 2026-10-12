@@ -82,6 +82,12 @@
               <!-- 管理员专属入口：置顶 + 蓝色底与下方常规项区分 -->
               <el-dropdown-item v-if="userStore.isAdmin" command="users" class="dd-admin-item">
                 <el-icon><User /></el-icon>{{ $t('nav.users') }}
+                <!-- v1.13.205：待处理 VIP 试用申请的红点计数（与 /users 页提示条同一接口） -->
+                <span
+                  v-if="vipPendingCount > 0"
+                  class="dd-pending-dot"
+                  :title="`${vipPendingCount} 条 VIP 试用申请待处理`"
+                >{{ vipPendingCount > 99 ? '99+' : vipPendingCount }}</span>
               </el-dropdown-item>
               <el-dropdown-item v-if="userStore.isAdmin" command="resale" class="dd-admin-item">
                 <el-icon><Key /></el-icon>{{ $t('nav.apiOpen') }}
@@ -340,8 +346,28 @@ const handleTemplateUpload = async () => {
   }
 }
 
+// ===== v1.13.205：VIP 试用申请入口红点（管理端）=====
+const vipPendingCount = ref(0)
+
+/**
+ * 待处理 VIP 试用申请数量 —— 个人下拉「用户管理」旁的红点。
+ * 接口本身已 requireAdmin；此处再守一道，普通账号不必白发一次必然 403 的请求。
+ * 读不到就按 0 处理（辅助信息，绝不打断主流程）。
+ * ⚠️ 必须等 fetchUser 落地后再判 isAdmin —— 否则此刻 user 还是 null，红点永远拉不到。
+ *    （fetchUser 内部已 try/catch，不会 reject，故 .then 必定执行）
+ */
+const fetchVipPendingCount = async () => {
+  if (!userStore.isAdmin) return
+  try {
+    const { data } = await axios.get('/api/vip-applications/pending-count')
+    vipPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    vipPendingCount.value = 0
+  }
+}
+
 onMounted(() => {
-  userStore.fetchUser()
+  userStore.fetchUser().then(fetchVipPendingCount)
   // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
   userStore.fetchOrgRole()
 })

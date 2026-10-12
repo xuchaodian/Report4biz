@@ -14,12 +14,9 @@ const router = express.Router()
 // 导致「新建时直接选 VIP用户/VIP试用」的账号 role 写入了但 vip_until 为 NULL ——
 // 表现为用户管理列表该列显示「—」、我的账户误标「已过期」，且 trial 因
 // app.js 的降级条件带 `vip_until IS NOT NULL` 而永远不会到期降级（永久白嫖 VIP）。
-const VIP_DAYS = { vip: 365, trial: 30 }
-const calcVipUntil = (role) => {
-  const days = VIP_DAYS[role]
-  if (!days) return null
-  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString().slice(0, 10)
-}
+// v1.13.205：本函数与 VIP_DAYS 已抽到 utils/vipRole.js —— 该批次新增的「VIP 试用申请
+// 审批」链路同样要按角色算到期日，就地复制会产生第三份拷贝（历史上已分叉过一次）。
+import { calcVipUntil } from '../utils/vipRole.js'
 
 // 获取用户列表（包含配额信息）
 router.get('/', authenticate, requireAdmin, (req, res) => {

@@ -10,6 +10,8 @@ import competitorRoutes from './routes/competitors.js'
 // 竞品期次快照（开关店监测）：必须先于 competitorRoutes 注册（/api/competitors 的 GET /:id 会吞掉 snapshots）
 import competitorSnapshotRoutes from './routes/competitorSnapshots.js'
 import userRoutes from './routes/users.js'
+// VIP 试用申请与审批（v1.13.205）：/account「体验 VIP 用户」→ 管理员审核 → 30 天 trial
+import vipApplicationRoutes from './routes/vipApplications.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
@@ -100,6 +102,8 @@ async function start() {
     app.use('/api/competitors/snapshots', competitorSnapshotRoutes)
     app.use('/api/competitors', competitorRoutes)
     app.use('/api/users', userRoutes)
+    // VIP 试用申请（普通用户提交 / 管理员审核）。⚠️ 独立前缀，避免与 /api/users/:id 的动态段相互吞并
+    app.use('/api/vip-applications', vipApplicationRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)

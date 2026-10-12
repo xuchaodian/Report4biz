@@ -8,6 +8,23 @@
           </span>
           <span v-else-if="isAdmin" class="role-badge"><AppIcon class="icon-text"><Setting /></AppIcon>管理员</span>
           <span v-else class="role-badge"><AppIcon class="icon-text"><User /></AppIcon>普通用户</span>
+
+          <!-- v1.13.205：普通用户引导升级 VIP —— 提交申请 → 管理员审核 → 30 天 VIP 试用 -->
+          <template v-if="isPlainUser && vipApplyLoaded">
+            <el-button v-if="showVipApplyBtn" type="warning" size="small" @click="openVipApply">
+              <AppIcon class="icon-text"><GoldMedal /></AppIcon>体验 VIP 用户
+            </el-button>
+            <span v-else-if="vipApply?.status === 'pending'" class="vip-apply-note is-pending">
+              <el-icon class="is-loading"><Loading /></el-icon>已提交申请，等待管理员审核
+            </span>
+            <span v-else-if="vipApply?.status === 'approved'" class="vip-apply-note is-ok">
+              试用已生效，<el-link type="success" :underline="false" @click="refreshIdentity">刷新查看</el-link>
+            </span>
+          </template>
+
+          <div v-if="isPlainUser && vipApplyLoaded && vipApply?.status === 'rejected'" class="vip-apply-reject">
+            <AppIcon class="icon-text"><WarningFilled /></AppIcon><span>上次申请未通过<span v-if="vipApply.review_note">：{{ vipApply.review_note }}</span>，可修改后重新提交</span>
+          </div>
         </div>
       </template>
 
@@ -627,6 +644,47 @@
     </el-dialog>
 
     <!-- 外部联通 Excel 批量导入（所有登录用户；仅能匹配本人名下门店） -->
+    <!-- v1.13.205：体验 VIP 用户申请表单（公司名 / 所在部门 / 联系人 / 电子邮箱 / 联系电话） -->
+    <el-dialog
+      v-model="vipApplyDialogVisible"
+      title="体验 VIP 用户"
+      width="520px"
+      class="vip-apply-dialog"
+      @closed="onVipApplyClosed"
+    >
+      <div class="vip-apply-intro">
+        <AppIcon class="icon-text"><GoldMedal /></AppIcon>
+        <span>提交以下信息后，我们将为您的账号开通 <strong>30 天 VIP 试用</strong>（解锁 AI 选址建议、开店余地、网络优化）。管理员确认后即时生效。</span>
+      </div>
+      <el-form
+        ref="vipApplyFormRef"
+        :model="vipApplyForm"
+        :rules="vipApplyRules"
+        label-width="88px"
+        class="vip-apply-form"
+      >
+        <el-form-item label="公司名" prop="company">
+          <el-input v-model="vipApplyForm.company" placeholder="请输入公司名称" maxlength="100" />
+        </el-form-item>
+        <el-form-item label="所在部门" prop="department">
+          <el-input v-model="vipApplyForm.department" placeholder="如：拓展部 / 运营部 / 市场部" maxlength="100" />
+        </el-form-item>
+        <el-form-item label="联系人" prop="contact_name">
+          <el-input v-model="vipApplyForm.contact_name" placeholder="请输入联系人姓名" maxlength="60" />
+        </el-form-item>
+        <el-form-item label="电子邮箱" prop="contact_email">
+          <el-input v-model="vipApplyForm.contact_email" placeholder="name@company.com" maxlength="120" />
+        </el-form-item>
+        <el-form-item label="联系电话" prop="contact_phone">
+          <el-input v-model="vipApplyForm.contact_phone" placeholder="如：13800138000 / 021-12345678" maxlength="30" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="vipApplyDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="vipApplySubmitting" @click="submitVipApply">申请</el-button>
+      </template>
+    </el-dialog>
+
     <PurchaseImportDialog v-model="importDialogVisible" @imported="onImportDone" />
   </div>
 </template>
@@ -638,7 +696,7 @@ import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } fr
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
@@ -703,6 +761,96 @@ const vipDaysLeft = computed(() => {
   return Math.ceil((new Date(String(u) + 'T23:59:59') - new Date()) / 86400000)
 })
 const vipExpiring = computed(() => vipDaysLeft.value !== null && !vipExpired.value && vipDaysLeft.value >= 0 && vipDaysLeft.value <= 30)
+
+// ===== v1.13.205：VIP 试用申请（普通用户提交 → 管理员审核 → 30 天试用）=====
+// 只在「普通用户」身份下出现入口：vip / trial 本身已是 VIP，admin 无需申请。
+const isPlainUser = computed(() => userStore.user?.role === 'user')
+const vipApplyDialogVisible = ref(false)
+const vipApplySubmitting = ref(false)
+// ⚠️ 必须等 /mine 回来再渲染入口：否则「已有 pending」的用户会先看到按钮、再被抹掉（闪烁）
+const vipApplyLoaded = ref(false)
+/** 本人最近一条申请：null 表示从未申请 */
+const vipApply = ref(null)
+const vipApplyFormRef = ref(null)
+const vipApplyForm = reactive({
+  company: '',
+  department: '',
+  contact_name: '',
+  contact_email: '',
+  contact_phone: ''
+})
+// 与服务端 routes/vipApplications.js 的校验同口径（前端先拦一道，减少无谓往返）
+const vipApplyRules = {
+  company: [{ required: true, message: '请输入公司名', trigger: 'blur' }],
+  department: [{ required: true, message: '请输入所在部门', trigger: 'blur' }],
+  contact_name: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+  contact_email: [
+    { required: true, message: '请输入电子邮箱', trigger: 'blur' },
+    { type: 'email', message: '电子邮箱格式不正确', trigger: 'blur' }
+  ],
+  contact_phone: [
+    { required: true, message: '请输入联系电话', trigger: 'blur' },
+    { pattern: /^[0-9+\-() #转ext.]{6,24}$/i, message: '联系电话格式不正确', trigger: 'blur' }
+  ]
+}
+// 未申请 / 被驳回 ⇒ 显示按钮（驳回后可改完重提）；pending / approved ⇒ 显示状态文案
+const showVipApplyBtn = computed(() =>
+  isPlainUser.value && vipApplyLoaded.value && (!vipApply.value || vipApply.value.status === 'rejected')
+)
+
+async function fetchVipApply() {
+  try {
+    // 冷启动直达 /account 时 store 里可能还没有 user ⇒ 先补一次，否则会误判成「非普通用户」而漏拉申请
+    if (!userStore.user) await userStore.fetchUser()
+    if (userStore.user?.role !== 'user') {
+      vipApply.value = null
+      return
+    }
+    const { data } = await axios.get('/api/vip-applications/mine')
+    vipApply.value = data?.application || null
+  } catch (e) {
+    // 申请状态是「锦上添花」，拉不到就不展示，绝不因此阻塞个人中心
+    vipApply.value = null
+  } finally {
+    vipApplyLoaded.value = true
+  }
+}
+
+function openVipApply() {
+  // 公司名/邮箱优先用账号已有信息预填（用户仍可改）
+  if (!vipApplyForm.company) vipApplyForm.company = userStore.user?.company || ''
+  if (!vipApplyForm.contact_email) vipApplyForm.contact_email = userStore.user?.email || ''
+  vipApplyDialogVisible.value = true
+}
+
+function onVipApplyClosed() {
+  vipApplyFormRef.value?.clearValidate()
+}
+
+async function submitVipApply() {
+  if (!vipApplyFormRef.value) return
+  try {
+    await vipApplyFormRef.value.validate()
+  } catch (e) {
+    return // 表单校验未通过，界面上已有逐项提示
+  }
+  vipApplySubmitting.value = true
+  try {
+    const { data } = await axios.post('/api/vip-applications', { ...vipApplyForm })
+    vipApply.value = data?.application || { status: 'pending' }
+    vipApplyDialogVisible.value = false
+    ElMessage.success(data?.message || '申请已提交，请等待管理员审核')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.message || '提交申请失败，请稍后重试')
+  } finally {
+    vipApplySubmitting.value = false
+  }
+}
+
+/** 管理员通过后本地角色可能还是旧值 ⇒ 一键重拉身份 */
+function refreshIdentity() {
+  userStore.fetchUser()
+}
 const quotaLoading = ref(false)
 
 // 购买履历相关
@@ -1314,6 +1462,9 @@ onMounted(async () => {
   if (!userStore.quota) {
     await userStore.fetchQuota()
   }
+
+  // v1.13.205：拉取本人 VIP 试用申请状态（仅普通用户会真正发请求）
+  fetchVipApply()
 
   // 检查 URL 参数：如果有 storeName 或 openHistory，自动打开购买履历
   const storeName = route.query.storeName
@@ -4099,7 +4250,11 @@ const handleExportExcel = async () => {
     font-weight: 600;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    /* v1.13.205：原为 space-between —— 彼时头部只有身份徽章一个子元素，左对齐与两端对齐视觉等价。
+       现旁边要挂「体验 VIP 用户」按钮与申请状态/驳回理由，继续用 space-between 会把按钮推到卡片
+       最右侧，与「紧贴普通用户徽章」的需求相反。改为左对齐 + 允许换行，长文案自动折到下一行。 */
+    justify-content: flex-start;
+    flex-wrap: wrap;
     gap: 10px;
   }
   .vip-badge {
@@ -4142,6 +4297,29 @@ const handleExportExcel = async () => {
   .role-badge .app-icon {
     color: #606266;
     font-size: 18px;
+  }
+  /* v1.13.205：VIP 试用申请的状态文案与驳回提示 */
+  .vip-apply-note {
+    font-size: 13px;
+    font-weight: 400;
+    color: #909399;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.6;
+  }
+  .vip-apply-note.is-pending { color: #e6a23c; }
+  .vip-apply-note.is-ok { color: #67c23a; }
+  /* width:100% ⇒ 在 .card-header 的 flex 行里强制独占一行，不被徽章挤在右侧 */
+  .vip-apply-reject {
+    width: 100%;
+    font-size: 12px;
+    font-weight: 400;
+    color: #f56c6c;
+    line-height: 1.6;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
   }
 }
 

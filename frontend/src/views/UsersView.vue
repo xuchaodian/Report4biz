@@ -71,6 +71,13 @@
       </div>
     </div>
 
+    <!-- v1.13.205：VIP 试用申请待处理提示条（管理端）—— 与右上角个人下拉里的入口红点同一数据源 -->
+    <div v-if="vipPendingCount > 0" class="vip-pending-bar" role="status">
+      <el-icon class="vip-pending-icon"><BellFilled /></el-icon>
+      <span>有 <b>{{ vipPendingCount }}</b> 条 VIP 试用申请待处理</span>
+      <el-button type="warning" size="small" @click="openVipReview">去审核</el-button>
+    </div>
+
     <!-- 用户表格 -->
     <div class="users-table">
       <div class="table-title">用户列表</div>
@@ -483,13 +490,90 @@
         <el-empty v-else-if="!overviewLoading" description="暂无数据" style="margin: 60px 0" />
       </div>
     </el-drawer>
+
+    <!-- v1.13.205：VIP 试用申请审核（管理员）—— 通过 ⇒ 该账号变为 30 天 VIP 试用 -->
+    <el-dialog
+      v-model="vipReviewVisible"
+      title="VIP 试用申请审核"
+      width="94%"
+      style="max-width:1280px"
+      top="5vh"
+      draggable
+      class="vip-review-dialog"
+    >
+      <div class="vip-review-toolbar">
+        <el-radio-group v-model="vipReviewStatus" size="small" @change="fetchVipApplications">
+          <el-radio-button :value="'pending'">待处理</el-radio-button>
+          <el-radio-button :value="'approved'">已通过</el-radio-button>
+          <el-radio-button :value="'rejected'">已驳回</el-radio-button>
+          <el-radio-button :value="'all'">全部</el-radio-button>
+        </el-radio-group>
+        <span class="vip-review-count">待处理 <b>{{ vipPendingCount }}</b> 条</span>
+        <el-button size="small" :loading="vipReviewLoading" @click="fetchVipApplications">
+          <el-icon><RefreshRight /></el-icon>刷新
+        </el-button>
+      </div>
+
+      <!-- v1.13.177 既定做法：给表格区域定名供读屏跳转。
+           ⛔ 不写 <caption> —— el-table 默认插槽会被 EP 渲进 display:none 的
+              <div class="hidden-columns">，并不在 <table> 内，caption 完全无效 -->
+      <div class="vip-review-table" role="region" :aria-label="`VIP 试用申请列表，共 ${vipApplications.length} 条`">
+        <el-table :data="vipApplications" v-loading="vipReviewLoading" border size="small" row-key="id">
+          <el-table-column prop="id" label="#" width="58" align="center" />
+          <el-table-column label="账号" min-width="120">
+            <template #default="{ row }">{{ row.current_username || row.username || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="company" label="公司名" min-width="170" show-overflow-tooltip />
+          <el-table-column prop="department" label="所在部门" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="contact_name" label="联系人" width="96" />
+          <el-table-column prop="contact_email" label="电子邮箱" min-width="190" show-overflow-tooltip />
+          <el-table-column prop="contact_phone" label="联系电话" width="136" />
+          <el-table-column label="提交时间" width="150">
+            <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="当前身份" width="104" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="vipRoleTag(row.current_role)">{{ vipRoleLabel(row.current_role) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="96" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="vipStatusTag(row.status)">{{ vipStatusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="审核" min-width="190">
+            <template #default="{ row }">
+              <span v-if="row.status === 'pending'" class="vip-review-none">—</span>
+              <template v-else>
+                <div>{{ row.reviewed_by_name || '—' }} · {{ formatDateTime(row.reviewed_at) }}</div>
+                <div v-if="row.review_note" class="vip-review-note">审核意见：{{ row.review_note }}</div>
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="158" fixed="right" align="center">
+            <template #default="{ row }">
+              <template v-if="row.status === 'pending'">
+                <el-button type="success" size="small" :loading="vipReviewingId === row.id" @click="approveVipApplication(row)">
+                  <el-icon><Check /></el-icon>通过
+                </el-button>
+                <el-button type="danger" size="small" plain :disabled="vipReviewingId === row.id" @click="rejectVipApplication(row)">
+                  <el-icon><CloseBold /></el-icon>驳回
+                </el-button>
+              </template>
+              <span v-else class="vip-review-none">已处理</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div v-if="!vipReviewLoading && vipApplications.length === 0" class="vip-review-empty">暂无申请记录</div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
@@ -499,6 +583,16 @@ const userStore = useUserStore()
 
 // 顶部 TAB（v0.9 P0-B）：users = 用户列表（原有）/ orgs = 集团·子公司绑定
 const activeTab = ref('users')
+
+// ===== v1.13.205：VIP 试用申请审核（管理端）=====
+// 普通用户在 /account 提交「体验 VIP 用户」申请 → 此处提示条 + 个人下拉入口红点 → 通过/驳回
+const vipPendingCount = ref(0)
+const vipReviewVisible = ref(false)
+const vipReviewLoading = ref(false)
+const vipReviewStatus = ref('pending')
+const vipApplications = ref([])
+/** 正在处理中的申请 id（防重复点击；只作用于当前行） */
+const vipReviewingId = ref(null)
 
 const users = ref([])
 // v1.13.202：「最后一个管理员」保护所需 —— 库内管理员总数（来自 GET /users，**不受公司筛选影响**）。
@@ -716,6 +810,118 @@ const showOverviewDialog = async () => {
     overview.value = null
   } finally {
     overviewLoading.value = false
+  }
+}
+
+// ===== v1.13.205：VIP 试用申请（管理端）=====
+const VIP_ROLE_LABEL = { admin: '管理员', vip: 'VIP用户', trial: 'VIP试用', user: '普通用户' }
+const VIP_ROLE_TAG = { admin: 'danger', vip: undefined, trial: 'primary', user: 'info' }
+const VIP_STATUS_LABEL = { pending: '待处理', approved: '已通过', rejected: '已驳回' }
+const VIP_STATUS_TAG = { pending: 'warning', approved: 'success', rejected: 'danger' }
+const vipRoleLabel = (r) => VIP_ROLE_LABEL[r] || '—'
+const vipRoleTag = (r) => VIP_ROLE_TAG[r] ?? 'info'
+const vipStatusLabel = (s) => VIP_STATUS_LABEL[s] || s || '—'
+const vipStatusTag = (s) => VIP_STATUS_TAG[s] || 'info'
+
+// ⚠️ 后端 created_at / reviewed_at 来自 SQLite `CURRENT_TIMESTAMP`，是 **UTC** 的
+// 「YYYY-MM-DD HH:MM:SS」。直接 new Date('2026-10-12 00:57:48') 在 Safari 上是
+// Invalid Date、在 Chrome 上会被当**本地时间**解析（比真实时间早 8 小时）。
+// 故此处显式补 'Z' 按 UTC 解析，再由 toLocale 系列输出本地时间。
+const formatDateTime = (raw) => {
+  if (!raw) return '—'
+  const t = String(raw).trim()
+  const d = new Date(t.includes('T') ? t : t.replace(' ', 'T') + 'Z')
+  if (isNaN(d.getTime())) return t.slice(0, 16)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 入口红点/提示条的数据源（轻量接口，只回一个数） */
+const fetchVipPendingCount = async () => {
+  try {
+    const data = await api.get('/vip-applications/pending-count')
+    vipPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    // 红点与提示条是辅助信息，读不到就当作 0，绝不打扰管理员的正常操作
+    vipPendingCount.value = 0
+  }
+}
+
+const fetchVipApplications = async () => {
+  vipReviewLoading.value = true
+  try {
+    const data = await api.get('/vip-applications', { params: { status: vipReviewStatus.value } })
+    vipApplications.value = data?.applications || []
+    vipPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    console.error('读取 VIP 试用申请失败:', e)
+    ElMessage.error(e?.response?.data?.message || '读取 VIP 试用申请失败')
+    vipApplications.value = []
+  } finally {
+    vipReviewLoading.value = false
+  }
+}
+
+const openVipReview = async () => {
+  vipReviewStatus.value = 'pending'
+  vipReviewVisible.value = true
+  await fetchVipApplications()
+}
+
+// 🔴 写操作一律先二次确认（本项目铁律：生产上不点无确认的写入口）
+const approveVipApplication = async (row) => {
+  const name = row.current_username || row.username || `#${row.user_id}`
+  try {
+    await ElMessageBox.confirm(
+      `确认通过「${name}」的 VIP 试用申请？通过后该账号将变为「VIP 试用」，有效期 30 天。`,
+      '通过 VIP 试用申请',
+      { confirmButtonText: '确认通过', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return // 取消 / 关闭
+  }
+  vipReviewingId.value = row.id
+  try {
+    const data = await api.post(`/vip-applications/${row.id}/approve`)
+    ElMessage.success(data?.message || '已通过')
+    // 用户列表的角色列也要跟着变 ⇒ 一并刷新
+    await Promise.all([fetchVipApplications(), fetchUsers()])
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '通过申请失败')
+  } finally {
+    vipReviewingId.value = null
+  }
+}
+
+const rejectVipApplication = async (row) => {
+  const name = row.current_username || row.username || `#${row.user_id}`
+  let note = ''
+  try {
+    const r = await ElMessageBox.prompt(
+      '驳回理由会展示给申请人，便于其修改后重新申请（可留空）',
+      `驳回「${name}」的 VIP 试用申请`,
+      {
+        confirmButtonText: '确认驳回',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '驳回理由（可留空）',
+        inputValidator: () => true, // 允许留空
+        type: 'warning'
+      }
+    )
+    note = r?.value || ''
+  } catch (e) {
+    return // 取消 / 关闭
+  }
+  vipReviewingId.value = row.id
+  try {
+    const data = await api.post(`/vip-applications/${row.id}/reject`, { review_note: note })
+    ElMessage.success(data?.message || '已驳回')
+    await fetchVipApplications()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '驳回申请失败')
+  } finally {
+    vipReviewingId.value = null
   }
 }
 
@@ -972,6 +1178,8 @@ const handleResetPassword = async (row) => {
 
 onMounted(() => {
   fetchUsers()
+  // v1.13.205：待处理提示条 + 入口红点（管理员专属接口，非管理员会 403 并被静默吞掉）
+  fetchVipPendingCount()
 })
 </script>
 
@@ -1317,4 +1525,37 @@ onMounted(() => {
 .ov-reconcile.ov-ok { background: #f0f9eb; color: #529b2e; border: 1px solid #e1f3d8; }
 .ov-reconcile.ov-bad { background: #fef0f0; color: #f56c6c; border: 1px solid #fbc4c4; }
 .ov-tip { margin-top: 10px; font-size: 12px; color: #909399; line-height: 1.8; }
+
+/* ===== v1.13.205：VIP 试用申请（管理端）===== */
+.vip-pending-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  border-radius: 6px;
+  color: #b88230;
+  font-size: 13px;
+}
+.vip-pending-bar .vip-pending-icon { color: #e6a23c; font-size: 16px; }
+.vip-pending-bar b { color: #e6a23c; font-size: 15px; }
+/* margin-left:auto ⇒ 按钮靠右，与左侧文案拉开 */
+.vip-pending-bar .el-button { margin-left: auto; }
+
+.vip-review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.vip-review-count { font-size: 13px; color: #909399; }
+.vip-review-count b { color: #e6a23c; }
+.vip-review-toolbar .el-button { margin-left: auto; }
+.vip-review-table { width: 100%; }
+.vip-review-none { color: #c0c4cc; font-size: 12px; }
+.vip-review-note { margin-top: 2px; font-size: 12px; color: #f56c6c; line-height: 1.5; }
+.vip-review-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
 </style>

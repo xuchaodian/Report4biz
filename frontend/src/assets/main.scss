@@ -435,6 +435,23 @@ body {
   color: #409eff;
 }
 
+/* v1.13.205：入口红点（待处理 VIP 试用申请数）—— 与上面同理，必须写全局：
+   el-dropdown-item 外层包了 el-roving-focus-item，组件 scoped 的 data-v-* 落不到 li 上。 */
+.el-dropdown-menu__item.dd-admin-item .dd-pending-dot {
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 /* ===== 密码显隐开关：可键盘操作的按钮（v1.13.133） =====
    Element Plus 自带的 show-password 把开关渲染成 <i class="el-input__icon
    el-input__password">，只绑了 onClick，无 role / tabindex / aria-label，键盘不可达
