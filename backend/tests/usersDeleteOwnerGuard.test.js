@@ -8,6 +8,10 @@
  *   ⇒ 该集团**永久无法解散 / 无法增删成员**；成员又受 `org_members.user_id UNIQUE`
  *   （一账号只能属一个集团）约束 ⇒ **再也加不进别的集团**，账号被永久锁死。
  *
+ * v1.13.216 契约变更：`DELETE /users/:id` 现在**要求账号已停用**（未停用 ⇒ 400）。
+ *   本文件因此统一改为「先停用 → 再删」，顺带把「owner 守卫」验成**与停用状态无关**
+ *   （即"停用也不能绕过 owner 守卫"），比改动前更强。
+ *
  * 本测试锁三件事：
  *   ① 源码：守卫确实存在于 DELETE /:id 分支（organizations + owner_user_id + dissolved_at IS NULL）；
  *   ② 行为：未解散集团 owner 被拒（400），**且账号仍在**（未被误删）；
@@ -80,6 +84,16 @@ const delUser = async (id) => {
   return { status: res.status, body: await res.json().catch(() => ({})) }
 }
 
+/** v1.13.216：走真实接口停用（DELETE 的前置条件），避免用 UPDATE 造假 */
+const disable = async (id) => {
+  const res = await fetch(`${base}/api/users/${id}/status`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled: true })
+  })
+  return res.status
+}
+
 const userExists = (id) => !!db.prepare('SELECT id FROM users WHERE id = ?').get(id)
 
 // ---------------------------------------------------------------- ① 源码
@@ -108,6 +122,7 @@ describe('行为：未解散集团 owner 不可删；已解散 / 普通账号可
     const owner = makeUser('user')
     const orgName = `集团-${uniq()}`
     makeOrg(owner.id, orgName)
+    await disable(owner.id)   // 即便已停用，owner 守卫仍必须挡住
 
     const { status, body } = await delUser(owner.id)
     expect(status, `应被拒：${JSON.stringify(body)}`).toBe(400)
@@ -120,6 +135,7 @@ describe('行为：未解散集团 owner 不可删；已解散 / 普通账号可
     const owner = makeUser('user')
     const orgId = makeOrg(owner.id, `集团-${uniq()}`)
     db.prepare(`UPDATE organizations SET dissolved_at = CURRENT_TIMESTAMP WHERE id = ?`).run(orgId)
+    await disable(owner.id)
 
     const { status } = await delUser(owner.id)
     expect(status).toBe(200)
@@ -128,6 +144,7 @@ describe('行为：未解散集团 owner 不可删；已解散 / 普通账号可
 
   it('普通账号（不属于任何集团）⇒ 可删', async () => {
     const u = makeUser('user')
+    await disable(u.id)
     const { status } = await delUser(u.id)
     expect(status).toBe(200)
     expect(userExists(u.id)).toBe(false)
@@ -139,6 +156,7 @@ describe('行为：未解散集团 owner 不可删；已解散 / 普通账号可
     const orgId = makeOrg(owner.id, `集团-${uniq()}`)
     db.prepare(`INSERT INTO org_members (org_id, user_id) VALUES (?, ?)`).run(orgId, member.id)
 
+    await disable(member.id)
     const { status } = await delUser(member.id)
     expect(status, '成员不在守卫范围内（owner_user_id 不是他）').toBe(200)
     expect(userExists(member.id)).toBe(false)

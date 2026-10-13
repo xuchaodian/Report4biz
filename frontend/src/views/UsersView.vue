@@ -98,13 +98,24 @@
         style="width: 100%"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="username" label="用户名" min-width="120">
+        <el-table-column prop="username" label="用户名" min-width="140">
           <template #default="{ row }">
             <!-- 👑 纯装饰：「角色」列已有 el-tag「VIP用户」表达同一语义 ⇒ 读屏忽略，避免念两遍 -->
-            <span v-if="row.role === 'vip'" aria-hidden="true">👑 </span>{{ row.username }}
+            <span v-if="row.role === 'vip'" aria-hidden="true">👑 </span>
+            <!-- v1.13.216：停用行回显**原用户名**（库内已改写为 __disabled_<id> 以便释放同名
+                 供重新注册）；裸行（有 disabled_at 却无 prev 记录）退回显示当前值，不掩盖事实 -->
+            <span v-if="row.disabled_at">{{ row.disabled_prev_username || row.username }}</span>
+            <span v-else>{{ row.username }}</span>
+            <el-tag v-if="row.disabled_at" type="info" size="small" style="margin-left: 6px;">已停用</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="email" label="邮箱" min-width="180" />
+        <el-table-column prop="email" label="邮箱" min-width="200">
+          <template #default="{ row }">
+            <!-- v1.13.216：停用行的邮箱已被改写为 __disabled_<id>@disabled.invalid（为释放原邮箱
+                 供重新注册）⇒ 展示**原邮箱**；裸行退回显示当前值 -->
+            <span>{{ row.disabled_at ? (row.disabled_prev_email || row.email) : row.email }}</span>
+          </template>
+        </el-table-column>
         <!-- 公司列：可点表头按拼音升/降序（同一前缀的公司会相邻，如「泉盛」系）；
              空公司名固定排最后（默认码位排序会把空值顶到最前，故用 sort-method 兜住） -->
         <el-table-column prop="company" label="公司" min-width="150" sortable :sort-method="sortByCompany" />
@@ -165,23 +176,42 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <!-- v1.13.177 A 档：操作列三个图标按钮此前零可访问名 -->
-            <el-button type="primary" link @click="handleEdit(row)" title="编辑" aria-label="编辑该用户">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <el-button type="warning" link @click="handleResetPassword(row)" title="重置密码" aria-label="重置该用户密码">
-              <el-icon><RefreshRight /></el-icon>
-            </el-button>
-            <el-button
-              type="danger"
-              link
-              :disabled="row.id === currentUserId || isLastAdminRow(row)"
-              :title="deleteDisabledReason(row) || '删除'"
-              aria-label="删除该用户"
-              @click="handleDelete(row)"
-            >
-              <el-icon><Delete /></el-icon>
-            </el-button>
+            <!-- v1.13.216：已停用账号**只给「恢复」** —— 停用期间用户名/邮箱已被改写为占位值，
+                 编辑它们没有意义（恢复时会整体还原）；密码也不该重置（人都进不来）。
+                 这同时避免了"改名后恢复失败"这一类歧义状态。 -->
+            <template v-if="row.disabled_at">
+              <el-button
+                type="success"
+                link
+                title="恢复该账号（还原原用户名/邮箱，恢复后可重新登录）"
+                aria-label="恢复该用户"
+                @click="handleRestore(row)"
+              >
+                <el-icon><RefreshLeft /></el-icon>
+              </el-button>
+            </template>
+            <template v-else>
+              <!-- v1.13.177 A 档：操作列三个图标按钮此前零可访问名 -->
+              <el-button type="primary" link @click="handleEdit(row)" title="编辑" aria-label="编辑该用户">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button type="warning" link @click="handleResetPassword(row)" title="重置密码" aria-label="重置该用户密码">
+                <el-icon><RefreshRight /></el-icon>
+              </el-button>
+              <!-- v1.13.216：「删除」改为「停用」。停用是可逆冻结：不动任何数据 ⇒ 不再产生孤儿行
+                   （本批起因就是生产库 1253 行孤儿）。⛔ UI 刻意**不暴露「彻底删除」**：
+                   DELETE 尚无级联（S3 批次），暴露它等于继续制造孤儿。 -->
+              <el-button
+                type="danger"
+                link
+                :disabled="row.id === currentUserId || isLastAdminRow(row)"
+                :title="disableDisabledReason(row) || '停用'"
+                aria-label="停用该用户"
+                @click="handleDisable(row)"
+              >
+                <el-icon><CircleClose /></el-icon>
+              </el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -584,7 +614,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled, Document } from '@element-plus/icons-vue'
+import { Plus, Edit, CircleClose, RefreshLeft, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled, Document } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
@@ -711,16 +741,17 @@ const isLastAdminTarget = computed(() => {
   return !!target && target.role === 'admin' && adminCount.value === 1
 })
 
-// v1.13.203：删除按钮的禁用判据与原因（与后端 DELETE /:id 守卫同口径）。
-// ① 不能删自己（后端同有）；② 系统唯一的管理员不可删 —— 后端才是权威，前端同口径禁用并**写出原因**，
+// v1.13.203 起：操作按钮的禁用判据与原因（与后端守卫同口径）。
+// ① 不能删/停用自己；② 系统唯一的管理员不可删/停用 —— 后端才是权威，前端同口径禁用并**写出原因**，
 //    免得用户对着灰按钮猜（此前「不能删自己」是**静默**禁用、无任何提示）。
 // ⚠️ isLastAdminRow 用 `=== 1`（不是 `<= 1`）：异常态退回「不拦截」＝改动前行为，后端始终兜底。
+// v1.13.216：文案由「删除」改为「停用」（按钮语义已变，判据本身与后端 PATCH /:id/status 一致）。
 const isLastAdminRow = (row) => !!row && row.role === 'admin' && adminCount.value === 1
 
-const deleteDisabledReason = (row) => {
+const disableDisabledReason = (row) => {
   if (!row) return ''
-  if (row.id === currentUserId.value) return '不能删除自己的账号'
-  if (isLastAdminRow(row)) return '该账号是系统唯一的管理员，不能删除（否则将永久失去后台入口）'
+  if (row.id === currentUserId.value) return '不能停用自己的账号'
+  if (isLastAdminRow(row)) return '该账号是系统唯一的管理员，不能停用（否则将永久失去后台入口）'
   return ''
 }
 
@@ -1165,17 +1196,41 @@ const handleSave = async () => {
   }
 }
 
-const handleDelete = async (row) => {
+// v1.13.216：原「删除」处理函数拆为「停用 / 恢复」两个可逆动作。
+// ⛔ 前端**不再调用物理删除接口** —— 后端该端点现在要求「账号已停用」，
+//    且**尚无级联**（S3 批次）；UI 不暴露它，避免继续制造孤儿行。
+const handleDisable = async (row) => {
   try {
-    await ElMessageBox.confirm(`确定要删除用户「${row.username}」吗？`, '提示', {
-      type: 'warning'
-    })
-    await api.delete(`/users/${row.id}`)
-    ElMessage.success('删除成功')
+    await ElMessageBox.confirm(
+      `确定要停用用户「${row.username}」吗？停用后该账号无法登录、已有登录状态立即失效，` +
+      `且用户名与邮箱会被释放（同名可重新注册）。数据全部保留，可随时恢复。`,
+      '停用账号',
+      { type: 'warning', confirmButtonText: '确认停用', cancelButtonText: '取消' }
+    )
+    const { data } = await api.patch(`/users/${row.id}/status`, { disabled: true })
+    ElMessage.success(data?.message || '已停用')
     fetchUsers()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || '删除失败')
+      ElMessage.error(error.response?.data?.message || '停用失败')
+    }
+  }
+}
+
+const handleRestore = async (row) => {
+  const name = row.disabled_prev_username || row.username
+  try {
+    await ElMessageBox.confirm(
+      `确定要恢复账号「${name}」吗？恢复后该账号可重新登录，用户名与原邮箱会被还原。`,
+      '恢复账号',
+      { type: 'warning', confirmButtonText: '确认恢复', cancelButtonText: '取消' }
+    )
+    const { data } = await api.patch(`/users/${row.id}/status`, { disabled: false })
+    ElMessage.success(data?.message || '已恢复')
+    fetchUsers()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.response?.data?.message || '恢复失败')
     }
   }
 }

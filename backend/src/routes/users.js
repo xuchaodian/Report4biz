@@ -26,7 +26,9 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     const db = getDb()
     const { company } = req.query
     
-    let sql = `SELECT id, username, email, role, vip_until, company, quota, created_at FROM users`
+    // v1.13.216：补 disabled_at / disabled_prev_username —— 前端据此给已停用账号
+    // 显示「已停用」徽章并回显**原用户名**（而不是 __disabled_<id>）
+    let sql = `SELECT id, username, email, role, vip_until, company, quota, created_at, disabled_at, disabled_prev_username, disabled_prev_email FROM users`
     const params = []
     
     if (company) {
@@ -562,7 +564,119 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
   }
 })
 
-// 删除用户
+// ============================================================================
+// 停用 / 恢复账号（v1.13.216）
+//
+// 语义：这是**默认的"删除"动作**（可逆冻结）。停用后该账号所有已签发 token 立即失效、
+//   再也无法登录，但**数据一行不动** ⇒ 零孤儿风险。物理删除改由 DELETE /:id 承担，
+//   且**要求账号已停用**（见该分支内的 gate）。
+//
+// ⚠️ 为什么必须**改写** username/email 而不能置 NULL：
+//   `users.username` 与 `users.email` 都是 `UNIQUE NOT NULL`
+//   ⇒ ① 置 NULL 直接违反约束；② 不改写则同名/同邮箱**永远无法重新注册**
+//     （注册重名检查见 routes/auth.js 与下方 POST / 的 `username = ? OR email = ?`）。
+//   故停用时挪到 `__disabled_<id>` / `__disabled_<id>@disabled.invalid`，
+//   原值记入 disabled_prev_*，恢复时还原。
+//   副作用（**有意接受**）：账号在集团成员列表等处会显示成 `__disabled_<id>` ——
+//   反过来正好是个「该账号已停用」的视觉告警。用户管理列表已用 prev 列回显原名。
+//
+// ⭐ 停用 ＝ **单条 UPDATE** 一次完成五件事（改名 + 释放 + 记原值 ×2 + bump 版本）。
+//   若拆成「bump + UPDATE」两条 ⇒ 同请求 2 个写点，按落盘铁律必须包事务；
+//   合成一条只落盘一次，更快也更不容易漏。
+// ⭐ 恢复**不 bump**：人被踢下线了，恢复后需重新登录取新 token，旧 token 早已 stale。
+// ============================================================================
+router.patch('/:id/status', authenticate, requireAdmin, (req, res) => {
+  try {
+    const userId = req.params.id
+    const { disabled } = req.body || {}
+
+    // 严格布尔：不接受 'true' / 1 / 空值 —— 避免"字符串真值"把恢复写成停用
+    if (typeof disabled !== 'boolean') {
+      return res.status(400).json({ message: '参数 disabled 必须为布尔值' })
+    }
+
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    if (disabled) {
+      // 不能停用自己 —— 停用会立刻撤销自己的 token，等于把自己锁在门外且无人能救
+      if (user.id === req.user.id) {
+        return res.status(400).json({ message: '不能停用自己的账号' })
+      }
+      // 「最后一个管理员」保护（与 PUT /:id · DELETE /:id 同口径）：
+      // 停用后该管理员无法登录 ⇒ 与删除等价地失去后台入口
+      if (user.role === 'admin') {
+        const adminCount = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE role = 'admin'`).get()?.c || 0
+        if (adminCount <= 1) {
+          return res.status(400).json({ message: '系统必须保留至少一个管理员：不能停用最后一个管理员' })
+        }
+      }
+      if (user.disabled_at) {
+        return res.status(400).json({ message: '该账号已处于停用状态' })
+      }
+
+      // SQL 的 SET 赋值全部取**行更新前**的值 ⇒ 同一条里先记 prev 再改名是安全的
+      db.prepare(`
+        UPDATE users
+           SET disabled_at = ?,
+               disabled_prev_username = username,
+               disabled_prev_email = email,
+               username = ?,
+               email = ?,
+               token_version = COALESCE(token_version, 0) + 1
+         WHERE id = ?
+      `).run(new Date().toISOString(), `__disabled_${user.id}`, `__disabled_${user.id}@disabled.invalid`, user.id)
+
+      return res.json({
+        message: `已停用「${user.username}」：该账号无法再登录，原有登录状态已全部失效（数据保留，可随时恢复）`,
+        user: db.prepare('SELECT id, username, email, role, disabled_at FROM users WHERE id = ?').get(user.id)
+      })
+    }
+
+    // ------------------------------ 恢复 ------------------------------
+    if (!user.disabled_at) {
+      return res.status(400).json({ message: '该账号未被停用' })
+    }
+    const prevName = user.disabled_prev_username
+    const prevMail = user.disabled_prev_email
+    if (!prevName || !prevMail) {
+      // 历史脏行（有 disabled_at 却没有 prev 记录）：绝不猜名字 —— 猜错会把账号
+      // 变成一个误导性的身份，比报错危险得多
+      return res.status(400).json({ message: '该账号缺少停用前的用户名/邮箱记录，无法自动恢复：请先手工修正再恢复' })
+    }
+    // 停用的意义正是「释放」这两个标识 ⇒ 原值可能已被新账号占用，必须显式检查
+    const clash = db.prepare('SELECT id, username FROM users WHERE (username = ? OR email = ?) AND id != ?')
+      .get(prevName, prevMail, user.id)
+    if (clash) {
+      return res.status(400).json({
+        message: `无法恢复：原用户名「${prevName}」或原邮箱已被账号「${clash.username}」占用，请先处理该账号`
+      })
+    }
+
+    db.prepare(`
+      UPDATE users
+         SET username = disabled_prev_username,
+             email = disabled_prev_email,
+             disabled_prev_username = NULL,
+             disabled_prev_email = NULL,
+             disabled_at = NULL
+       WHERE id = ?
+    `).run(user.id)
+
+    return res.json({
+      message: `已恢复「${prevName}」：该账号可重新登录（需重新登录取新会话）`,
+      user: db.prepare('SELECT id, username, email, role, disabled_at FROM users WHERE id = ?').get(user.id)
+    })
+  } catch (error) {
+    console.error('停用/恢复用户错误:', error)
+    res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// 删除用户（v1.13.216 起：**要求账号已停用**）
 router.delete('/:id', authenticate, requireAdmin, (req, res) => {
   try {
     const userId = req.params.id
@@ -608,6 +722,17 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
     if (ownedOrg) {
       return res.status(400).json({
         message: `该账号是集团「${ownedOrg.name}」的总部账号，删除后该集团将无法再被管理：请先解散该集团或转移总部账号`
+      })
+    }
+
+    // v1.13.216：物理删除**要求账号已停用**。
+    // 理由：停用是默认动作（可逆、零孤儿风险），彻底删除只对「已停用」账号开放 ⇒
+    //   ① 彻底消灭「点一下删除就静默产生孤儿行」的路径（本批的起因就是 1253 行孤儿）；
+    //   ② 给 S3「对已停用账号彻底删除（含级联）」留好现成接口。
+    // ⚠️ 本端点**目前仍不级联**（未开 PRAGMA foreign_keys）—— 级联实现属 S3 批次。
+    if (!existingUser.disabled_at) {
+      return res.status(400).json({
+        message: '请先停用该账号再彻底删除（直接删除会留下无法再清理的孤儿数据）'
       })
     }
 

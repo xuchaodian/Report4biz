@@ -22,7 +22,7 @@ export function authenticate(req, res, next) {
     const chk = verifyTokenPayload(decoded, getDb())
     if (!chk.ok) {
       // 只在服务端留痕，对外不区分原因（revoked / stale 都回同一句）
-      if (chk.reason === 'revoked' || chk.reason === 'stale') {
+      if (chk.reason === 'revoked' || chk.reason === 'stale' || chk.reason === 'disabled') {
         console.warn(`[auth] token 已被撤销(${chk.reason}): user=${decoded?.id}`)
       }
       return res.status(401).json({ message: SESSION_EXPIRED_MESSAGE })

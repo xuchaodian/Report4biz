@@ -137,6 +137,42 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // ==========================================================================
+  // 账号「停用」三列（v1.13.216 · 语义 S2）
+  //
+  // 背景：本库未开 `PRAGMA foreign_keys` ⇒ `DELETE /api/users/:id` **不级联**，
+  //   只留孤儿行（生产实测：历史已删 8 个账号 ⇒ markers 754 + competitors 499
+  //   = 1253 行孤儿）。故新增**可逆的停用**作为默认动作，物理删除改为「须先停用」。
+  //
+  // 三列语义：
+  //   disabled_at            —— NULL=正常；非空=已停用（ISO 时间串）
+  //   disabled_prev_username —— 停用前的原用户名（恢复时还原用）
+  //   disabled_prev_email    —— 停用前的原邮箱（恢复时还原用）
+  //
+  // ⚠️ 为什么必须存 prev 两列：`username` / `email` 在 users 表上都是
+  //   `UNIQUE NOT NULL`（见本文件上方 CREATE TABLE users）⇒ 停用要「释放」
+  //   这两个标识只能靠**改写**（置 NULL 会被约束直接拒绝），原值不记下来
+  //   就再也恢复不回去。
+  // ⚠️ 老行默认 NULL ⇒ 等价于「未停用」，上线不改变任何既有账号的行为。
+  // ==========================================================================
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN disabled_at TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN disabled_prev_username TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN disabled_prev_email TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
   // 创建管理员总配额表
   db.run(`
     CREATE TABLE IF NOT EXISTS admin_quota (

@@ -60,7 +60,7 @@ export function signToken(user, tokenVersion) {
 
 /**
  * 校验已解码的 payload 是否仍然有效（jwt.verify 之外的业务层校验）。
- * @returns {{ ok: boolean, reason?: 'invalid'|'revoked'|'user_gone'|'stale' }}
+ * @returns {{ ok: boolean, reason?: 'invalid'|'revoked'|'user_gone'|'stale'|'disabled' }}
  */
 export function verifyTokenPayload(decoded, db) {
   if (!decoded || decoded.id === undefined || decoded.id === null) {
@@ -73,9 +73,16 @@ export function verifyTokenPayload(decoded, db) {
     if (hit) return { ok: false, reason: 'revoked' }
   }
 
-  // ② 账号级版本
-  const row = db.prepare('SELECT token_version FROM users WHERE id = ?').get(decoded.id)
+  // ② 账号级：停用 + 版本（v1.13.216 合并为**同一次查询**，不多付一次内存查询）
+  const row = db.prepare('SELECT token_version, disabled_at FROM users WHERE id = ?').get(decoded.id)
   if (!row) return { ok: false, reason: 'user_gone' }
+
+  // ⭐ v1.13.216：账号已停用 ⇒ 其**所有**已签发 token 立即失效。
+  //   与 token_version 是**双保险**：停用时两者同时变（见 routes/users.js 的
+  //   PATCH /:id/status「一条 UPDATE」），但若将来某条路径漏了 bump，这里仍兜得住。
+  //   ⚠️ 刻意排在版本比对**之前**：顺序反了会先命中 stale，服务端日志的诊断信息变差。
+  if (row.disabled_at) return { ok: false, reason: 'disabled' }
+
   const current = Number(row.token_version || 0)
   const minted = Number(decoded.tv ?? 0) || 0   // ⚠️ 老 token 无 tv ⇒ 0
   if (minted !== current) return { ok: false, reason: 'stale' }

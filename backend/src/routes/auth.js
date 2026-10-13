@@ -195,6 +195,16 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ message: '用户名或密码错误' })
     }
 
+    // v1.13.216：已停用账号一律拒绝登录（只读判据，不额外查库 —— user 来自上方 SELECT *）。
+    // ⚠️ 文案必须与「密码错」**逐字一致**，否则这里会变成一条**账号枚举信道**
+    //    （拿一个用户名试登录：不同回复即可判断该账号是否存在/是否被停用）。
+    // ⚠️ 位置刻意在 bcrypt 校验**之后**：让「停用账号 + 正确密码」与「正常账号 + 错误密码」
+    //    两条路径的对外表现（状态码/文案/耗时量级）一致。
+    if (user.disabled_at) {
+      bumpLoginFailure(acctKey, ipKey)
+      return res.status(401).json({ message: '用户名或密码错误' })
+    }
+
     // 生成JWT（v1.13.150：内嵌 jti + 账号版本快照 tv，便于服务端撤销，见 utils/tokenAuth.js）
     const token = signToken(user, user.token_version)
 
