@@ -703,6 +703,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { requireVip } from '@/utils/vipGate'
+import { formatVipUntil, vipDaysRemaining, isVipExpiredFor, isVipExpiringFor } from '@/utils/vipUntil'
 import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
@@ -747,28 +748,12 @@ const isVipUser = computed(() => userStore.isVipActive)
 // v1.13.158：vip_until 为空的语义统一为「长期有效（不过期）」—— 与后端 ai.js 的 VIP 门禁判定
 // （`!vip_until || 未过期`）保持一致。此前这三处各自把空值当「已过期/剩余 0 天」，会把
 // 权限正常的账号显示成红色「已过期」，误导客户以为需要续费。
-const vipUntilText = computed(() => {
-  const u = userStore.user?.vip_until
-  if (!u) return '长期有效'
-  const d = new Date(String(u))
-  if (isNaN(d.getTime())) return String(u).slice(0, 10)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-})
-const vipExpired = computed(() => {
-  const u = userStore.user?.vip_until
-  if (!u) return false
-  return new Date(String(u) + 'T23:59:59') < new Date()
-})
+// v1.13.215：四处就地表达式收敛到 utils/vipUntil.js（单一入口），行为不变 —— 见该文件头注释。
+const vipUntilText = computed(() => formatVipUntil(userStore.user?.vip_until))
+const vipExpired = computed(() => isVipExpiredFor(userStore.user?.vip_until))
 // 是否 30 天内到期（提醒）；无到期日 → null 表示不限（不参与提醒）
-const vipDaysLeft = computed(() => {
-  const u = userStore.user?.vip_until
-  if (!u) return null
-  return Math.ceil((new Date(String(u) + 'T23:59:59') - new Date()) / 86400000)
-})
-const vipExpiring = computed(() => vipDaysLeft.value !== null && !vipExpired.value && vipDaysLeft.value >= 0 && vipDaysLeft.value <= 30)
+const vipDaysLeft = computed(() => vipDaysRemaining(userStore.user?.vip_until))
+const vipExpiring = computed(() => isVipExpiringFor(userStore.user?.vip_until))
 
 // ===== v1.13.205：VIP 试用申请（普通用户提交 → 管理员审核 → 30 天试用）=====
 // 只在「普通用户」身份下出现入口：vip / trial 本身已是 VIP，admin 无需申请。

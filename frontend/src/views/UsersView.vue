@@ -588,6 +588,7 @@ import { Plus, Edit, Delete, RefreshRight, DataAnalysis, Odometer, Check, CloseB
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
+import { formatVipUntil, isVipExpiredByRole, isVipExpiringByRole } from '@/utils/vipUntil'
 import OrgBindingPanel from '@/components/org/OrgBindingPanel.vue'
 
 const userStore = useUserStore()
@@ -989,17 +990,10 @@ const formatDate = (dateStr) => {
 }
 
 // VIP 是否即将到期（30 天内；含 VIP 试用）
-const isVipExpiring = (row) => {
-  if ((row.role !== 'vip' && row.role !== 'trial') || !row.vip_until) return false
-  const until = new Date(String(row.vip_until) + 'T23:59:59')
-  const now = new Date()
-  const days = Math.ceil((until - now) / 86400000)
-  return days >= 0 && days <= 30
-}
-const isVipExpired = (row) => {
-  if ((row.role !== 'vip' && row.role !== 'trial') || !row.vip_until) return false
-  return new Date(String(row.vip_until) + 'T23:59:59') < new Date()
-}
+// v1.13.215：收敛到 utils/vipUntil.js 单一入口。⛔ 勿再就地实现 —— 旧版缺 !expired 守卫，
+//   而 days 用 Math.ceil ⇒「到期日次日」整整一天 days 仍为 0 ⇒ 该行会同时标「⏰ 临期」与「❌ 已过期」。
+const isVipExpiring = (row) => isVipExpiringByRole(row)
+const isVipExpired = (row) => isVipExpiredByRole(row)
 
 const fetchUsers = async () => {
   loading.value = true
@@ -1105,7 +1099,7 @@ const handleEdit = (row) => {
     quota: row.quota || 0,
     usedQuota: row.usedQuota || 0,
     remaining: editRemaining,
-    vipUntilText: row.vip_until ? formatDate(row.vip_until) : '长期有效'
+    vipUntilText: formatVipUntil(row.vip_until)
   })
   originalRemaining.value = editRemaining
   dialogVisible.value = true
