@@ -77,6 +77,13 @@
         <span class="quota-number">-</span>
         <span class="quota-label">次</span>
       </div>
+      <!-- v1.13.217：配额不足时的统一引导。⚠️ 「购买」按钮是 `:disabled="!canQuery"`，
+           而 canQuery 含 `available > 0` ⇒ 配额为 0 时按钮会被**静默禁用**，
+           原先只写在 handler 里的提示**根本显示不出来** ⇒ 必须在此处内联给出出路。 -->
+      <div
+        v-if="quotaInfo && quotaInfo.available <= 0"
+        style="color: #f56c6c; font-size: 12px; margin-top: 6px; line-height: 1.7;"
+      >{{ QUOTA_INLINE.prefix }}<el-button type="primary" link size="small" @click="onQuotaShortage">{{ QUOTA_INLINE.action }}</el-button>{{ QUOTA_INLINE.suffix }}</div>
     </div>
 
     <template #footer>
@@ -130,6 +137,7 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
+import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
 const props = defineProps({
   visible: Boolean,
@@ -215,11 +223,16 @@ async function loadQuota() {
   }
 }
 
+/** 配额不足的行内入口：走统一引导（v1.13.217 —— 文案与联系方式收敛到 utils/quotaContact.js） */
+function onQuotaShortage() {
+  requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: getTotalQuota() || 1 })
+}
+
 // 点击购买：先检查配额，再弹出确认
-function handlePurchase() {
+async function handlePurchase() {
   const total = getTotalQuota()
   if (!quotaInfo.value || quotaInfo.value.available < total) {
-    ElMessage.warning(`剩余次数不足！需要 ${total} 次，当前剩余 ${quotaInfo.value?.available || 0} 次`)
+    await requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: total || 1 })
     return
   }
   showConfirm.value = true

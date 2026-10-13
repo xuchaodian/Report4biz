@@ -93,6 +93,13 @@
         <span class="quota-number">-</span>
         <span class="quota-label">次</span>
       </div>
+      <!-- v1.13.217：配额不足时的统一引导。⚠️ 「查询」按钮是 `:disabled="!canQuery"`，
+           而 canQuery 含 `available > 0` ⇒ 配额为 0 时按钮会被**静默禁用**，
+           原先只写在 handler 里的提示**根本显示不出来** ⇒ 必须在此处内联给出出路。 -->
+      <div
+        v-if="quotaInfo && quotaInfo.available <= 0"
+        style="color: #f56c6c; font-size: 12px; margin-top: 6px; line-height: 1.7;"
+      >{{ QUOTA_INLINE.prefix }}<el-button type="primary" link size="small" @click="onQuotaShortage">{{ QUOTA_INLINE.action }}</el-button>{{ QUOTA_INLINE.suffix }}</div>
     </div>
 
     <!-- 查询结果对话框 -->
@@ -287,6 +294,7 @@ import axios from 'axios'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { parseP0S1001, get1001Dict, pick1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
+import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
 const userStore = useUserStore()
 // VIP 用户（管理员视为 VIP；VIP 试用 trial 同权）
@@ -621,10 +629,13 @@ const handleAiAdvice = async () => {
 }
 
 // 计算属性
-const canQuery = computed(() => {
+// v1.13.217：把「参数是否填全」与「配额是否够」拆开 —— 原先二者揉进同一个 canQuery，
+//   导致配额为 0 时只会弹一句「请设置查询参数或检查配额」，用户无从判断缺的是什么、下一步做什么。
+const hasQueryParams = computed(() => {
   const hasRadius = queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0 || queryForm.value.radius4 > 0
-  return hasRadius && queryForm.value.cityMonth && quotaInfo.value?.available > 0
+  return !!(hasRadius && queryForm.value.cityMonth)
 })
+const canQuery = computed(() => hasQueryParams.value && quotaInfo.value?.available > 0)
 
 const selectedMonthLabel = computed(() => {
   const month = availableMonths.value.find(m => m.value === queryForm.value.cityMonth)
@@ -1840,10 +1851,20 @@ function formatDate(dateStr) {
   })
 }
 
+/** 配额不足的行内入口：走统一引导（v1.13.217 —— 文案与联系方式收敛到 utils/quotaContact.js） */
+function onQuotaShortage() {
+  requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
+}
+
 // 查询按钮点击
 function handleQuery() {
   if (!canQuery.value) {
-    ElMessage.warning('请设置查询参数或检查配额')
+    // 分流：参数没填 ≠ 配额不足 —— 只有后者才该给采购出口
+    if (!hasQueryParams.value) {
+      ElMessage.warning('请设置查询半径与数据年月')
+      return
+    }
+    requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
     return
   }
   showConfirmDialog.value = true
@@ -2096,7 +2117,14 @@ async function executeQuery(event) {
     showQueryResultDialog.value = true
   } catch (e) {
     console.error('查询失败:', e)
-    ElMessage.error(e.response?.data?.message || '查询失败')
+    // v1.13.217：后端闸门现在带 code（own_quota_exhausted / pool_quota_exhausted）⇒ 按 code 分流，
+    //   把「本账号额度空」（可采购）与「平台池空」（买也没用，须我方补上游额度）分开引导。
+    const code = e.response?.data?.code
+    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
+      await requireQuota(code, { own: quotaInfo.value?.available ?? 0, need: 1 })
+    } else {
+      ElMessage.error(e.response?.data?.message || '查询失败')
+    }
   } finally {
     isLoading.value = false
   }

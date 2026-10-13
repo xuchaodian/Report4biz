@@ -48,7 +48,7 @@
           <el-icon><Odometer /></el-icon>
           &nbsp;剩余次数：<b>{{ quotaAvailable }}</b>
         </el-tag>
-        <span v-if="quotaAvailable < 1" class="se-quota-warn">余额不足，请联系管理员分配配额</span>
+        <span v-if="quotaAvailable < 1" class="se-quota-warn">{{ QUOTA_INLINE.prefix }}<el-button type="primary" link size="small" @click="onQuotaShortage">{{ QUOTA_INLINE.action }}</el-button>{{ QUOTA_INLINE.suffix }}</span>
       </div>
     </div>
 
@@ -177,6 +177,7 @@ import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer, Aim, Setting, DataAnalysis, Collection } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
 const mapRef = ref(null)
 let map = null
@@ -327,11 +328,16 @@ function drawPoint() {
 
 watch(radiusKm, () => { if (selectedPoint.value) drawPoint() })
 
+/** 配额不足的行内入口：走统一引导（v1.13.217 —— 文案与联系方式收敛到 utils/quotaContact.js） */
+function onQuotaShortage() {
+  requireQuota(QUOTA_REASON.OWN, { own: quotaAvailable.value, need: 1 })
+}
+
 async function startScore() {
   if (!selectedPoint.value) { ElMessage.warning('请先选择评估点位（从我的门店选择或地图选点）'); return }
-  // 配额检查
+  // 配额检查（v1.13.217：改走统一引导）
   if (quotaAvailable.value < 1) {
-    ElMessage.warning('余额不足：剩余次数为 0，请联系管理员分配配额')
+    await requireQuota(QUOTA_REASON.OWN, { own: quotaAvailable.value, need: 1 })
     return
   }
   // 确认提示：从剩余次数扣除
@@ -368,7 +374,18 @@ async function startScore() {
       ElMessage.error(res.message || '评估失败')
     }
   } catch (e) {
-    ElMessage.error('评估失败: ' + (e.response?.data?.message || e.message))
+    // v1.13.217：后端闸门拒绝时按 code 分流（防御性 —— 见日志：scoringEngine 目前
+    //   配额不足时静默降级为默认分，不会把 code 传到前端；待其改为透传后本分支即生效）
+    const code = e.response?.data?.code
+    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
+      await requireQuota(code, {
+        own: e.response?.data?.own,
+        pool: e.response?.data?.pool,
+        need: e.response?.data?.need
+      })
+    } else {
+      ElMessage.error('评估失败: ' + (e.response?.data?.message || e.message))
+    }
   } finally {
     scoring.value = false
   }

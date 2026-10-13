@@ -117,7 +117,7 @@
         </el-button>
         <!-- 禁用原因提示 -->
         <div class="purchase-hint" v-if="!canPurchase && !isLoading">
-          <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">配额不足，请联系管理员分配配额</span>
+          <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">{{ QUOTA_INLINE.prefix }}<el-button type="primary" link size="small" @click="onQuotaShortage">{{ QUOTA_INLINE.action }}</el-button>{{ QUOTA_INLINE.suffix }}</span>
           <span v-else-if="!circleCenter">请先选择位置</span>
           <span v-else-if="!hasRadius">请设置至少一个半径</span>
           <span v-else>请选择数据年月</span>
@@ -172,6 +172,7 @@ import { useUserStore } from '@/stores/user'
 import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { parseP0S1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
+import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
 const props = defineProps({
   visible: Boolean,
@@ -418,6 +419,11 @@ function confirmPurchase() {
   showConfirmDialog.value = true
 }
 
+/** 配额不足的行内入口：走统一引导（v1.13.217 —— 文案与联系方式收敛到 utils/quotaContact.js） */
+function onQuotaShortage() {
+  requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
+}
+
 // 执行购买并查询
 async function executePurchase() {
   if (!circleCenter.value) return
@@ -430,9 +436,9 @@ async function executePurchase() {
     // 刷新最新配额
     await loadQuota()
 
-    // 检查配额（配额未加载或配额不足）
+    // 检查配额（配额未加载或配额不足）—— v1.13.217 改走统一引导
     if (!quotaInfo.value || quotaInfo.value.available < 1) {
-      ElMessage.error('配额不足，请联系管理员分配配额')
+      await requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
       isLoading.value = false
       return
     }
@@ -466,7 +472,17 @@ async function executePurchase() {
     loadQuota()
   } catch (e) {
     console.error('查询失败:', e)
-    ElMessage.error(e.response?.data?.message || '查询失败')
+    // v1.13.217：后端闸门拒绝时按 code 分流 —— 「平台池空」与「账号额度空」给**不同出口**
+    const code = e.response?.data?.code
+    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
+      await requireQuota(code, {
+        own: e.response?.data?.own,
+        pool: e.response?.data?.pool,
+        need: e.response?.data?.need
+      })
+    } else {
+      ElMessage.error(e.response?.data?.message || '查询失败')
+    }
   } finally {
     isLoading.value = false
   }

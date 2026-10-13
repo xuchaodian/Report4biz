@@ -158,6 +158,7 @@ import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, OfficeBuilding, DataAnalysis, Close } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
 const mapRef = ref(null)
 let map = null
@@ -424,8 +425,18 @@ async function refreshDistrict() {
       ElMessage.error(res.message || '刷新失败')
     }
   } catch (e) {
-    const msg = e.response?.data?.message || e.message
-    ElMessage.error('刷新失败：' + msg)
+    // v1.13.217：后端闸门拒绝时按 code 分流 —— 「平台池空」与「账号额度空」给**不同出口**
+    const code = e.response?.data?.code
+    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
+      await requireQuota(code, {
+        own: e.response?.data?.own,
+        pool: e.response?.data?.pool,
+        need: e.response?.data?.need
+      })
+    } else {
+      const msg = e.response?.data?.message || e.message
+      ElMessage.error('刷新失败：' + msg)
+    }
   } finally {
     refreshing.value = false
   }

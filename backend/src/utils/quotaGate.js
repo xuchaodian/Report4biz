@@ -71,25 +71,35 @@ export function checkQuota(db, userId, need = 1, { role, isApiKey = false } = {}
  * @param {Object} gate   checkQuota 的返回值（ok=false）
  * @param {Object} [opts]
  * @param {string} [opts.service='联通人口数据']  提示语里的服务名
+ * @param {number} [opts.ownStatus=403]           账号额度耗尽时的状态码
  * @param {number} [opts.poolStatus=400]          物理池耗尽时的状态码（resale 沿用 429）
  * @returns {{ status: number, body: Object }}
  */
-export function buildGateError(gate, { service = '联通人口数据', poolStatus = 400 } = {}) {
+export function buildGateError(gate, { service = '联通人口数据', ownStatus = 403, poolStatus = 400 } = {}) {
+  // v1.13.217：**两个分支都显式给出 code** —— 前端据此分流（⛔ 不靠 message 字符串匹配）。
+  //   文案口径见 workbuddy过程文件/Report4biz_联通配额采购引导设计_20261013.md §4.1
   if (gate.reason === 'own_exhausted') {
     return {
-      status: 403,
+      status: ownStatus,
       body: {
-        message: `本账号「${service}」可用次数不足（需要 ${gate.need} 次，当前可用 ${gate.own} 次），请联系集团管理员分配`,
+        // 集团成员的主出口是「找集团管理员再分配」（免费）；采购是**附加**出口。
+        message: `本账号「${service}」可用次数不足（需要 ${gate.need} 次，当前可用 ${gate.own} 次）。` +
+          '请联系集团管理员分配；若集团额度亦已用尽，可提交采购申请。',
         code: 'own_quota_exhausted',
         own: gate.own,
         need: gate.need
       }
     }
   }
+  // 平台池空：用户**买也没用**（上游调不动）⇒ 只给事实，不给采购入口。
   return {
     status: poolStatus,
     body: {
-      message: `运营商剩余配额不足，需要 ${gate.need} 次，当前剩余 ${gate.pool} 次`
+      message: `平台上游「${service}」额度已用尽（需要 ${gate.need} 次，当前剩余 ${gate.pool} 次），` +
+        '本项需我方补充上游额度后方可使用。',
+      code: 'pool_quota_exhausted',
+      pool: gate.pool,
+      need: gate.need
     }
   }
 }

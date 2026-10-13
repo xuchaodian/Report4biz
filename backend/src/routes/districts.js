@@ -3,7 +3,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getAuthorization } from './smartsteps.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
-import { checkQuota } from '../utils/quotaGate.js'
+import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { getGeoObject } from '../models/geoStore.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
@@ -266,10 +266,12 @@ router.post('/refresh', authenticate, async (req, res) => {
     // 2. 配额检查（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度；每商圈 1 点）
     const gate = checkQuota(db, req.user?.id, 1, { role: req.user?.role })
     if (!gate.ok) {
-      const message = gate.reason === 'own_exhausted'
-        ? `本账号可用「极目点」不足（需要 1 次，当前可用 ${gate.own} 次），请联系集团管理员分配`
-        : '极目点不足，请联系管理员充值'
-      return res.status(400).json({ success: false, message, code: gate.reason })
+      // v1.13.217：改走统一闸门错误 —— 此前这里**自己拼了一套文案**（第 6 处拷贝），
+      //   且 code 用的是后端内部 reason（'own_exhausted'），与 buildGateError 的
+      //   'own_quota_exhausted' **不一致** ⇒ 前端按 code 分流会漏掉本端点。
+      //   ownStatus 显式传 400：本端点历史上两分支都是 400，不改既有状态码语义。
+      const err = buildGateError(gate, { service: '极目点', ownStatus: 400 })
+      return res.status(err.status).json({ success: false, ...err.body })
     }
 
     // 3. 调联通（polygon 直查）
