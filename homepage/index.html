@@ -13,11 +13,88 @@
 <meta property="og:title" content="选址赢家Online - WebGIS 商业智能分析平台">
 <meta property="og:description" content="商圈人口分析 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
 <meta property="og:url" content="https://mka-online.cn/home/">
-<meta property="og:image" content="https://mka-online.cn/home/dashboard_screenshot.png">
+<meta property="og:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:alt" content="选址赢家Online · 数据大屏驾驶舱">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="选址赢家Online - WebGIS 商业智能分析平台">
 <meta name="twitter:description" content="商圈人口分析 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
-<meta name="twitter:image" content="https://mka-online.cn/home/dashboard_screenshot.png">
+<meta name="twitter:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
+<meta name="twitter:image:alt" content="选址赢家Online · 数据大屏驾驶舱">
+<!-- ============ 结构化数据 JSON-LD（v1.13.220） ============
+     ⚠️ 本块为硬编码。若页面下方 FAQ 的问答有增删改，请同步维护 FAQPage.mainEntity。
+     ✅ 已实测：CSP `script-src 'self'` **不拦** application/ld+json（只拦可执行内联 JS）。 -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://mka-online.cn/#organization",
+      "name": "选址赢家Online",
+      "url": "https://mka-online.cn/",
+      "logo": "https://mka-online.cn/favicon.png",
+      "description": "选址赢家Online 是基于位置大数据的 WebGIS 商业智能分析平台，聚焦商圈人口分析与门店竞争决策。",
+      "email": "jyo@youshi-tech.com",
+      "parentOrganization": { "@type": "Organization", "name": "上海优事商务咨询有限公司", "url": "https://youshi-tech.com/" },
+      "contactPoint": [{
+        "@type": "ContactPoint",
+        "contactType": "sales",
+        "telephone": "+86-138-1779-1741",
+        "email": "jyo@youshi-tech.com",
+        "availableLanguage": ["zh-CN"]
+      }]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://mka-online.cn/#website",
+      "url": "https://mka-online.cn/",
+      "name": "选址赢家Online",
+      "inLanguage": "zh-CN",
+      "publisher": { "@id": "https://mka-online.cn/#organization" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://mka-online.cn/#software",
+      "name": "选址赢家Online",
+      "url": "https://mka-online.cn/home/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web Browser (Windows / macOS / 移动端)",
+      "inLanguage": "zh-CN",
+      "description": "商圈人口分析、门店竞争洞察、开店余地评估、数据大屏驾驶舱与 AI 选址建议，把开店决策从凭经验变为看数据。",
+      "publisher": { "@id": "https://mka-online.cn/#organization" }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://mka-online.cn/home/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "需要安装软件吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "不需要。选址赢家Online 是 Web 应用，使用浏览器访问即可，支持 Windows / macOS / 移动端，无需安装任何客户端。" }
+        },
+        {
+          "@type": "Question",
+          "name": "人口数据来自哪里，准确吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "平台接入运营商级人口大数据，数据经匿名化处理，按网格粒度统计商圈人口与人群结构，能够反映区域人口的量级与分布趋势。" }
+        },
+        {
+          "@type": "Question",
+          "name": "我的门店数据是私有的吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "是。门店、竞品等业务数据按用户严格隔离，每个账号只能查看和管理自己的数据，管理员也无法查看普通用户的门店明细。" }
+        },
+        {
+          "@type": "Question",
+          "name": "分析报表可以直接用于汇报吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "可以。系统按统一模板输出 Excel / PDF 报表，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。" }
+        }
+      ]
+    }
+  ]
+}
+</script>
 <style>
 :root {
   --primary: #1e6fff;
@@ -35,6 +112,9 @@
   --shadow-hover: 0 12px 32px rgba(30, 111, 255, 0.16);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* v1.13.220：<picture> 默认 display:inline，父宽会塌陷 ⇒ 子 img 的 width:100% 失效。
+   令 picture 从布局中「消失」，img 直接参与既有父容器（.banner-slide / .ui-card / .dashboard-frame）布局。 */
+picture { display: contents; }
 html { scroll-behavior: smooth; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -252,7 +332,7 @@ a { text-decoration: none; color: inherit; }
   border: 1px solid rgba(255,255,255,0.35);
   padding: 4px 12px; border-radius: 999px; margin-bottom: 12px;
 }
-.banner-text h3 { font-size: 26px; color: #fff; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.3px; }
+.banner-text h2 { font-size: 26px; color: #fff; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.3px; }
 .banner-text p { font-size: 14px; color: rgba(255,255,255,0.85); max-width: 340px; line-height: 1.7; }
 .banner-text .bt-cta {
   display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
@@ -292,7 +372,7 @@ a { text-decoration: none; color: inherit; }
       rgba(7,22,48,0.82) 52%,
       rgba(7,22,48,0.96) 100%);
   }
-  .banner-text h3 { font-size: 19px; }
+  .banner-text h2 { font-size: 19px; }
   .banner-text p { font-size: 12.5px; line-height: 1.6; }
   .banner-arrow { display: none; }
 }
@@ -537,7 +617,10 @@ a { text-decoration: none; color: inherit; }
 
     <div class="hero-visual">
       <div class="dashboard-frame">
-        <img class="dashboard-screenshot" src="dashboard_screenshot.png" alt="选址赢家 Online 数据大屏" />
+        <picture>
+          <source type="image/webp" srcset="assets/dashboard_screenshot.webp">
+          <img class="dashboard-screenshot" src="dashboard_screenshot.png" alt="选址赢家 Online 数据大屏" fetchpriority="high">
+        </picture>
       </div>
       <div class="float-card fc-1">
         <div class="fc-icon" style="background:var(--primary-light)"><img src="assets/icons/shop.svg" alt="" width="18" height="18"></div>
@@ -559,10 +642,13 @@ a { text-decoration: none; color: inherit; }
 
         <!-- Slide 1: 商圈人口分析 -->
         <div class="banner-slide">
-          <img class="banner-img" src="assets/screen-district.jpg" alt="商圈洞察：商圈边界与人口评分">
+          <picture>
+            <source type="image/webp" srcset="assets/screen-district.webp">
+            <img class="banner-img" src="assets/screen-district.jpg" alt="商圈洞察：商圈边界与人口评分" loading="lazy" decoding="async">
+          </picture>
           <div class="banner-text">
             <span class="bt-tag">商圈人口分析</span>
-            <h3>圈定商圈，看懂人口</h3>
+            <h2>圈定商圈，看懂人口</h2>
             <p>半径圈选 + 网格统计，常住人口、居住与工作人群分布一目了然，配套统计面板一键汇总。</p>
             <a class="bt-cta" href="#ability">了解平台能力 →</a>
           </div>
@@ -570,10 +656,13 @@ a { text-decoration: none; color: inherit; }
 
         <!-- Slide 2: 竞品追踪 -->
         <div class="banner-slide">
-          <img class="banner-img" src="assets/screen-competitor.jpg" alt="竞品门店管理：品牌、价格与星级">
+          <picture>
+            <source type="image/webp" srcset="assets/screen-competitor.webp">
+            <img class="banner-img" src="assets/screen-competitor.jpg" alt="竞品门店管理：品牌、价格与星级" loading="lazy" decoding="async">
+          </picture>
           <div class="banner-text">
             <span class="bt-tag">门店竞争分析</span>
-            <h3>追踪竞品，洞察格局</h3>
+            <h2>追踪竞品，洞察格局</h2>
             <p>门店重合度、竞争数量、竞争追踪三种模式，透视门店与竞品的空间关系，评估市场饱和度。</p>
             <a class="bt-cta" href="#ability">查看竞争分析 →</a>
           </div>
@@ -581,10 +670,13 @@ a { text-decoration: none; color: inherit; }
 
         <!-- Slide 3: AI 助手 -->
         <div class="banner-slide">
-          <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地分析：高潜力区域筛选">
+          <picture>
+            <source type="image/webp" srcset="assets/screen-sitefinder.webp">
+            <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地分析：高潜力区域筛选" loading="lazy" decoding="async">
+          </picture>
           <div class="banner-text">
             <span class="bt-tag">开店余地评估</span>
-            <h3>筛出高潜力的开店区域</h3>
+            <h2>筛出高潜力的开店区域</h2>
             <p>设定城市、半径、门店数与竞品品牌条件，一键在地图上圈出符合条件的高潜力网格。</p>
             <a class="bt-cta" href="#ability">查看平台能力 →</a>
           </div>
@@ -751,7 +843,10 @@ a { text-decoration: none; color: inherit; }
     </div>
     <div class="ui-grid">
       <div class="ui-card">
-        <img class="ui-shot" src="assets/screen-dashboard.jpg" alt="数据大屏驾驶舱" loading="lazy">
+        <picture>
+          <source type="image/webp" srcset="assets/screen-dashboard.webp">
+          <img class="ui-shot" src="assets/screen-dashboard.jpg" alt="数据大屏驾驶舱" loading="lazy" decoding="async">
+        </picture>
         <div class="ui-body">
           <span class="ui-tag">数据大屏</span>
           <h3>门店与竞品全国分布驾驶舱</h3>
@@ -759,7 +854,10 @@ a { text-decoration: none; color: inherit; }
         </div>
       </div>
       <div class="ui-card">
-        <img class="ui-shot" src="assets/screen-forecast.jpg" alt="销售预测" loading="lazy">
+        <picture>
+          <source type="image/webp" srcset="assets/screen-forecast.webp">
+          <img class="ui-shot" src="assets/screen-forecast.jpg" alt="销售预测" loading="lazy" decoding="async">
+        </picture>
         <div class="ui-body">
           <span class="ui-tag">销售预测</span>
           <h3>候选门店年销售额预测</h3>
@@ -767,7 +865,10 @@ a { text-decoration: none; color: inherit; }
         </div>
       </div>
       <div class="ui-card">
-        <img class="ui-shot" src="assets/screen-ai.jpg" alt="AI 智能助手" loading="lazy">
+        <picture>
+          <source type="image/webp" srcset="assets/screen-ai.webp">
+          <img class="ui-shot" src="assets/screen-ai.jpg" alt="AI 智能助手" loading="lazy" decoding="async">
+        </picture>
         <div class="ui-body">
           <span class="ui-tag">AI 智能助手</span>
           <h3>一句话驱动地图与分析</h3>
