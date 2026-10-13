@@ -1136,6 +1136,42 @@ export async function initDatabase() {
   // 🔴 同一账号同时只能有 1 条 pending（存储层兜底；路由会先行返回 400 友好提示）
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_vip_app_pending ON vip_applications(user_id) WHERE status = 'pending'`)
 
+  // 配额采购申请单（v1.13.218）
+  // 背景（设计文档 §4.4）：用户账号的「联通人口数据」可用次数不足时，页面给出采购引导；
+  // 用户填意向单 → 我方商务（jyo@youshi-tech.com）收到内部通知邮件 → 管理员在用户管理页受理。
+  // 🔴 决策 3：**受理 ≠ 充值** —— accept 只改本表 status，⛔ 绝不写 users.quota
+  //    （回款/签约核对完成后，由管理员在用户管理页「设置累计总配额」单独执行）。
+  // 🔴 决策 4：不上屏单价 —— 本表只存「期望采购次数」，金额属合同条款。
+  // 幂等零迁移：CREATE TABLE IF NOT EXISTS —— 生产重启即建表，无需手工 ALTER。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS quota_purchase_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      org_id INTEGER,                        -- 所属集团（成员查 org_members；总部查 organizations.owner_user_id；独立账号 NULL）
+      username TEXT,                         -- 提交时快照
+      company TEXT,
+      department TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      want_amount INTEGER NOT NULL,          -- 期望采购次数（⛔ 不含单价/金额）
+      purpose TEXT,                          -- 用途说明（选填）
+      expect_date TEXT,                      -- 期望到货日期（选填）
+      status TEXT NOT NULL DEFAULT 'pending',
+      review_note TEXT,
+      reviewed_by INTEGER,
+      reviewed_by_name TEXT,
+      reviewed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  // 管理端按「待处理」列表 + 时间倒序 ⇒ (status, created_at) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_quota_req_status ON quota_purchase_requests(status, created_at DESC)`)
+  // 申请人「我的申请」⇒ (user_id, status) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_quota_req_user ON quota_purchase_requests(user_id, status)`)
+  // 🔴 同一账号同时只能有 1 条 pending（存储层兜底；路由会先行返回 400 友好提示）
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_quota_req_pending ON quota_purchase_requests(user_id) WHERE status = 'pending'`)
+
   // 保存数据库
   saveDatabase()
 

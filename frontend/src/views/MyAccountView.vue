@@ -138,6 +138,49 @@
           <p v-if="userStore.quota">• 当前配额: {{ userStore.quota.total }} 次（累计配额: {{ userStore.quota.cumulativeTotal }} 次）</p>
           <p v-if="userStore.quota">• 当前已使用: {{ userStore.quota.used }} 次（累计使用: {{ userStore.quota.cumulativeUsed }} 次）</p>
         </div>
+
+        <!-- v1.13.218：低额度软提醒 ＋ 采购引导（≤ QUOTA_WARN_THRESHOLD；=0 升级为 error 色调）
+             口径：阈值与文案常量全部取自 utils/quotaContact.js，⛔ 不就地硬编码数字/联系方式
+             🔴 admin 排除：admin 走「平台池兜底」、根本不被自己的额度拦截，且=平台方，
+             向自己（jyo@youshi-tech.com）提交采购单语义不通 ⇒ 设计文档身份表把 admin 的
+             own_exhausted 记为「—（池兜底）」，与「独立账号」刻意区分。
+             `userStore.user &&` 一并要求：避免 user 未就位时 isAdmin 暂判 false 导致提示条闪烁。
+             回归钉子：backend/tests/quotaPurchaseGuard.test.js（② 组） -->
+        <div
+          v-if="quotaApplyLoaded && userStore.user && !isAdmin && userStore.availableQuota <= QUOTA_WARN_THRESHOLD"
+          class="quota-warn"
+          :class="{ 'is-empty': userStore.availableQuota <= 0 }"
+          role="status"
+        >
+          <AppIcon class="quota-warn-icon"><WarningFilled /></AppIcon>
+          <div class="quota-warn-text">
+            <div class="qw-title">
+              {{ userStore.availableQuota <= 0 ? '剩余次数已用尽' : `剩余次数不足（≤ ${QUOTA_WARN_THRESHOLD} 次）` }}
+            </div>
+            <div class="qw-sub">可提交采购申请，由我方与您联系；也可直接联系商务</div>
+          </div>
+          <el-button
+            v-if="quotaApply?.status === 'pending'"
+            size="small"
+            plain
+            @click="openQuotaApplyStatus"
+          >查看申请状态</el-button>
+          <el-button v-else type="primary" size="small" @click="openQuotaApply">申请采购配额</el-button>
+        </div>
+
+        <!-- 申请状态回显：pending / accepted / rejected 三态各一行 -->
+        <div v-if="quotaApply?.status === 'pending'" class="quota-apply-note is-pending">
+          <el-icon class="is-loading"><Loading /></el-icon>采购申请已提交，等待我方联系
+        </div>
+        <div v-else-if="quotaApply?.status === 'accepted'" class="quota-apply-note is-accepted">
+          <AppIcon class="icon-text"><CircleCheck /></AppIcon>
+          采购申请已受理，我方将与您联系；<b>充值到账后点「刷新配额」即可见</b>
+        </div>
+        <div v-else-if="quotaApply?.status === 'rejected'" class="quota-apply-note is-rejected">
+          <AppIcon class="icon-text"><WarningFilled /></AppIcon>
+          <span>上次采购申请未通过<span v-if="quotaApply.review_note">：{{ quotaApply.review_note }}</span>，可修改后重新提交</span>
+        </div>
+
         <div class="quota-actions">
           <el-button type="text" @click="refreshQuota" :loading="quotaLoading">
             <AppIcon class="icon-text"><Refresh /></AppIcon>刷新配额
@@ -691,6 +734,13 @@
       </template>
     </el-dialog>
 
+    <!-- v1.13.218：联通配额采购申请单（意向单；提交后我方商务线下确认合同与付款） -->
+    <QuotaPurchaseDialog
+      v-model="quotaApplyDialogVisible"
+      :prefill="{ company: userStore.user?.company, email: userStore.user?.email }"
+      @submitted="onQuotaApplySubmitted"
+    />
+
     <PurchaseImportDialog v-model="importDialogVisible" @imported="onImportDone" />
   </div>
 </template>
@@ -704,13 +754,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { requireVip } from '@/utils/vipGate'
 import { formatVipUntil, vipDaysRemaining, isVipExpiredFor, isVipExpiringFor } from '@/utils/vipUntil'
-import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts, WarningFilled } from '@element-plus/icons-vue'
+import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Setting, DataAnalysis, Refresh, Memo, Tickets, Upload, Download, User, Money, Cpu, Lock, StarFilled, DocumentCopy, Document, Share, ChatDotRound, TrendCharts, WarningFilled, CircleCheck } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
+import QuotaPurchaseDialog from '@/components/QuotaPurchaseDialog.vue'
+import { QUOTA_WARN_THRESHOLD } from '@/utils/quotaContact'
 // v1.13.166 多订单对比看板：解析器抽成单一权威模块（原先内联在本文件，新看板与图表必须同口径）
 import { extractApiResult, extractPopSums, extractFlowData, extractConsumeData } from '@/utils/smartstepsExtract'
 import {
@@ -862,6 +914,53 @@ async function submitVipApply() {
 /** 管理员通过后本地角色可能还是旧值 ⇒ 一键重拉身份 */
 function refreshIdentity() {
   userStore.fetchUser()
+}
+
+// ===== v1.13.218：联通配额「采购申请单」（用户提交 → 我方联系 → 管理员受理）=====
+// 与 VIP 试用申请同构：申请状态是「锦上添花」，拉不到就不展示，绝不因此阻塞个人中心。
+const quotaApplyDialogVisible = ref(false)
+// ⚠️ 同 vipApplyLoaded：必须等 /mine 回来再渲染提醒块，
+//    否则「额度已用尽」的用户会先看不到任何入口（闪烁）
+const quotaApplyLoaded = ref(false)
+/** 本人最近一条采购申请：null 表示从未申请 */
+const quotaApply = ref(null)
+
+async function fetchQuotaApply() {
+  try {
+    const { data } = await axios.get('/api/quota-requests/mine')
+    quotaApply.value = data?.request || null
+  } catch (e) {
+    quotaApply.value = null
+  } finally {
+    quotaApplyLoaded.value = true
+  }
+}
+
+function openQuotaApply() {
+  quotaApplyDialogVisible.value = true
+}
+
+function onQuotaApplySubmitted(request) {
+  quotaApply.value = request || { status: 'pending' }
+}
+
+/**
+ * 「查看申请状态」——纯文本展示。
+ * ⛔ 刻意不用 HTML 渲染（公司名/用途是用户自填字段），避免任何 XSS 面；
+ *    用全角间隔号串成一行，避免 ElMessageBox 把 \n 折成空白。
+ */
+function openQuotaApplyStatus() {
+  const r = quotaApply.value || {}
+  const parts = [
+    `公司名：${r.company || '—'}`,
+    `期望采购次数：${r.want_amount ?? '—'} 次`,
+    `提交时间：${r.created_at || '—'}`,
+    '状态：已提交，等待我方联系'
+  ]
+  ElMessageBox.alert(parts.join('　·　'), '采购申请状态', {
+    confirmButtonText: '我知道了',
+    type: 'info'
+  }).catch(() => { /* ESC / 关闭会 reject('close')，必须吞掉 */ })
 }
 const quotaLoading = ref(false)
 
@@ -1477,6 +1576,9 @@ onMounted(async () => {
 
   // v1.13.205：拉取本人 VIP 试用申请状态（仅普通用户会真正发请求）
   fetchVipApply()
+
+  // v1.13.218：拉取本人配额采购申请状态（决定提醒块里是「申请采购配额」还是「查看申请状态」）
+  fetchQuotaApply()
 
   // 检查 URL 参数：如果有 storeName 或 openHistory，自动打开购买履历
   const storeName = route.query.storeName
@@ -4374,6 +4476,78 @@ const handleExportExcel = async () => {
   display: flex;
   align-items: flex-start;
   gap: 4px;
+}
+
+/* v1.13.218：配额「低额度提醒 ＋ 采购引导」（个人中心配额卡内）。
+   ⚠️ 本节元素全部由本组件模板直写（不经 el-dialog）⇒ 自带 data-v-*，单类选择器可命中。
+   🔴 210/212 教训：容器一旦带状态修饰类，图标必须**为每个状态各写一条**选择器，
+      否则图标只走无条件规则 ⇒ 不跟变、零报错。下面 .is-empty 的图标色就是为此单列。 */
+.quota-warn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+
+  &.is-empty {
+    background: #fef0f0;
+    border-color: #fbc4c4;
+  }
+}
+
+.quota-warn-icon {
+  font-size: 18px;
+  color: #e6a23c;
+  flex: 0 0 auto;
+}
+
+/* 🔴 状态修饰类：必须显式再写一条，图标才会跟着变色 */
+.quota-warn.is-empty .quota-warn-icon {
+  color: #f56c6c;
+}
+
+.quota-warn-text {
+  flex: 1 1 auto;
+  min-width: 0;
+
+  .qw-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #b88230;
+    line-height: 1.5;
+  }
+
+  .qw-sub {
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.5;
+  }
+}
+
+/* 🔴 同理：标题也要按状态各写一条 */
+.quota-warn.is-empty .quota-warn-text .qw-title {
+  color: #c45656;
+}
+
+.quota-apply-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #909399;
+
+  &.is-pending { color: #e6a23c; }
+  &.is-accepted { color: #529b2e; }
+  &.is-rejected { color: #c45656; }
+
+  b {
+    font-weight: 600;
+  }
 }
 
 .account-form {

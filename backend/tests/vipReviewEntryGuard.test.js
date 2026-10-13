@@ -22,6 +22,11 @@
  *   ① 谁把提示条改回 `v-if="vipPendingCount > 0"` 单支（入口又消失）→ 立刻红；
  *   ② 谁把 `openVipReview` 的默认页签改回恒 `'pending'` → 立刻红；
  *   ③ 谁把红点的定时器/监听清理删掉（内存泄漏）→ 立刻红。
+ *
+ * v1.13.218 增补：配额采购申请的入口同样落在 /users 页的个人下拉里，
+ *   故红点改为**合并计数** `pendingDotCount = vipPendingCount + quotaPendingCount`。
+ *   ⇒ 「红点渲染」一条随之升级：守「必须由待处理数驱动」＋「⛔ 不得退回只绑 VIP 计数」，
+ *     而不再死绑变量名（否则合并计数反被误伤）。
  * （前端无独立测试框架，故与 cspInlineHandlerGuard / destructiveActionConfirmGuard
  *   一致，挂在 backend 的 vitest 下。）
  */
@@ -135,6 +140,24 @@ describe('VIP 红点刷新时机：不得只在挂载时拉一次', () => {
   })
 
   it('红点仍按「有待处理才显示」渲染（常驻化只针对审核入口，不针对红点）', () => {
-    expect(main).toMatch(/v-if="vipPendingCount > 0"/)
+    // v1.13.218：红点改为**合并计数** —— 待处理 VIP 试用申请 ＋ 配额采购申请
+    //   （两者入口都在 /users 页的个人下拉里，见 UsersView 常驻条）。
+    // 本断言守的是不变式「红点由待处理数驱动、归零即隐藏」，
+    //   ⛔ 不是死绑某个变量名 —— 否则 218 合并计数会被误判成回归。
+    expect(
+      main,
+      '红点必须写 v-if="pendingDotCount > 0"（有待处理才显示，归零即隐藏）'
+    ).toMatch(/v-if="pendingDotCount > 0"/)
+    expect(
+      main,
+      '⛔ 红点不得退回只绑 vipPendingCount —— 会吞掉「配额采购申请」那一路（218 合并计数）'
+    ).not.toMatch(/v-if="vipPendingCount > 0"/)
+    // pendingDotCount 必须是 vip ＋ quota 两路之和；写死常量或漏一路即失效
+    expect(
+      main,
+      'pendingDotCount 必须是 vipPendingCount + quotaPendingCount 的 computed 求和'
+    ).toMatch(
+      /const\s+pendingDotCount\s*=\s*computed\(\s*\(\)\s*=>\s*vipPendingCount\.value\s*\+\s*quotaPendingCount\.value\s*\)/
+    )
   })
 })

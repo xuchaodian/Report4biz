@@ -86,12 +86,13 @@
               <!-- 管理员专属入口：置顶 + 蓝色底与下方常规项区分 -->
               <el-dropdown-item v-if="userStore.isAdmin" command="users" class="dd-admin-item">
                 <el-icon><User /></el-icon>{{ $t('nav.users') }}
-                <!-- v1.13.205：待处理 VIP 试用申请的红点计数（与 /users 页提示条同一接口） -->
+                <!-- v1.13.205：待处理 VIP 试用申请的红点计数（与 /users 页提示条同一接口）
+                     v1.13.218：与「配额采购申请」**合并计数**（两者入口都在 /users 页） -->
                 <span
-                  v-if="vipPendingCount > 0"
+                  v-if="pendingDotCount > 0"
                   class="dd-pending-dot"
-                  :title="`${vipPendingCount} 条 VIP 试用申请待处理`"
-                >{{ vipPendingCount > 99 ? '99+' : vipPendingCount }}</span>
+                  :title="pendingDotTitle"
+                >{{ pendingDotCount > 99 ? '99+' : pendingDotCount }}</span>
               </el-dropdown-item>
               <el-dropdown-item v-if="userStore.isAdmin" command="resale" class="dd-admin-item">
                 <el-icon><Key /></el-icon>{{ $t('nav.apiOpen') }}
@@ -371,6 +372,33 @@ const fetchVipPendingCount = async () => {
   }
 }
 
+// ★ v1.13.218：配额采购申请的同款计数（独立接口，独立数据源）。
+//   两者入口都在 /users 页，故红点**合并计数**，但 title 分开说清楚分别有几条。
+const quotaPendingCount = ref(0)
+
+const fetchQuotaPendingCount = async () => {
+  if (!userStore.isAdmin) return
+  try {
+    const { data } = await axios.get('/api/quota-requests/pending-count')
+    quotaPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    quotaPendingCount.value = 0
+  }
+}
+
+/** 红点总数 = VIP 试用申请 ＋ 配额采购申请 */
+const pendingDotCount = computed(() => vipPendingCount.value + quotaPendingCount.value)
+/** 分开描述（避免管理员以为全是同一件事），仅计数 > 0 的项才出现在提示里 */
+const pendingDotTitle = computed(() => {
+  const parts = []
+  if (vipPendingCount.value > 0) parts.push(`${vipPendingCount.value} 条 VIP 试用申请`)
+  if (quotaPendingCount.value > 0) parts.push(`${quotaPendingCount.value} 条配额采购申请`)
+  return parts.length ? `${parts.join(' + ')}待处理` : '暂无待处理'
+})
+
+/** 一次拉两路（onMounted / 轮询 / 可见性补拉 共用） */
+const fetchPendingCounts = () => Promise.all([fetchVipPendingCount(), fetchQuotaPendingCount()])
+
 // ★ v1.13.210：刷新时机修复。
 //   旧版只在 onMounted 拉一次 ⇒ 用户（别人）提交新申请后，管理员停在页面上**看不到红点**，
 //   必须手动刷新整个页面。补两路：
@@ -381,17 +409,17 @@ const VIP_PENDING_POLL_MS = 60000
 
 /** visibilitychange 处理器（命名以便卸载时精确移除） */
 const handleVisibilityForVip = () => {
-  if (!document.hidden) fetchVipPendingCount()
+  if (!document.hidden) fetchPendingCounts()
 }
 
 onMounted(() => {
-  userStore.fetchUser().then(fetchVipPendingCount)
+  userStore.fetchUser().then(fetchPendingCounts)
   // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
   userStore.fetchOrgRole()
 
   vipPendingTimer = setInterval(() => {
     if (document.hidden) return
-    fetchVipPendingCount()
+    fetchPendingCounts()
   }, VIP_PENDING_POLL_MS)
   document.addEventListener('visibilitychange', handleVisibilityForVip)
 })

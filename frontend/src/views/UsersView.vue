@@ -87,6 +87,20 @@
       <el-button size="small" plain @click="openVipReview">查看记录</el-button>
     </div>
 
+    <!-- v1.13.218：配额采购申请待处理提示条（管理端）—— 与 VIP 条**同样是两支常驻**。
+         🔴 210 教训：整条写 `v-if="quotaPendingCount > 0"` 会让「去受理」成为**全局唯一入口**
+           却在无待办时彻底消失 ⇒ 历史采购申请单在 UI 上永久不可达。 -->
+    <div v-if="quotaPendingCount > 0" class="vip-pending-bar quota-pending-bar" role="status">
+      <el-icon class="vip-pending-icon"><ShoppingCart /></el-icon>
+      <span>有 <b>{{ quotaPendingCount }}</b> 条配额采购申请待处理</span>
+      <el-button type="warning" size="small" @click="openQuotaReview">去受理</el-button>
+    </div>
+    <div v-else class="vip-pending-bar vip-pending-bar--quiet">
+      <el-icon class="vip-pending-icon"><Document /></el-icon>
+      <span>配额采购申请记录</span>
+      <el-button size="small" plain @click="openQuotaReview">查看记录</el-button>
+    </div>
+
     <!-- 用户表格 -->
     <div class="users-table">
       <div class="table-title">用户列表</div>
@@ -608,13 +622,97 @@
       </div>
       <div v-if="!vipReviewLoading && vipApplications.length === 0" class="vip-review-empty">暂无申请记录</div>
     </el-dialog>
+
+    <!-- v1.13.218：配额采购申请受理（管理员）—— 受理 ⇒ **仅标记已受理，不充值**（决策 3） -->
+    <el-dialog
+      v-model="quotaReviewVisible"
+      title="配额采购申请受理"
+      width="94%"
+      style="max-width:1360px"
+      top="5vh"
+      draggable
+      class="vip-review-dialog"
+    >
+      <div class="vip-review-toolbar">
+        <el-radio-group v-model="quotaReviewStatus" size="small" @change="fetchQuotaApplications">
+          <el-radio-button :value="'pending'">待处理</el-radio-button>
+          <el-radio-button :value="'accepted'">已受理</el-radio-button>
+          <el-radio-button :value="'rejected'">已驳回</el-radio-button>
+          <el-radio-button :value="'all'">全部</el-radio-button>
+        </el-radio-group>
+        <span class="vip-review-count">待处理 <b>{{ quotaPendingCount }}</b> 条</span>
+        <el-button size="small" :loading="quotaReviewLoading" @click="fetchQuotaApplications">
+          <el-icon><RefreshRight /></el-icon>刷新
+        </el-button>
+      </div>
+
+      <div class="vip-review-alert" role="note">
+        <el-icon><WarningFilled /></el-icon>
+        <span>受理<b>不等于</b>到账：签约/回款核对完成后，请在「用户列表」用「设置配额」为对方单独充值。</span>
+      </div>
+
+      <div class="vip-review-table" role="region" :aria-label="`配额采购申请列表，共 ${quotaRequests.length} 条`">
+        <el-table :data="quotaRequests" v-loading="quotaReviewLoading" border size="small" row-key="id">
+          <el-table-column prop="id" label="#" width="58" align="center" />
+          <el-table-column label="账号" min-width="110">
+            <template #default="{ row }">{{ row.current_username || row.username || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="company" label="公司名" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="department" label="所在部门" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="contact_name" label="联系人" width="90" />
+          <el-table-column prop="contact_phone" label="联系电话" width="130" />
+          <el-table-column prop="contact_email" label="电子邮箱" min-width="180" show-overflow-tooltip />
+          <el-table-column label="期望采购" width="96" align="center">
+            <template #default="{ row }"><b class="quota-want">{{ row.want_amount }}</b> 次</template>
+          </el-table-column>
+          <el-table-column prop="purpose" label="用途说明" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="expect_date" label="期望到货" width="110" align="center">
+            <template #default="{ row }">{{ row.expect_date || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="提交时间" width="140">
+            <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="当前剩余" width="96" align="center">
+            <template #default="{ row }">{{ row.current_quota ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="quotaStatusTag(row.status)">{{ quotaStatusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="受理" min-width="180">
+            <template #default="{ row }">
+              <span v-if="row.status === 'pending'" class="vip-review-none">—</span>
+              <template v-else>
+                <div>{{ row.reviewed_by_name || '—' }} · {{ formatDateTime(row.reviewed_at) }}</div>
+                <div v-if="row.review_note" class="vip-review-note">受理意见：{{ row.review_note }}</div>
+              </template>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="152" fixed="right" align="center">
+            <template #default="{ row }">
+              <template v-if="row.status === 'pending'">
+                <el-button type="success" size="small" :loading="quotaReviewingId === row.id" @click="acceptQuotaRequest(row)">
+                  <el-icon><Check /></el-icon>受理
+                </el-button>
+                <el-button type="danger" size="small" plain :disabled="quotaReviewingId === row.id" @click="rejectQuotaRequest(row)">
+                  <el-icon><CloseBold /></el-icon>驳回
+                </el-button>
+              </template>
+              <span v-else class="vip-review-none">已处理</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div v-if="!quotaReviewLoading && quotaRequests.length === 0" class="vip-review-empty">暂无采购申请记录</div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, CircleClose, RefreshLeft, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled, Document } from '@element-plus/icons-vue'
+import { Plus, Edit, CircleClose, RefreshLeft, RefreshRight, DataAnalysis, Odometer, Check, CloseBold, BellFilled, Document, ShoppingCart, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/utils/api'
@@ -974,6 +1072,115 @@ const rejectVipApplication = async (row) => {
   }
 }
 
+// ===== v1.13.218：配额采购申请受理（管理端）=====
+const quotaPendingCount = ref(0)
+const quotaReviewVisible = ref(false)
+const quotaReviewLoading = ref(false)
+const quotaReviewStatus = ref('pending')
+const quotaRequests = ref([])
+const quotaReviewingId = ref(null)
+
+const QUOTA_STATUS_LABEL = { pending: '待处理', accepted: '已受理', rejected: '已驳回' }
+const QUOTA_STATUS_TAG = { pending: 'warning', accepted: 'success', rejected: 'danger' }
+const quotaStatusLabel = (s) => QUOTA_STATUS_LABEL[s] || s || '—'
+const quotaStatusTag = (s) => QUOTA_STATUS_TAG[s] || 'info'
+
+/** 入口红点/提示条的数据源（轻量接口，只回一个数） */
+const fetchQuotaPendingCount = async () => {
+  try {
+    const data = await api.get('/quota-requests/pending-count')
+    quotaPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    // 红点与提示条是辅助信息，读不到就当作 0，绝不打扰管理员正常操作
+    quotaPendingCount.value = 0
+  }
+}
+
+const fetchQuotaApplications = async () => {
+  quotaReviewLoading.value = true
+  try {
+    const data = await api.get('/quota-requests', { params: { status: quotaReviewStatus.value } })
+    quotaRequests.value = data?.requests || []
+    quotaPendingCount.value = Number(data?.pendingCount) || 0
+  } catch (e) {
+    console.error('读取配额采购申请失败:', e)
+    ElMessage.error(e?.response?.data?.message || '读取配额采购申请失败')
+    quotaRequests.value = []
+  } finally {
+    quotaReviewLoading.value = false
+  }
+}
+
+/**
+ * 打开「配额采购申请受理」弹窗 —— 全站唯一入口（提示条 / 常驻记录入口共用）。
+ * ★ 同 v1.13.210 教训：默认页签＝「有 pending 就看 pending，没有就看全部」。
+ *   ⛔ 恒置 'pending' ⇒ 从常驻入口进来只会显示「暂无采购申请记录」，历史单依旧拿不到。
+ */
+const openQuotaReview = async () => {
+  quotaReviewStatus.value = quotaPendingCount.value > 0 ? 'pending' : 'all'
+  quotaReviewVisible.value = true
+  await fetchQuotaApplications()
+}
+
+// 🔴 写操作一律先二次确认；确认文案必须点明「受理 ≠ 到账」（决策 3）
+const acceptQuotaRequest = async (row) => {
+  const name = row.current_username || row.username || `#${row.user_id}`
+  try {
+    await ElMessageBox.confirm(
+      `确认受理「${name}」的配额采购申请（期望采购 ${row.want_amount} 次）？` +
+      '受理只表示我方已接下这一单，不会自动充值到账；请在签约/回款核对完成后，' +
+      '到「用户列表」用「设置配额」为其单独充值。',
+      '受理配额采购申请',
+      { confirmButtonText: '确认受理', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return // 取消 / 关闭
+  }
+  quotaReviewingId.value = row.id
+  try {
+    const data = await api.post(`/quota-requests/${row.id}/accept`)
+    ElMessage.success(data?.message || '已受理；充值请在用户管理页单独执行')
+    // 用户列表的「剩余次数」也要跟着变（若管理员随后充值）⇒ 一并刷新
+    await Promise.all([fetchQuotaApplications(), fetchUsers()])
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '受理失败')
+  } finally {
+    quotaReviewingId.value = null
+  }
+}
+
+const rejectQuotaRequest = async (row) => {
+  const name = row.current_username || row.username || `#${row.user_id}`
+  let note = ''
+  try {
+    const r = await ElMessageBox.prompt(
+      '驳回理由会展示给申请人，便于其修改后重新申请（可留空）',
+      `驳回「${name}」的配额采购申请`,
+      {
+        confirmButtonText: '确认驳回',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '驳回理由（可留空）',
+        inputValidator: () => true, // 允许留空
+        type: 'warning'
+      }
+    )
+    note = r?.value || ''
+  } catch (e) {
+    return // 取消 / 关闭
+  }
+  quotaReviewingId.value = row.id
+  try {
+    const data = await api.post(`/quota-requests/${row.id}/reject`, { review_note: note })
+    ElMessage.success(data?.message || '已驳回')
+    await fetchQuotaApplications()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '驳回失败')
+  } finally {
+    quotaReviewingId.value = null
+  }
+}
+
 const handleFilterChange = () => {
   fetchUsers()
 }
@@ -1255,6 +1462,8 @@ onMounted(() => {
   fetchUsers()
   // v1.13.205：待处理提示条 + 入口红点（管理员专属接口，非管理员会 403 并被静默吞掉）
   fetchVipPendingCount()
+  // v1.13.218：配额采购申请的待处理条（同构，独立数据源）
+  fetchQuotaPendingCount()
 })
 </script>
 
@@ -1649,4 +1858,27 @@ onMounted(() => {
 .vip-review-none { color: #c0c4cc; font-size: 12px; }
 .vip-review-note { margin-top: 2px; font-size: 12px; color: #f56c6c; line-height: 1.5; }
 .vip-review-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
+
+/* v1.13.218：配额采购申请条 —— 蓝色底与 VIP 橙色条区分（同一 .vip-pending-bar 骨架）。
+   ⚠️ 必须各写一条覆盖规则：骨架上的无条件规则会赢过「只继承」的期望（212 教训）。 */
+.quota-pending-bar { background: #ecf5ff; border-color: #b3d8ff; }
+.quota-pending-bar .vip-pending-icon { color: #0d579c; }
+.quota-pending-bar b { color: #0d579c; }
+/* 收款提示条（弹窗内，模板直写 ⇒ teleport 不影响 scopeId，单类选择器命中） */
+.vip-review-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  color: #b88230;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.vip-review-alert b { font-weight: 600; }
+/* 弹窗内「期望采购次数」加粗（表格里唯一需要抢眼的数字） */
+.quota-want { color: #0d579c; font-size: 14px; }
 </style>

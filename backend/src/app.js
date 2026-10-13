@@ -12,6 +12,8 @@ import competitorSnapshotRoutes from './routes/competitorSnapshots.js'
 import userRoutes from './routes/users.js'
 // VIP 试用申请与审批（v1.13.205）：/account「体验 VIP 用户」→ 管理员审核 → 30 天 trial
 import vipApplicationRoutes from './routes/vipApplications.js'
+// 配额采购申请单（v1.13.218）：配额不足 → 提交采购意向 → 内部邮件通知 ＋ 管理员受理
+import quotaRequestRoutes from './routes/quotaRequests.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
@@ -107,6 +109,8 @@ async function start() {
     app.use('/api/users', userRoutes)
     // VIP 试用申请（普通用户提交 / 管理员审核）。⚠️ 独立前缀，避免与 /api/users/:id 的动态段相互吞并
     app.use('/api/vip-applications', vipApplicationRoutes)
+    // 配额采购申请（用户提交 / 管理员受理）。⚠️ 同样独立前缀，避免与 /api/users/:id 动态段互吞
+    app.use('/api/quota-requests', quotaRequestRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)

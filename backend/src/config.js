@@ -92,6 +92,11 @@ const SMTP_USER = process.env.SMTP_USER || ''
 const SMTP_PASS = process.env.SMTP_PASS || ''
 const MAIL_FROM_NAME = process.env.MAIL_FROM_NAME || '选址赢家Online'
 const MAIL_ENABLED = !!(SMTP_USER && SMTP_PASS)
+// ---- 配额采购申请的内部通知收件人（v1.13.218）----
+// 有人提交「联通人口数据配额」采购申请时，通知邮件发到此地址（我方商务/管理员，**不是**申请人）。
+// 未设置时回退到对外商务邮箱；如需换人，改 env 即可，不必动源码。
+// ⚠️ 注意：这是**内部**收件人；前端对外展示的联系方式见 frontend/src/utils/quotaContact.js。
+const QUOTA_NOTIFY_EMAIL = process.env.QUOTA_NOTIFY_EMAIL || 'jyo@youshi-tech.com'
 // 邮件里重置链接的前缀（后端拼 href 用）。生产为 https://mka-online.cn，
 // 本地验证时可指向本地静态服务，例如 http://127.0.0.1:4173
 const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://mka-online.cn').replace(/\/+$/, '')
@@ -112,6 +117,7 @@ if (!MAIL_ENABLED) {
 
 export {
   JWT_SECRET, AMAP_KEY, TENCENT_LBS_KEY, ARK_API_KEY, SMARTSTEPS_API_KEY, PURCHASE_SHARE_SECRET,
-  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM_NAME, MAIL_ENABLED, APP_BASE_URL
+  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM_NAME, MAIL_ENABLED, APP_BASE_URL,
+  QUOTA_NOTIFY_EMAIL
 }
 
