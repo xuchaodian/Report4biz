@@ -131,6 +131,21 @@ const routes = [
         component: () => import('@/views/DataSyncView.vue')
       }
     ]
+  },
+  {
+    // ===== 404 catch-all（v1.13.221）=====
+    // 背景：nginx 的 `location /` 对未命中的路径一律 try_files 回落 index.html，
+    //   而此前路由表**没有** catch-all ⇒ 访问 /abcxyz 时 Vue 找不到匹配路由，
+    //   渲染出一片空白、且 HTTP 仍是 200（软 404）。
+    // ⚠️ 必须放在路由表**最后**：vue-router 4 在具体度评分相同时按定义顺序匹配，
+    //   catch-all 的具体度最低，放末尾可确保上面所有精确路由优先命中。
+    // ⚠️ requiresAuth 刻意设 false —— 未知路径不该把访客弹去登录页，否则输错 URL
+    //   只会看到一个登录框、永远不知道「404」的存在（这正是本页要修的体验问题）。
+    // ⚠️ noindex：由下方 afterEach 负责注入 <meta name="robots">，见 applyRobotsMeta。
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFoundView.vue'),
+    meta: { requiresAuth: false, noindex: true }
   }
 ]
 
@@ -161,6 +176,29 @@ router.beforeEach(async (to, from, next) => {
   }
 })
 
+// ===== SEO：按路由 meta 切换 <meta name="robots">（v1.13.221）=====
+// 用途：catch-all 404 视图必须向爬虫声明 noindex，否则「未知路径 → HTTP 200 + 通用 SPA 壳」
+//       会被搜索引擎当成 soft 404 / 重复内容收进索引（这正是本批要修的问题）。
+// ⚠️ 只操作「由本函数注入的那个」标签（用 data-r4b-noindex 自我标记）：
+//   ⛔ 不去删/改 index.html 或将来可能出现的其它 robots 标签 —— 那属于站点级策略，
+//   误删会静默改变全站收录行为（例如把整站 noindex 抹掉）。
+function applyRobotsMeta(noindex) {
+  const SELECTOR = 'meta[name="robots"][data-r4b-noindex]'
+  const existing = document.head.querySelector(SELECTOR)
+
+  if (noindex) {
+    if (existing) return // 已在位 ⇒ 幂等，避免重复插入
+    const el = document.createElement('meta')
+    el.setAttribute('name', 'robots')
+    el.setAttribute('content', 'noindex, follow')
+    el.setAttribute('data-r4b-noindex', '1')
+    document.head.appendChild(el)
+  } else if (existing) {
+    // 离开 noindex 路由 ⇒ 摘掉，恢复站点默认（可索引）
+    document.head.removeChild(existing)
+  }
+}
+
 // ===== L13（v1.13.176 B 档）：路由切换后的焦点管理 =====
 // 问题：SPA 里点导航切页时，被点的那个 <a> 随旧页面一起卸载 ⇒ document.activeElement
 //       掉回 <body>。实测（点顶栏「我的门店」→ /data）确实如此。后果：
@@ -170,6 +208,11 @@ router.beforeEach(async (to, from, next) => {
 // 做法：导航落定后把焦点送到主内容地标 `<main id="main-content" tabindex="-1">`——
 //       读屏会播报该地标的 role + 可访问名，等价于宣告「新页面内容在此」。
 router.afterEach((to, from) => {
+  // ===== SEO：路由落定后同步 robots 元信息（v1.13.221）=====
+  // ⚠️ 必须排在下文「`!from.name` 提前 return」**之前**：首屏直接输入未知 URL 时
+  //   from 即 START_LOCATION（name 为空），若排在其后就永远不会注入 404 的 noindex。
+  applyRobotsMeta(to.meta.noindex === true)
+
   // ① 首次进入（刷新页面 / 直接输 URL / 从站外跳回）：`from` 是 START_LOCATION，
   //    name 为空。此时浏览器给 <body> 焦点是正常的，抢焦点反而会打断
   //    读屏对整页的首次朗读 ⇒ 直接跳过。

@@ -142,6 +142,16 @@ export default {
     other: 'その他',
     marquee: '全国合計 {markers} 店舗・{competitors} 競合 · 対象 {cities} 都市 · 累計購入 {purchases} 回 · データは毎時自動更新'
   },
+  // ===== 404 ページ（v1.13.221）=====
+  notFound: {
+    code: '404',
+    subtitle: 'ページが見つかりません',
+    desc: 'ご指定のアドレスは存在しないか、移動・削除された可能性があります。URL をご確認ください。',
+    attempted: 'アクセスした URL：',
+    backHome: 'ワークベンチへ戻る',
+    toLogin: 'ログイン画面へ戻る',
+    toHomepage: '製品サイトへ'
+  },
   // ===== 共通 =====
   common: {
     loading: '読み込み中...',

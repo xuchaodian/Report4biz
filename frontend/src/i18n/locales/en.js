@@ -142,6 +142,16 @@ export default {
     other: 'Other',
     marquee: '{markers} stores, {competitors} competitors across {cities} cities \u00b7 {purchases} purchases \u00b7 auto-refresh hourly'
   },
+  // ===== 404 page (v1.13.221) =====
+  notFound: {
+    code: '404',
+    subtitle: 'Page not found',
+    desc: 'The address you requested does not exist, or has been moved or removed. Please check the URL.',
+    attempted: 'Requested:',
+    backHome: 'Back to workbench',
+    toLogin: 'Back to sign in',
+    toHomepage: 'Visit product homepage'
+  },
   // ===== Common =====
   common: {
     loading: 'Loading...',

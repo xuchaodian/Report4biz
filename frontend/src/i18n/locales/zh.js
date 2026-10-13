@@ -142,6 +142,16 @@ export default {
     other: '其他',
     marquee: '全国共 {markers} 家门店、{competitors} 家竞品 · 覆盖 {cities} 个城市 · 累计购买 {purchases} 次 · 系统数据每小时自动刷新'
   },
+  // ===== 404 页（v1.13.221）=====
+  notFound: {
+    code: '404',
+    subtitle: '页面不存在',
+    desc: '您访问的地址不存在，或已被移动、删除。请检查链接是否输入正确。',
+    attempted: '尝试访问：',
+    backHome: '返回工作台',
+    toLogin: '返回登录页',
+    toHomepage: '前往产品主页'
+  },
   // ===== 通用 =====
   common: {
     loading: '加载中...',
