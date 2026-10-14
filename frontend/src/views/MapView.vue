@@ -1657,6 +1657,8 @@ import turfPointInPoly from '@turf/boolean-point-in-polygon'
 import { formatNumber } from '@/utils/populationStats'
 // v1.13.228：分年龄字段判定抽到单一入口（面板过滤 + 未来对比面板复用）
 import { isAgeGroupField } from '@/utils/ageField'
+// v1.13.229：字段展示顺序抽到单一入口（业主指定序）
+import { sortByPopulationPriority } from '@/utils/populationFieldOrder'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { handleApiError } from '@/utils/errorHandler'
 import { exportChartImage } from '@/utils/chartExport'
@@ -4010,7 +4012,10 @@ const analyzePopulationDistribution = async () => {
       }
     })
     // v1.13.228：过滤「分年龄人口」字段（判据见 utils/ageField.js）—— hd 带 24 个，面板纵向过长显示不全
-    const fieldList = Array.from(allFieldNames).filter(f => !isAgeGroupField(f)).sort()
+    // v1.13.229：排序改为**业务优先级序**（顺序表见 utils/populationFieldOrder.js），⛔ 不再是字母序
+    const fieldList = sortByPopulationPriority(
+      Array.from(allFieldNames).filter(f => !isAgeGroupField(f))
+    )
 
     // 构建统计面板HTML
     let statsHtml = `<div style="background:rgba(255,255,255,0.95);border:2px solid #333;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:grab;user-select:none;position:relative;">`

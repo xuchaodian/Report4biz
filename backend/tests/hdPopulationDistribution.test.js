@@ -200,6 +200,58 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
     expect(
       mapSrc,
       '统计面板未对字段列表做分年龄过滤（hd 会渲染 35 行 ⇒ 弹窗显示不全）'
-    ).toMatch(/fieldList = Array\.from\(allFieldNames\)\.filter\(f => !isAgeGroupField\(f\)\)/)
+    ).toMatch(/Array\.from\(allFieldNames\)\.filter\(f => !isAgeGroupField\(f\)\)/)
+  })
+
+  it('⑨ 面板字段按业务优先级排序（顺序表 utils/populationFieldOrder.js，行为断言）', async () => {
+    const { sortByPopulationPriority, POPULATION_FIELD_ORDER } = await import(
+      '../../frontend/src/utils/populationFieldOrder.js'
+    )
+    const { isAgeGroupField } = await import('../../frontend/src/utils/ageField.js')
+
+    // 业主 2026-10-14 指定的顺序
+    expect(POPULATION_FIELD_ORDER).toEqual([
+      '居住人数', '工作人数', '到访人次', '男性人数', '女性人数',
+      '低收入', '中等收入', '中产', '小康', '富裕', '富人'
+    ])
+
+    // 真实链路复现：hd 的 35 字段 → 过滤分年龄 → 排序
+    const HD_FIELDS = [
+      '到访人次', '居住人数', '工作人数', '低收入', '中等收入', '小康', '中产', '富裕', '富人',
+      '男性人数', '女性人数',
+      '男0_18', '男19_24', '男25_29', '男30_34', '男35_39', '男40_44', '男45_49', '男50_54',
+      '男55_59', '男60_64', '男65_69', '男70以上',
+      '女0_18', '女19_24', '女25_29', '女30_34', '女35_39', '女40_44', '女45_49', '女50_54',
+      '女55_59', '女60_64', '女65_69', '女70以上'
+    ]
+    const got = sortByPopulationPriority(HD_FIELDS.filter((f) => !isAgeGroupField(f)))
+
+    expect(
+      got,
+      '面板字段顺序与业主指定不符（顺序表被改动或排序逻辑退化）'
+    ).toEqual([
+      '居住人数', '工作人数', '到访人次', '男性人数', '女性人数',
+      '低收入', '中等收入', '中产', '小康', '富裕', '富人'
+    ])
+
+    // 不修改入参（避免调用方拿到被排序过的原数组）
+    const src = ['富人', '居住人数']
+    const copy = src.slice()
+    sortByPopulationPriority(src)
+    expect(src, 'sortByPopulationPriority 不应修改入参').toEqual(copy)
+
+    // 未列出的字段：排在最后，且不打乱已确认顺序
+    const withExtra = sortByPopulationPriority(['新增字段B', '居住人数', '新增字段A'])
+    expect(withExtra[0], '未列出的字段应排在最后').toBe('居住人数')
+    expect(withExtra.slice(1).sort(), '未列出的字段之间按中文拼音序兜底').toEqual(['新增字段A', '新增字段B'])
+
+    // 接线断言：MapView 必须真的用了它（否则 util 写了也没人调）
+    expect(mapSrc, 'MapView 未从 utils/populationFieldOrder 引入排序').toContain(
+      "import { sortByPopulationPriority } from '@/utils/populationFieldOrder'"
+    )
+    expect(
+      mapSrc,
+      '统计面板未用业务顺序排序（仍是字母序）'
+    ).toContain('sortByPopulationPriority(')
   })
 })
