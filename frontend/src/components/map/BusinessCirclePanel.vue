@@ -17,6 +17,11 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>常住人口分布</span>
       </div>
+      <!-- v1.13.227：高精人口分布（250m 网格，单城 95MB）—— 仅管理员可见，普通/VIP 账户暂不展示 -->
+      <div v-if="userStore.isAdmin" class="business-circle-btn" @click="$emit('population-hd-dist')">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>高精人口分布</span>
+      </div>
       <div class="business-circle-btn" @click="$emit('population-compare')">
         <el-icon><DataAnalysis /></el-icon>
         <span>常住人口对比</span>
@@ -45,6 +50,7 @@ const emit = defineEmits([
   'set-tool',
   'env-score',
   'population-dist',
+  'population-hd-dist',
   'population-compare',
   'toggle-smartsteps',
   'toggle-potential'

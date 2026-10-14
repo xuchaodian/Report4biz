@@ -71,6 +71,20 @@ const upload = multer({
 // · population_hd  —— 高精度人口 250m 网格（v1.13.194 新增；WGS84→GCJ-02）
 const ALLOWED_CATEGORIES = new Set(['population', 'other', 'population_hd'])
 
+// 🔴🔴 v1.13.227：`calculate-population` 的**内存 + 并发护栏**（改本路由前必读）
+// 背景：「高精度人口」（category='population_hd'，250m 网格）实测单文件 **95MB / 107,960 要素 / 35 字段**，
+//   而 geoStore 对 >4MB 不做对象缓存、>64MB 不做文本缓存 ⇒ **每次请求都要重新 JSON.parse 整个文件**。
+//   本地实测该文件：JSON.parse 增量 rss ≈ **372MB**（3.6×）、heap ≈ 345MB，parse 本身仅 1.3s。
+//   生产机 available 仅 ~518MB（常驻 webgis-backend 已占 ~422MB，used 681MB）
+//   ⇒ 单次串行后总占用 ≈ 1053MB（< 1608MB 上限，可行）；
+//     但**两个并发请求就会到 ~1425MB ⇒ OOM，而 OOM 波及的是整个后端、所有用户**。
+// ⇒ 因此本路由强制三点（详见路由内的护栏①②③）：
+//   ① hd 类数据**必须传 shapefileId**（单文件），⛔ 不允许走「全 category 兜底」；
+//   ② **同一文件同时只允许 1 个计算在飞**（这是硬要求，不是优化项）；
+//   ③ 解析前 RSS 自检，超阈值直接拒绝 —— 宁可返回错误，也不触发 OOM。
+const POP_CALC_RSS_LIMIT_MB = 1000      // 解析前 RSS 上限：留 ~600MB 给单次解析峰值
+const popCalcInFlight = new Set()        // key: 'id:<shapefileId>' | 'cat:<category>'
+
 // 上传并解析 Shapefile (ZIP格式，仅管理员可上传)
 router.post('/upload', authenticate, upload.single('file'), async (req, res) => {
   try {
@@ -515,27 +529,75 @@ router.post('/calculate-population', authenticate, (req, res) => {
   try {
     const vis = visibilityClause(req.user)
     const { lat, lng, radius, fieldName, shapefileId } = req.body
+    // v1.13.227：category 参数化（白名单，默认 'population' ⇒ 对「常住人口分布」逐字兼容）
+    const category = ALLOWED_CATEGORIES.has(req.body.category) ? req.body.category : 'population'
 
     if (!lat || !lng || !radius) {
       return res.status(400).json({ success: false, error: '缺少必要参数' })
     }
 
+    // 🔴 护栏⓪：hd 仅管理员可用（v1.13.227）—— 与 223 对两族「隐藏功能」的收紧同构。
+    //   前端入口虽已 admin-only，但若 API 不拦，普通用户**仍可直接调用**（visibilityClause 让他们
+    //   能看到 admin 上传的 hd 文件）⇒「其他用户暂不实施」就成了假的。故此处兜底拒绝。
+    if (category === 'population_hd' && req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        code: 'admin_only',
+        error: '高精度人口数据仅管理员可用'
+      })
+    }
+
+    // 🔴 护栏①：hd 必须指定单文件 —— ⛔ 绝不允许走「全 category 兜底」（否则 95MB 级文件被批量遍历）
+    if (!shapefileId && category === 'population_hd') {
+      return res.status(400).json({
+        success: false,
+        code: 'shapefile_required',
+        error: '高精度人口数据量极大，必须指定单个数据文件'
+      })
+    }
+
+    // 🔴 护栏②：同一文件串行 —— 并发会让 95MB 解析内存叠加（实测 372MB/次）
+    const lockKey = shapefileId ? 'id:' + shapefileId : 'cat:' + category
+    if (popCalcInFlight.has(lockKey)) {
+      return res.status(429).json({
+        success: false,
+        code: 'calc_busy',
+        error: '该数据文件正在计算中，请稍候再试'
+      })
+    }
+
+    // 🔴 护栏③：解析前 RSS 自检 —— 宁可拒绝，也不触发 OOM 拖垮整机
+    const rssMb = Math.round(process.memoryUsage().rss / 1048576)
+    if (rssMb > POP_CALC_RSS_LIMIT_MB) {
+      return res.status(503).json({
+        success: false,
+        code: 'server_memory_pressure',
+        error: `服务器内存紧张（当前 ${rssMb}MB），请稍后再试`
+      })
+    }
+
+    popCalcInFlight.add(lockKey)
+    // 正常结束与客户端中断统一释放（close 覆盖两种情况）
+    res.on('close', () => popCalcInFlight.delete(lockKey))
+
     const db = getDb()
     // 获取shapefile（如果前端传了shapefileId则只处理该文件，否则全部可加载的）
     let rows
     if (shapefileId) {
+      // ⚠️ 该分支历史上不校验 category；v1.13.227 起一并校验，防止拿 population 的 id 去按 hd 语义算
       rows = db.prepare(
-        `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND ${vis.clause}`
-      ).all(shapefileId, ...vis.params)
+        `SELECT id, name, field_names FROM shapefiles WHERE id = ? AND category = ? AND ${vis.clause}`
+      ).all(shapefileId, category, ...vis.params)
     } else {
-      // 🔴🔴 兜底分支必须锁定 category！
+      // 🔴🔴 兜底分支必须锁定 category（v1.13.227 起为参数，默认 'population'）！
       // 该分支是「不指定文件 ⇒ 用全部人口网格」的语义，MapView 商圈人口分布
       // （MapView.vue 里 radius 批量调用那次）走的正是这条、不传 shapefileId。
       // 若不限制，v1.13.194 新增的 population_hd（单城 95MB / 10.8 万格 / 35 字段）
       // 会被全量 getGeoObject + 逐要素 turf.intersect ⇒ 单次请求数百 MB 内存，服务器必 OOM。
+      // （hd 走这条已被上方护栏① 拦下。）
       rows = db.prepare(
-        `SELECT id, name, field_names FROM shapefiles WHERE category = 'population' AND ${vis.clause}`
-      ).all(...vis.params)
+        `SELECT id, name, field_names FROM shapefiles WHERE category = ? AND ${vis.clause}`
+      ).all(category, ...vis.params)
     }
 
     if (!rows || rows.length === 0) {

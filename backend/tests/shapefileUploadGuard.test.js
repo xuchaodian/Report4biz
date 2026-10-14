@@ -152,11 +152,20 @@ describe('calculate-population：兜底分支必须锁定 category', () => {
     ).toBe(false)
   })
 
-  it("兜底分支显式限定 category = 'population'", () => {
+  it('兜底分支必须锁定 category（v1.13.227 起改为参数化，语义不变且更严）', () => {
     const body = extractFnBody(src, "router.post('/calculate-population'")
+    // v1.13.227：category 由写死的 'population' 改为**白名单参数**（默认 'population'），
+    //   语义等价（「不指定文件 ⇒ 只查该类网格」），故此处放宽匹配，但**要求仍在锁 category**；
+    //   同时补一条更强的：hd 必须被显式拦截，不得走兜底（否则 95MB × 全量遍历 ⇒ OOM）。
     expect(
-      body.includes("category = 'population' AND ${vis.clause}"),
-      "calculate-population 兜底分支缺少 category='population' 限定（新数据会被误加载）"
+      body.includes("category = ? AND ${vis.clause}") ||
+        body.includes("category = 'population' AND ${vis.clause}"),
+      "calculate-population 兜底分支缺少 category 限定（新数据会被误加载）"
+    ).toBe(true)
+
+    expect(
+      body.includes('shapefile_required'),
+      "缺少「population_hd 必须指定单个 shapefileId」的护栏 —— 否则 hd 会走兜底分支"
     ).toBe(true)
   })
 })

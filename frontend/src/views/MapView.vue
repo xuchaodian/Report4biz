@@ -27,6 +27,7 @@
       @set-tool="setTool"
       @env-score="startEnvScore"
       @population-dist="openPopulationDistribution"
+      @population-hd-dist="openHdPopulationDistribution"
       @population-compare="openPopulationCompare"
       @toggle-smartsteps="smartstepsVisible = !smartstepsVisible"
       @toggle-potential="potentialVisible = !potentialVisible"
@@ -1011,6 +1012,11 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>常住人口分布</span>
       </div>
+      <!-- v1.13.227：高精人口分布（250m 网格）—— 仅管理员可见 -->
+      <div v-if="userStore.isAdmin" class="map-context-menu-item" @click="contextMenuAction('populationHd')">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>高精人口分布</span>
+      </div>
       <div class="map-context-menu-item" @click="contextMenuAction('smartsteps')">
         <el-icon><DataAnalysis /></el-icon>
         <span>联通人口</span>
@@ -1214,7 +1220,7 @@
     <!-- 绘制圆形对话框 -->
     <el-dialog
       v-model="circleDialogVisible"
-      :title="circleDialogMode === 'population' ? '商圈人口分布' : '设置圆形半径'"
+      :title="isPopulationMode ? (circleDialogMode === 'population_hd' ? '高精人口分布' : '商圈人口分布') : '设置圆形半径'"
       :width="circleDialogWidth"
       :show-close="true"
       draggable
@@ -1259,8 +1265,30 @@
             <el-radio value="m">米</el-radio>
           </el-radio-group>
         </el-form-item>
-        <!-- 统计字段选择（仅商圈人口分布模式显示） -->
-        <el-form-item v-if="circleDialogMode === 'population'" label="统计字段">
+        <!-- 数据文件选择（仅高精人口分布）—— hd 文件的 city 为 NULL，无法按城市自动匹配 -->
+        <el-form-item v-if="circleDialogMode === 'population_hd'" label="数据文件">
+          <el-select
+            v-model="selectedHdShapefileId"
+            placeholder="选择高精度人口数据文件"
+            style="width: 100%;"
+            :disabled="hdShapefileOptions.length === 0"
+          >
+            <el-option
+              v-for="f in hdShapefileOptions"
+              :key="f.id"
+              :label="f.name + '（' + (f.featureCount || 0).toLocaleString() + ' 格）'"
+              :value="f.id"
+            />
+          </el-select>
+          <div v-if="hdShapefileOptions.length === 0" style="font-size: 12px; color: #999; margin-top: 4px;">
+            {{ populationFieldLoading ? `正在扫描数据文件... (已用 ${loadingElapsedSeconds} 秒)` : '暂无高精度人口数据' }}
+          </div>
+          <div style="font-size: 12px; color: #e6a23c; margin-top: 4px;">
+            250m 网格数据量大（单城约 10 万格），建议半径 ≤ 5km，且每次仅算一个文件
+          </div>
+        </el-form-item>
+        <!-- 统计字段选择（人口类模式共用） -->
+        <el-form-item v-if="isPopulationMode" label="统计字段">
           <el-select
             v-model="selectedPopulationField"
             placeholder="选择统计字段"
@@ -1278,8 +1306,8 @@
             {{ populationFieldLoading ? `正在扫描数据文件... (已用 ${loadingElapsedSeconds} 秒)` : '正在扫描数据文件...' }}
           </div>
         </el-form-item>
-        <!-- 色块方案选择（仅商圈人口分布模式显示） -->
-        <el-form-item v-if="circleDialogMode === 'population'" label="设置色块">
+        <!-- 色块方案选择（人口类模式共用） -->
+        <el-form-item v-if="isPopulationMode" label="设置色块">
           <el-select v-model="populationColorScheme" placeholder="选择色块方案" style="width: 100%;">
             <el-option
               v-for="(scheme, key) in POPULATION_COLOR_SCHEMES"
@@ -1301,8 +1329,8 @@
       </el-form>
       <template #footer>
         <el-button @click="closeCircleDialog">取消</el-button>
-        <el-button type="primary" @click="circleDialogMode === 'population' ? analyzePopulationDistribution() : analyzeCircleStores()">
-          {{ circleDialogMode === 'population' ? '分析' : '确定' }}
+        <el-button type="primary" @click="isPopulationMode ? analyzePopulationDistribution() : analyzeCircleStores()">
+          {{ isPopulationMode ? '分析' : '确定' }}
         </el-button>
       </template>
     </el-dialog>
@@ -2156,7 +2184,15 @@ const currentMarkerStyle = ref('store') // 当前图标样式
 
 // 绘制圆形相关
 const circleDialogVisible = ref(false)
-const circleDialogMode = ref('stores') // 'stores'=商圈内点位, 'population'=商圈人口分布
+// 'stores'=商圈内点位, 'population'=常住人口分布, 'population_hd'=高精人口分布（250m 网格，仅管理员）
+const circleDialogMode = ref('stores')
+// v1.13.227：人口类模式的**统一判据** —— 模板与逻辑一律用它，⛔ 别再散写 `=== 'population'`。
+//   （漏一处就会出现「hd 模式下少个表单项」这类静默缺陷，与 214 门禁分叉同构）
+const isPopulationMode = computed(() => circleDialogMode.value === 'population' || circleDialogMode.value === 'population_hd')
+// v1.13.227：高精人口数据文件列表 —— hd 文件的 city 为 NULL（生产实测 id=65 上海），
+//   无法沿用「按城市自动匹配」，故改为下拉选文件（当前仅 1 个，自动选中）。
+const hdShapefileOptions = ref([])      // [{ id, name, featureCount }]
+const selectedHdShapefileId = ref(null)
 const circleForm = reactive({
   center: null,
   centerText: '',
@@ -2198,7 +2234,7 @@ const populationColorScheme = ref('blue-green-yellow-orange-red')
 
 // 多半径时自动加宽对话框
 const circleDialogWidth = computed(() => {
-  if (circleDialogMode.value !== 'population') return '420px'
+  if (!isPopulationMode.value) return '420px'
   const count = [circleForm.radius, circleForm.radius2, circleForm.radius3].filter(r => r != null).length
   return count >= 2 ? '580px' : '420px'
 })
@@ -2373,6 +2409,7 @@ const contextMenuAction = (action) => {
     case 'circle': setTool('circle'); break
     case 'envscore': startEnvScore(); break
     case 'population': openPopulationDistribution(); break
+    case 'populationHd': openHdPopulationDistribution(); break
     case 'smartsteps': smartstepsVisible.value = !smartstepsVisible.value; break
     case 'lockmap': toggleMapLock(); break
   }
@@ -2509,6 +2546,34 @@ const closeCircleDialog = () => {
     map.removeLayer(populationLayerGroup)
     populationLayerGroup = null
   }
+}
+
+// v1.13.227：临时圆心图钉（常住人口分布 / 高精人口分布 共用）
+//   —— 抽成单一函数，避免两处拷贝各自漂移（项目铁律：共用片段必抽单一实现）
+function showTempCenterMarker(latlng) {
+  if (!map) return null
+  const pinIcon = L.divIcon({
+    html: `<div style="
+      width: 16px;
+      height: 22px;
+      position: relative;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+    ">
+      <svg viewBox="0 0 24 40" width="16" height="22" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 28 12 28s12-19 12-28c0-6.6-5.4-12-12-12z" fill="#ef4444"/>
+        <circle cx="12" cy="12" r="4" fill="white"/>
+      </svg>
+    </div>`,
+    className: '',
+    iconSize: [16, 22],
+    iconAnchor: [8, 22],
+    popupAnchor: [0, -22]
+  })
+  return L.marker([latlng.lat, latlng.lng], {
+    icon: pinIcon,
+    zIndexOffset: 1000,
+    isCenterMarker: true  // 自定义属性，用于识别圆心标记
+  }).addTo(map)
 }
 
 // 商圈人口分布 - 打开对话框
@@ -2662,32 +2727,123 @@ const openPopulationDistribution = async () => {
     circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
     ElMessage.success(`已选择位置：${circleForm.centerText}`)
     
-    // 在点击位置显示小图钉标记
-    const pinIcon = L.divIcon({
-      html: `<div style="
-        width: 16px;
-        height: 22px;
-        position: relative;
-        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
-      ">
-        <svg viewBox="0 0 24 40" width="16" height="22" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 28 12 28s12-19 12-28c0-6.6-5.4-12-12-12z" fill="#ef4444"/>
-          <circle cx="12" cy="12" r="4" fill="white"/>
-        </svg>
-      </div>`,
-      className: '',
-      iconSize: [16, 22],
-      iconAnchor: [8, 22],
-      popupAnchor: [0, -22]
-    })
-    
-    tempPopulationMarker = L.marker([e.latlng.lat, e.latlng.lng], {
-      icon: pinIcon,
-      zIndexOffset: 1000,
-      isCenterMarker: true  // 自定义属性，用于识别圆心标记
-    }).addTo(map)
+    // 在点击位置显示小图钉标记（v1.13.227 抽为共用函数 showTempCenterMarker）
+    tempPopulationMarker = showTempCenterMarker(e.latlng)
     
     // 用户点击地图后，才打开对话框
+    circleDialogVisible.value = true
+  })
+}
+
+// v1.13.227：高精人口分布（250m 网格）—— 仅管理员。
+// 与 openPopulationDistribution 同构，差异三点：① category='population_hd'；
+// ② 必须选单个数据文件（hd 文件 city 为 NULL，无法自动匹配）；③ 计算串行（见 analyzePopulationDistribution）。
+const openHdPopulationDistribution = async () => {
+  if (!map) return
+
+  // 关闭商圈工具面板
+  businessCircleExpanded.value = false
+
+  circleDialogMode.value = 'population_hd'
+
+  // 重置表单
+  circleForm.center = null
+  circleForm.centerText = ''
+  circleForm.radius = 2
+  circleForm.radius2 = null
+  circleForm.radius3 = null
+  circleForm.unit = 'km'
+
+  // 重置字段与文件选项
+  populationFieldOptions.value = []
+  selectedPopulationField.value = ''
+  hdShapefileOptions.value = []
+  selectedHdShapefileId.value = null
+
+  // 清除之前的人口分布图层与临时标记
+  if (populationLayerGroup) {
+    map.removeLayer(populationLayerGroup)
+    populationLayerGroup = null
+  }
+  if (tempPopulationMarker) {
+    map.removeLayer(tempPopulationMarker)
+    tempPopulationMarker = null
+  }
+
+  ElMessage.info('请在地图上点击选择圆心位置')
+
+  const originalCursor = map.getContainer().style.cursor
+  map.getContainer().style.cursor = 'crosshair'
+
+  if (loadingTimer) {
+    clearInterval(loadingTimer)
+    loadingTimer = null
+  }
+  populationFieldLoading.value = true
+  loadingElapsedSeconds.value = 0
+  loadingTimer = setInterval(() => {
+    loadingElapsedSeconds.value++
+  }, 1000)
+
+  // 异步加载 hd 文件列表 + 字段（不阻塞用户点地图）
+  setTimeout(async () => {
+    try {
+      const listRes = await fetch(`/api/shapefiles?category=population_hd`, {
+        headers: { Authorization: `Bearer ${userStore.token}` }
+      })
+      const listData = await listRes.json()
+      const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+      hdShapefileOptions.value = shapefiles.map(sf => ({
+        id: sf.id,
+        name: sf.name,
+        featureCount: sf.feature_count,
+        fieldNames: Array.isArray(sf.field_names) ? sf.field_names : []
+      }))
+      if (hdShapefileOptions.value.length > 0) {
+        selectedHdShapefileId.value = hdShapefileOptions.value[0].id
+      }
+
+      // 🔴🔴 v1.13.227：**不得**调 `/:id/fields` —— 该接口内部会 `JSON.parse(row.geojson)`，
+      //   对 95MB 的 hd 文件意味着在「扫描字段」阶段就再吃一次 ~372MB 内存（实测）。
+      //   列表接口已返回解析好的 field_names，直接用即可（hd 各字段本身都是数值）。
+      const allFields = new Set()
+      hdShapefileOptions.value.forEach(sf => {
+        (sf.fieldNames || []).forEach(f => allFields.add(f))
+      })
+
+      // 过滤 RecID；hd 数据无「常住人口」字段，等价语义是「居住人数」⇒ 两者都优先
+      const PRIORITY = ['居住人数', '常住人口']
+      const filteredFields = Array.from(allFields)
+        .filter(f => f !== 'RecID')
+        .sort((a, b) => {
+          const ia = PRIORITY.indexOf(a), ib = PRIORITY.indexOf(b)
+          if (ia === -1 && ib === -1) return 0
+          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+        })
+
+      populationFieldOptions.value = filteredFields
+      if (filteredFields.length > 0) {
+        selectedPopulationField.value = filteredFields.find(f => PRIORITY.includes(f)) || filteredFields[0]
+      }
+      console.log('高精人口字段加载完成，共', filteredFields.length, '个，默认选择:', selectedPopulationField.value)
+    } catch (e) {
+      console.error('加载高精度人口字段失败:', e)
+    } finally {
+      populationFieldLoading.value = false
+      if (loadingTimer) {
+        clearInterval(loadingTimer)
+        loadingTimer = null
+      }
+    }
+  }, 0)
+
+  // 添加一次性地图点击监听
+  map.once('click', (e) => {
+    map.getContainer().style.cursor = originalCursor
+    circleForm.center = e.latlng
+    circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
+    ElMessage.success(`已选择位置：${circleForm.centerText}`)
+    tempPopulationMarker = showTempCenterMarker(e.latlng)
     circleDialogVisible.value = true
   })
 }
@@ -3335,6 +3491,17 @@ const analyzePopulationDistribution = async () => {
     return
   }
 
+  // 🔴🔴 v1.13.227：高精人口（250m 网格）—— 必须单文件 + **串行**。
+  //   生产实测该文件 95MB，JSON.parse 增量 rss ≈ 372MB；若沿用下方的 Promise.all 并行 3 个半径，
+  //   峰值将达 ~1.1GB，与常驻 681MB 叠加 ⇒ **必 OOM**（且 OOM 波及所有用户，不只管理员）。
+  const isHd = circleDialogMode.value === 'population_hd'
+  const calcCategory = isHd ? 'population_hd' : 'population'
+  const hdShapefileId = isHd ? selectedHdShapefileId.value : null
+  if (isHd && !hdShapefileId) {
+    ElMessage.warning('请先选择高精度人口数据文件')
+    return
+  }
+
   // 检查地图对象是否有效
   if (!map || !map.getCenter) {
     console.error('地图对象无效，无法进行分析')
@@ -3346,7 +3513,8 @@ const analyzePopulationDistribution = async () => {
     const panelId = 'panel-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) // 唯一ID用于关闭按钮
     
     // 添加超时控制（总超时30秒）
-    const globalTimeout = 30000
+    // hd 单文件 95MB 且串行执行，给足 3 分钟；常规仍 30s
+    const globalTimeout = isHd ? 180000 : 30000
     const startGlobalTime = Date.now()
     const checkTimeout = () => {
       if (Date.now() - startGlobalTime > globalTimeout) {
@@ -3379,12 +3547,12 @@ const analyzePopulationDistribution = async () => {
     ElMessage.info('正在计算人口分布...')
 
     // 获取所有shapefile
-    const listRes = await fetch(`/api/shapefiles?category=population`, {
+    const listRes = await fetch(`/api/shapefiles?category=${calcCategory}`, {
       headers: { Authorization: `Bearer ${userStore.token}` }
     })
     const listData = await listRes.json()
     const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
-    console.log(`获取到${shapefiles.length}个shapefile:`, shapefiles.map(s => ({ id: s.id, name: s.name, city: s.city })))
+    console.log(`获取到${shapefiles.length}个shapefile（${calcCategory}）:`, shapefiles.map(s => ({ id: s.id, name: s.name, city: s.city })))
 
     if (shapefiles.length === 0) {
       ElMessage.warning('没有找到上传的数据文件')
@@ -3399,15 +3567,15 @@ const analyzePopulationDistribution = async () => {
     console.log(`开始并行调用${allRadiiMeters.length}个半径的API`)
     
     // 为每个半径创建API调用Promise
-    const apiPromises = allRadiiMeters.map(async (r) => {
+    const doCalc = async (r) => {
       checkTimeout() // 检查超时
-      console.log(`调用API: radius=${r}m, field=${fieldName}`)
+      console.log(`调用API: radius=${r}m, field=${fieldName}, category=${calcCategory}`)
       const startTime = Date.now()
       
       try {
-        // 使用AbortController添加超时控制（15秒）
+        // 使用AbortController添加超时控制（hd 单文件 95MB，给足 60s；常规 15s）
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 15000)
+        const timeoutId = setTimeout(() => controller.abort(), isHd ? 60000 : 15000)
         
         const response = await fetch('/api/shapefiles/calculate-population', {
           method: 'POST',
@@ -3419,7 +3587,10 @@ const analyzePopulationDistribution = async () => {
             lat: centerLat,
             lng: centerLng,
             radius: r,
-            fieldName: fieldName
+            fieldName: fieldName,
+            category: calcCategory,
+            // 🔴 hd 必传 shapefileId（后端护栏①）：既命中 hd 文件，也保证只解析 1 个文件
+            ...(hdShapefileId ? { shapefileId: hdShapefileId } : {})
             // 不再传递city参数，后端自动处理
           }),
           signal: controller.signal
@@ -3451,10 +3622,20 @@ const analyzePopulationDistribution = async () => {
         }
         return { radius: r, success: false, error: error.message }
       }
-    })
+    }
     
-    // 并行执行所有API调用
-    const apiResults = await Promise.all(apiPromises)
+    // 🔴🔴 v1.13.227：hd 模式**必须串行** —— 并发会让 95MB 的解析内存叠加（实测 372MB/次），
+    //   2 个并发即 ~1.4GB ⇒ OOM。⛔ 不要把这里改回 Promise.all。
+    const apiResults = []
+    if (isHd) {
+      for (const r of allRadiiMeters) {
+        checkTimeout()
+        apiResults.push(await doCalc(r))
+      }
+    } else {
+      const apiPromises = allRadiiMeters.map(r => doCalc(r))
+      apiResults.push(...(await Promise.all(apiPromises)))
+    }
     console.log('所有API调用完成:', apiResults)
     
     // 处理API结果
