@@ -1079,11 +1079,25 @@ export async function initDatabase() {
     db.run(`CREATE INDEX IF NOT EXISTS idx_ss_user ON store_scores(user_id)`)
     db.run(`CREATE INDEX IF NOT EXISTS idx_sd_score ON score_details(score_id)`)
 
-    // 插入默认餐饮模板
-    const templateExists = db.prepare('SELECT id FROM scoring_templates WHERE name = ?').get('餐饮通用')
+    // 插入默认餐饮模板。
+    // 🔴🔴 v1.13.225 修复：原实现在**全新库上静默不播种** —— 两张表被 CREATE 出来但恒 0 行，
+    //   且全程无 warn/报错，直到 `/api/store-scores` 报「模板不存在」才暴露（批次 223 发现）。
+    //   根因（sql.js 1.14.1 实测）——原写法 `db.prepare('… WHERE name = ?').get('餐饮通用')` 有**两个**缺陷：
+    //     ① 参数是**散参**（字符串，非数组）⇒ 原生 sql.js 绑定不上 ⇒ 查询条件恒不成立；
+    //     ② 即便绑对，该版本 `Statement.get()` 在**空结果时返回 `[]`**（truthy！），
+    //        而「有结果」时返回的又是**值数组**而不是对象 ⇒ `!templateExists` 恒为 false。
+    //   ✅ 改用「bind + step」判存在（`step()` 返回 boolean，不受 `[]` 陷阱影响），
+    //      写入改用 Database 级 `db.run(sql, params)`（参数化，与包装层同构）。
+    //   ⚠️ 例外：**路由层不受影响** —— `getDb()` 返回的包装对象（本文件 L1261+）
+    //      自行用 `bind()+step()+getAsObject()` 实现了 `get`/`all`，绕开了原生 `get()` 的语义陷阱。
+    //      （sweep 本文件确认：initDatabase 内仅此一处原生 `prepare().get()`。）
+    const tplStmt = db.prepare('SELECT id FROM scoring_templates WHERE name = ?')
+    tplStmt.bind(['餐饮通用'])
+    const templateExists = tplStmt.step()
+    tplStmt.free()
+
     if (!templateExists) {
-      const insertTpl = db.prepare('INSERT INTO scoring_templates (name, category) VALUES (?, ?)')
-      insertTpl.run(['餐饮通用', '餐饮'])
+      db.run('INSERT INTO scoring_templates (name, category) VALUES (?, ?)', ['餐饮通用', '餐饮'])
       const lastIdResult = db.exec('SELECT last_insert_rowid() as id')
       const templateId = lastIdResult[0]?.values[0]?.[0] || 1
 
@@ -1100,8 +1114,9 @@ export async function initDatabase() {
         ['site', '停车便利度', 'manual', 5, 'select', JSON.stringify([{label:'方便',value:5},{label:'一般',value:3},{label:'困难',value:1}]), 10],
       ]
 
-      const insertItem = db.prepare('INSERT INTO scoring_items (template_id, dimension, name, data_source, max_score, input_type, options, sort_order) VALUES (?,?,?,?,?,?,?,?)')
-      items.forEach(item => insertItem.run([templateId, ...item]))
+      items.forEach(item => {
+        db.run('INSERT INTO scoring_items (template_id, dimension, name, data_source, max_score, input_type, options, sort_order) VALUES (?,?,?,?,?,?,?,?)', [templateId, ...item])
+      })
     }
   } catch (e) {
     console.warn('创建门店评分表失败:', e.message)

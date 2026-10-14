@@ -11,8 +11,34 @@
  *
  * 本文件钉死该函数的存量形态与边界，防回归（最后一条直接针对本 bug）。
  */
-import { describe, it, expect } from 'vitest'
-import { formatRadiusDisplay } from '../src/routes/purchase.js'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+// 🔴 临时库隔离（v1.13.225 补齐）——
+//   本文件只测一个**纯函数**，但 `../src/routes/purchase.js` 顶层
+//   `import { getDb } from '../models/database.js'`，而 database.js **末尾**有
+//   `await initDatabase()` ⇒ 模块加载即建表 / 播种 / 整库落盘。
+//   不设 R4B_DB_PATH 时该副作用会落到**真实开发库** `backend/database/webgis.db`
+//   （实测：跑本文件会把该文件重写一次；v1.13.225 播种修复后还会真的插入默认模板 ——
+//    若开发库尚无模板，跑一次测试就凭空多出 1 模板 + 10 项）。
+//   ⚠️ ESM 静态 import 会被**提升**到模块体代码之前 ⇒ env 必须在动态 import 前设好，
+//      故 `formatRadiusDisplay` 改在 beforeAll 里 `await import()` 取得（与 database.test.js 同款）。
+const tmpDb = path.join(os.tmpdir(), `r4b-radius-${process.pid}-${Date.now()}.db`)
+process.env.R4B_DB_PATH = tmpDb
+
+let formatRadiusDisplay
+
+beforeAll(async () => {
+  vi.resetModules()
+  ;({ formatRadiusDisplay } = await import('../src/routes/purchase.js'))
+})
+
+afterAll(() => {
+  fs.rmSync(tmpDb, { force: true })
+  fs.rmSync(tmpDb + '.tmp', { force: true }) // 原子写残留
+})
 
 describe('formatRadiusDisplay（v1.13.183 抽取共用）', () => {
   it('JSON 数组串（两条 INSERT 路径的真实落库形态）→ 带单位', () => {

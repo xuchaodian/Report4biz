@@ -104,36 +104,34 @@ function countScores(db) {
 }
 
 /**
- * 显式播种「餐饮通用」模板 + 10 个评分项（复刻 database.js L1090-1101 的种子定义）。
+ * 前置校验并返回「餐饮通用」模板 id（含 10 个评分项）。
  *
- * ⚠️ 为什么不依赖 `database.js` 的种子：实测**全新库上该种子未生效** —— 两张表被
- *    CREATE 出来但均为 0 行（`SELECT COUNT(*)` 均为 0），而 `templateExists` 判定为
- *    `undefined`（`!undefined === true`）理应进入播种分支，播种语句单独重放也正常
- *    ⇒ 根因未定（疑与 initDatabase 的执行顺序/写盘时机有关），已如实记为**遗留项**。
- *    生产库不受影响（18 号前已存在 1 模板 + 10 项），但**全新部署会 404**。
- *    本测试因此自带种子，保持自包含。
+ * ⭐ v1.13.225：`database.js` 的默认模板播种**已修复**。
+ *   原实现在**全新库上静默失效**（两张表建出来但恒 0 行、无任何报错）—— 根因是
+ *   sql.js 1.14.1 的 `Statement.get()`：① 传**散参**（非数组）绑定不上；
+ *   ② **空结果返回 `[]`（truthy！）** ⇒ `!templateExists` 恒为 false。
+ *   修复改用 `stmt.bind([...]) → stmt.step()`（`step()` 返回 boolean）。详见
+ *   `tests/scoringTemplateSeed.test.js`（该修复的专属守卫）。
  *
- * @returns {number} 模板 id（新建库表空 ⇒ 必为 1，与路由 `templateId || 1` 的默认一致）
+ *   故本测试**不再自带种子**，改为直接消费 initDatabase 的播种结果
+ *   ⇒ 本文件同时成为该修复的**下游消费者验证**：一旦播种回退，此处立刻报「模板缺失」。
+ *
+ *   ⚠️ 历史：223 立档时此处自带种子并断言「空表自增必为 1（空表自增应从 1 起）」——
+ *     225 修复后播种先占了 id=1，该断言随之失效，故随种子一并移除。
+ *
+ * @returns {number} 模板 id
  */
-function seedTemplate(db) {
-  const tpl = db.prepare(`INSERT INTO scoring_templates (name, category) VALUES ('餐饮通用', '餐饮')`).run()
-  const tplId = tpl.lastInsertRowid
-  if (tplId !== 1) throw new Error(`测试前置失败：模板 id 应为 1，实际 ${tplId}（空表自增应从 1 起）`)
-  const items = [
-    ['trade_area', '人口密度', 'smartsteps', 15, 'auto', null, 1],
-    ['trade_area', '竞争强度', 'competitors', 15, 'auto', null, 2],
-    ['trade_area', '配套丰富度', 'poi', 10, 'auto', null, 3],
-    ['trade_area', '交通便利度', 'poi', 10, 'auto', null, 4],
-    ['site', '可达性', 'manual', 10, 'score', null, 5],
-    ['site', '可视性', 'manual', 10, 'score', null, 6],
-    ['site', '门前客流(人/天)', 'manual', 10, 'number', null, 7],
-    ['site', '月租金(元)', 'manual', 10, 'number', null, 8],
-    ['site', '楼层位置', 'manual', 5, 'select', JSON.stringify([{ label: '一楼', value: 5 }]), 9],
-    ['site', '停车便利度', 'manual', 5, 'select', JSON.stringify([{ label: '方便', value: 5 }]), 10]
-  ]
-  const ins = db.prepare('INSERT INTO scoring_items (template_id, dimension, name, data_source, max_score, input_type, options, sort_order) VALUES (?,?,?,?,?,?,?,?)')
-  items.forEach(it => ins.run(tplId, ...it))
-  return tplId
+function requireSeedTemplate(db) {
+  const tpl = db.prepare(`SELECT id FROM scoring_templates WHERE name = '餐饮通用'`).get()
+  if (!tpl) {
+    throw new Error('测试前置失败：库中无「餐饮通用」评分模板 —— initDatabase 的默认播种未生效'
+      + '（v1.13.225 修复被回退？见 tests/scoringTemplateSeed.test.js）')
+  }
+  const n = db.prepare('SELECT COUNT(*) AS n FROM scoring_items WHERE template_id = ?').get(tpl.id).n
+  if (n !== 10) {
+    throw new Error(`测试前置失败：模板 ${tpl.id} 应含 10 个评分项，实际 ${n}`)
+  }
+  return tpl.id
 }
 
 /** 取某评分记录中「人口密度」这一明细的 final_score / auto_value */
@@ -162,7 +160,7 @@ beforeAll(async () => {
 
   const db = getDb()
   initCacheTable(db)
-  seedTemplate(db)   // ⚠️ 全新库不会自动播种，见 seedTemplate 注释（遗留项）
+  requireSeedTemplate(db)   // ⭐ v1.13.225：播种已修复 ⇒ 改为消费 initDatabase 的播种结果（见上方注释）
 
   const seed = (username, role) => {
     const r = db.prepare(`INSERT INTO users (username, email, password, role, quota) VALUES (?, ?, ?, ?, 0)`)
