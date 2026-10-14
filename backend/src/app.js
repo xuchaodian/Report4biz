@@ -44,6 +44,8 @@ import syncRoutes from './routes/sync.js'
 // v1.13.211：trial 到期自动降级属于「降权」⇒ 必须同时撤销该账号已签发 token，
 // 否则旧 token 里的 role='trial' 还能按旧身份放行最长 7 天（详见 utils/vipRole.js）
 import { bumpTokenVersion } from './utils/tokenAuth.js'
+// v1.13.223：两族「隐藏功能」路由（/api/scoring、/api/store-scores）收紧为 admin-only
+import { authenticate, requireAdmin } from './middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -134,9 +136,19 @@ async function start() {
     app.use('/api/store-sales', storeSalesRoutes)
     app.use('/api/sales-forecast', salesForecastRoutes)
     app.use('/api/mall-tenants', mallTenantsRoutes)
-    app.use('/api/scoring', scoringRoutes)
+    // ★ v1.13.223（批次 223）：两族「隐藏功能」路由收紧为 **admin-only**。
+    //   背景：/api/scoring（选址评估）与 /api/store-scores（门店评分表）的前端入口
+    //   自 c9fba2e(2026-08-19) 起已全部隐藏 —— 路由被注释、3 个地图组件全 git 历史零 import
+    //   ⇒ 线上**无任何可达前端调用者**，收紧零业务影响。
+    //   动因（风险 R1 成本放大器）：POST /api/scoring/score-batch 此前只要 authenticate
+    //   ⇒ 任意登录用户即可触发；`MAX_GRIDS=20` 且 smartsteps_cache 为 0 行
+    //   ⇒ **单请求最坏 20 × ¥60 = ¥1200**（闸门只逐格校验 need=1，池未空时会先花掉 20 次），
+    //   而 app.js 无全局限流 ⇒ 可重复调用。
+    //   ⚠️ 顺序：先 authenticate（填充 req.user）再 requireAdmin（读 req.user.role）；
+    //      挂反会让 requireAdmin 读不到 req.user（已加兜底，但仍须保序）。
+    app.use('/api/scoring', authenticate, requireAdmin, scoringRoutes)
     app.use('/api/districts', districtsRoutes)
-    app.use('/api/store-scores', storeScoresRoutes)
+    app.use('/api/store-scores', authenticate, requireAdmin, storeScoresRoutes)
     app.use('/api/template', templateRoutes)
     // 集团/子公司组织管理（v0.9 P0-B）：建集团、绑成员、我的组织（不含 quota 增减）
     // v0.10 批次 C：+ 管辖范围读写 + 城市互斥校验（scopeGuard）

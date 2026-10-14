@@ -39,8 +39,13 @@ export function authenticate(req, res, next) {
 }
 
 // 验证管理员权限中间件
+// ⚠️ 必须挂在 authenticate **之后**（依赖 req.user）。
+//    防御（v1.13.223）：漏挂 authenticate 时给出可诊断的 403，而不是
+//    `req.user.role` 抛 TypeError → 500（500 会掩盖「顺序挂反」这类配置错误）。
+//    配套：app.js 对两族「隐藏功能」路由改为 `authenticate, requireAdmin` 串联，
+//    本函数不自行认证，只判角色。
 export function requireAdmin(req, res, next) {
-  if (req.user.role !== 'admin') {
+  if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({ message: '需要管理员权限' })
   }
   next()

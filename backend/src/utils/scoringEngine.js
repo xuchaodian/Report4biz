@@ -28,10 +28,23 @@ function getLatestCityMonth() {
 /**
  * 通过联通智慧足迹（1001 人口服务）获取点位人口规模
  * 优先命中缓存（免费），未命中才调上游并扣 1 次配额
+ *
+ * ⚠️ v1.13.223：本函数由模块内部私有改为 **export** —— 供 `routes/store-scores.js`
+ *   直接复用（原实现是 HTTP 自调 `/api/smartsteps/query-population` 且**未带 token**
+ *   ⇒ 必 401 ⇒ catch 兜底 ⇒ 静默返回伪造的默认分）。派生/解析算法**单一函数共用**，
+ *   ⛔ 不得再有第二份实现。
+ *
+ * @param {Object} db
+ * @param {number} lng
+ * @param {number} lat
+ * @param {number} radiusM 分析半径（米）
  * @param {Object} [user] 调用者 { id, role }（v0.9 P0：供授权闸门判定组织成员额度）
- * @returns {{ totalPopulation: number, fromCache: boolean, quotaUsed: number } | null} 失败返回 null
+ * @returns {Promise<{ totalPopulation: number|null, fromCache?: boolean, quotaUsed?: number,
+ *                     degraded?: boolean, degradeReason?: string, radiusM: number }>}
+ *          失败不返回 null，而是带 `degraded:true` 的降级标记；
+ *          **配额不足则抛 QuotaGateError**（见下）。
  */
-async function queryPointPopulation(db, lng, lat, radiusM, user) {
+export async function queryPointPopulation(db, lng, lat, radiusM, user) {
   const services = ['1001']
   const cityMonth = getLatestCityMonth()
   const servicesStr = '1001'

@@ -1,9 +1,13 @@
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
-import { scoreLocation } from '../utils/scoringEngine.js'
+// ★ v1.13.223：改 import 引擎的 `queryPointPopulation`（原为 `scoreLocation`，从未被使用）。
+//   本文件此前**没有任何一处**用到 `scoreLocation` —— 它同时 HTTP 自调了
+//   `/api/smartsteps/query-population`，见 calcAutoScores 注释。
+import { queryPointPopulation } from '../utils/scoringEngine.js'
+import { buildGateError } from '../utils/quotaGate.js'
 import { AMAP_KEY } from '../config.js'
-import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS, DEFAULT_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
+import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 
 const router = express.Router()
 
@@ -47,11 +51,21 @@ router.post('/scores', authenticate, async (req, res) => {
     const template = db.prepare('SELECT * FROM scoring_templates WHERE id = ?').get(templateId || 1)
     if (!template) return res.status(404).json({ message: '模板不存在' })
 
-    // 创建评分记录
     const userId = req.user?.id
     if (!userId) return res.status(401).json({ message: '用户未认证' })
     const isAdmin = req.user?.role === 'admin'
 
+    // 获取评分项
+    const items = db.prepare('SELECT * FROM scoring_items WHERE template_id = ? ORDER BY sort_order').all(template.id)
+
+    // 自动计算商圈特征项
+    // ★ v1.13.223（**序号前移**）：原顺序是「先 INSERT 一条 draft → 再算自动分」，
+    //   而算分可能抛 QuotaGateError（配额不足）⇒ 会留下一条**无明细的孤儿 draft 记录**。
+    //   前移后，配额不足时本接口**零副作用**返回（不写任何行）。
+    const autoResult = await calcAutoScores(db, lng, lat, premium, userId, isAdmin)
+    const autoScores = autoResult.scores
+
+    // 创建评分记录
     // 参数化插入（杜绝 SQL 注入）
     const insertSql = `INSERT INTO store_scores (template_id, user_id, store_id, lng, lat, address, premium, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')`
     const insertResult = db.prepare(insertSql).run(
@@ -65,12 +79,6 @@ router.post('/scores', authenticate, async (req, res) => {
     )
     const scoreId = insertResult.lastInsertRowid
     console.log('[StoreScores] inserted id:', scoreId)
-
-    // 获取评分项
-    const items = db.prepare('SELECT * FROM scoring_items WHERE template_id = ? ORDER BY sort_order').all(template.id)
-
-    // 自动计算商圈特征项
-    const autoScores = await calcAutoScores(db, lng, lat, premium, userId, isAdmin)
 
     // 创建评分明细（参数化插入）——H3/S1-A：明细+总分更新包事务，N 项从 N 次落盘收敛为 1 次
     let totalScore = 0
@@ -102,8 +110,23 @@ router.post('/scores', authenticate, async (req, res) => {
     const details = db.prepare('SELECT * FROM score_details WHERE score_id = ?').all(scoreId)
     const score = db.prepare('SELECT * FROM store_scores WHERE id = ?').get(scoreId)
 
-    res.status(201).json({ score, details, items })
+    res.status(201).json({
+      score,
+      details,
+      items,
+      // ★ v1.13.223：与评分引擎（v1.13.222）统一口径 —— 上游异常类降级**显式外露**。
+      //   ⛔ 前端不得靠 `auto_value == null` 反推降级：那与「该点人口确实为 0」
+      //     不可区分；degradeReason 区分 upstream_failed / upstream_empty / exception。
+      degradedDims: autoResult.degradedDims,
+      degradeReason: autoResult.degradeReason
+    })
   } catch (error) {
+    // ★ v1.13.223：配额不足属「用户**可行动**」（去采购）⇒ 与评分引擎统一走 buildGateError
+    //   转「剩余次数 + 采购入口」引导。⛔ 绝不在这条路径上降级为默认分。
+    if (error?.isQuotaGate) {
+      const gateErr = buildGateError(error.gate)
+      return res.status(gateErr.status).json({ success: false, ...gateErr.body })
+    }
     console.error('创建评分失败:', error)
     res.status(500).json({ message: '创建评分失败，请稍后重试' })
   }
@@ -224,26 +247,47 @@ router.delete('/scores/:id', authenticate, (req, res) => {
 
 // === 辅助函数 ===
 
+/**
+ * 计算 4 个自动评分项（人口密度 / 竞争强度 / 配套丰富度 / 交通便利度）
+ *
+ * ★ v1.13.223（批次 223 · 风险 R2）—— 人口密度不再 HTTP 自调：
+ *   原实现 `fetchWithTimeout('http://localhost:PORT/api/smartsteps/query-population')`
+ *   且**未带 Authorization** ⇒ `authenticate` 必然 401 ⇒ `.catch(() => ({ total: null }))`
+ *   ⇒ 恒落入「联通API不可用，使用默认值」⇒ **静默返回伪造的默认 5 分**。
+ *   生产库实证（store_scores × score_details × scoring_items 聚合）：
+ *   「人口密度」8 条明细 auto_value **全为 NULL**、final_score **恒 5.0**。
+ *   这与 v1.13.222 修的评分引擎「静默降级为默认分」是**同一类 bug**，只是另一处。
+ *   现直接复用 `scoringEngine.queryPointPopulation`（派生算法**单一函数共用**）：
+ *   ① 命中缓存（免费历史数据不再浪费）② 配额闸门统一 ③ 上游异常带 degraded 标记外露。
+ *
+ * @returns {{ scores: Object, degradedDims: string[], degradeReason: string|null }}
+ */
 async function calcAutoScores(db, lng, lat, premium, userId, isAdmin = false) {
   const result = {}
+  let popDegradeReason = null
 
-  // 1. 人口密度（统一使用联通精算数据）
+  // 1. 人口密度（统一使用联通精算数据；半径固定 1000m，与评分项 max_score=15 的口径一致）
   try {
-    // 调用智慧足迹API获取人口数据
-    const smartstepsRes = await fetchWithTimeout(
-      `http://localhost:${process.env.PORT || 3000}/api/smartsteps/query-population?lng=${lng}&lat=${lat}`, {}, SLOW_HTTP_TIMEOUT_MS
-    ).then(r => r.json()).catch(() => ({ total: null }))
-
-    const smartPop = smartstepsRes.total || null
-    if (smartPop) {
-      const smartScore = Math.min(15, smartPop / 300)
-      result['人口密度'] = { value: Math.round(smartPop), score: Math.round(smartScore) }
+    const popRes = await queryPointPopulation(db, lng, lat, 1000, {
+      id: userId,
+      role: isAdmin ? 'admin' : 'user'
+    })
+    if (popRes?.degraded === true) {
+      // 上游失败 / 返回空 / 异常 ⇒ 用户**无从行动** ⇒ 不伪造占位分：
+      // 置 0 并显式标注降级（与 v1.13.222 确立的边界 B 一致）。
+      popDegradeReason = popRes.degradeReason || 'upstream_failed'
+      result['人口密度'] = { value: null, score: 0 }
     } else {
-      // 如果联通API不可用，使用默认值
-      result['人口密度'] = { value: null, score: 5 }
+      const total = Number(popRes?.totalPopulation) || 0
+      result['人口密度'] = { value: Math.round(total), score: Math.round(Math.min(15, total / 300)) }
     }
-  } catch (_) {
-    result['人口密度'] = { value: null, score: 5 }
+  } catch (e) {
+    // ⛔ 配额不足（闸门拒绝）必须**穿透** —— 它属「配额不足」而非「数据缺失」，
+    //   若在此被吞掉就退化成本次要修的静默降级。由路由 buildGateError 转统一响应。
+    if (e?.isQuotaGate) throw e
+    console.warn('[StoreScores] 人口查询异常:', e.message)
+    popDegradeReason = 'exception'
+    result['人口密度'] = { value: null, score: 0 }
   }
 
   // 2. 竞争强度（周边1km有效竞品计数；用户隔离：admin全量特权，普通用户仅自己名下竞品）
@@ -288,7 +332,13 @@ async function calcAutoScores(db, lng, lat, premium, userId, isAdmin = false) {
     result['交通便利度'] = { value: null, score: 5 }
   }
 
-  return result
+  // ★ v1.13.223：降级标记并入返回体 —— 调用方 `POST /scores` 透出到响应，
+  //   ⛔ 不得只返回 `result`（那会让降级重新变成「静默」）。
+  return {
+    scores: result,
+    degradedDims: popDegradeReason ? ['population'] : [],
+    degradeReason: popDegradeReason
+  }
 }
 
 function calcRentScore(rent, maxScore) {
