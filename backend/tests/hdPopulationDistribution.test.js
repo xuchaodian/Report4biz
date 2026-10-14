@@ -254,4 +254,51 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
       '统计面板未用业务顺序排序（仍是字母序）'
     ).toContain('sortByPopulationPriority(')
   })
+
+  it('⑩ 网格标签尺寸分档：hd（250m）必须小于常规（1km），锚点由尺寸折半推出', () => {
+    // 250m 网格的物理边长只有 1km 网格的 1/4（zoom 15 @上海 ≈ 4.1 m/px）
+    // ⇒ 标签必须整体缩小，否则会溢出到相邻网格、密集区彼此压盖。
+    const m = mapSrc.match(
+      /const POP_LABEL_METRICS = isHd\s*\?\s*(\{[^}]*\})\s*:\s*(\{[^}]*\})/
+    )
+    expect(
+      m,
+      '未找到 POP_LABEL_METRICS 分档定义 —— 标签尺寸被写死回单档了（守卫已失锚，请同步更新）'
+    ).toBeTruthy()
+
+    const parse = (s) => ({
+      fontSize: Number((s.match(/fontSize:\s*([\d.]+)/) || [])[1]),
+      size: JSON.parse((s.match(/size:\s*(\[[^\]]*\])/) || [])[1])
+    })
+    const hd = parse(m[1])
+    const normal = parse(m[2])
+
+    expect(hd.fontSize, 'hd 标签字号未小于常规').toBeLessThan(normal.fontSize)
+    expect(hd.size[0], 'hd 标签外框宽度未小于常规').toBeLessThan(normal.size[0])
+    expect(hd.size[1], 'hd 标签外框高度未小于常规').toBeLessThan(normal.size[1])
+
+    // 反向对照：常规（1km）档必须保持原值 —— 本批只应影响 hd，
+    // 否则等于把「常住人口分布」的外观也一并偷偷改了。
+    expect(normal, '常规（1km）档被改动 —— 本批只应影响 hd').toEqual({
+      fontSize: 11,
+      size: [60, 20]
+    })
+
+    // 🔴 居中不变式：iconAnchor 必须由 size 折半推出（⛔ 写死常数会让标签偏离网格中心）
+    expect(mapSrc, '标签 iconAnchor 必须由尺寸折半推出').toContain(
+      'iconAnchor: [popLabelW / 2, popLabelH / 2]'
+    )
+
+    const at = mapSrc.indexOf("className: 'population-label'")
+    expect(at, '未找到 population-label 标签块（守卫已失锚，请同步更新）').toBeGreaterThan(-1)
+    const labelBlock = mapSrc.slice(at, at + 900)
+    expect(
+      labelBlock,
+      'population-label 仍写死了锚点数字（应改用 popLabelW / popLabelH 折半）'
+    ).not.toMatch(/iconAnchor:\s*\[\s*\d/)
+    expect(
+      labelBlock,
+      'population-label 的字号仍写死（应改用 POP_LABEL_METRICS.fontSize）'
+    ).toContain('${POP_LABEL_METRICS.fontSize}px')
+  })
 })

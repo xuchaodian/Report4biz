@@ -3817,6 +3817,18 @@ const analyzePopulationDistribution = async () => {
     // 改为每帧最多渲染 POP_RENDER_CHUNK 个，把主线程交还给地图交互。
     console.log(`开始绘制多边形，共${maxRadiusData.matchingData.length}个`)
     const POP_RENDER_CHUNK = 150
+
+    // v1.13.230：网格标签度量按数据源分档 ——
+    //   高精度人口是 **250m 网格**，单元格物理边长只有常住人口（1km 网格）的 1/4
+    //   （zoom 15 @上海 ≈ 4.1 m/px ⇒ 250m ≈ 61px 宽、1km ≈ 244px 宽），
+    //   沿用 11px 字号 + 60px 宽的标签会溢出到相邻网格、密集区彼此压盖。
+    //   ⇒ hd 模式整体缩小：字号 11→9px、内边距 2/6→1/3px、外框 60×20→40×16px。
+    //   ⭐ iconAnchor 恒由 size 折半推出（居中不变式）⇒ ⛔ 别再手写锚点常数，否则标签会偏离网格中心。
+    //   ⚠️ 想再调大小：只改这一处（两个模式的取值都集中在此）。
+    const POP_LABEL_METRICS = isHd
+      ? { fontSize: 9, padding: '1px 3px', radius: 3, shadow: '0 1px 2px rgba(0,0,0,0.25)', size: [40, 16] }
+      : { fontSize: 11, padding: '2px 6px', radius: 4, shadow: '0 1px 3px rgba(0,0,0,0.3)', size: [60, 20] }
+    const [popLabelW, popLabelH] = POP_LABEL_METRICS.size
     const popRenderToken = ++populationRenderToken   // 新一轮渲染作废旧循环
     let polygonCount = 0
     let labelCount = 0
@@ -3890,17 +3902,17 @@ const analyzePopulationDistribution = async () => {
                   html: `<div style="
                     background: rgba(255,255,255,0.9);
                     border: 1px solid ${color};
-                    border-radius: 4px;
-                    padding: 2px 6px;
-                    font-size: 11px;
+                    border-radius: ${POP_LABEL_METRICS.radius}px;
+                    padding: ${POP_LABEL_METRICS.padding};
+                    font-size: ${POP_LABEL_METRICS.fontSize}px;
                     font-weight: bold;
                     color: #333;
                     white-space: nowrap;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                    box-shadow: ${POP_LABEL_METRICS.shadow};
                     text-align: center;
                   ">${displayValue}</div>`,
-                  iconSize: [60, 20],
-                  iconAnchor: [30, 10]
+                  iconSize: [popLabelW, popLabelH],
+                  iconAnchor: [popLabelW / 2, popLabelH / 2]
                 })
               })
               populationLayerGroup.addLayer(labelMarker)
