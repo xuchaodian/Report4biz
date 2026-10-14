@@ -160,4 +160,46 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
     ).not.toMatch(/\/fields/)
     expect(body, 'hd 应直接使用列表接口返回的 field_names').toContain('sf.fieldNames')
   })
+
+  it('⑧ 「人口分布分析」面板不展示分年龄字段（判据来自 utils/ageField.js，行为断言）', async () => {
+    const { isAgeGroupField } = await import('../../frontend/src/utils/ageField.js')
+
+    // 生产 hd 文件的真实 35 字段（PRAGMA 查得）
+    const HD_FIELDS = [
+      '到访人次', '居住人数', '工作人数', '低收入', '中等收入', '小康', '中产', '富裕', '富人',
+      '男性人数', '女性人数',
+      '男0_18', '男19_24', '男25_29', '男30_34', '男35_39', '男40_44', '男45_49', '男50_54',
+      '男55_59', '男60_64', '男65_69', '男70以上',
+      '女0_18', '女19_24', '女25_29', '女30_34', '女35_39', '女40_44', '女45_49', '女50_54',
+      '女55_59', '女60_64', '女65_69', '女70以上'
+    ]
+    expect(HD_FIELDS.length, 'hd 字段数应为 35（若数据换了，请同步更新本守卫）').toBe(35)
+
+    const ageFields = HD_FIELDS.filter(isAgeGroupField)
+    const kept = HD_FIELDS.filter((f) => !isAgeGroupField(f))
+
+    expect(ageFields.length, '应恰好识别出 24 个分年龄字段').toBe(24)
+    expect(kept.length, '面板应保留 11 个量类字段（面板行数 11 + 表头 1）').toBe(11)
+
+    // 🔴 反向对照：量类字段必须**全部保留** —— 尤其「男性人数」「女性人数」不能被误杀
+    for (const must of [
+      '到访人次', '居住人数', '工作人数', '低收入', '中等收入', '小康', '中产', '富裕', '富人',
+      '男性人数', '女性人数'
+    ]) {
+      expect(kept, `「${must}」被误判为分年龄字段而丢弃`).toContain(must)
+    }
+    // 抽样：年龄字段必须命中（含边界「男0_18」与「男70以上」）
+    for (const must of ['男0_18', '男70以上', '女19_24', '女65_69']) {
+      expect(ageFields, `「${must}」未被识别为分年龄字段`).toContain(must)
+    }
+
+    // 接线断言：MapView 必须真的用了这个判据（否则 util 写了也没人调）
+    expect(mapSrc, 'MapView 未从 utils/ageField 引入判据').toContain(
+      "import { isAgeGroupField } from '@/utils/ageField'"
+    )
+    expect(
+      mapSrc,
+      '统计面板未对字段列表做分年龄过滤（hd 会渲染 35 行 ⇒ 弹窗显示不全）'
+    ).toMatch(/fieldList = Array\.from\(allFieldNames\)\.filter\(f => !isAgeGroupField\(f\)\)/)
+  })
 })
