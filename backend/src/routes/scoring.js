@@ -2,6 +2,7 @@ import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { scoreLocation, scoreBatch } from '../utils/scoringEngine.js'
+import { buildGateError } from '../utils/quotaGate.js'
 
 const router = express.Router()
 
@@ -90,6 +91,14 @@ router.post('/score-point', authenticate, async (req, res) => {
 
     res.json({ success: true, ...result })
   } catch (error) {
+    // ★ v1.13.222（批次 218 遗留项 ①）：引擎里「配额不足」现在抛 QuotaGateError，
+    //   在此转成统一闸门响应（status + code）⇒ 前端按 code 分流到 requireQuota 引导
+    //   （剩余次数 + 采购入口）。此前该场景被引擎静默降级为默认 60 分并入总分，
+    //   用户拿到一个不可信的综合评分却毫无提示。
+    if (error?.isQuotaGate) {
+      const err = buildGateError(error.gate)
+      return res.status(err.status).json({ success: false, ...err.body })
+    }
     console.error('评分失败:', error)
     res.status(500).json({ message: '评分失败: ' + error.message })
   }
@@ -121,6 +130,13 @@ router.post('/score-batch', authenticate, async (req, res) => {
     const results = await scoreBatch(grids, config, req.user)
     res.json({ success: true, total: results.length, candidates: results.slice(0, 50) })
   } catch (error) {
+    // ★ v1.13.222：批量中**任一点位**因配额不足失败 ⇒ scoreBatch 整批抛错。
+    //   理由：批量结果用于 `sort` 横向排序选最优，若部分点位缺人口（0.40 权重）
+    //   则排序不可信 ⇒ 与其给出误导性排名，不如交给用户走采购引导。
+    if (error?.isQuotaGate) {
+      const err = buildGateError(error.gate)
+      return res.status(err.status).json({ success: false, ...err.body })
+    }
     console.error('批量评分失败:', error)
     res.status(500).json({ message: '评分失败: ' + error.message })
   }

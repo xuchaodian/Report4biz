@@ -2,7 +2,7 @@ import { getDb } from '../models/database.js'
 import { saveToCache, getAuthorization, buildCircleWkt, checkIfDataIsEmpty, initCacheTable } from '../routes/smartsteps.js'
 import { AMAP_KEY } from '../config.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS, DEFAULT_HTTP_TIMEOUT_MS } from './httpTimeout.js'
-import { checkQuota } from './quotaGate.js'
+import { checkQuota, QuotaGateError } from './quotaGate.js'
 
 // === 评分引擎配置 ===
 const DEFAULT_WEIGHTS = {
@@ -57,10 +57,14 @@ async function queryPointPopulation(db, lng, lat, radiusM, user) {
     }
 
     // 2. 检查配额（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度）
+    //    ★ v1.13.222（批次 218 遗留项 ①）：配额不足**不再 return null**。
+    //      早先 return null 会被上层按「数据缺失」处理 ⇒ calcPopulationScore 给默认 60 分
+    //      ⇒ 人口（权重 0.40）是编造的，用户却拿到一个看似合理的综合评分去做决策。
+    //      现改为抛出 QuotaGateError，由路由 buildGateError 转成统一响应，
+    //      前端据此走 requireQuota 引导（剩余次数 + 采购入口）。
     const gate = checkQuota(db, user?.id, 1, { role: user?.role })
     if (!gate.ok) {
-      console.warn('[Scoring] 人口评分跳过：配额不足', gate.reason)
-      return null
+      throw new QuotaGateError(gate)
     }
 
     // 3. 调上游 1001
@@ -71,21 +75,26 @@ async function queryPointPopulation(db, lng, lat, radiusM, user) {
       headers: { 'Content-Type': 'application/json', 'authorization': token },
       body: JSON.stringify({ codes: '1001', cityMonth, radius: radiusM, polygons: wkt })
     }, SLOW_HTTP_TIMEOUT_MS)
+    // ★ v1.13.222：以下「上游异常」类失败**不再静默 return null**，改为带 degraded 标记返回。
+    //   与上文「配额不足」区分对待 —— 配额不足用户**可行动**（去采购）⇒ 抛错引导；
+    //   上游失败/空数据用户**无从行动**（网络抖动、或该点确实无人口数据）⇒ 网络抖动时
+    //   若也直接报错，会让评分功能在抖动期整站不可用，故照常出分但**显式标注降级**。
+    //   前端据 degradedDims 显示「人口数据不可用」提示条，不再让用户以为分数是全量可信的。
     if (!response.ok) {
       console.warn('[Scoring] 人口上游调用失败:', response.status)
-      return null
+      return { totalPopulation: null, degraded: true, degradeReason: 'upstream_failed', radiusM }
     }
     const apiResponse = await response.json()
     if (apiResponse.code !== 200 || !apiResponse.data) {
       console.warn('[Scoring] 人口上游返回异常:', apiResponse.code)
-      return null
+      return { totalPopulation: null, degraded: true, degradeReason: 'upstream_failed', radiusM }
     }
     const result = apiResponse.data
 
     // 4. 空数据不扣配额
     if (checkIfDataIsEmpty(result)) {
       console.warn('[Scoring] 人口上游返回空数据，不扣配额')
-      return null
+      return { totalPopulation: null, degraded: true, degradeReason: 'upstream_empty', radiusM }
     }
 
     // 5. 扣配额 + 缓存
@@ -95,8 +104,11 @@ async function queryPointPopulation(db, lng, lat, radiusM, user) {
     const total = Number(result['1001']?.pall_sum) || 0
     return { totalPopulation: total, fromCache: false, quotaUsed: 1, radiusM }
   } catch (e) {
+    // ⛔ 闸门拒绝必须**穿透**本 catch —— 它属「配额不足」而非「数据缺失」，
+    //   若在此被吞掉就退化成本批要修的那个静默降级（见本函数上文注释）。
+    if (e?.isQuotaGate) throw e
     console.warn('[Scoring] 人口查询异常:', e.message)
-    return null
+    return { totalPopulation: null, degraded: true, degradeReason: 'exception', radiusM }
   }
 }
 
@@ -117,9 +129,12 @@ export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT
   const isAdmin = (user?.role === 'admin' || userId === 1) ? 1 : 0
 
   // 1. 人口指数
+  //    ⚠️ 配额不足时 queryPointPopulation 会**抛 QuotaGateError**（不在此捕获，直穿到路由）；
+  //       能走到下面说明要么命中缓存、要么调用成功、要么是「上游异常」类降级。
   const popResult = await queryPointPopulation(db, lng, lat, radius, user)
   const popScore = calcPopulationScore(popResult)
   const populationTotal = popResult?.totalPopulation ?? null
+  const popDegraded = popResult?.degraded === true
 
   // 2. 竞争指数（周边有效竞品；用户隔离：admin全量特权，普通用户仅自己名下竞品）
   const compCount = await countCompetitors(db, lng, lat, radius, userId, isAdmin)
@@ -145,7 +160,13 @@ export async function scoreLocation({ lng, lat, radius = 1000, weights = DEFAULT
     scoreTransport: Math.round(transportScore),
     competitorCount: compCount,
     poiCount,
-    populationDensity: populationTotal  // 半径内总人口（来自联通1001）
+    populationDensity: populationTotal,  // 半径内总人口（来自联通1001）；降级时为 null
+    // ★ v1.13.222：降级维度**显式外露**（当前只可能是 'population'）。
+    //   ⛔ 前端不得靠 `populationDensity == null` 反推 —— 那与「该点人口确实为 0」
+    //     不可区分。也正因如此，`degradeReason` 一并返回，便于区分
+    //     upstream_failed（网络/上游异常）与 upstream_empty（该点确实无数据）。
+    degradedDims: popDegraded ? ['population'] : [],
+    degradeReason: popDegraded ? (popResult?.degradeReason || null) : null
   }
 }
 
@@ -180,9 +201,20 @@ export async function scoreBatch(grids, config, user) {
       }).then(s => ({ ...s, lng: g.lng, lat: g.lat, address: g.address || '', gridId: g.gridId || '' }))
     )
     const batchResults = await Promise.allSettled(promises)
+    // ★ v1.13.222：原实现只 push fulfilled、**rejected 被静默丢弃** ⇒
+    //   既少了点位又没有任何提示（「静默降级」的另一种形态，同样在本批修掉）。
+    //   现在区分两类失败：
+    //     · 配额不足（isQuotaGate）⇒ **整批抛错**。批量结果用于 `sort` 横向排序选最优，
+    //       若部分点位缺人口（0.40 权重）则排序不可信 ⇒ 交路由统一走采购引导。
+    //     · 其余异常 ⇒ 已在 scoreLocation 内降级为带标记的结果并被 fulfilled 收录；
+    //       此处真抛出的（理论上不该有）仍忽略，避免个别点位毁掉整批。
+    //   ⚠️ 全缓存命中场景不受影响：缓存分支在配额检查**之前**返回，不抛错。
+    let gateError = null
     batchResults.forEach(r => {
       if (r.status === 'fulfilled') results.push(r.value)
+      else if (r.reason?.isQuotaGate && !gateError) gateError = r.reason
     })
+    if (gateError) throw gateError
   }
 
   return results.sort((a, b) => b.score - a.score)
@@ -193,7 +225,11 @@ export async function scoreBatch(grids, config, user) {
 function calcPopulationScore(popResult) {
   try {
     if (!popResult || !popResult.totalPopulation) {
-      // 查询失败/配额不足/空数据 → 返回默认中等分
+      // 上游失败 / 空数据 / 降级 → 默认中等分 60（**占位分，非真实评估**）。
+      // ⚠️ v1.13.222：**配额不足已不再走本分支** —— 那条路现在抛 QuotaGateError，
+      //   连分数都不会产生。走到这里的都是「上游异常」类降级，且 scoreLocation 会
+      //   同步置 degradedDims=['population'] 并透出 degradeReason，
+      //   前端据此提示 ⇒ 这 60 分不再是**静默**的魔法值，而是**有标注的占位分**。
       return 60
     }
 

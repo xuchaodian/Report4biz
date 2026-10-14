@@ -103,3 +103,26 @@ export function buildGateError(gate, { service = '联通人口数据', ownStatus
     }
   }
 }
+
+/**
+ * 把「闸门拒绝」以**异常**形式穿过深层调用链的载体。
+ *
+ * 立档背景（v1.13.222 · 批次 218 遗留项 ①）：
+ *   多数路由是扁平的「先 checkQuota，不 ok 就直接 return」，好处理；
+ *   但 `scoringEngine.js::queryPointPopulation` 的配额校验**嵌在多层 try/catch 内部**，
+ *   早先只能 `return null`，上层再按「数据缺失」处理 ⇒ **静默降级成默认 60 分**
+ *   （`calcPopulationScore` 的魔法默认值），人口还占 0.40 权重 ⇒
+ *   用户拿到一个**看起来合理、实则编造**的综合评分去做开店决策。
+ *   现在改为抛出本错误，由路由用 `buildGateError` 转成统一响应，
+ *   前端 217 批次预留的 `requireQuota` 分流分支随之生效。
+ *
+ * ★ 判型用 `err.isQuotaGate`（⛔ 不靠 `instanceof` —— 跨模块/打包场景更脆）。
+ */
+export class QuotaGateError extends Error {
+  constructor(gate) {
+    super(`quota gate blocked: ${gate?.reason || 'unknown'}`)
+    this.name = 'QuotaGateError'
+    this.isQuotaGate = true
+    this.gate = gate
+  }
+}

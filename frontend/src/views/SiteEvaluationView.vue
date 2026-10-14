@@ -115,6 +115,12 @@
             <div class="se-total-score" :style="{ color: totalColor }">{{ result.score }}</div>
             <div class="se-total-label">综合评分</div>
           </div>
+          <!-- ★ v1.13.222：降级提示 —— **常驻**于结果卡片内（toast 会消失，不足以承担告知责任）。
+               人口权重 0.40，缺失时总分不具备全量决策价值，必须让用户一眼看到。 -->
+          <div v-if="degradedPopulation" class="se-degrade-tip">
+            <el-icon><WarningFilled /></el-icon>
+            <span>{{ degradeReasonText }}，「人口规模」为占位分，综合评分仅供参考</span>
+          </div>
           <div class="se-dims">
             <div v-for="d in dims" :key="d.key" class="se-dim">
               <div class="se-dim-head">
@@ -175,7 +181,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer, Aim, Setting, DataAnalysis, Collection } from '@element-plus/icons-vue'
+import { Pointer, MagicStick, FolderOpened, FolderAdd, Odometer, Aim, Setting, DataAnalysis, Collection, WarningFilled } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 
@@ -235,6 +241,17 @@ function scoreColor(s) {
   if (s >= 50) return '#e6a23c'
   return '#f56c6c'
 }
+
+// ★ v1.13.222：人口维度是否降级（后端 scoreLocation 透出 degradedDims）。
+//   ⛔ 不要用 `result.populationDensity == null` 反推 —— 那与「该点人口确实为 0」不可区分，
+//     故后端额外给了显式标记与原因。
+const degradedPopulation = computed(() => (result.value?.degradedDims || []).includes('population'))
+// 降级原因文案：区分「该点确实无数据」与「上游服务暂时不可用」—— 后者用户可稍后重试。
+const degradeReasonText = computed(() => {
+  const r = result.value?.degradeReason
+  if (r === 'upstream_empty') return '该点位暂无人口数据'
+  return '人口数据服务暂时不可用，可稍后重试'
+})
 
 // 候选
 const candDialogVisible = ref(false)
@@ -370,12 +387,19 @@ async function startScore() {
       } else {
         ElMessage.success('评估完成（缓存命中，未消耗配额）')
       }
+      // ★ v1.13.222：人口维度降级时**必须显式提醒** —— 否则用户会以为总分是四维全量评估，
+      //   直接拿去做开店决策（这正是本批要修的「静默」问题）。
+      //   这里用会消失的 toast 提醒一次，结果卡片内另有**常驻**提示条（见模板 se-degrade-tip）。
+      if (degradedPopulation.value) {
+        ElMessage.warning('人口数据暂不可用：本次「人口规模」为占位分，综合评分仅供参考')
+      }
     } else {
       ElMessage.error(res.message || '评估失败')
     }
   } catch (e) {
-    // v1.13.217：后端闸门拒绝时按 code 分流（防御性 —— 见日志：scoringEngine 目前
-    //   配额不足时静默降级为默认分，不会把 code 传到前端；待其改为透传后本分支即生效）
+    // v1.13.217 预留 → v1.13.222 **已生效**：后端 scoringEngine 的「配额不足」不再静默降级，
+    //   改为抛 QuotaGateError，由路由 buildGateError 转成带 code 的统一响应
+    //   （own_quota_exhausted / pool_quota_exhausted）⇒ 此处按 code 分流到 requireQuota 引导。
     const code = e.response?.data?.code
     if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
       await requireQuota(code, {
@@ -579,6 +603,26 @@ function flyToCandidate(row) {
   font-size: 13px;
   color: #909399;
   margin-top: 2px;
+}
+/* v1.13.222：人口维度降级提示条（常驻）。浅黄底 + 暖色边框，不抢总分视觉，但足够显眼。 */
+.se-degrade-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a65a00;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  border-radius: 4px;
+}
+.se-degrade-tip .el-icon {
+  flex: none;
+  margin-top: 2px;
+  font-size: 14px;
+  color: #e6a23c;
 }
 .se-dims {
   border-top: 1px dashed #ebeef5;
