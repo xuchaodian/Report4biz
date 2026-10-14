@@ -1,3 +1,14 @@
+<!--
+  ⛔ 【隐藏功能资产 · 从未接线】本文件全 git 历史零 import —— 请勿直接接入。恢复前必读：
+     workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+
+  B 族 · 门店评分表（store-scores）「基础框架」
+    · 2026-07-30 提交 94b5ae0 引入，此后从未被引用
+    · 本文件调 B 族后端 /api/store-scores/scores（自 v1.13.223 起已收紧 admin-only）
+  ⚠️ 该族后端历史上的「人口密度」维度曾静默降级为恒 5 分（HTTP 自调未带 token ⇒ 401
+     ⇒ catch 兜底），已于 v1.13.223 修复（改复用 scoringEngine.queryPointPopulation）。
+     恢复本框架前请一并复核该维度是否已出真实分。
+-->
 <template>
   <el-dialog v-model="visible" title="门店评分表" width="620px" draggable :close-on-click-modal="false" @open="initScore" @close="visible = false">
     <div v-if="loading" style="text-align:center;padding:40px;">

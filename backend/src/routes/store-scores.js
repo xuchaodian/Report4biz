@@ -1,3 +1,17 @@
+/**
+ * ⛔ 【隐藏功能资产 · 无前端入口】本路由属 B 族「门店评分表」基础框架。
+ *    全 git 历史无任何前端 import（SiteScoringDialog.vue / StoreScoreSheet.vue 均未接线）
+ *    ⇒ 线上不可达，仅开发者／调试可用。
+ *
+ * 🔴 注册位置：app.js —— app.use('/api/store-scores', authenticate, requireAdmin, router)
+ *    自 v1.13.223 起收紧为 admin-only。
+ * 🔴 v1.13.223 同时修复本文件的历史缺陷：calcAutoScores 曾 HTTP 自调
+ *    /api/smartsteps/query-population（未带 token ⇒ 必 401 ⇒ catch 兜底）
+ *    ⇒ 人口密度恒默认 5 分。现改为直接复用 scoringEngine.queryPointPopulation
+ *    ⇒ 派生算法单一实现，且配额不足会**穿透抛出**而非降级为默认分。
+ *
+ * 盘点上文：workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+ */
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'

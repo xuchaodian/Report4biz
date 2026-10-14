@@ -1,3 +1,10 @@
+<!--
+  ⛔ 【隐藏功能资产 · 间接死代码】本文件仅被同样未接线的 SiteScoringDialog.vue 引用，
+     无任何可达路径 —— 请勿直接接入。恢复前必读：
+     workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+
+  B 族 · 门店评分表（store-scores）「基础框架」的子面板（候选点位 Top N）
+-->
 <template>
   <div class="candidate-panel" :class="{ collapsed: collapsed }">
     <div class="panel-header">

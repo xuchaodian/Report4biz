@@ -1,3 +1,17 @@
+<!--
+  ⛔ 【隐藏功能资产 · 请勿接线／恢复】本文件当前不可达 —— 恢复前必读：
+     workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+
+  A 族 · 选址评估（site-evaluation）
+    · 2026-08-19 提交 c9fba2e 因「与现有功能重叠」隐藏：路由被注释、下拉菜单入口被移除
+    · 现状：无菜单入口，全库零 import（唯一提及是 router/index.js 的注释块）
+    · 本文件调用 A 族后端 /api/scoring/score-point · /scoring/candidates
+
+  🔴 恢复即重新暴露 R1 成本放大器：POST /api/scoring/score-batch 的 MAX_GRIDS=20，
+     且生产 smartsteps_cache 为 0 行 ⇒ 单请求最坏 20 网格 × ¥60/次 ＝ ¥1200。
+     该族后端端点自 v1.13.223 起已挂 authenticate+requireAdmin（见 app.js），
+     但恢复前端入口前仍须复核配额闸门（闸门按 need=1 逐格校验，池未空会先花掉）。
+-->
 <template>
   <div class="site-eval-view">
     <!-- 页头 -->

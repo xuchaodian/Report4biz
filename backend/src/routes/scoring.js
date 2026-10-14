@@ -1,3 +1,16 @@
+/**
+ * ⛔ 【隐藏功能资产 · 无前端入口】本路由属 A 族「选址评估」。
+ *    唯一的前端调用者 SiteEvaluationView.vue 的路由自 2026-08-19（c9fba2e）起被注释
+ *    ⇒ 线上不可达；全库无其他 import。
+ *
+ * 🔴 注册位置：app.js —— app.use('/api/scoring', authenticate, requireAdmin, router)
+ *    自 v1.13.223 起收紧为 admin-only。此前只需 authenticate ⇒ 任意登录用户可调
+ *    POST /score-batch，而 MAX_GRIDS=20 且生产 smartsteps_cache 为 0 行
+ *    ⇒ 单请求最坏 20 × ¥60 ＝ ¥1200（R1 成本放大器）。
+ *    ⛔ 若为恢复前端而放宽鉴权，必须先复核配额闸门（按 need=1 逐格校验，池未空会先花掉）。
+ *
+ * 盘点上文：workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+ */
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'

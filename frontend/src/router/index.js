@@ -98,6 +98,9 @@ const routes = [
         component: () => import('@/views/DistrictInsightView.vue')
       },
       // 选址评估（v1.11.x 曾上线，因与现有功能重叠已隐藏，代码保留可随时恢复）
+      // ⛔ 恢复前必读：盘点报告 Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+      //    （恢复即重新暴露 R1：/api/scoring/score-batch 单请求最坏 ¥1200；
+      //     该族后端自 v1.13.223 起已收紧 admin-only，放宽前必须复核配额闸门）
       // {
       //   path: 'site-evaluation',
       //   name: 'SiteEvaluation',

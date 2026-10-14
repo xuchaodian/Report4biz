@@ -1,3 +1,12 @@
+<!--
+  ⛔ 【隐藏功能资产 · 从未接线】本文件全 git 历史零 import —— 请勿直接接入。恢复前必读：
+     workbuddy过程文件/Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
+
+  B 族 · 门店评分表（store-scores）「基础框架」
+    · 2026-07-30 提交 94b5ae0 引入，此后从未被引用（git log -S 为 0 命中）
+    · 本文件调 A 族后端 /api/scoring/configs，并内含同样未接线的 CandidateListPanel
+    · 接入前须先厘清与「开店余地／商圈洞察」的功能重叠（当初隐藏 A 族的同一理由）
+-->
 <template>
   <el-dialog v-model="visible" title="门店潜力评分" width="520px" draggable :close-on-click-modal="false" @open="initConfig" @close="visible = false">
     <el-form label-width="100px">
