@@ -1648,11 +1648,10 @@ import { bandLabel } from '@/utils/salesBand'
 import echarts from '@/utils/echarts'
 // M1（v1.13.107）：turf 按函数引入——`import * as turf from '@turf/turf'` 会把整个 turf 包
 // （约 200 个 CJS 子模块，Rollup 无法 tree-shake CJS）打进 vendor-maps；本文件实际只用 6 个函数。
-// 命名避开文件内已有的局部变量 turfPolygon / turfCircle。
+// 命名避开文件内已有的局部变量 turfPolygon。
+// v1.13.233：原 turfAreaFn / turfCircleFn / turfIntersectFn **仅**被死函数 calculateIntersectionRatio
+//   使用，随其一并移除（turf 是 CJS ⇒ 只要 import 就进 vendor-maps，无法 tree-shake）⇒ 真实减包。
 import { polygon as turfPoly, point as turfPt } from '@turf/helpers'
-import turfAreaFn from '@turf/area'
-import turfCircleFn from '@turf/circle'
-import turfIntersectFn from '@turf/intersect'
 import turfPointInPoly from '@turf/boolean-point-in-polygon'
 import { formatNumber } from '@/utils/populationStats'
 // v1.13.228：分年龄字段判定抽到单一入口（面板过滤 + 未来对比面板复用）
@@ -4260,21 +4259,9 @@ const analyzePopulationDistribution = async () => {
   console.log('analyzePopulationDistribution函数执行结束')
 }
 
-// 计算两点之间的距离（米）- 使用Haversine公式
-const getDistanceFromLatLng = (lat1, lng1, lat2, lng2) => {
-  const R = 6371000 // 地球半径（米）
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLng = (lng2 - lng1) * Math.PI / 180
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng / 2) * Math.sin(dLng / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
-
 // 检测点是否在圆形内（使用球面距离）
 const isPointInCircle = (pointLat, pointLng, centerLat, centerLng, radius) => {
-  return getDistanceFromLatLng(centerLat, centerLng, pointLat, pointLng) <= radius
+  return calculateDistance(centerLat, centerLng, pointLat, pointLng) <= radius
 }
 
 // 检测多边形是否与圆相交
@@ -4361,73 +4348,6 @@ const isLineIntersectsCircle = (lat1, lng1, lat2, lng2, centerLat, centerLng, ra
   const closestLng = lng1 + t * (lng2 - lng1)
   
   return dist(closestLat, closestLng, centerLat, centerLng) <= radius
-}
-
-// 计算多边形面积（平方米）- 使用球面近似公式
-const calculatePolygonArea = (ring) => {
-  if (!ring || ring.length < 3) return 0
-  
-  let area = 0
-  const n = ring.length
-  const R = 6371000  // 地球半径（米）
-  
-  for (let i = 0; i < n; i++) {
-    const [lng1, lat1] = ring[i]
-    const [lng2, lat2] = ring[(i + 1) % n]
-    
-    const lat1Rad = lat1 * Math.PI / 180
-    const lat2Rad = lat2 * Math.PI / 180
-    const lng1Rad = lng1 * Math.PI / 180
-    const lng2Rad = lng2 * Math.PI / 180
-    
-    area += (lng2Rad - lng1Rad) * (2 + Math.sin(lat1Rad) + Math.sin(lat2Rad))
-  }
-  
-  area = Math.abs(area * R * R / 2)
-  return area
-}
-
-// 计算多边形与圆的交集面积比例（使用Turf.js精确几何计算）
-const calculateIntersectionRatio = (geom, centerLat, centerLng, radius) => {
-  // 如果几何体无效，直接返回0
-  if (!geom || !geom.coordinates || geom.coordinates.length === 0) return 0
-  
-  try {
-    // 将GeoJSON几何体转换为Turf多边形
-    let turfPolygon
-    if (geom.type === 'Polygon') {
-      turfPolygon = turfPoly(geom.coordinates)
-    } else if (geom.type === 'MultiPolygon') {
-      // 使用第一个多边形（通常只有一个）
-      turfPolygon = turfPoly(geom.coordinates[0])
-    } else {
-      return 0
-    }
-    
-    // 计算多边形面积（平方米）
-    const polygonArea = turfAreaFn(turfPolygon)
-    if (polygonArea === 0) return 0
-    
-    // 创建圆形（Turf.circle半径单位为公里，需要从米转换）
-    const radiusKm = radius / 1000
-    const turfCircle = turfCircleFn([centerLng, centerLat], radiusKm, { steps: 64 })
-    
-    // 计算交集
-    const intersection = turfIntersectFn(turfPolygon, turfCircle)
-    
-    // 如果没有交集，返回0
-    if (!intersection) return 0
-    
-    // 计算交集面积（平方米）
-    const intersectionArea = turfAreaFn(intersection)
-    
-    // 返回交集面积占多边形面积的比例
-    return intersectionArea / polygonArea
-  } catch (error) {
-    console.error('Turf.js计算交集面积失败:', error)
-    // 出错时返回保守估计0.5，避免影响整体计算
-    return 0.5
-  }
 }
 
 // 关闭分析对话框（同时关闭圆形设置对话框）
@@ -7743,9 +7663,10 @@ const searchCommerce = async () => {
         if (boundaries.length > 0) {
           const flatCoords = boundaries.flat()
           if (flatCoords.length >= 3) {
-            // calculatePolygonArea 需要 [lng, lat] 格式
-            const lngLatCoords = flatCoords.map(p => [p[1], p[0]])
-            const areaSqm = calculatePolygonArea(lngLatCoords)
+            // v1.13.233：改用 utils/map 的 calculateArea（收 {lat,lng}）—— 消重
+            //   （原局部 calculatePolygonArea 收 [lng,lat]，公式严格相同；已数值验证显示值不变）
+            // ⚠️ flatCoords 已是 [lat, lng]（上游 boundaries 做过 c[1],c[0] 交换）⇒ 直接构造对象
+            const areaSqm = calculateArea(flatCoords.map(p => ({ lat: p[0], lng: p[1] })))
             commerceArea.value = Math.round(areaSqm / 10000) / 100  // 平方米 → 平方公里，保留2位
           }
         }
