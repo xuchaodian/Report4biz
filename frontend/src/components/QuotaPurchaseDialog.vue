@@ -40,7 +40,15 @@
         <el-form-item label="联系电话" prop="contact_phone">
           <el-input v-model="form.contact_phone" placeholder="如：13800138000 / 021-12345678" maxlength="30" />
         </el-form-item>
-        <el-form-item label="期望采购次数" prop="want_amount">
+        <!-- v1.13.234：「期望采购次数」→「采购次数」（业主 2026-10-16）。
+             ⚠️ 折行根因（实测，非推测）：本项 prop 为必填 ⇒ el-form-item 带 is-required，
+             label 的 `::before` 星号是 `position: static` ⇒ **实际占位**
+             （宽 4.9375px + margin-right 4px ≈ 8.94px）。
+             于是 label 可用宽 = 104px(label-width) − 12px(padding-right) − 8.94px(星号) ≈ **83.06px**，
+             而 6 个中文字 = 84px ⇒ 恰好超出 0.94px ⇒ 断成「期望采购次」+「数」两行
+             （对照：同为 6 字的「期望到货日期」非必填、无星号，可用 92px ⇒ 单行，故只此一项折行）。
+             ⇒ 改 4 字（56px）后单行可容。**若日后要再加长文案，须同时调 label-width，否则会再次折行。** -->
+        <el-form-item label="采购次数" prop="want_amount">
           <el-input-number
             v-model="form.want_amount"
             :min="1"
@@ -141,8 +149,8 @@ const rules = {
     required: true,
     trigger: 'change',
     validator: (_rule, value, cb) => {
-      if (value === undefined || value === null || value === '') return cb(new Error('请输入期望采购次数'))
-      if (!Number.isInteger(Number(value)) || Number(value) < 1) return cb(new Error('期望采购次数必须为不小于 1 的整数'))
+      if (value === undefined || value === null || value === '') return cb(new Error('请输入采购次数'))
+      if (!Number.isInteger(Number(value)) || Number(value) < 1) return cb(new Error('采购次数必须为不小于 1 的整数'))
       cb()
     }
   }]
