@@ -399,7 +399,7 @@ function generateMockData(services) {
  *   cityMonth: string,  // 格式: '202403'，为空则用最新月份
  * }
  * 计费（v1.13.105 B1）：本次查询固定消耗 1 次上游 getData 调用。服务端自行计量，
- * 不接受客户端传入 quotaUsed（防改包 quotaUsed:0 绕过扣减），与 districts/scoringEngine 硬编码 -1 对齐。
+ * 不接受客户端传入 quotaUsed（防改包 quotaUsed:0 绕过扣减），与 districts 硬编码 -1 对齐。
  */
 router.post('/query', authenticate, async (req, res) => {
   // 从请求体获取参数（提到try外面供catch块访问）

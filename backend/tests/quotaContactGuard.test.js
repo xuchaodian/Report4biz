@@ -69,7 +69,6 @@ const GATE = path.join(REPO_ROOT, GATE_REL)
  */
 const CALL_SITES = [
   { file: 'components/SmartstepsPanel.vue', minCalls: 3 },
-  { file: 'views/SiteEvaluationView.vue', minCalls: 3 },
   { file: 'views/DistrictInsightView.vue', minCalls: 1 },
   // ⚠️ 以下两处同样是**实施期才发现**的活入口（设计 §1.2 只列了 5 处，取证漏了它们）：
   //    两个弹窗的查询/购买按钮都是 `:disabled="!canQuery"`，而 canQuery 含 `available > 0`
@@ -381,7 +380,6 @@ describe('配额采购引导：文案与联系方式必须收敛到 utils/quotaC
       [UTIL]: [/export\s+const\s+QUOTA_CONTACT/, /requireQuota/],
       [GATE]: [/export\s+function\s+checkQuota/, /export\s+function\s+buildGateError/],
       [path.join(FRONTEND_SRC, 'components/SmartstepsPanel.vue')]: [/<script setup>/],
-      [path.join(FRONTEND_SRC, 'views/SiteEvaluationView.vue')]: [/<script setup>/],
     }
     const eaten = []
     for (const [f, res] of Object.entries(MARKERS)) {

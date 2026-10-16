@@ -97,15 +97,13 @@ const routes = [
         name: 'DistrictInsight',
         component: () => import('@/views/DistrictInsightView.vue')
       },
-      // 选址评估（v1.11.x 曾上线，因与现有功能重叠已隐藏，代码保留可随时恢复）
-      // ⛔ 恢复前必读：盘点报告 Report4biz_隐藏功能盘点_20261014.md ＋ 记忆附录①§6.54
-      //    （恢复即重新暴露 R1：/api/scoring/score-batch 单请求最坏 ¥1200；
-      //     该族后端自 v1.13.223 起已收紧 admin-only，放宽前必须复核配额闸门）
-      // {
-      //   path: 'site-evaluation',
-      //   name: 'SiteEvaluation',
-      //   component: () => import('@/views/SiteEvaluationView.vue')
-      // },
+      // v1.13.231：选址评估（site-evaluation）已**整体清理**。
+      //   沿革：v1.11.x 上线 → c9fba2e(2026-08-19) 因「与现有功能重叠」隐藏（路由注释、代码保留）
+      //        → 2026-10-16 完成重叠评审后决定清理（判定重叠 ≈80%：开店余地 + 商圈洞察
+      //          已覆盖人口/竞品/配套三面，且该族「从未被真正验证」）。
+      //   ⛔ 若将来要恢复：先读 workbuddy过程文件/Report4biz_隐藏资产清理方案_20261016.md
+      //      ＋ 记忆附录①§6.61 —— 恢复即重新暴露 R1（score-batch 单请求最坏 ¥1200），
+      //      且前端 4 组件 / 后端 2 路由 / 引擎 / 6 张表均需从 git 历史取回。
       {
         path: 'sales-forecast',
         name: 'SalesForecast',

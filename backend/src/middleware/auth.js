@@ -42,7 +42,8 @@ export function authenticate(req, res, next) {
 // ⚠️ 必须挂在 authenticate **之后**（依赖 req.user）。
 //    防御（v1.13.223）：漏挂 authenticate 时给出可诊断的 403，而不是
 //    `req.user.role` 抛 TypeError → 500（500 会掩盖「顺序挂反」这类配置错误）。
-//    配套：app.js 对两族「隐藏功能」路由改为 `authenticate, requireAdmin` 串联，
+//    ⚠️ v1.13.231：原唯一使用者（/api/scoring、/api/store-scores 两族隐藏资产）
+//    已随清理一并删除，app.js 不再挂载本中间件；函数保留供后续 admin-only 端点复用。
 //    本函数不自行认证，只判角色。
 export function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'admin') {

@@ -1,12 +1,12 @@
 // ============================================================================
 // 授权闸门（规则 20 · P0 必做，方案 §3.6 Ⅴ）
 // ----------------------------------------------------------------------------
-// 问题：`users.quota` 原先只是"显示值"不是"限制"—— 4 个扣减入口
-//       （smartsteps / districts / scoringEngine / resale）都只校验全局物理池。
+// 问题：`users.quota` 原先只是"显示值"不是"限制"—— 多个扣减入口
+//       （smartsteps / districts / resale）都只校验全局物理池。
 //       后果：集团分给子公司 100 次，用完后子公司**照样继续烧全局池**，
 //       分配出去的数字没有任何约束力 → 需求实质上没落地。
 //
-// 本文件把 4 处散落的"只查 admin_quota"逻辑收敛为一次调用，并把
+// 本文件把散落的"只查 admin_quota"逻辑收敛为一次调用，并把
 // "成员授权额度"纳入校验。
 //
 // ★ 兼容开关（关键决策 P8）：**仅对 org_members 中的成员启用**。
@@ -109,12 +109,14 @@ export function buildGateError(gate, { service = '联通人口数据', ownStatus
  *
  * 立档背景（v1.13.222 · 批次 218 遗留项 ①）：
  *   多数路由是扁平的「先 checkQuota，不 ok 就直接 return」，好处理；
- *   但 `scoringEngine.js::queryPointPopulation` 的配额校验**嵌在多层 try/catch 内部**，
- *   早先只能 `return null`，上层再按「数据缺失」处理 ⇒ **静默降级成默认 60 分**
- *   （`calcPopulationScore` 的魔法默认值），人口还占 0.40 权重 ⇒
- *   用户拿到一个**看起来合理、实则编造**的综合评分去做开店决策。
+ *   但深层调用链（当时的 `scoringEngine.js::queryPointPopulation`）的配额校验
+ *   **嵌在多层 try/catch 内部**，早先只能 `return null`，上层再按「数据缺失」处理
+ *   ⇒ **静默降级成默认 60 分**（`calcPopulationScore` 的魔法默认值），
+ *   人口还占 0.40 权重 ⇒ 用户拿到一个**看起来合理、实则编造**的评分去做决策。
  *   现在改为抛出本错误，由路由用 `buildGateError` 转成统一响应，
  *   前端 217 批次预留的 `requireQuota` 分流分支随之生效。
+ *   ⚠️ v1.13.231：`scoringEngine.js` 已随两族隐藏资产清理删除；本载体机制仍保留，
+ *      供其他深层调用链（如 districts / sync）复用。
  *
  * ★ 判型用 `err.isQuotaGate`（⛔ 不靠 `instanceof` —— 跨模块/打包场景更脆）。
  */

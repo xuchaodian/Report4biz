@@ -1,8 +1,9 @@
 // ============================================================================
 // 配额池 / 账号授权额度的统一读取入口（P0 · 集团/子公司数据同步）
 // ----------------------------------------------------------------------------
-// 背景：全系统有 4 处会扣减联通配额（smartsteps / districts / scoringEngine /
-// resale），它们原先各自 `SELECT remaining_quota FROM admin_quota` 做门禁。
+// 背景：全系统有 3 处会扣减联通配额（smartsteps / districts / resale），
+// 它们原先各自 `SELECT remaining_quota FROM admin_quota` 做门禁。
+// （v1.13.231：原第 4 处 scoringEngine 已随两族隐藏资产清理删除）
 // 本文件把这些散落读取收敛到一处，供：
 //   · utils/quotaGate.js  —— 授权闸门（规则 20）
 //   · routes/resale.js    —— 预算池展示（原 getPoolInfo 的宿主）
