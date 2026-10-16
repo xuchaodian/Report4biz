@@ -662,7 +662,7 @@
           <el-table-column prop="contact_name" label="联系人" width="90" />
           <el-table-column prop="contact_phone" label="联系电话" width="130" />
           <el-table-column prop="contact_email" label="电子邮箱" min-width="180" show-overflow-tooltip />
-          <el-table-column label="期望采购" width="96" align="center">
+          <el-table-column label="采购次数" width="96" align="center">
             <template #default="{ row }"><b class="quota-want">{{ row.want_amount }}</b> 次</template>
           </el-table-column>
           <el-table-column prop="purpose" label="用途说明" min-width="140" show-overflow-tooltip />
@@ -1127,7 +1127,7 @@ const acceptQuotaRequest = async (row) => {
   const name = row.current_username || row.username || `#${row.user_id}`
   try {
     await ElMessageBox.confirm(
-      `确认受理「${name}」的配额采购申请（期望采购 ${row.want_amount} 次）？` +
+      `确认受理「${name}」的配额采购申请（采购次数 ${row.want_amount} 次）？` +
       '受理只表示我方已接下这一单，不会自动充值到账；请在签约/回款核对完成后，' +
       '到「用户列表」用「设置配额」为其单独充值。',
       '受理配额采购申请',
@@ -1879,6 +1879,6 @@ onMounted(() => {
   line-height: 1.6;
 }
 .vip-review-alert b { font-weight: 600; }
-/* 弹窗内「期望采购次数」加粗（表格里唯一需要抢眼的数字） */
+/* 弹窗内「采购次数」加粗（表格里唯一需要抢眼的数字） */
 .quota-want { color: #0d579c; font-size: 14px; }
 </style>

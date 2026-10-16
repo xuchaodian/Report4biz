@@ -1015,7 +1015,7 @@ export async function initDatabase() {
   // 用户填意向单 → 我方商务（jyo@youshi-tech.com）收到内部通知邮件 → 管理员在用户管理页受理。
   // 🔴 决策 3：**受理 ≠ 充值** —— accept 只改本表 status，⛔ 绝不写 users.quota
   //    （回款/签约核对完成后，由管理员在用户管理页「设置累计总配额」单独执行）。
-  // 🔴 决策 4：不上屏单价 —— 本表只存「期望采购次数」，金额属合同条款。
+  // 🔴 决策 4：不上屏单价 —— 本表只存「采购次数」，金额属合同条款。
   // 幂等零迁移：CREATE TABLE IF NOT EXISTS —— 生产重启即建表，无需手工 ALTER。
   db.run(`
     CREATE TABLE IF NOT EXISTS quota_purchase_requests (
@@ -1028,7 +1028,7 @@ export async function initDatabase() {
       contact_name TEXT,
       contact_email TEXT,
       contact_phone TEXT,
-      want_amount INTEGER NOT NULL,          -- 期望采购次数（⛔ 不含单价/金额）
+      want_amount INTEGER NOT NULL,          -- 采购次数（⛔ 不含单价/金额）
       purpose TEXT,                          -- 用途说明（选填）
       expect_date TEXT,                      -- 期望到货日期（选填）
       status TEXT NOT NULL DEFAULT 'pending',

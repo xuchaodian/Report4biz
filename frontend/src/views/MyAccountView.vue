@@ -953,7 +953,7 @@ function openQuotaApplyStatus() {
   const r = quotaApply.value || {}
   const parts = [
     `公司名：${r.company || '—'}`,
-    `期望采购次数：${r.want_amount ?? '—'} 次`,
+    `采购次数：${r.want_amount ?? '—'} 次`,
     `提交时间：${r.created_at || '—'}`,
     '状态：已提交，等待我方联系'
   ]

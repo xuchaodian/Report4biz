@@ -41,6 +41,8 @@
           <el-input v-model="form.contact_phone" placeholder="如：13800138000 / 021-12345678" maxlength="30" />
         </el-form-item>
         <!-- v1.13.234：「期望采购次数」→「采购次数」（业主 2026-10-16）。
+             v1.13.235：全仓其余各处一并统一为「采购次数」——管理员侧列头/确认弹窗、
+             用户侧「申请状态」弹窗、后端三条校验消息、内部通知邮件字段名、代码注释。
              ⚠️ 折行根因（实测，非推测）：本项 prop 为必填 ⇒ el-form-item 带 is-required，
              label 的 `::before` 星号是 `position: static` ⇒ **实际占位**
              （宽 4.9375px + margin-right 4px ≈ 8.94px）。

@@ -11,7 +11,7 @@
  *      回款/签约核对完成后，由管理员在用户管理页「设置累计总配额」另行执行。
  *      ⚠️ 若将来要做「受理即充值」，**必须用增量写法** `quota = quota + N`，
  *         ⛔ 不要走 `PUT /users/quota` 的**差值语义**（要求每次填「原值+本次量」，极易算错）。
- *   ② **不上屏单价**（决策 4）：本表只存「期望采购次数」；内部通知邮件里 ⛔ 也不写价。
+ *   ② **不上屏单价**（决策 4）：本表只存「采购次数」；内部通知邮件里 ⛔ 也不写价。
  *   ③ **先回响应、后发信**：SMTP socketTimeout 达 30s，且发信失败不能否定「申请已提交」这一事实
  *      ⇒ `res.status(201)` 之后才调用，且必须 `.catch()` 兜住（外部 IO 绝不进事务/阻塞响应）。
  *   ④ **以库内数据为准**读账号（⛔ 不用 `req.user.role`：JWT 是**签发时快照**）。
@@ -111,17 +111,17 @@ router.post('/', authenticate, (req, res) => {
     if (!contactName) missing.push('联系人')
     if (!contactEmail) missing.push('电子邮箱')
     if (!contactPhone) missing.push('联系电话')
-    if (wantAmountRaw === undefined || wantAmountRaw === null || wantAmountRaw === '') missing.push('期望采购次数')
+    if (wantAmountRaw === undefined || wantAmountRaw === null || wantAmountRaw === '') missing.push('采购次数')
     if (missing.length) {
       return res.status(400).json({ message: `请填写：${missing.join('、')}` })
     }
 
     const wantAmount = Number(wantAmountRaw)
     if (!Number.isInteger(wantAmount) || wantAmount < 1) {
-      return res.status(400).json({ message: '期望采购次数必须为不小于 1 的整数' })
+      return res.status(400).json({ message: '采购次数必须为不小于 1 的整数' })
     }
     if (wantAmount > 1000000) {
-      return res.status(400).json({ message: '期望采购次数过大，请与商务直接联系' })
+      return res.status(400).json({ message: '采购次数过大，请与商务直接联系' })
     }
 
     const fields = {

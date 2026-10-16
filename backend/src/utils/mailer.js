@@ -139,7 +139,7 @@ export async function sendQuotaPurchaseNotice({
     ['联系人', contactName || '—'],
     ['联系电话', contactPhone || '—'],
     ['电子邮箱', contactEmail || '—'],
-    ['期望采购次数', wantAmount != null ? String(wantAmount) : '—'],
+    ['采购次数', wantAmount != null ? String(wantAmount) : '—'],
     ['用途说明', purpose || '—'],
     ['期望到货日期', expectDate || '—'],
     ['提交时间', createdAt || '—']
