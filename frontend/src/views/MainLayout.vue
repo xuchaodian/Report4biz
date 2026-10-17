@@ -112,6 +112,12 @@
               <el-dropdown-item command="export">
                 <el-icon><Download /></el-icon>导出报表
               </el-dropdown-item>
+              <!-- 用户手册（2026-10-17）：独立静态页 /help/，与 SPA 路由无关。
+                   ⛔ 必须走 window.open / 原生跳转，不可 router.push —— 它不在路由表里，
+                      会被 catch-all 抓成 404（同 404 页指 /home/ 那次的性质）。 -->
+              <el-dropdown-item command="help">
+                <el-icon><Reading /></el-icon>使用帮助
+              </el-dropdown-item>
               <!-- 仅集团账号（总部 / 子公司）可见：不属于任何集团时该页只有空态，没必要展示入口 -->
               <el-dropdown-item v-if="userStore.hasOrg" command="dataSync">
                 <el-icon><RefreshRight /></el-icon>数据同步
@@ -264,7 +270,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -446,6 +452,9 @@ const handleCommand = async (command) => {
   } else if (command === 'purchase') {
     // 跳转到个人中心并自动打开购买履历
     router.push('/account?openHistory=true')
+  } else if (command === 'help') {
+    // 打开用户手册静态页（新标签），不走 vue-router
+    window.open('/help/', '_blank', 'noopener')
   } else if (command === 'export') {
     openExportDialog()
   } else if (command === 'dataSync') {

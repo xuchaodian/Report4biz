@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用户手册 - 选址赢家Online</title>
+<meta name="description" content="选址赢家Online 用户手册：产品概述、快速入门、门户导航、地图中心、门店管理、选址工作台、联通人口分析、AI 助手、集团与子公司、API 开放等完整操作说明。">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/favicon.png" sizes="190x176" />
+<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+<style>
+:root{
+  --brand:#0d579c; --brand-dark:#0a4479; --brand-soft:#e8f1fa;
+  --ink:#1f2937; --ink-2:#4b5563; --line:#e5e7eb; --bg:#f7f9fc; --card:#ffffff;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;
+  font-size:15px;line-height:1.78;-webkit-font-smoothing:antialiased}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+/* 顶栏 */
+.topbar{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:1280px;margin:0 auto;padding:0 24px;height:56px;
+  display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;color:var(--brand-dark);font-size:16px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--brand)}
+.topbar .tag{font-size:12px;color:var(--ink-2);background:var(--brand-soft);
+  padding:2px 8px;border-radius:999px}
+.topbar nav{margin-left:auto;display:flex;gap:18px;font-size:13.5px}
+/* 布局 */
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:grid;
+  grid-template-columns:286px minmax(0,1fr);gap:28px;align-items:start}
+.toc{position:sticky;top:80px;max-height:calc(100vh - 104px);overflow:auto;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 10px}
+.toc-title{font-size:12px;letter-spacing:.08em;color:var(--ink-2);
+  text-transform:uppercase;padding:0 8px 8px}
+.toc a{display:block;padding:5px 8px;border-radius:7px;color:var(--ink-2);font-size:13.5px}
+.toc a:hover{background:var(--brand-soft);color:var(--brand-dark);text-decoration:none}
+.toc-l1{font-weight:600;color:var(--ink)!important;margin-top:5px}
+.toc-l2{padding-left:20px!important;font-size:13px!important}
+/* 正文 */
+.doc{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:34px 40px 48px;min-width:0}
+.doc h1{font-size:23px;color:var(--brand-dark);margin:34px 0 14px;padding-bottom:9px;
+  border-bottom:2px solid var(--brand-soft);scroll-margin-top:76px}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:17.5px;color:var(--brand);margin:26px 0 10px;scroll-margin-top:76px}
+.doc h3{font-size:15.5px;margin:20px 0 8px}
+.doc p{margin:9px 0}
+.doc ul,.doc ol{margin:9px 0;padding-left:24px}
+.doc li{margin:5px 0}
+.doc strong{color:var(--brand-dark)}
+.doc table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;
+  display:block;overflow-x:auto}
+.doc th,.doc td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+.doc th{background:var(--brand-soft);color:var(--brand-dark);font-weight:600;white-space:nowrap}
+.doc tr:nth-child(even) td{background:#fbfcfe}
+.doc code{background:#f1f5f9;border:1px solid var(--line);border-radius:5px;
+  padding:1px 5px;font-size:13px}
+.doc blockquote{margin:12px 0;padding:10px 14px;border-left:3px solid var(--brand);
+  background:var(--brand-soft);border-radius:0 8px 8px 0;color:var(--ink-2)}
+.doc hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+.doc img{max-width:100%;height:auto}
+/* 页脚 */
+.foot{max-width:1280px;margin:0 auto;padding:8px 24px 40px;color:var(--ink-2);font-size:12.5px}
+/* 响应式 */
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr;padding:16px}
+  .toc{position:static;max-height:none}
+  .doc{padding:22px 18px 34px}
+  .doc h1{font-size:20px}
+  .topbar nav{display:none}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand"><span class="dot"></span>选址赢家Online</span>
+    <span class="tag">用户手册</span>
+    <nav>
+      <a href="/">进入系统</a>
+      <a href="/home/">产品主页</a>
+      <a href="#top">回到顶部</a>
+    </nav>
+  </div>
+</header>
+
+<a id="top"></a>
+<div class="wrap">
+  <aside class="toc">
+    <div class="toc-title">目录</div>
+      <a class="toc-l1" href="#s2">1. 产品概述</a>
+      <a class="toc-l2" href="#s3">核心能力</a>
+      <a class="toc-l2" href="#s4">技术说明</a>
+      <a class="toc-l1" href="#s5">2. 快速入门</a>
+      <a class="toc-l2" href="#s6">2.1 注册与登录</a>
+      <a class="toc-l2" href="#s7">2.2 批量导入门店</a>
+      <a class="toc-l2" href="#s8">2.3 首次地图操作</a>
+      <a class="toc-l1" href="#s9">3. 门户导航</a>
+      <a class="toc-l2" href="#s10">3.1 顶部导航栏</a>
+      <a class="toc-l2" href="#s11">3.2 用户下拉菜单</a>
+      <a class="toc-l1" href="#s12">4. 地图中心</a>
+      <a class="toc-l2" href="#s13">4.1 左上角：地址搜索</a>
+      <a class="toc-l2" href="#s14">4.2 左侧面板：商圈工具</a>
+      <a class="toc-l2" href="#s15">4.3 右侧工具栏：地图工具箱</a>
+      <a class="toc-l2" href="#s16">4.4 门店类型开关</a>
+      <a class="toc-l2" href="#s17">4.5 门店弹窗（POPUP）</a>
+      <a class="toc-l2" href="#s18">4.6 图层切换（右下角）</a>
+      <a class="toc-l1" href="#s19">5. 门店管理</a>
+      <a class="toc-l2" href="#s20">5.1 数据视图（/data）</a>
+      <a class="toc-l2" href="#s21">5.2 门店操作</a>
+      <a class="toc-l2" href="#s22">5.3 批量操作</a>
+      <a class="toc-l2" href="#s23">5.4 导入/导出</a>
+      <a class="toc-l1" href="#s24">6. 竞品/品牌/购物中心管理</a>
+      <a class="toc-l2" href="#s25">6.1 竞品门店（/competitors）</a>
+      <a class="toc-l2" href="#s26">6.2 品牌门店（/brand-stores）</a>
+      <a class="toc-l2" href="#s27">6.3 购物中心（/shopping-centers）</a>
+      <a class="toc-l1" href="#s28">7. 个人中心与购买履历</a>
+      <a class="toc-l2" href="#s29">7.1 个人中心（/account）</a>
+      <a class="toc-l2" href="#s30">7.2 筛选购买履历</a>
+      <a class="toc-l2" href="#s31">7.3 查看查询结果</a>
+      <a class="toc-l2" href="#s32">7.4 微信分享</a>
+      <a class="toc-l1" href="#s33">8. 智慧足迹联通人口分析</a>
+      <a class="toc-l2" href="#s34">8.2 可用服务指标</a>
+      <a class="toc-l2" href="#s35">8.3 使用方法</a>
+      <a class="toc-l2" href="#s36">8.4 配额管理</a>
+      <a class="toc-l1" href="#s37">9. 品牌图标管理</a>
+      <a class="toc-l1" href="#s38">10. 统计数据管理（Shapefile）</a>
+      <a class="toc-l2" href="#s39">10.1 上传数据</a>
+      <a class="toc-l2" href="#s40">10.2 查看与查询</a>
+      <a class="toc-l2" href="#s41">10.3 共享</a>
+      <a class="toc-l2" href="#s42">10.4 在地图中的应用</a>
+      <a class="toc-l2" href="#s43">10.5 城市宏观数据Tab</a>
+      <a class="toc-l1" href="#s44">11. AI助手</a>
+      <a class="toc-l2" href="#s45">11.2 支持的指令</a>
+      <a class="toc-l2" href="#s46">11.3 额度与限次说明</a>
+      <a class="toc-l2" href="#s47">11.4 使用技巧</a>
+      <a class="toc-l1" href="#s48">12. 数据大屏</a>
+      <a class="toc-l2" href="#s49">12.1 打开与退出</a>
+      <a class="toc-l2" href="#s50">12.2 页面构成</a>
+      <a class="toc-l2" href="#s51">12.3 地图与图层</a>
+      <a class="toc-l2" href="#s52">12.4 数据刷新</a>
+      <a class="toc-l1" href="#s53">13. 选址工作台（城市洞察 / 商圈洞察 / 销售预测）</a>
+      <a class="toc-l2" href="#s54">13.1 城市洞察</a>
+      <a class="toc-l2" href="#s55">13.2 商圈洞察</a>
+      <a class="toc-l2" href="#s56">13.3 销售预测（VIP 专属）</a>
+      <a class="toc-l1" href="#s57">14. 集团 / 子公司与数据同步</a>
+      <a class="toc-l2" href="#s58">14.1 概念与绑定关系</a>
+      <a class="toc-l2" href="#s59">14.2 数据同步页（/data-sync）</a>
+      <a class="toc-l2" href="#s60">14.3 只读镜像与管辖范围（重要规则）</a>
+      <a class="toc-l2" href="#s61">14.4 非集团账号</a>
+      <a class="toc-l1" href="#s62">15. API 开放（第三方调用）</a>
+      <a class="toc-l2" href="#s63">15.1 功能定位</a>
+      <a class="toc-l2" href="#s64">15.2 操作步骤</a>
+      <a class="toc-l2" href="#s65">15.3 配额池</a>
+      <a class="toc-l1" href="#s66">16. 常见问题与排错</a>
+      <a class="toc-l2" href="#s67">16.1 登录相关</a>
+      <a class="toc-l2" href="#s68">16.2 地图相关</a>
+      <a class="toc-l2" href="#s69">16.3 数据相关</a>
+      <a class="toc-l2" href="#s70">16.4 配额与查询</a>
+      <a class="toc-l2" href="#s71">16.5 其他</a>
+  </aside>
+  <main class="doc">
+<p><strong>选址赢家Online</strong></p><p><strong>用户手册</strong></p><p>v3.0.0</p><p>系统地址：https://mka-online.cn</p><p>更新日期：2026年10月</p><p>1. 产品概述</p><p>2. 快速入门</p><p>3. 门户导航</p><p>4. 地图中心</p><p>5. 门店管理</p><p>6. 竞品/品牌/购物中心管理</p><p>7. 个人中心与购买履历</p><p>8. 智慧足迹联通人口分析</p><p>9. 品牌图标管理</p><p>10. 统计数据管理（Shapefile）</p><p>11. AI助手</p><p>12. 数据大屏</p><p>13. 选址工作台（城市洞察 / 商圈洞察 / 销售预测）</p><p>14. 集团 / 子公司与数据同步</p><p>15. API 开放（第三方调用）</p><p>16. 常见问题与排错</p><h1 id="s2">1. 产品概述</h1><p>选址赢家Online（Report4biz）是一套面向连锁门店选址与商圈分析的 WebGIS 商业智能平台。系统以地图为核心，整合门店管理、人口分析、竞品追踪、AI 智能辅助等能力，帮助选址决策者做出更高效的商圈判断。</p><h2 id="s3">核心能力</h2><table><tr><td><p><strong>能力</strong></p></td><td><p><strong>说明</strong></p></td></tr><tr><td><p>🗺️ 多源地图</p></td><td><p>高德矢量、腾讯地图、卫星影像三种底图自由切换</p></td></tr><tr><td><p>📊 人口分析</p></td><td><p>基于Shapefile的常住人口分布 + 智慧足迹联通人口API</p></td></tr><tr><td><p>🤖 AI助手</p></td><td><p>集成豆包大模型，自然语言指令控制地图操作与数据分析</p></td></tr><tr><td><p>📈 购买履历</p></td><td><p>完整记录每次人口数据查询，支持结果导出和微信分享</p></td></tr><tr><td><p>👥 多用户</p></td><td><p>管理员配额分配，多用户独立工作</p></td></tr><tr><td><p>🧭 选址工作台</p></td><td><p>城市洞察 / 商圈洞察 / 销售预测（VIP 专属），辅助城市与商圈决策</p></td></tr><tr><td><p>📺 数据大屏</p></td><td><p>门店与竞品全景展示，KPI 与图表每小时自动刷新</p></td></tr></table><h2 id="s4">技术说明</h2><ul><li>系统在浏览器中运行，推荐使用 Chrome / Edge 最新版本</li><li>地图坐标采用 GCJ-02（火星坐标系），人口查询时自动转换为 WGS84</li><li>数据存储在云端服务器，无需本地安装</li></ul><h1 id="s5">2. 快速入门</h1><h2 id="s6">2.1 注册与登录</h2><ul><li>打开 https://mka-online.cn</li><li>如无账号，点击「没有账号？去注册」填写用户名、密码、邮箱完成注册</li><li>使用用户名和密码登录</li><li>登录后进入地图主界面</li><li>忘记密码：在登录页点「<strong>忘记密码</strong>」，输入注册邮箱，按邮件里的链接设置新密码（链接 30 分钟内有效）</li></ul><h2 id="s7">2.2 批量导入门店</h2><ul><li>点击顶部导航「我的门店」进入门店管理页</li><li>点击「导入门店」→「导入」按钮</li><li>选择CSV文件（支持UTF-8/GBK编码）</li><li>点击「确定导入」完成批量导入</li></ul><p><em>💡 CSV模板格式：点击「导入门店」→ 下载模板，按模板格式填写数据</em></p><h2 id="s8">2.3 首次地图操作</h2><ul><li>点击鼠标滚轮拖动地图</li><li>滚轮缩放</li><li>右下角切换底图（高德/腾讯/卫星）</li><li>点击地图上门店图标查看详情</li></ul><h1 id="s9">3. 门户导航</h1><h2 id="s10">3.1 顶部导航栏</h2><table><tr><td><p><strong>菜单项</strong></p></td><td><p><strong>页面</strong></p></td><td><p><strong>说明</strong></p></td></tr><tr><td><p>地图</p></td><td><p>/</p></td><td><p>主地图操作中心</p></td></tr><tr><td><p>我的门店</p></td><td><p>/data</p></td><td><p>门店数据表格管理</p></td></tr><tr><td><p>竞品门店</p></td><td><p>/competitors</p></td><td><p>竞品数据管理</p></td></tr><tr><td><p>品牌门店</p></td><td><p>/brand-stores</p></td><td><p>品牌门店数据管理（仅管理员可见）</p></td></tr><tr><td><p>购物中心</p></td><td><p>/shopping-centers</p></td><td><p>购物中心数据管理 + 餐饮商户</p></td></tr><tr><td><p>统计数据</p></td><td><p>/shapefiles</p></td><td><p>Shapefile文件管理 + 城市宏观数据</p></td></tr><tr><td><p>选址工作台</p></td><td><p>下拉菜单</p></td><td><p>城市洞察 / 商圈洞察 / 销售预测（VIP 专属）</p></td></tr><tr><td><p>数据大屏</p></td><td><p>/dashboard</p></td><td><p>门店与竞品全景展示，每小时自动刷新；入口在顶栏最右侧</p></td></tr></table><h2 id="s11">3.2 用户下拉菜单</h2><p>点击右上角头像区域展开：</p><table><tr><td><p><strong>选项</strong></p></td><td><p><strong>功能</strong></p></td></tr><tr><td><p>个人中心</p></td><td><p>查看账户信息、配额、购买履历；提交 VIP 试用申请与配额采购申请</p></td></tr><tr><td><p>设置图标</p></td><td><p>管理品牌地图图标</p></td></tr><tr><td><p>设置模板</p></td><td><p>上传 Excel 报表模板（仅管理员显示）</p></td></tr><tr><td><p>购买履历</p></td><td><p>快捷跳转到购买履历页</p></td></tr><tr><td><p>导出报表</p></td><td><p>按订单导出 Excel / PDF；勾选多条时自动打包为 ZIP</p></td></tr><tr><td><p>数据同步</p></td><td><p>集团 / 子公司数据同步（仅集团账号显示）</p></td></tr><tr><td><p>剩余次数</p></td><td><p>显示当前联通人口数据剩余次数（每 60 秒自动刷新）</p></td></tr><tr><td><p>退出登录</p></td><td><p>安全退出系统</p></td></tr></table><h1 id="s12">4. 地图中心</h1><p>地图页面是系统的核心工作区。</p><h2 id="s13">4.1 左上角：地址搜索</h2><ul><li>输入关键词搜索地址，调用高德API自动完成识别</li><li>选中搜索结果后地图自动定位到该位置</li></ul><h2 id="s14">4.2 左侧面板：商圈工具</h2><p><strong>周边检索</strong></p><ul><li>在地图上绘制圆形或多边形</li><li>搜索范围内的POI（餐饮、购物、教育等）</li></ul><p><strong>商圈人口分布</strong></p><ul><li>点击「选择中心点」后在地图上点击设置圆心</li><li>设置1~3层半径（公里）</li><li>分析该范围内的常住人口分布</li></ul><p><strong>常住人口对比</strong></p><ul><li>选择2~5家门店，设置统一分析半径，自动生成对比表格与图表</li></ul><p><strong>联通人口（智慧足迹）</strong></p><ul><li>见第8章详细说明</li></ul><h2 id="s15">4.3 右侧工具栏：地图工具箱</h2><table><tr><td><p><strong>工具</strong></p></td><td><p><strong>图标</strong></p></td><td><p><strong>功能</strong></p></td></tr><tr><td><p>添加门店</p></td><td><p>📍</p></td><td><p>在地图上点击添加门店</p></td></tr><tr><td><p>测量距离</p></td><td><p>📏</p></td><td><p>点击绘制折线测量距离</p></td></tr><tr><td><p>测量面积</p></td><td><p>📐</p></td><td><p>点击绘制多边形测量面积</p></td></tr><tr><td><p>热力图</p></td><td><p>🔥</p></td><td><p>显示门店分布热力渲染</p></td></tr><tr><td><p>聚合显示</p></td><td><p>🔵</p></td><td><p>门店聚合/非聚合切换</p></td></tr><tr><td><p>人口分析</p></td><td><p>📊</p></td><td><p>智慧足迹人口分析入口</p></td></tr><tr><td><p>清除绘制</p></td><td><p>🗑️</p></td><td><p>清除所有绘制图形</p></td></tr><tr><td><p>门店对比</p></td><td><p>⚖️</p></td><td><p>选择2~5家门店进行多维度对比</p></td></tr><tr><td><p>门店排名</p></td><td><p>🏆</p></td><td><p>按到访/居住/工作人口进行门店排名</p></td></tr><tr><td><p>开店余地</p></td><td><p>📍</p></td><td><p>分析某城市各网格的门店密度与开店空间</p></td></tr></table><h2 id="s16">4.4 门店类型开关</h2><ul><li>我的门店（默认开启）/ 竞品门店（默认关闭）/ 品牌门店（默认关闭）/ 购物中心（默认关闭）</li></ul><h2 id="s17">4.5 门店弹窗（POPUP）</h2><ul><li>门店信息：编号、类型、门店状态、商场类型、商圈类型、面积等</li><li>操作按钮：编辑、删除、联通人口、人口分布、竞品分布</li><li>⭐ 标记表示该门店有购买履历记录</li></ul><h2 id="s18">4.6 图层切换（右下角）</h2><ul><li>高德地图（默认）/ 腾讯地图 / 卫星影像</li></ul><ol><li>开店余地：在地图上圈出「机会点」（可按城市、半径、我的门店数、竞品门店数、人口条件筛选）</li><li>常住人口分布：以选点为圆心统计居住人口，最多同时 3 个半径圆，支持单位与色块设置</li><li>高精人口分布：250 米网格的高精度人口（仅管理员可见）</li><li>周边商业配套：对选定点位做周边商业配套打分</li><li>常住人口对比：选择 2~5 家门店，按统一半径对比人口</li><li>商圈内点位：在地图上点击位置，列出半径内的我的门店与竞品门店</li></ol><p>📖 延伸阅读：《3. 地图操作》—— 测量距离/面积、周边门店检索、城市商圈显示</p><p>📖 延伸阅读：《4.1 开店分析｜开店余地》《4.2 开店分析｜竞品分布》《4.3 开店分析｜人口分布》《4.4 开店分析｜门店对比》（图文步骤）</p><p>💡 小技巧：在地图上右键可快速唤出「添加门店 / 定位门店 / 商圈内点位 / 周边商业配套 / 常住人口分布 / 联通人口 / 锁定地图」。</p><h1 id="s19">5. 门店管理</h1><h2 id="s20">5.1 数据视图（/data）</h2><p>门店数据以表格形式展示，支持全部CRUD操作。</p><p>筛选栏：关键词搜索、门店类型、城市、区县、门店区分、品牌、门店状态、商场类型</p><p>表格列：编号、品牌、门店名称、类型、城市、区县、门店状态、区域经理、店长、面积、座位、商场类型、门店区分、操作</p><h2 id="s21">5.2 门店操作</h2><table><tr><td><p><strong>操作</strong></p></td><td><p><strong>说明</strong></p></td></tr><tr><td><p>编辑 ✏️</p></td><td><p>修改门店信息</p></td></tr><tr><td><p>购买履历 📋</p></td><td><p>查看该门店的联通人口查询记录</p></td></tr><tr><td><p>删除 🗑️</p></td><td><p>删除该门店</p></td></tr><tr><td><p>勾选框</p></td><td><p>可选择多个门店进行批量操作</p></td></tr></table><h2 id="s22">5.3 批量操作</h2><table><tr><td><p><strong>操作</strong></p></td><td><p><strong>说明</strong></p></td></tr><tr><td><p>批量删除</p></td><td><p>删除所有勾选的门店</p></td></tr><tr><td><p>全清除</p></td><td><p>删除当前用户所有门店</p></td></tr></table><h2 id="s23">5.4 导入/导出</h2><ul><li>导入：上传CSV文件批量导入门店数据</li><li>地址解析：对没有坐标的门店，基于地址自动解析经纬度</li><li>导出：将当前门店数据导出为CSV文件</li></ul><p>📖 延伸阅读：《2. 门店可视化》—— 显示/隐藏各图层、热力图与聚合、网点优化（VIP 专属）、分区域查询门店</p><h1 id="s24">6. 竞品/品牌/购物中心管理</h1><h2 id="s25">6.1 竞品门店（/competitors）</h2><ul><li>管理竞争对手门店信息，支持按品牌、城市、关键词筛选，支持导入/导出/批量删除</li></ul><h2 id="s26">6.2 品牌门店（/brand-stores）</h2><ul><li>管理品牌下的门店信息，支持按品牌、城市、关键词筛选，支持导入/导出/批量删除/全清空</li></ul><h2 id="s27">6.3 购物中心（/shopping-centers）</h2><ul><li>管理购物中心数据，支持按城市、关键词筛选，支持导入/导出/批量删除</li></ul><p><strong>餐饮商户Tab：</strong></p><ul><li>点击商场名称进入详情，在「餐饮商户」Tab中查看商户列表</li><li>支持按归类（快餐、火锅、日料等）筛选商户</li><li>支持按楼层、商户名称关键词搜索</li><li>商户对比：选择2个以上商场，点击「商户对比」查看分类饼图对比</li><li>支持CSV导入商户数据</li></ul><h1 id="s28">7. 个人中心与购买履历</h1><h2 id="s29">7.1 个人中心（/account）</h2><p><strong>用户信息区域：用户名、公司、邮箱、角色，可修改邮箱和密码</strong></p><p><strong>配额信息卡片：</strong></p><ul><li>当前配额 / 当前已使用 / 剩余次数（卡片上另有「刷新配额」「充值履历」「购买履历」按钮）</li><li>剩余次数不足时，点「申请采购配额」提交采购意向单；也可直接联系商务：徐经理 138 1779 1741</li><li>管理员可通过用户管理页面调整配额</li><li>「体验 VIP 用户」：填写公司名 / 所在部门 / 联系人 / 电子邮箱 / 联系电话提交申请，审核通过后自动开通 <strong>30 天</strong> VIP 试用</li><li>提交采购或试用申请后，卡片上会出现「查看申请状态」，可随时查看处理进度</li></ul><p><strong>购买履历表格：</strong></p><ul><li>展示所有历史查询记录，每条记录包含：ID、门店名、类型、半径、数据年月、查询时间</li></ul><h2 id="s30">7.2 筛选购买履历</h2><ul><li>按门店名/ID、门店类型、城市、区县、半径、数据年月筛选</li></ul><h2 id="s31">7.3 查看查询结果</h2><ul><li>信息区：订单ID、查询时间、坐标位置、半径、数据年月</li><li>数据表格：12个核心人口服务指标（人口总量、居住人口、工作人口、到访人口等）</li><li>操作按钮：数据洞察（AI分析）/ 微信分享 / 导出报表</li></ul><h2 id="s32">7.4 微信分享</h2><ul><li>系统自动截图 → 预览窗口 → 复制图片/保存图片分享到微信</li></ul><h1 id="s33">8. 智慧足迹联通人口分析</h1><p>基于中国联通智慧足迹数据，查询指定位置周边的人口特征。每次查询消耗配额。</p><h2 id="s34">8.2 可用服务指标</h2><table><tr><td><p><strong>代码</strong></p></td><td><p><strong>指标名称</strong></p></td><td><p><strong>说明</strong></p></td></tr><tr><td><p>1001</p></td><td><p>人口总量</p></td><td><p>指定半径内的总人口数</p></td></tr><tr><td><p>1004</p></td><td><p>夜间驻留人口</p></td><td><p>22:00-06:00 驻留人口</p></td></tr><tr><td><p>1005</p></td><td><p>工作人口</p></td><td><p>工作日在区域内工作的活跃人口</p></td></tr><tr><td><p>1006</p></td><td><p>到访人口</p></td><td><p>非居住/工作人员之外的访客</p></td></tr><tr><td><p>1007</p></td><td><p>外省客流</p></td><td><p>源自外省的访客数量</p></td></tr><tr><td><p>1008</p></td><td><p>娱乐人口</p></td><td><p>休闲娱乐场所到访人口</p></td></tr><tr><td><p>1009</p></td><td><p>年龄段分布</p></td><td><p>各年龄段人口占比</p></td></tr><tr><td><p>1010</p></td><td><p>性别比例</p></td><td><p>男女占比</p></td></tr><tr><td><p>1011</p></td><td><p>收入水平</p></td><td><p>人口收入分布</p></td></tr><tr><td><p>1012</p></td><td><p>消费水平</p></td><td><p>消费能力分布</p></td></tr><tr><td><p>1013</p></td><td><p>出行方式</p></td><td><p>交通出行方式分布</p></td></tr><tr><td><p>1014</p></td><td><p>停留时长</p></td><td><p>停留时间分布</p></td></tr><tr><td><p>1015</p></td><td><p>来源分布</p></td><td><p>客流来源地分布</p></td></tr></table><h2 id="s35">8.3 使用方法</h2><p><strong>单个门店查询：</strong></p><ul><li>在地图上点击门店 → 弹窗中点击「联通人口」→ 设置半径 → 选择数据年月 → 购买</li></ul><p><strong>批量查询：</strong></p><ul><li>我的门店页面 → 勾选门店 → 批量购买 → 设置半径 → 确认执行</li></ul><p><em>💡 注意：一份订单=1家门店×1个半径，例如4家门店×2个半径=8次查询</em></p><h2 id="s36">8.4 配额管理</h2><ul><li>总配额由管理员设置；每次成功查询扣减 1 次，次数不足时，可在「个人中心 → 申请采购配额」提交采购意向单（<strong>受理不等于到账</strong>，充值到账后点「刷新配额」即可看到）</li><li>VIP / 试用账号与普通账号的 AI 助手额度不同，详见第 11 章</li><li>查询结果为空数据时自动返还</li></ul><p>📖 延伸阅读：《1. 联通人口报表》—— 从导入门店到购买、导出联通人口报表的完整图文步骤</p><h1 id="s37">9. 品牌图标管理</h1><ul><li>访问方式：右上角头像 →「设置图标」或访问 /brands</li><li>输入品牌名称，选择图片文件（jpg/png/gif/webp/svg，2MB以内），点击上传</li><li>每个用户上传专属图标，管理员图标对所有用户可见</li></ul><h1 id="s38">10. 统计数据管理（Shapefile）</h1><h2 id="s39">10.1 上传数据</h2><ul><li>进入「统计数据」页面，上传ZIP格式的Shapefile文件，系统自动解析为GeoJSON</li></ul><h2 id="s40">10.2 查看与查询</h2><ul><li>查看文件名称、字段数、要素数、上传时间</li><li>支持对数值字段进行多条件筛选（&gt;/&gt;=/&lt;/&lt;=/=/!=）</li></ul><h2 id="s41">10.3 共享</h2><ul><li>管理员上传的数据对所有用户可见，个人上传的数据仅自己可见</li></ul><h2 id="s42">10.4 在地图中的应用</h2><ul><li>商圈分析工具使用Shapefile数据按面积比例计算圈内人口分布</li></ul><h2 id="s43">10.5 城市宏观数据Tab</h2><ul><li>在「统计数据」页面切换至「城市宏观数据」Tab</li><li>查看全国30个重点城市的宏观经济统计数据（GDP、增速、人均GDP、常住人口、人均可支配收入、社零总额）</li><li>支持按省份筛选、关键词搜索；管理员可编辑和添加城市数据</li><li>点击城市名称自动跳转到地图并显示城市边界</li></ul><h1 id="s44">11. AI助手</h1><p>点击页面右下角的AI图标，打开对话浮窗。AI助手基于豆包大模型（doubao-seed-2-1-pro-260915）。</p><h2 id="s45">11.2 支持的指令</h2><p><strong>门店筛选类</strong></p><ul><li>显示我的门店中上海的已开业的商场店</li><li>显示竞品门店中品牌为麦当劳的</li><li>显示购物中心中评级为A级的</li></ul><p><strong>地图定位类</strong></p><ul><li>定位到上海市</li><li>定位到南京西路</li></ul><p><strong>图层控制类</strong></p><ul><li>显示竞品门店</li><li>隐藏购物中心</li><li>只显示品牌门店</li></ul><p><strong>POI搜索类</strong></p><ul><li>搜索周围500米的咖啡店</li><li>在南京西路附近搜索餐厅</li><li>在新天地附近搜索便利店</li></ul><p><strong>数据分析类</strong></p><ul><li>分析人民广场周边的人口分布</li><li>对比门店A和门店B的人口数据</li><li>门店人口排名TOP10</li></ul><p><strong>城市数据查询类</strong></p><ul><li>上海GDP多少</li><li>北京的人口和人均收入</li></ul><p><strong>商场商户查询类</strong></p><ul><li>浦江城市生活广场有哪些餐厅</li><li>对比浦江城市生活广场和颛桥万达的商户</li></ul><p><strong>开店余地分析类</strong></p><ul><li>上海的开店余地怎么样</li><li>北京还有开店空间吗</li></ul><h2 id="s46">11.3 额度与限次说明</h2><p>AI 助手按月限次，额度按账号角色区分：</p><ul><li>管理员：不限次数</li><li>VIP 用户：每月 1000 次</li><li>VIP 试用：每月 50 次</li><li>普通用户：每月 100 次</li><li>另有保护：每日最多 100 次、每分钟最多 10 次；全站月度预算用尽时 AI 会临时停用，下月 1 日自动恢复</li><li>高消耗查询（商场商户、开店余地）会占用较多额度，建议在页面中自助操作</li></ul><h2 id="s47">11.4 使用技巧</h2><ul><li>使用自然语言描述需求即可</li><li>AI会自动调用地图工具执行操作</li><li>操作结果会通过弹窗或地图展示</li><li>如果AI未准确理解，可以重新描述或手动操作</li></ul><h1 id="s48"><strong>12. 数据大屏</strong></h1><p>数据大屏是面向汇报与实时监控的展示页面，<strong>所有登录用户</strong>均可使用。</p><h2 id="s49"><strong>12.1 打开与退出</strong></h2><ul><li>入口：顶部导航栏<strong>最右侧</strong>的「数据大屏」按钮；也可直接访问 /dashboard</li><li>退出：点击右上角「退出大屏」，或按 Esc 键</li></ul><h2 id="s50"><strong>12.2 页面构成</strong></h2><ul><li><strong>顶部信息区</strong>：环比标签「新增门店环比（上月 vs 上上月）：↑/↓ N%」、实时时钟、「更新 HH:MM:SS」、语言切换（中文 / 日本語 / English）、「退出大屏」</li><li><strong>KPI 卡片（8 张）</strong>：在营门店、竞品门店、闭店门店、竞品数量、覆盖省份、竞品省份、覆盖城市、竞品城市</li><li><strong>图表</strong>：门店类型分布（饼图）、门店城市（在营）TOP10、竞品品牌 TOP10</li><li><strong>地图区块「全国门店分布」</strong>：全国门店与竞品分布</li><li><strong>折叠区</strong>：「数据表」（名称 / 数量 / 占比）、「标记列表（N）」</li><li><strong>底部</strong>：数据简报（滚动播报，如「全国共 N 家门店、M 家竞品 · 覆盖 C 个城市 · 累计购买 P 次」）</li></ul><h2 id="s51"><strong>12.3 地图与图层</strong></h2><ul><li>图层开关「我的门店」「竞品门店」均可展开子项：我的门店按「已开业 / 重点候选 / 一般候选」，竞品按品牌</li><li>地图缩放会自动切换聚合层级：远景显示「省级聚合 · 放大查看城市」，放大后切换为城市级聚合</li><li>地图为<strong>纯展示</strong>（不响应点击）；门店明细请查看「标记列表」与「数据表」</li></ul><h2 id="s52"><strong>12.4 数据刷新</strong></h2><ul><li>页面数据<strong>每小时自动刷新</strong>一次，顶部「更新 HH:MM:SS」即最近一次刷新时刻</li><li>若显示「暂无数据」，表示当前账号还没有可展示的门店或竞品数据</li></ul><h1 id="s53"><strong>13. 选址工作台（城市洞察 / 商圈洞察 / 销售预测）</strong></h1><p>顶部导航「<strong>选址工作台</strong>」是一个下拉菜单，收纳三个决策类工具。其中「<strong>销售预测</strong>」为 VIP 专属功能，非 VIP 账号在菜单中会看到 🔒VIP 角标。</p><h2 id="s54"><strong>13.1 城市洞察</strong></h2><p>用于回答「下一座该进入的城市是哪座」。</p><p><strong>入口</strong>：选址工作台 →「城市洞察」（/market-map）</p><p><strong>评分模型</strong>：市场机会评分 = 市场规模 × 竞争强度 × 品牌空白 × 消费潜力</p><table><thead><tr><th><p><strong>等级</strong></p></th><th><p><strong>分数区间</strong></p></th><th><p><strong>建议</strong></p></th></tr></thead><tbody><tr><td><p>优先进入</p></td><td><p>≥ 75</p></td><td><p>建议优先布局</p></td></tr><tr><td><p>可观察</p></td><td><p>50 - 74</p></td><td><p>持续观察</p></td></tr><tr><td><p>谨慎</p></td><td><p>&lt; 50</p></td><td><p>谨慎进入</p></td></tr></tbody></table><p><strong>操作步骤</strong></p><ol><li>页面顶部查看 KPI：覆盖城市、优先进入、可观察、谨慎、涉及省份</li><li>左侧「省份机会指数」查看各省机会排名（括号内为该省最优城市）</li><li>点击某省份条目 → 右侧「城市机会排行榜」按省筛选（再点一次取消筛选）</li><li>点击排行榜中的城市行 → 右侧弹出「城市 · 市场分析」详情抽屉</li></ol><p><strong>城市机会排行榜列</strong>：#、城市、省份、面积(km²)、下辖区县、GDP(亿)、GDP增速、人口(万)、我的店、竞品、市场机会、建议</p><p><strong>城市详情抽屉</strong>：机会评分（0-100）、评分维度明细（市场规模 / 竞争强度 / 品牌空白度 / 消费潜力，各带权重说明）、城市基本面（面积、下辖区县、常住人口、GDP、社零总额、人均可支配收入、人均消费支出、城市等级、我的门店、竞品门店、品牌门店）</p><p><strong>权重设置</strong>（页面右上角「权重设置」）</p><ol><li>拖动四个滑杆调整相对重要性：市场规模（人口×社零）、竞争强度（竞品密度越低越优）、品牌空白度（本品牌渗透率低）、消费潜力（收入+支出）</li><li>权重会<strong>归一化为总和 100%</strong>，分数实时重算</li><li>「保存并应用」后提示「权重已更新，榜单已重算」；「恢复默认」可回到默认权重（市场规模 30% / 竞争强度 25% / 品牌空白度 25% / 消费潜力 20%）</li></ol><h2 id="s55"><strong>13.2 商圈洞察</strong></h2><p>用于在已选城市内挑出「最值得进入的商圈」。</p><p><strong>入口</strong>：选址工作台 →「商圈洞察」（/district-insight）</p><p><strong>综合评分构成</strong>：人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（页面顶部会标注数据基准月份，如「数据时间 2022-04」）</p><p><strong>操作步骤</strong></p><ol><li>左栏「选择城市」下拉选择城市（按一线城市 / 新一线城市 / 二三线城市分组，括号内为该城市商圈数量）</li><li>地图自动缩放至该城市商圈范围；点击地图上的商圈边界即可选中，浮签显示「名称 · N分」</li><li>左栏列表按评分排序，条目上显示「竞品 N」「人口 N」</li><li>选中商圈后查看右侧「商圈详情卡」（见下）</li></ol><p><strong>商圈详情卡包含</strong></p><ul><li>四个维度进度条：人口规模、消费能力、竞争强度、客流活跃</li><li>事实项：居住人口(估算)、工作人口(估算)、到访人次、竞品门店、我的门店</li><li>商圈内购物中心：显示「📌 名称 ⭐ 评级」，点击可跳转到地图并弹出图钉；该购物中心无坐标时会提示「该购物中心暂无坐标，无法定位」</li><li>按钮「刷新最新数据」：拉取最新月份数据</li></ul><p><strong>关于「刷新最新数据」（会消耗配额）</strong></p><ul><li>点击后确认框提示「将从『剩余次数』中扣除 1 次……确定刷新吗？」</li><li>成功：「刷新成功（消耗 N 次，剩余 M 次）」</li><li>若该月份数据已在缓存中：「缓存命中，未消耗次数（数据已是最新月份）」</li><li>剩余次数不足时会给出提示，请先按第 10 章处理配额</li></ul><p><strong>商圈对比</strong></p><ol><li>勾选 2-5 个商圈（不足 2 个提示「请至少选择 2 个商圈」，超过提示「最多对比 5 个商圈」）</li><li>点击「商圈对比 (N)」打开对比表：商圈、综合评分、人口规模、居住、工作、到访人次、竞品数、数据</li><li>表中<strong>绿色高亮</strong>为该列最优值；脚注说明「居住(估)」「工作(估)」为联通商圈总人口按各半拆分的近似值</li></ol><h2 id="s56"><strong>13.3 销售预测（VIP 专属）</strong></h2><p>基于<strong>已开业门店的真实销售</strong>，预测候选门店的年销售额，并模拟新店对周边门店的蚕食影响。</p><p><strong>权限与开通</strong></p><ul><li>可用：VIP 用户、VIP 试用用户、管理员</li><li>普通用户打开该页只会看到开通引导，可点「前往个人中心申请试用」；在个人中心点「体验 VIP 用户」提交申请，通过后自动开通 <strong>30 天</strong> VIP 试用</li></ul><p><strong>引擎自动升级</strong>：L1 类比 → L2 回归 → L3 机器学习。系统按已录入的有效销售样本量自动升级，样本越多、预测越准；升级到 L3 才会提供蚕食模拟与归因。</p><p><strong>页面构成与操作</strong></p><ol><li><strong>样本量提示条</strong>：显示当前样本行数（含已开业店数）与距下一档还差多少，可点「去录入销售」补录；若部分记录只填了金额区间（档位估值），系统按区间中点参与测算，并提示预测误差范围会比纯精确样本更大</li><li><strong>候选门店工具条</strong>：搜索「搜索候选门店」、按「城市」筛选、按「已购联通人口 / 未购买」筛选；右侧显示候选门店数量</li><li><strong>候选门店表</strong>：编号、门店名称（已购联通人口的会带标签）、城市、类型（重点候选 / 一般候选）、面积(㎡)、操作；点「<strong>预测</strong>」按钮出结果</li><li><strong>参照店圈定</strong>（进阶，可选）：默认「系统自动推荐」；勾选想用作类比基准的参照店后变为「自定义（已圈定 N 家）」，勾选即保存在本机（按账号隔离）；点「恢复系统推荐」回到自动模式</li><li><strong>预测结果卡</strong>：门店名 · 年销售额预测，含引擎标签（L1 类比 / L2 回归 / L3 机器学习）、主指标「N 万元 / 年」、置信度 ±N%、参考区间「X ~ Y 万元（含外卖口径）」，以及匹配方式、参照店、商圈归属、常住人口、点位环境、参考门店 N 家</li><li><strong>结果明细</strong>：列出特征相似（或类比参照）门店的真实销售；L3 额外提供「对周边 N 家店影响（3km 内，新店开业蚕食模拟）」与「预测归因（特征重要性 Top4）」</li></ol><p><strong>注意事项</strong></p><ul><li>没有候选门店（重点候选 / 一般候选）时会提示「暂无候选门店」</li><li>预测失败会提示「预测失败：……」或「暂时无法预测」，可稍后重试</li></ul><h1 id="s57"><strong>14. 集团 / 子公司与数据同步</strong></h1><p>平台支持「集团 ↔ 子公司」多账号协作：集团可以把门店与竞品数据<strong>下发</strong>给子公司，子公司也可以把数据<strong>上交</strong>给集团，全程按需手动执行、先预览后确认。</p><h2 id="s58"><strong>14.1 概念与绑定关系</strong></h2><ul><li>绑定关系由<strong>平台管理员</strong>在「用户管理 → 集团 / 子公司」中建立</li><li><strong>新建集团</strong>：填写「集团名称」与「总部账号」 <ul><li>提示：总部账号<strong>不会成为「组织成员」</strong>，其可用额度仍由平台配额池统一兜底</li></ul></li><li><strong>添加子公司</strong>：把子公司账号加入该集团</li><li>成员表可逐家设置：「可接收下发」「可被集团拉取」「管辖范围」「知情确认」（已确认 / 待确认）与「已分配额度」</li><li><strong>解绑子公司</strong>不会改动该账号的已分配额度；集团下还有子公司时不允许解散集团（会提示「集团下还有子公司，不能解散」）</li></ul><h2 id="s59"><strong>14.2 数据同步页（/data-sync）</strong></h2><p><strong>入口</strong>：右上角头像 →「数据同步」（仅集团账号可见）</p><p>页面原则：<strong>「按需手动同步」—— 先预览、后确认，每次留痕可审计</strong>；同步过来的门店为只读镜像。</p><p>页面包含六个区块：</p><ol><li><strong>从集团同步</strong>：把集团下发的门店 / 竞品拉取到本账号</li><li><strong>从子公司同步</strong>：集团侧把子公司数据汇总上来</li><li><strong>预览明细</strong>：同步前先查看将发生的增删改，确认无误再执行</li><li><strong>我已同步到的数据</strong>：查看已同步的行，可在此执行「脱离同步」或「移除副本」</li><li><strong>同步历史</strong>：每次同步的时间与操作留痕</li><li><strong>配额分配</strong>：管理成员可用额度</li></ol><h2 id="s60"><strong>14.3 只读镜像与管辖范围（重要规则）</strong></h2><ul><li>集团下发给你的门店与竞品是<strong>只读镜像</strong>：本地不能改、不能删（<strong>仍可录入销售</strong>），只能由集团更新或撤回。如需本地自管，可在「④ 我已同步到的数据」里<strong>脱离同步</strong></li><li><strong>脱离同步</strong> → 转为本账号自有行，此后不再被来源覆盖；<strong>移除副本</strong> → 只删本账号这一份，来源数据不受影响</li><li><strong>管辖范围</strong>：只有当数据落在管辖范围内时才会被同步（越界自动丢弃）。管辖范围由各子公司自行设置，集团亦可代设或改派</li><li><strong>集团可查看并维护你管辖范围内的门店数据</strong>（按城市；范围外的行看不到）</li><li><strong>集团可查看你账号已购买的联通人口数据（购买履历）</strong>，并做跨公司汇总与报表导出 —— 用的是你<strong>已经买过</strong>的数据，不会额外消耗你的配额</li><li><strong>知情确认</strong>：需要成员<strong>本人</strong>在「数据同步」页点击确认（合规留痕，不可代签）。未确认就接收集团下发数据，会提示「请先在『数据同步』页完成知情确认，再接收集团下发的数据。」</li><li>竞品期次快照<strong>只支持「集团下发到子公司」</strong>，不支持「从子公司同步到集团」（竞品由集团统一导入，子公司不可自行上传竞品快照）</li><li><strong>销售数据仅门店归属账号可见</strong></li></ul><h2 id="s61"><strong>14.4 非集团账号</strong></h2><p>若当前账号不属于任何集团，页面会显示「当前账号不属于任何集团」，并提示：</p><p>账号归属由平台管理员在「用户管理 → 集团 / 子公司」中绑定。</p><p>📖 延伸阅读：《5. 子公司数据同步方法》—— 设置管辖范围 → 预览 → 执行同步的图文步骤</p><h1 id="s62"><strong>15. API 开放（第三方调用）</strong></h1><p>本章面向<strong>平台管理员</strong>。普通账号看不到该入口。</p><h2 id="s63"><strong>15.1 功能定位</strong></h2><p>把平台的联通人口数据能力开放给第三方系统按接口调用，按次计费：<strong>60 元/次，最低 100 次起充</strong>。</p><p><strong>入口</strong>：右上角头像 →「API开放」（/resale）</p><h2 id="s64"><strong>15.2 操作步骤</strong></h2><ol><li><strong>创建客户</strong><ul><li>填写「公司名称」「初始次数」；如需先联调，可勾选「测试模式」</li><li>提交后系统生成该客户的 API Key</li><li>⚠️ <strong>Key 已加密存储，完整 Key 仅在创建时显示一次</strong>，请立即复制交给客户</li></ul></li><li><strong>列表查看</strong>：公司名称、API Key、剩余次数、已用次数、状态（启用 / 停用）、创建时间</li><li><strong>日常操作</strong><ul><li><strong>充值</strong>：输入次数（最低 100 次起充，60 元/次），点「确认充值」</li><li><strong>扣减</strong>：减少某客户的可用次数（扣减的次数会<strong>归还配额池</strong>）</li><li><strong>用量</strong>：查看该客户的调用记录</li><li><strong>停用 / 启用</strong>：临时关闭或恢复该客户的调用权限</li><li><strong>删除</strong>：移除该客户</li></ul></li></ol><h2 id="s65"><strong>15.3 配额池</strong></h2><p>页面顶部显示配额池概览：上游总配额、用户页已分配、API页已分配、测试模式余额、剩余可分配。</p><ul><li><strong>API 开放页与用户页共用同一批次配额</strong>（测试模式不占用真实配额）</li><li>充值按下单批次采购，具体余额以配额池显示为准</li></ul><h1 id="s66">16. 常见问题与排错</h1><h2 id="s67">16.1 登录相关</h2><p><strong>Q: 登录失败提示错误？</strong></p><p>A: 请检查用户名和密码是否正确。如忘记密码，联系管理员重置。</p><p><strong>Q: 登录后页面空白？</strong></p><p>A: 尝试清除浏览器缓存（Chrome: 设置 → 隐私与安全 → 清除浏览数据）。</p><h2 id="s68">16.2 地图相关</h2><p><strong>Q: 地图加载不出来？</strong></p><p>A: 检查网络连接，瓦片地图需访问外部CDN。如使用公司网络，确认是否限制了外部域名访问。</p><p><strong>Q: 坐标位置不准？</strong></p><p>A: 系统使用高德/腾讯地图（GCJ-02坐标系）。如从GPS获取的坐标（WGS-84）导入，会产生约500米偏差。</p><p><strong>Q: 门店导入后地图上看不到？</strong></p><p>A: 确认门店有正确的经纬度坐标，且「我的门店」图层开关已开启。</p><h2 id="s69">16.3 数据相关</h2><p><strong>Q: CSV导入失败？</strong></p><p>A: 检查CSV文件编码（建议UTF-8），确保列名与模板一致。</p><p><strong>Q: 数据修改后地图未更新？</strong></p><p>A: 使用无痕模式刷新页面。浏览器缓存可能导致旧数据显示。</p><p><strong>Q: 导出Excel打开乱码？</strong></p><p>A: 使用Excel打开时选择UTF-8编码导入。</p><h2 id="s70">16.4 配额与查询</h2><p><strong>Q: 配额不足怎么办？</strong></p><p>A: 联系管理员增加配额，或联系徐经理采购（电话/微信：138 1779 1741，邮箱：jyo@youshi-tech.com）。</p><p><strong>Q: 查询结果显示空数据？</strong></p><p>A: 可能该区域人口数据缺失。系统会自动返还配额，不会扣费。</p><p><strong>Q: 批量购买速度慢？</strong></p><p>A: 每个门店×每个半径需独立请求，Q: 提交了采购申请，什么时候能到账？</p><p>A: 受理不等于到账。我方与您确认合同与付款后，会由管理员在「用户管理」为您单独充值；到账后在个人中心点「刷新配额」即可看到剩余次数。</p><p>Q: 忘记密码了怎么办？</p><p>A: 在登录页点「忘记密码」，输入注册邮箱，按邮件里的链接设置新密码（链接 30 分钟内有效）。</p><p>大量查询需要时间。系统有缓存机制。</p><h2 id="s71">16.5 其他</h2><p><strong>Q: 如何联系技术支持？</strong></p><p>A: 联系系统管理员或项目维护人员。</p><p><strong>Q: 数据安全吗？</strong></p><p>A: 所有数据传输使用HTTPS加密，认证使用JWT Token。Q: 页面提示 404 或打不开？</p><p>A: 请检查链接是否输入正确；地址不存在时系统会显示 404 页面，可从页面上的按钮返回工作台或登录页。</p><p>Q: 分享出去的链接怎么打开？</p><p>A: 微信分享的链接打开后是只读的「联通人口数据分析报告」页面，无需登录；链接无效时会提示「分享链接无效」。</p><p>数据存储在云端服务器。</p><p>文档版本：v3.0.0 · 最后更新：2026年10月</p>
+  </main>
+</div>
+
+<footer class="foot">
+  本手册随系统更新，如需 PDF / Word 版本或发现说明与界面不一致，请联系管理员（徐经理 138 1779 1741）。
+</footer>
+</body>
+</html>

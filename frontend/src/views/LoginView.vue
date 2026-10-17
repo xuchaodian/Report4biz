@@ -87,6 +87,7 @@
       <template #footer>
         <span>{{ $t('login.noAccount') }}</span>
         <router-link to="/register">{{ $t('login.register') }}</router-link>
+        <a href="/help/" target="_blank" rel="noopener" style="margin-left:14px;color:#0d579c;text-decoration:none;">使用手册</a>
       </template>
     </AuthCard>
   </div>
