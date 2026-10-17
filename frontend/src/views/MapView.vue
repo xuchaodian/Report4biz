@@ -1626,6 +1626,7 @@ import { useBrandIconStore } from '@/stores/brandIcon'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
+import { currentUidOr } from '@/utils/currentUser.js'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
 import PoiSearchPanel from '@/components/map/PoiSearchPanel.vue'
@@ -2071,18 +2072,50 @@ const restoreOverlapThresholds = () => {
   } catch (_) {}
 }
 
-const showBusinessLayer = ref(true)
-// 我的门店状态筛选（all/open/closed，localStorage 持久化）
-const myStoreStatusFilter = ref(localStorage.getItem('myStoreStatusFilter') || 'all')
+// ── 图层显示状态持久化（v1.13.237）────────────────────────────────
+// 🔴 背景（业主 2026-10-17 报障）：MapView **没有 keep-alive** ⇒ 切到别的页面再回来，
+//    组件重建、这些 ref 回到写死的默认值 ⇒ 用户勾的「竞品门店」等图层会自己关掉。
+// 🔒 口径：localStorage **按 uid 隔离**（⛔ 禁裸 key —— 同一浏览器多账号会串档，
+//    见 utils/currentUser.js 的事故说明）；**登出不清**（设备级偏好，与
+//    myStoreStatusFilter / mapLocked 同属 stores/user.js 的「刻意保留」清单）。
+const LAYER_PREF_KEY = () => `mapLayerPrefs_${currentUidOr('anon')}`
+function readLayerPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(LAYER_PREF_KEY()) || '{}')
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {}
+  } catch (_) { return {} }
+}
+const _layerPrefs = readLayerPrefs()
+// 只认真正的布尔值；字段缺失/类型不对 ⇒ 用默认值（避免旧数据把图层搞成意外状态）
+const boolPref = (v, dflt) => (typeof v === 'boolean' ? v : dflt)
+
+const showBusinessLayer = ref(boolPref(_layerPrefs.business, true))
+// 我的门店状态筛选（all/open/closed）—— 同样按 uid 隔离；读不到新键时兼容旧的全局键
+const myStoreStatusFilter = ref(
+  localStorage.getItem(`myStoreStatusFilter_${currentUidOr('anon')}`) ||
+  localStorage.getItem('myStoreStatusFilter') ||
+  'all'
+)
 watch(myStoreStatusFilter, () => {
-  localStorage.setItem('myStoreStatusFilter', myStoreStatusFilter.value)
+  localStorage.setItem(`myStoreStatusFilter_${currentUidOr('anon')}`, myStoreStatusFilter.value)
   loadMarkers()
 })
 const showStoreLayers = ref(true)       // 总开关：控制竞品+品牌图层整体显示
-const showCompetitorLayer = ref(false)  // 竞品图层显示控制（默认隐藏）
-const showBrandStoreLayer = ref(false)  // 品牌门店图层显示控制（默认隐藏）
+const showCompetitorLayer = ref(boolPref(_layerPrefs.competitor, false))  // 竞品图层（默认隐藏）
+const showBrandStoreLayer = ref(boolPref(_layerPrefs.brand, false))       // 品牌门店图层（默认隐藏）
 const brandPopVisible = ref(false)      // v1.13.196：「显示品牌」浮层受控可见（首次打开开关时主动弹出）
-const showShoppingCenterLayer = ref(false)  // 购物中心图层显示控制（默认隐藏）
+const showShoppingCenterLayer = ref(boolPref(_layerPrefs.center, false))  // 购物中心图层（默认隐藏）
+// 任一开关变化 ⇒ 整体落盘（结构简单、读取一次到位）
+watch([showBusinessLayer, showCompetitorLayer, showBrandStoreLayer, showShoppingCenterLayer], () => {
+  try {
+    localStorage.setItem(LAYER_PREF_KEY(), JSON.stringify({
+      business: showBusinessLayer.value,
+      competitor: showCompetitorLayer.value,
+      brand: showBrandStoreLayer.value,
+      center: showShoppingCenterLayer.value,
+    }))
+  } catch (_) { /* 配额满 / 隐私模式：静默降级，不影响使用 */ }
+})
 const storeToggleExpanded = ref(false) // 显示门店面板展开/收起
 const storeToolsExpanded = ref(false) // 门店工具面板展开/收起
 const layerOpacity = ref(1)

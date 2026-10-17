@@ -223,7 +223,8 @@ export const useUserStore = defineStore('user', {
      *     app_lang ／ mapIconSize_*（品牌图标尺寸）／ guide_done_* 与
      *     guide_banner_closed_*（新手引导标记）／ panel_smartsteps_radii ／
      *     store_smartsteps_radii ／ aiEgressAllowed_v1 ／ aiEgressNoticeSeen_v1 ／
-     *     myStoreStatusFilter ／ mapLocked ／ aiFaqHits_*（运营埋点计数）
+     *     myStoreStatusFilter ／ mapLocked ／ mapLayerPrefs_*（图层显示勾选，v1.13.237）／
+     *     aiFaqHits_*（运营埋点计数）
      *   ⚠️ 理由：这些多是「设备级偏好」或运营埋点；即便带 uid 前缀，它们也**只对本账号可见**
      *      （读取时按当前 uid 取），**不构成跨账号泄漏面**，清了反而会被用户感知为「又弹引导」。
      */
