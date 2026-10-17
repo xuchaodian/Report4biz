@@ -20,6 +20,17 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
+/**
+ * 数值解析（v1.13.238）
+ * ⛔ 不要写成 `parseFloat(x) || dflt` —— 那会把**合法的 0** 吞成默认值。
+ *    业主报障：「我的门店数 = 0」被当成 1，结果全是"恰好含 1 家门店"的网格。
+ * ✅ 只有真正取不到数字（null/undefined/''/非数字）时才回落默认值。
+ */
+function numOr(raw, dflt) {
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? n : dflt
+}
+
 const router = express.Router()
 
 // 生成 shapefile 可见性 SQL 片段及参数。
@@ -812,7 +823,7 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     // 其他品牌（高德关键词检索，可两个）
     const otherBrands = [req.body.otherBrand1, req.body.otherBrand2].map(ob => {
       if (!ob || !ob.name || !String(ob.name).trim()) return null
-      return { name: String(ob.name).trim(), op: ob.op || '>', val: parseFloat(ob.val) || 1, pois: [] }
+      return { name: String(ob.name).trim(), op: ob.op || '>', val: numOr(ob.val, 1), pois: [] }
     })
     // 高德检索其他品牌 POI（高德返回 GCJ-02，与网格/门店坐标一致，直接用）
     for (let i = 0; i < otherBrands.length; i++) {
@@ -855,7 +866,7 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
             const ratio = Math.min(turf.area(inter) / turf.area(fp), 1)
             const weighted = val * ratio
             const op = cond.operator || '>'
-            const condVal = parseFloat(cond.value) || parseFloat(cond.minValue) || 0
+            const condVal = numOr(cond.value, numOr(cond.minValue, 0))
             if (op === '>') { if (!(weighted > condVal)) { popOk = false; break } }
             else if (op === '>=') { if (!(weighted >= condVal)) { popOk = false; break } }
             else if (op === '<') { if (!(weighted < condVal)) { popOk = false; break } }
@@ -870,9 +881,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       const bCounts = {}
       for (const s of myStoresFiltered) { if (turf.booleanPointInPolygon(turf.point([s.longitude, s.latitude]), circle)) mc++ }
       const myStoreOp = req.body.myStoreOp || '>'
-      const myStoreVal = parseFloat(req.body.myStoreVal) || parseFloat(req.body.myStoreMin) || 1
+      const myStoreVal = numOr(req.body.myStoreVal, numOr(req.body.myStoreMin, 1))
       const compOp = req.body.competitorOp || '>'
-      const compVal = parseFloat(req.body.competitorVal) || parseFloat(req.body.competitorMin) || 1
+      const compVal = numOr(req.body.competitorVal, numOr(req.body.competitorMin, 1))
       // 我的门店数条件
       if (myStoreOp === '>' && !(mc > myStoreVal)) continue
       else if (myStoreOp === '>=' && !(mc >= myStoreVal)) continue

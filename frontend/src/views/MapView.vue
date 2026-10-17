@@ -2140,6 +2140,11 @@ const commerceError = ref('')
 const commerceLayerItems = ref([])
 
 // 开店余地
+// 数值解析：⛔ 不用 `x || 1` —— 会把合法的 0 吞成 1（v1.13.238 修复）
+const numOr = (v, dflt) => {
+  const n = parseFloat(v)
+  return Number.isFinite(n) ? n : dflt
+}
 const potentialVisible = ref(false)
 const populationCities = ref([])
 const potentialCity = ref('')
@@ -7896,8 +7901,8 @@ const calculatePotential = async () => {
         competitorVal: potentialCompVal.value,
         myStoreBrands: potentialMyBrands.value,
         compBrands: potentialCompBrands.value,
-        otherBrand1: potentialOther1Name.value ? { name: potentialOther1Name.value.trim(), op: potentialOther1Op.value || '>', val: potentialOther1Val.value || 1 } : null,
-        otherBrand2: potentialOther2Name.value ? { name: potentialOther2Name.value.trim(), op: potentialOther2Op.value || '>', val: potentialOther2Val.value || 1 } : null,
+        otherBrand1: potentialOther1Name.value ? { name: potentialOther1Name.value.trim(), op: potentialOther1Op.value || '>', val: numOr(potentialOther1Val.value, 1) } : null,
+        otherBrand2: potentialOther2Name.value ? { name: potentialOther2Name.value.trim(), op: potentialOther2Op.value || '>', val: numOr(potentialOther2Val.value, 1) } : null,
         conditions
       })
     })
