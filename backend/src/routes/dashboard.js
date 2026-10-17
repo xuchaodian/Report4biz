@@ -4,6 +4,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { getCityDataArray } from '../utils/cityData.js'
+import { ABNORMAL_STORE_STATUS as ABNORMAL_STATUS, ABNORMAL_STATUS_SQL, OPEN_ONLY_SQL } from '../utils/storeStatus.js'
 
 const router = express.Router()
 
@@ -53,8 +54,7 @@ router.get('/summary', authenticate, async (req, res) => {
       return res.json(cachedPayload)
     }
 
-    // 异常经营状态（停业/歇业/关闭等，大屏聚合排除，markers 表字段）
-    const ABNORMAL_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿', '未知', '待开业', '筹备中']
+    // 异常经营状态（停业/歇业/关闭等，大屏聚合排除）：定义在 utils/storeStatus.js，与开店余地共用
 
     // 竞品有效口径：排除「店铺已关」「尚未营业」（competitors.status 文本列；NULL/未知/暂停营业 保留）
     const COMP_ACTIVE_COND = `(status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
@@ -66,10 +66,7 @@ router.get('/summary', authenticate, async (req, res) => {
     }
 
     // ===== KPI 指标 =====
-    // 异常状态过滤（所有门店查询共用）
-    const ABNORMAL_STATUS_SQL = `AND store_status NOT IN (${ABNORMAL_STATUS.map(() => '?').join(',')})`
-    // 已开门店过滤（KPI 我的门店/覆盖城市/覆盖省份 统一为「仅已开业」口径，与地图/TOP10 一致）
-    const OPEN_ONLY_SQL = `AND store_type = '已开业'`
+    // 异常状态 / 仅已开业 两个 SQL 片段同样来自 utils/storeStatus.js（单一真源）
     const markersCount = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE (user_id = ? OR ? = 1) AND 1=1 ${ABNORMAL_STATUS_SQL} ${OPEN_ONLY_SQL}`).get(userId, isAdmin, ...ABNORMAL_STATUS)?.c || 0
     const competitorsCount = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE (user_id = ? OR ? = 1) AND ${COMP_ACTIVE_COND}`).get(userId, isAdmin)?.c || 0
     const centersCount = db.prepare('SELECT COUNT(*) AS c FROM shopping_centers').get()?.c || 0

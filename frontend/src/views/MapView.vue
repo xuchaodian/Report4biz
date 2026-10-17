@@ -721,7 +721,10 @@
         <el-form-item label="半径(km)">
           <el-input-number v-model="potentialRadius" :min="0.1" :max="10" :step="0.1" :controls="false" style="width:100%" />
         </el-form-item>
-        <el-form-item label="我的门店数">
+        <el-form-item>
+          <template #label>
+            <span title="只统计「已开业」且在营的门店（闭店/停业等状态不计入）">我的门店数</span>
+          </template>
           <div style="display:flex;gap:8px;width:100%">
             <el-select v-model="potentialMyStoreOp" placeholder="运算符" style="width:78px;flex-shrink:0">
               <el-option label=">" value=">" />

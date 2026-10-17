@@ -10,6 +10,7 @@ import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
 import { textSearchAll } from '../utils/amapPoi.js'
+import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 // ⚠️ 本文件**不再使用 writeGeoText**：上传改由 Python 流式直写 + adoptGeoFile 转正
 //    （见 upload 路由与 geoStore::adoptGeoFile 的注释）。writeGeoText 仍供其他模块使用。
 import {
@@ -817,7 +818,11 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     const features = geojson.features || []
     // 🔴 v1.13.239：「我的门店数」= **本账号自己的门店**（与 GET /api/markers 同口径 `WHERE user_id = ?`）。
     //   旧实现整表全取、无 user_id 过滤 ⇒ 实际统计的是**全平台门店**，把别人的店算成了"我的"。
-    const markers = db.prepare('SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ?').all(req.user.id)
+    // 🔴 v1.13.240：再收一层 —— **只算在营门店**（`utils/storeStatus.js` 单一真源，与仪表盘 KPI 同口径）。
+    //   闭店/停业/候选店不再计入，否则「我的门店数 = 1」可能只是一家早就关掉的店。
+    const markers = db.prepare(
+      `SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ? ${IN_BUSINESS_SQL}`
+    ).all(req.user.id, ...IN_BUSINESS_PARAMS)
     const comps = db.prepare("SELECT id, brand, latitude, longitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").all()
     // 品牌筛选（多选，空数组=不限品牌）
     const myBrands = Array.isArray(req.body.myStoreBrands) ? req.body.myStoreBrands.filter(Boolean) : []
@@ -860,7 +865,6 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     // 品牌过滤后的门店集合（仅统计所选品牌）
     const myStoresFiltered = myBrands.length ? myStores.filter(s => myBrands.includes(s.brand)) : myStores
     const compStoresFiltered = compBrands.length ? compStores.filter(c => compBrands.includes(c.brand)) : compStores
-    const closedKeywords = ['闭店','停业','歇业','休业','结业','暂停营业']
     const results = []
     for (let i = 0; i < features.length; i++) {
       const f = features[i], props = f.properties || {}, geom = f.geometry
@@ -946,7 +950,7 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
           degraded: !!ob.degraded, reason: ob.degraded ? ob.degraded.reason : null } : null).filter(Boolean) })
     }
     res.json({ success: true, data: { cityName, total: features.length, matched: results.length, results,
-      degraded: degradedBrands, myStoreScope: 'own' } })
+      degraded: degradedBrands, myStoreScope: 'own', myStoreInBusiness: true } })
   } catch (error) {
     console.error('[calculate-potential] error:', error)
     res.status(500).json({ success: false, error: error.message })
