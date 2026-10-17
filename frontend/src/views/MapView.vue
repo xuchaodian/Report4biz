@@ -808,6 +808,12 @@
           </div>
         </el-form-item>
       </el-form>
+      <el-alert v-if="potentialDegraded.length" type="warning" :closable="false" show-icon style="margin-top:10px">
+        <template #title>
+          <span style="font-weight:600">{{ potentialDegraded.some(d => d.reason !== 'truncated') ? '以下品牌条件未生效（结果可能偏多）' : '以下品牌数据不完整（计数可能偏低）' }}</span>
+        </template>
+        <div v-for="d in potentialDegraded" :key="d.name" style="line-height:1.7">{{ d.name }}：{{ d.message }}</div>
+      </el-alert>
       <template #footer>
         <el-button @click="potentialVisible = false">取消</el-button>
         <el-button type="primary" :loading="potentialLoading" @click="calculatePotential">开始分析</el-button>
@@ -2174,6 +2180,8 @@ const potentialCond2Op = ref('>')
 const potentialCond2Val = ref(null)
 const potentialLoading = ref(false)
 const potentialResults = ref([])
+// 开店余地：其他品牌检索降级说明（取不到数据 ⇒ 条件未生效，必须在弹窗里明示）
+const potentialDegraded = ref([])
 let potentialLayer = null
 
 // 常用汉字拼音首字母映射表
@@ -7876,6 +7884,7 @@ const onPotentialFieldChange = async (idx) => {
 const calculatePotential = async () => {
   if (!potentialCity.value) { ElMessage.warning('请选择城市'); return }
   potentialLoading.value = true
+  potentialDegraded.value = []
   try {
     // 清除旧图层
     if (potentialLayer && map) {
@@ -7907,7 +7916,20 @@ const calculatePotential = async () => {
       })
     })
     const data = await res.json()
-    if (data.success && data.data.matched > 0) {
+    if (!data.success) {
+      ElMessage.error(data.error || '分析失败')
+      return
+    }
+    // 🔴 降级可见：这些品牌没取到数据，其条件未生效 —— 必须明说
+    potentialDegraded.value = data.data.degraded || []
+    if (potentialDegraded.value.length) {
+      ElMessage.warning({
+        message: potentialDegraded.value.map(d => '「' + d.name + '」' + d.message).join('；'),
+        duration: 8000,
+        showClose: true
+      })
+    }
+    if (data.data.matched > 0) {
       potentialResults.value = data.data.results
       // 在地图上显示符合条件的圆
       const circles = []
@@ -7921,7 +7943,7 @@ const calculatePotential = async () => {
           fillOpacity: 0.12,
           interactive: false
         })
-        const otherText = (r.otherStores || []).map(o => o.name + ':' + o.count).join(' ')
+        const otherText = (r.otherStores || []).map(o => o.name + ':' + (o.count == null ? '未取到' : o.count)).join(' ')
         circle.bindTooltip('门店:' + r.myStores + ' 竞品:' + r.competitors + (otherText ? ' ' + otherText : ''), {
           permanent: false, direction: 'center', className: 'potential-tooltip'
         })
@@ -7950,6 +7972,7 @@ const clearPotentialLayer = () => {
     potentialLayer = null
   }
   potentialResults.value = []
+  potentialDegraded.value = []
 }
 
 // 切换图标样式

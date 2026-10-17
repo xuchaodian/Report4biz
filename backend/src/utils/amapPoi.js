@@ -179,11 +179,14 @@ async function textSearch(city, keywords, types) {
  * @param {string} city - 城市名称
  * @param {string} keywords - 品牌关键词
  * @param {number} maxPages - 最多翻页数（默认 8 页 = 160 个点）
- * @returns {Promise<{count: number, pois: Array<{name, lng, lat}>}>}
+ * @returns {Promise<{count: number, pois: Array<{name, lng, lat}>, error: string|null, truncated: boolean}>}
+ *   ⚠️ v1.13.239：高德返回 status≠1 时**不再静默 break**，改为带回 error；count>已取点数 记 truncated。
+ *   调用方据此把「条件未生效」告知用户（⛔ 不允许静默放行）。
  */
 async function textSearchAll(city, keywords, maxPages = 8) {
   const all = []
   let count = 0
+  let error = null
   for (let page = 1; page <= maxPages; page++) {
     const params = {
       key: AMAP_KEY,
@@ -195,7 +198,7 @@ async function textSearchAll(city, keywords, maxPages = 8) {
       extensions: 'all'
     }
     const resp = await http.get(`${AMAP_PLACE_URL}/text`, { params })
-    if (resp.data.status !== '1') break
+    if (resp.data.status !== '1') { error = resp.data.info || ('status=' + resp.data.status); break }
     const pois = (resp.data.pois || []).map(p => {
       const parts = (p.location || '0,0').split(',')
       return { name: p.name || '', lng: parseFloat(parts[0]), lat: parseFloat(parts[1]) }
@@ -204,7 +207,7 @@ async function textSearchAll(city, keywords, maxPages = 8) {
     all.push(...pois)
     if (pois.length < 20 || all.length >= count || all.length >= maxPages * 20) break
   }
-  return { count, pois: all }
+  return { count, pois: all, error, truncated: count > all.length }
 }
 
 /**

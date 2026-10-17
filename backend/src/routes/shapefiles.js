@@ -815,7 +815,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     attachGeo(rows[0])
     const geojson = JSON.parse(rows[0].geojson)
     const features = geojson.features || []
-    const markers = db.prepare('SELECT id, latitude, longitude, store_status, brand FROM markers').all()
+    // 🔴 v1.13.239：「我的门店数」= **本账号自己的门店**（与 GET /api/markers 同口径 `WHERE user_id = ?`）。
+    //   旧实现整表全取、无 user_id 过滤 ⇒ 实际统计的是**全平台门店**，把别人的店算成了"我的"。
+    const markers = db.prepare('SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ?').all(req.user.id)
     const comps = db.prepare("SELECT id, brand, latitude, longitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").all()
     // 品牌筛选（多选，空数组=不限品牌）
     const myBrands = Array.isArray(req.body.myStoreBrands) ? req.body.myStoreBrands.filter(Boolean) : []
@@ -823,20 +825,36 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     // 其他品牌（高德关键词检索，可两个）
     const otherBrands = [req.body.otherBrand1, req.body.otherBrand2].map(ob => {
       if (!ob || !ob.name || !String(ob.name).trim()) return null
-      return { name: String(ob.name).trim(), op: ob.op || '>', val: numOr(ob.val, 1), pois: [] }
+      return { name: String(ob.name).trim(), op: ob.op || '>', val: numOr(ob.val, 1), pois: [], degraded: null }
     })
     // 高德检索其他品牌 POI（高德返回 GCJ-02，与网格/门店坐标一致，直接用）
+    // 🔴🔴 v1.13.239 降级可见：取不到数据时该品牌条件**不参与筛选**，
+    //    但必须把原因回传给前端明示 —— ⛔ 绝不允许「条件等于没设」还看起来像筛过了。
     for (let i = 0; i < otherBrands.length; i++) {
       const ob = otherBrands[i]
       if (!ob) continue
       try {
         const sres = await textSearchAll(cityName, ob.name)
         ob.pois = sres.pois || []
-        console.log(`[calculate-potential] 其他品牌检索 "${ob.name}" 城市${cityName}: 高德count=${sres.count}, 收集${ob.pois.length}点`)
+        const totalCount = Number(sres.count) || 0
+        if (sres.error) {
+          ob.degraded = { name: ob.name, reason: 'search_failed',
+            message: `高德检索失败（${sres.error}），该品牌条件未生效` }
+        } else if (ob.pois.length === 0 && totalCount > 0) {
+          ob.degraded = { name: ob.name, reason: 'no_coords',
+            message: `高德返回 ${totalCount} 家但未取到坐标，该品牌条件未生效` }
+        } else if (totalCount > ob.pois.length) {
+          ob.degraded = { name: ob.name, reason: 'truncated',
+            message: `共 ${totalCount} 家，仅取到前 ${ob.pois.length} 家（单次上限），计数可能偏少` }
+        }
+        console.log(`[calculate-potential] 其他品牌检索 "${ob.name}" 城市${cityName}: 高德count=${sres.count}, 收集${ob.pois.length}点${ob.degraded ? ' ⚠️' + ob.degraded.reason : ''}`)
       } catch (e) {
+        ob.degraded = { name: ob.name, reason: 'search_failed',
+          message: `高德检索异常（${e.message}），该品牌条件未生效` }
         console.warn(`[calculate-potential] 高德检索"${ob.name}"失败:`, e.message)
       }
     }
+    const degradedBrands = otherBrands.filter(ob => ob && ob.degraded).map(ob => ob.degraded)
     const myStores = markers.filter(m => m.latitude && m.longitude)
     const compStores = comps.filter(c => c.latitude && c.longitude)
     // 品牌过滤后的门店集合（仅统计所选品牌）
@@ -905,7 +923,11 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       const otherCounts = []
       let otherOk = true
       for (const ob of otherBrands) {
-        if (!ob || ob.pois.length === 0) { otherCounts.push(0); continue }
+        // 降级品牌：条件无法判定 ⇒ 不参与筛选，count 记 null 让前端显示「未取到」
+        if (!ob) { otherCounts.push(0); continue }
+        if (ob.degraded) { otherCounts.push(null); continue }
+        // ⚠️ 旧实现还有 `|| ob.pois.length === 0 ⇒ 直接放行`，等于该城市确实 0 家时
+        //    运算符也不再判定（设「>= 1」也会通过）。现改为按 cnt = 0 正常走运算符。
         let cnt = 0
         for (const p of ob.pois) {
           if (turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), circle)) cnt++
@@ -920,9 +942,11 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       }
       if (!otherOk) continue
       results.push({ index: i, center: cc, radius: r, myStores: mc, competitors: ccCount, competitorBrands: bCounts,
-        otherStores: otherBrands.map((ob, oi) => ob ? { name: ob.name, count: otherCounts[oi] } : null).filter(Boolean) })
+        otherStores: otherBrands.map((ob, oi) => ob ? { name: ob.name, count: otherCounts[oi],
+          degraded: !!ob.degraded, reason: ob.degraded ? ob.degraded.reason : null } : null).filter(Boolean) })
     }
-    res.json({ success: true, data: { cityName, total: features.length, matched: results.length, results } })
+    res.json({ success: true, data: { cityName, total: features.length, matched: results.length, results,
+      degraded: degradedBrands, myStoreScope: 'own' } })
   } catch (error) {
     console.error('[calculate-potential] error:', error)
     res.status(500).json({ success: false, error: error.message })
