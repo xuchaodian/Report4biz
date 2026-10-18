@@ -734,7 +734,8 @@
               <el-option label="=" value="=" />
             </el-select>
             <el-input v-model="potentialMyStoreVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
-            <el-select v-model="potentialMyBrands" multiple collapse-tags collapse-tags-tooltip placeholder="品牌(可多选)" style="width:130px;flex-shrink:0" clearable>
+            <el-select v-model="potentialMyBrands" multiple collapse-tags collapse-tags-tooltip placeholder="全部品牌"
+              title="不选＝全部品牌；可多选，多选为并集" style="width:130px;flex-shrink:0" clearable>
               <el-option v-for="b in potentialMyBrandOptions" :key="b" :label="b" :value="b" />
             </el-select>
           </div>
@@ -749,7 +750,8 @@
               <el-option label="=" value="=" />
             </el-select>
             <el-input v-model="potentialCompVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
-            <el-select v-model="potentialCompBrands" multiple collapse-tags collapse-tags-tooltip placeholder="品牌(可多选)" style="width:130px;flex-shrink:0" clearable>
+            <el-select v-model="potentialCompBrands" multiple collapse-tags collapse-tags-tooltip placeholder="全部品牌"
+              title="不选＝全部品牌；可多选，多选为并集" style="width:130px;flex-shrink:0" clearable>
               <el-option v-for="b in potentialCompBrandOptions" :key="b" :label="b" :value="b" />
             </el-select>
           </div>
