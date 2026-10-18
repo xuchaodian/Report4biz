@@ -727,13 +727,14 @@
           </template>
           <div style="display:flex;gap:8px;width:100%">
             <el-select v-model="potentialMyStoreOp" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label="不限" value="any" />
               <el-option label=">" value=">" />
               <el-option label=">=" value=">=" />
               <el-option label="<" value="<" />
               <el-option label="<=" value="<=" />
               <el-option label="=" value="=" />
             </el-select>
-            <el-input v-model="potentialMyStoreVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+            <el-input v-model="potentialMyStoreVal" type="number" placeholder="数量" :disabled="potentialMyStoreOp === 'any'" style="flex:1;min-width:0" />
             <el-select v-model="potentialMyBrands" multiple collapse-tags collapse-tags-tooltip placeholder="全部品牌"
               title="不选＝全部品牌；可多选，多选为并集" style="width:130px;flex-shrink:0" clearable>
               <el-option v-for="b in potentialMyBrandOptions" :key="b" :label="b" :value="b" />
@@ -743,13 +744,14 @@
         <el-form-item label="竞品门店数">
           <div style="display:flex;gap:8px;width:100%">
             <el-select v-model="potentialCompOp" placeholder="运算符" style="width:78px;flex-shrink:0">
+              <el-option label="不限" value="any" />
               <el-option label=">" value=">" />
               <el-option label=">=" value=">=" />
               <el-option label="<" value="<" />
               <el-option label="<=" value="<=" />
               <el-option label="=" value="=" />
             </el-select>
-            <el-input v-model="potentialCompVal" type="number" placeholder="数量" style="flex:1;min-width:0" />
+            <el-input v-model="potentialCompVal" type="number" placeholder="数量" :disabled="potentialCompOp === 'any'" style="flex:1;min-width:0" />
             <el-select v-model="potentialCompBrands" multiple collapse-tags collapse-tags-tooltip placeholder="全部品牌"
               title="不选＝全部品牌；可多选，多选为并集" style="width:130px;flex-shrink:0" clearable>
               <el-option v-for="b in potentialCompBrandOptions" :key="b" :label="b" :value="b" />
@@ -2160,9 +2162,9 @@ const potentialVisible = ref(false)
 const populationCities = ref([])
 const potentialCity = ref('')
 const potentialRadius = ref(1.0)
-const potentialMyStoreOp = ref('>')
+const potentialMyStoreOp = ref('any')  // 默认「不限」：⛔ 别用 '>' 1，会悄悄筛掉结果
 const potentialMyStoreVal = ref(1)
-const potentialCompOp = ref('>')
+const potentialCompOp = ref('any')  // 默认「不限」
 const potentialCompVal = ref(1)
 // 品牌筛选（我的门店/竞品，可多选）
 const potentialMyBrands = ref([])
@@ -7909,9 +7911,9 @@ const calculatePotential = async () => {
       body: JSON.stringify({
         cityName: potentialCity.value,
         radius: potentialRadius.value,
-        myStoreOp: potentialMyStoreOp.value || '>',
+        myStoreOp: potentialMyStoreOp.value || 'any',
         myStoreVal: potentialMyStoreVal.value,
-        competitorOp: potentialCompOp.value || '>',
+        competitorOp: potentialCompOp.value || 'any',
         competitorVal: potentialCompVal.value,
         myStoreBrands: potentialMyBrands.value,
         compBrands: potentialCompBrands.value,

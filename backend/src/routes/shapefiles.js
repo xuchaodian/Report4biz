@@ -906,8 +906,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       const myStoreVal = numOr(req.body.myStoreVal, numOr(req.body.myStoreMin, 1))
       const compOp = req.body.competitorOp || '>'
       const compVal = numOr(req.body.competitorVal, numOr(req.body.competitorMin, 1))
-      // 我的门店数条件
-      if (myStoreOp === '>' && !(mc > myStoreVal)) continue
+      // 我的门店数条件（'any' = 不限，整段跳过；否则默认 '>' 1 会悄悄筛掉大部分区域）
+      if (myStoreOp === 'any') { /* 不限：不筛选 */ }
+      else if (myStoreOp === '>' && !(mc > myStoreVal)) continue
       else if (myStoreOp === '>=' && !(mc >= myStoreVal)) continue
       else if (myStoreOp === '<' && !(mc < myStoreVal)) continue
       else if (myStoreOp === '<=' && !(mc <= myStoreVal)) continue
@@ -917,8 +918,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
           ccCount++; const b = c.brand || '未知'; bCounts[b] = (bCounts[b] || 0) + 1
         }
       }
-      // 竞品门店数条件
-      if (compOp === '>' && !(ccCount > compVal)) continue
+      // 竞品门店数条件（'any' = 不限）
+      if (compOp === 'any') { /* 不限：不筛选 */ }
+      else if (compOp === '>' && !(ccCount > compVal)) continue
       else if (compOp === '>=' && !(ccCount >= compVal)) continue
       else if (compOp === '<' && !(ccCount < compVal)) continue
       else if (compOp === '<=' && !(ccCount <= compVal)) continue
