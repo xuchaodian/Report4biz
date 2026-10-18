@@ -830,7 +830,10 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     // 其他品牌（高德关键词检索，可两个）
     const otherBrands = [req.body.otherBrand1, req.body.otherBrand2].map(ob => {
       if (!ob || !ob.name || !String(ob.name).trim()) return null
-      return { name: String(ob.name).trim(), op: ob.op || '>', val: numOr(ob.val, 1), pois: [], degraded: null }
+      // 🔴 v1.13.243：填了品牌名却没填数量 ⇒ 该条件不参与（⛔ 不兜底成 1）
+      const v = numOr(ob.val, NaN)
+      if (!Number.isFinite(v)) return null
+      return { name: String(ob.name).trim(), op: ob.op || '>', val: v, pois: [], degraded: null }
     })
     // 高德检索其他品牌 POI（高德返回 GCJ-02，与网格/门店坐标一致，直接用）
     // 🔴🔴 v1.13.239 降级可见：取不到数据时该品牌条件**不参与筛选**，
@@ -888,7 +891,9 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
             const ratio = Math.min(turf.area(inter) / turf.area(fp), 1)
             const weighted = val * ratio
             const op = cond.operator || '>'
-            const condVal = numOr(cond.value, numOr(cond.minValue, 0))
+            // 🔴 v1.13.243：数值无效的条件**不参与**（⛔ 不再按 0 参与比较 —— 那会变成"该字段 > 0"）
+            const condVal = numOr(cond.value, numOr(cond.minValue, NaN))
+            if (!Number.isFinite(condVal)) continue
             if (op === '>') { if (!(weighted > condVal)) { popOk = false; break } }
             else if (op === '>=') { if (!(weighted >= condVal)) { popOk = false; break } }
             else if (op === '<') { if (!(weighted < condVal)) { popOk = false; break } }
@@ -902,12 +907,16 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       let mc = 0, ccCount = 0
       const bCounts = {}
       for (const s of myStoresFiltered) { if (turf.booleanPointInPolygon(turf.point([s.longitude, s.latitude]), circle)) mc++ }
-      const myStoreOp = req.body.myStoreOp || '>'
-      const myStoreVal = numOr(req.body.myStoreVal, numOr(req.body.myStoreMin, 1))
-      const compOp = req.body.competitorOp || '>'
-      const compVal = numOr(req.body.competitorVal, numOr(req.body.competitorMin, 1))
-      // 我的门店数条件（'any' = 不限，整段跳过；否则默认 '>' 1 会悄悄筛掉大部分区域）
-      if (myStoreOp === 'any') { /* 不限：不筛选 */ }
+      // 🔴 v1.13.243：未填有效数值的条件一律**不参与**筛选。
+      //    ⛔ 不能再 `numOr(x, 1)` 兜底 —— 空值会被当成"≥1 家店"，结果被悄悄缩小且界面无提示。
+      const myStoreOp = req.body.myStoreOp || 'any'
+      const myStoreVal = numOr(req.body.myStoreVal ?? req.body.myStoreMin, NaN)
+      const myCondOk = myStoreOp !== 'any' && Number.isFinite(myStoreVal)
+      const compOp = req.body.competitorOp || 'any'
+      const compVal = numOr(req.body.competitorVal ?? req.body.competitorMin, NaN)
+      const compCondOk = compOp !== 'any' && Number.isFinite(compVal)
+      // 我的门店数条件（'any' = 不限；数值无效 = 未填 ⇒ 同样不筛选）
+      if (!myCondOk) { /* 不限 / 未填数量：不筛选 */ }
       else if (myStoreOp === '>' && !(mc > myStoreVal)) continue
       else if (myStoreOp === '>=' && !(mc >= myStoreVal)) continue
       else if (myStoreOp === '<' && !(mc < myStoreVal)) continue
@@ -918,8 +927,8 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
           ccCount++; const b = c.brand || '未知'; bCounts[b] = (bCounts[b] || 0) + 1
         }
       }
-      // 竞品门店数条件（'any' = 不限）
-      if (compOp === 'any') { /* 不限：不筛选 */ }
+      // 竞品门店数条件（'any' = 不限；数值无效 = 未填 ⇒ 同样不筛选）
+      if (!compCondOk) { /* 不限 / 未填数量：不筛选 */ }
       else if (compOp === '>' && !(ccCount > compVal)) continue
       else if (compOp === '>=' && !(ccCount >= compVal)) continue
       else if (compOp === '<' && !(ccCount < compVal)) continue

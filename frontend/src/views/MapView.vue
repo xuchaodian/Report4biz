@@ -2153,11 +2153,8 @@ const commerceError = ref('')
 const commerceLayerItems = ref([])
 
 // 开店余地
-// 数值解析：⛔ 不用 `x || 1` —— 会把合法的 0 吞成 1（v1.13.238 修复）
-const numOr = (v, dflt) => {
-  const n = parseFloat(v)
-  return Number.isFinite(n) ? n : dflt
-}
+// 数值解析已并入 calculatePotential 内的 numOrNull（v1.13.243）：无效值一律不参与筛选，
+// 不再有"兜底默认值"—— 兜底成 1 会让空值悄悄变成"≥1 家店"。
 const potentialVisible = ref(false)
 const populationCities = ref([])
 const potentialCity = ref('')
@@ -7898,12 +7895,45 @@ const calculatePotential = async () => {
       map.removeLayer(potentialLayer)
       potentialLayer = null
     }
-    const conditions = []
-    if (potentialCond1Field.value && potentialCond1Val.value !== null) {
-      conditions.push({ field: potentialCond1Field.value, operator: potentialCond1Op.value || '>', value: potentialCond1Val.value })
+    // 🔴 v1.13.243：条件有效性校验 —— 没填有效数值的条件**一律不参与**，
+    //    ⛔ 绝不能让空值被兜底成 1（那等于悄悄按"≥1 家店"在筛）；缺项就提示并中止。
+    const numOrNull = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null }
+    const problems = []
+
+    const myOp = potentialMyStoreOp.value || 'any'
+    const myVal = myOp === 'any' ? null : numOrNull(potentialMyStoreVal.value)
+    if (myOp !== 'any' && myVal === null) problems.push('「我的门店数」未填数量（可将运算符改为「不限」）')
+
+    const compOp = potentialCompOp.value || 'any'
+    const compVal = compOp === 'any' ? null : numOrNull(potentialCompVal.value)
+    if (compOp !== 'any' && compVal === null) problems.push('「竞品门店数」未填数量（可将运算符改为「不限」）')
+
+    const buildOther = (name, op, val, label) => {
+      const n = String(name || '').trim()
+      if (!n) return null                                  // 没填品牌名 ⇒ 该条件不参与
+      const v = numOrNull(val)
+      if (v === null) { problems.push(label + '「' + n + '」未填数量'); return null }
+      return { name: n, op: op || '>', val: v }
     }
-    if (potentialCond2Field.value && potentialCond2Val.value !== null) {
-      conditions.push({ field: potentialCond2Field.value, operator: potentialCond2Op.value || '>', value: potentialCond2Val.value })
+    const other1 = buildOther(potentialOther1Name.value, potentialOther1Op.value, potentialOther1Val.value, '其他品牌1')
+    const other2 = buildOther(potentialOther2Name.value, potentialOther2Op.value, potentialOther2Val.value, '其他品牌2')
+
+    // 人口条件：选了字段却没填数值 ⇒ 视为无效（避免空值被当作 0 参与比较）
+    const conditions = []
+    const condPairs = [
+      [potentialCond1Field.value, potentialCond1Val.value, potentialCond1Op.value, '人口数量1'],
+      [potentialCond2Field.value, potentialCond2Val.value, potentialCond2Op.value, '人口数量2']
+    ]
+    for (const [field, rawVal, op, label] of condPairs) {
+      if (!field) continue                                 // 没选字段 ⇒ 该条件不参与
+      const v = numOrNull(rawVal)
+      if (v === null) { problems.push(label + '「' + field + '」未填数值'); continue }
+      conditions.push({ field, operator: op || '>', value: v })
+    }
+
+    if (problems.length) {
+      ElMessage.warning({ message: '请补全或清空这些条件：' + problems.join('；'), duration: 6000, showClose: true })
+      return
     }
     const res = await fetch('/api/shapefiles/calculate-potential', {
       method: 'POST',
@@ -7911,14 +7941,14 @@ const calculatePotential = async () => {
       body: JSON.stringify({
         cityName: potentialCity.value,
         radius: potentialRadius.value,
-        myStoreOp: potentialMyStoreOp.value || 'any',
-        myStoreVal: potentialMyStoreVal.value,
-        competitorOp: potentialCompOp.value || 'any',
-        competitorVal: potentialCompVal.value,
+        myStoreOp: myOp,
+        myStoreVal: myVal,
+        competitorOp: compOp,
+        competitorVal: compVal,
         myStoreBrands: potentialMyBrands.value,
         compBrands: potentialCompBrands.value,
-        otherBrand1: potentialOther1Name.value ? { name: potentialOther1Name.value.trim(), op: potentialOther1Op.value || '>', val: numOr(potentialOther1Val.value, 1) } : null,
-        otherBrand2: potentialOther2Name.value ? { name: potentialOther2Name.value.trim(), op: potentialOther2Op.value || '>', val: numOr(potentialOther2Val.value, 1) } : null,
+        otherBrand1: other1,
+        otherBrand2: other2,
         conditions
       })
     })
