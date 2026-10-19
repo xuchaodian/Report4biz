@@ -112,6 +112,8 @@
   --shadow-hover: 0 12px 32px rgba(30, 111, 255, 0.16);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* v1.13.247：锚点跳转给 sticky 导航让位（实测导航 65px，留 80px 呼吸位） */
+html { scroll-padding-top: 80px; }
 /* v1.13.220：<picture> 默认 display:inline，父宽会塌陷 ⇒ 子 img 的 width:100% 失效。
    令 picture 从布局中「消失」，img 直接参与既有父容器（.banner-slide / .ui-card / .dashboard-frame）布局。 */
 picture { display: contents; }
@@ -169,7 +171,12 @@ a { text-decoration: none; color: inherit; }
 .btn-white { background: #fff; color: var(--primary); }
 .btn-white:hover { box-shadow: 0 6px 16px rgba(255,255,255,0.35); transform: translateY(-1px); }
 .btn-lg { padding: 13px 30px; font-size: 15px; border-radius: 10px; }
-.menu-toggle { display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text); }
+/* v1.13.247：原触控区仅 19×27px，低于移动端 44×44 建议值 */
+.menu-toggle {
+  display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text);
+  min-width: 44px; min-height: 44px; align-items: center; justify-content: center;
+  margin-right: -10px; padding: 0;
+}
 
 /* ============ Hero ============ */
 .hero {
@@ -581,7 +588,7 @@ a { text-decoration: none; color: inherit; }
   .nav.open { display: flex; }
   .nav a { padding: 13px 24px; font-size: 15px; color: var(--text); }
   .nav a:hover { background: var(--primary-light); color: var(--primary); }
-  .menu-toggle { display: block; }
+  .menu-toggle { display: inline-flex; }
   .hero-grid { grid-template-columns: 1fr; gap: 40px; }
   .hero h1 { font-size: 34px; }
   .cap-grid, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
@@ -709,7 +716,7 @@ a { text-decoration: none; color: inherit; }
         <div class="banner-slide">
           <picture>
             <source type="image/webp" srcset="assets/screen-sitefinder.webp">
-            <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地分析：高潜力区域筛选" loading="lazy" decoding="async">
+            <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地评估：高潜力区域筛选" loading="lazy" decoding="async">
           </picture>
           <div class="banner-text">
             <span class="bt-tag">开店余地评估</span>
@@ -845,7 +852,7 @@ a { text-decoration: none; color: inherit; }
         <span class="tl-node tl-purple" aria-hidden="true"><img src="assets/icons/compass.svg" alt="" width="16" height="16"></span>
         <div class="tl-body">
           <h3>周边竞争强度增强</h3>
-          <p>点击竞争强度圆圈下钻「竞品雷达」：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，看清圈内竞品格局。</p>
+          <p>点击竞争强度圆圈即可下钻：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，看清圈内竞品格局。</p>
         </div>
         <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
       </li>

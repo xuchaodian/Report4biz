@@ -85,11 +85,14 @@
       toggle.setAttribute('aria-expanded', 'false');
       toggle.setAttribute('aria-label', '展开导航菜单');
       toggle.textContent = '☰';
+      document.body.style.overflow = '';        // v1.13.247：关闭时恢复页面滚动
     };
 
     toggle.addEventListener('click', function (e) {
       e.stopPropagation();
       var opened = nav.classList.toggle('open');
+      // v1.13.247：菜单是 absolute 定位，不锁滚动会跟着手指一起滚走
+      document.body.style.overflow = opened ? 'hidden' : '';
       toggle.setAttribute('aria-expanded', opened ? 'true' : 'false');
       toggle.setAttribute('aria-label', opened ? '收起导航菜单' : '展开导航菜单');
       toggle.textContent = opened ? '✕' : '☰';
