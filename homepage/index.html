@@ -439,18 +439,37 @@ a { text-decoration: none; color: inherit; }
 
 /* ============ 理由 ============ */
 .reason-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+/* v1.13.244：选择理由改为「通用地图 App vs 选址赢家」逐项对照 */
 .reason-card {
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 32px 26px; text-align: center; transition: all .25s; position: relative;
+  padding: 26px 24px; text-align: left; transition: all .25s; position: relative;
 }
 .reason-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-4px); }
-.reason-num {
-  font-size: 12px; font-weight: 800; color: #fff;
-  background: var(--primary); width: 28px; height: 28px; border-radius: 50%;
-  display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px;
+.cmp-dim { font-size: 12px; font-weight: 700; color: var(--text-3); letter-spacing: .06em; margin-bottom: 14px; }
+.cmp-row { border-radius: 10px; padding: 12px 14px; }
+.cmp-row + .cmp-row { margin-top: 10px; }
+.cmp-row.map { background: #f4f5f7; }
+.cmp-row.us { background: var(--primary-light); }
+.cmp-who { font-size: 11.5px; font-weight: 700; margin-bottom: 4px; }
+.cmp-row.map .cmp-who { color: var(--text-3); }
+.cmp-row.us .cmp-who { color: var(--primary-dark); }
+.cmp-txt { font-size: 13.5px; line-height: 1.65; }
+.cmp-row.map .cmp-txt { color: var(--text-2); }
+.cmp-row.us .cmp-txt { color: var(--text); }
+.reason-foot {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px;
+  margin-top: 24px; font-size: 13px; color: var(--text-2);
 }
-.reason-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
-.reason-card p { font-size: 13.5px; color: var(--text-2); line-height: 1.8; }
+.reason-foot span { display: inline-flex; align-items: center; gap: 6px; }
+.reason-foot span::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--primary); opacity: .65;
+}
+.reason-note { text-align: center; font-size: 12px; color: var(--text-3); margin-top: 10px; }
+/* 2 列断点时第 3 张卡独占一行，避免右侧留空 */
+@media (max-width: 980px) and (min-width: 621px) {
+  .reason-grid > .reason-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
 
 /* ============ CTA ============ */
 .cta {
@@ -924,32 +943,57 @@ a { text-decoration: none; color: inherit; }
   </div>
 </section>
 
-<!-- ============ 选择理由 ============ -->
+<!-- ============ 选择理由（地图工具 vs 选址系统，v1.13.244）============ -->
 <section class="section section-soft" id="reason">
   <div class="container">
     <div class="section-head">
       <div class="sub-en">Why choose us</div>
       <div class="section-tag">选择理由</div>
-      <h2>为什么选择选址赢家Online</h2>
-      <p>专注商业选址场景，把复杂的地理分析做到「开箱即用」。</p>
+      <h2>同样是管门店，为什么还要一套选址系统</h2>
+      <p>地图负责告诉你店在哪，选址赢家负责判断该不该开在这。</p>
     </div>
     <div class="reason-grid">
       <div class="reason-card">
-        <div class="reason-num">1</div>
-        <h3>高精度人口数据</h3>
-        <p>接入运营商级人口大数据，支持最小网格粒度统计，商圈人口、常住人群分布精准呈现，为决策提供可靠依据。</p>
+        <div class="cmp-dim">01　门店数据</div>
+        <div class="cmp-row map">
+          <div class="cmp-who">通用地图 App</div>
+          <div class="cmp-txt">收藏点，只有名称和位置</div>
+        </div>
+        <div class="cmp-row us">
+          <div class="cmp-who">选址赢家</div>
+          <div class="cmp-txt">结构化门店库：品牌、经营状态、面积、商圈类型，可筛选、可统计</div>
+        </div>
       </div>
       <div class="reason-card">
-        <div class="reason-num">2</div>
-        <h3>开箱即用的 GIS 能力</h3>
-        <p>无需 GIS 专业知识，圈选、分析、出图全部可视化操作；多图层叠加与聚合渲染，大数据量依然流畅。</p>
+        <div class="cmp-dim">02　人口与客流</div>
+        <div class="cmp-row map">
+          <div class="cmp-who">通用地图 App</div>
+          <div class="cmp-txt">一张热力图，看不出多少人、什么年龄段</div>
+        </div>
+        <div class="cmp-row us">
+          <div class="cmp-who">选址赢家</div>
+          <div class="cmp-txt">最小 1km 网格分龄人口，按半径聚合，可设阈值筛区域</div>
+        </div>
       </div>
       <div class="reason-card">
-        <div class="reason-num">3</div>
-        <h3>面向选址的深度功能</h3>
-        <p>门店重合度、竞争追踪、开店余地评估等选址专属分析模型，直击开店决策核心问题，非通用 BI 可比。</p>
+        <div class="cmp-dim">03　决策输出</div>
+        <div class="cmp-row map">
+          <div class="cmp-who">通用地图 App</div>
+          <div class="cmp-txt">看到的是位置，判断还得靠人</div>
+        </div>
+        <div class="cmp-row us">
+          <div class="cmp-who">选址赢家</div>
+          <div class="cmp-txt">开店余地、竞争强度、AI 建议，直接给出候选区域与理由</div>
+        </div>
       </div>
     </div>
+    <div class="reason-foot">
+      <span>竞品按半径自动计数</span>
+      <span>一键导出 Excel / PDF</span>
+      <span>集团与子公司数据隔离</span>
+      <span>不用 GIS 专业，圈选即出图</span>
+    </div>
+    <div class="reason-note">人口数据来自运营商授权数据源，按次计量调用</div>
   </div>
 </section>
 
