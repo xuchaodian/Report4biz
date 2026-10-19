@@ -8,7 +8,7 @@
 
     <!-- ============ SEO 元信息（v1.13.221）============
          背景：本站是登录墙 SPA，nginx 的 `location /` 把一切未命中静态文件的路径都
-         try_files 回落本文件 ⇒ 此前 head 里仅有一个 <title>，主域 / 在搜索结果中
+         try_files 回落本文件 ⇒ 此前 head 里仅有一个 title 标签，主域 / 在搜索结果中
          没有任何描述，社交平台分享也无卡片可展示。
          本批按营销页 /home/（独立静态页，自带完整 head）的口径补齐：
            • 与 robots.txt / sitemap.xml 的策略保持一致 —— 对外只开放 `/` 与 `/home/`
@@ -35,6 +35,7 @@
     <meta name="twitter:title" content="选址赢家Online - WebGIS 商业智能分析平台">
     <meta name="twitter:description" content="商圈人口分析 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
     <meta name="twitter:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
+    <meta name="twitter:image:alt" content="选址赢家Online · 数据大屏驾驶舱">
 
     <!-- v1.13.137：移除 unpkg CDN 外链（3 个 <link>）。Leaflet 与 MarkerCluster 样式改由使用方
          以 ESM 方式引入，随路由 chunk 自动注入：
