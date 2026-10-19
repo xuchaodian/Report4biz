@@ -456,16 +456,34 @@ a { text-decoration: none; color: inherit; }
 .cmp-txt { font-size: 13.5px; line-height: 1.65; }
 .cmp-row.map .cmp-txt { color: var(--text-2); }
 .cmp-row.us .cmp-txt { color: var(--text); }
-.reason-foot {
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px;
-  margin-top: 24px; font-size: 13px; color: var(--text-2);
+/* 6 行硬对比表（v1.13.246） */
+.cmp-table-wrap {
+  margin-top: 28px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
 }
-.reason-foot span { display: inline-flex; align-items: center; gap: 6px; }
-.reason-foot span::before {
-  content: ""; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--primary); opacity: .65;
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cmp-table th, .cmp-table td { padding: 15px 20px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.cmp-table thead th { background: var(--bg-soft); font-size: 13px; font-weight: 700; color: var(--text-2); }
+.cmp-table thead th.us { background: var(--primary-light); color: var(--primary-dark); }
+.cmp-table tbody th {
+  width: 132px; font-size: 13.5px; font-weight: 700; color: var(--text);
+  white-space: nowrap; background: #fff;
 }
-.reason-note { text-align: center; font-size: 12px; color: var(--text-3); margin-top: 10px; }
+.cmp-table tbody td { color: var(--text-2); line-height: 1.7; }
+.cmp-table tbody td.us { color: var(--text); background: rgba(30, 111, 255, .04); }
+.cmp-table tbody tr:last-child th, .cmp-table tbody tr:last-child td { border-bottom: none; }
+.reason-note { text-align: center; font-size: 12px; color: var(--text-3); margin-top: 12px; }
+@media (max-width: 620px) {
+  .cmp-table thead { display: none; }
+  .cmp-table, .cmp-table tbody, .cmp-table tr, .cmp-table th, .cmp-table td { display: block; width: auto; }
+  .cmp-table tbody tr { padding: 4px 0 12px; border-bottom: 1px solid var(--line); }
+  .cmp-table tbody tr:last-child { border-bottom: none; }
+  .cmp-table tbody th { padding: 12px 14px 4px; border: none; background: transparent; color: var(--text-3); font-size: 12px; letter-spacing: .04em; }
+  .cmp-table tbody td { padding: 6px 14px; border: none; }
+  .cmp-table tbody td::before { content: attr(data-label); display: block; font-size: 11.5px; font-weight: 700; color: var(--text-3); margin-bottom: 3px; }
+  .cmp-table tbody td.us { background: var(--primary-light); border-radius: 8px; margin: 6px 10px; padding: 10px 12px; }
+  .cmp-table tbody td.us::before { color: var(--primary-dark); }
+}
 /* 2 列断点时第 3 张卡独占一行，避免右侧留空 */
 @media (max-width: 980px) and (min-width: 621px) {
   .reason-grid > .reason-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -987,11 +1005,48 @@ a { text-decoration: none; color: inherit; }
         </div>
       </div>
     </div>
-    <div class="reason-foot">
-      <span>竞品按半径自动计数</span>
-      <span>一键导出 Excel / PDF</span>
-      <span>集团与子公司数据隔离</span>
-      <span>不用 GIS 专业，圈选即出图</span>
+    <div class="cmp-table-wrap">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th scope="col">维度</th>
+            <th scope="col">通用地图 App</th>
+            <th scope="col" class="us">选址赢家Online</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">数据归属</th>
+            <td data-label="通用地图 App">门店存在个人账号里，换人换机就散了</td>
+            <td data-label="选址赢家Online" class="us">存在自己库里，随时可导出，账号之间互相隔离</td>
+          </tr>
+          <tr>
+            <th scope="row">分析能力</th>
+            <td data-label="通用地图 App">能看热力图，算不出半径内到底多少人</td>
+            <td data-label="选址赢家Online" class="us">按半径聚合、多条件阈值筛选，一次算出候选区域</td>
+          </tr>
+          <tr>
+            <th scope="row">竞品计数</th>
+            <td data-label="通用地图 App">一家家搜，数量靠眼数</td>
+            <td data-label="选址赢家Online" class="us">内置竞品库按半径自动计数，自家门店蚕食加权</td>
+          </tr>
+          <tr>
+            <th scope="row">决策依据</th>
+            <td data-label="通用地图 App">看到位置和路线，判断靠经验</td>
+            <td data-label="选址赢家Online" class="us">开店余地、竞争强度、AI 建议与销售预测</td>
+          </tr>
+          <tr>
+            <th scope="row">成果输出</th>
+            <td data-label="通用地图 App">截图贴进 PPT，改一次重来一次</td>
+            <td data-label="选址赢家Online" class="us">一键导出 Excel / PDF，分析结果可复用</td>
+          </tr>
+          <tr>
+            <th scope="row">团队协作</th>
+            <td data-label="通用地图 App">一个账号大家共用，谁改的说不清</td>
+            <td data-label="选址赢家Online" class="us">多账号 + 集团 / 子公司数据隔离与权限</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
     <div class="reason-note">人口数据来自运营商授权数据源，按次计量调用</div>
   </div>
