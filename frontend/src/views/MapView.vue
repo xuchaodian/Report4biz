@@ -700,7 +700,7 @@
 
 
     <!-- 开店余地对话框 -->
-    <el-dialog v-model="potentialVisible" width="600px" class="dialog-fancy" :close-on-click-modal="false" draggable @opened="loadPotentialCities">
+    <el-dialog v-model="potentialVisible" width="600px" class="dialog-fancy" :close-on-click-modal="false" draggable @opened="onPotentialOpened">
       <template #header>
         <div class="dialog-header-fancy">
           <span class="dhf-icon" style="background:#faeeda;color:#916012;"><AppIcon><MapLocation /></AppIcon></span>
@@ -712,7 +712,7 @@
       </template>
       <el-form label-width="120px">
         <el-form-item label="选择城市">
-          <el-select v-model="potentialCity" placeholder="请选择城市" style="width:100%" filterable>
+          <el-select v-model="potentialCity" placeholder="请选择城市" style="width:100%" filterable @change="onPotentialCityChange">
             <el-option-group v-for="group in groupedPotentialCities" :key="group.letter" :label="group.letter">
               <el-option v-for="c in group.cities" :key="c" :label="c" :value="c" />
             </el-option-group>
@@ -760,7 +760,9 @@
         </el-form-item>
         <el-form-item label="其他品牌1">
           <div style="display:flex;gap:8px;width:100%">
-            <el-input v-model="potentialOther1Name" placeholder="品牌名(如肯德基)" clearable style="flex:1;min-width:0" />
+            <el-select v-model="potentialOther1Name" placeholder="品牌" clearable filterable :disabled="!potentialCity" style="flex:1;min-width:0">
+              <el-option v-for="b in potentialBrandOptions" :key="b.brand" :label="`${b.brand}（${b.count}家）`" :value="b.brand" />
+            </el-select>
             <el-select v-model="potentialOther1Op" placeholder="运算符" style="width:78px;flex-shrink:0">
               <el-option label=">" value=">" />
               <el-option label=">=" value=">=" />
@@ -773,7 +775,9 @@
         </el-form-item>
         <el-form-item label="其他品牌2">
           <div style="display:flex;gap:8px;width:100%">
-            <el-input v-model="potentialOther2Name" placeholder="品牌名(如麦当劳)" clearable style="flex:1;min-width:0" />
+            <el-select v-model="potentialOther2Name" placeholder="品牌" clearable filterable :disabled="!potentialCity" style="flex:1;min-width:0">
+              <el-option v-for="b in potentialBrandOptions" :key="b.brand" :label="`${b.brand}（${b.count}家）`" :value="b.brand" />
+            </el-select>
             <el-select v-model="potentialOther2Op" placeholder="运算符" style="width:78px;flex-shrink:0">
               <el-option label=">" value=">" />
               <el-option label=">=" value=">=" />
@@ -2168,7 +2172,8 @@ const potentialMyBrands = ref([])
 const potentialCompBrands = ref([])
 const potentialMyBrandOptions = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))])
 const potentialCompBrandOptions = computed(() => [...new Set(competitorStore.activeCompetitors.map(c => c.brand).filter(Boolean))])
-// 其他品牌（高德关键词检索）
+// 其他品牌（v1.13.255：改查平台品牌库 brand_stores，不再走高德 —— 下拉按城市动态加载）
+const potentialBrandOptions = ref([])
 const potentialOther1Name = ref('')
 const potentialOther1Op = ref('>')
 const potentialOther1Val = ref(1)
@@ -7844,6 +7849,33 @@ const loadPotentialCities = async () => {
   } catch(e) {
     console.error('[Potential] 加载城市列表失败:', e)
   }
+}
+
+// 开店余地：加载该城市在品牌库中有数据的品牌（v1.13.255）
+// ⚠️ 其他品牌已不走高德 —— 下拉只列库里有的品牌，避免「选了却查不到」。
+const loadPotentialBrands = async () => {
+  if (!potentialCity.value) { potentialBrandOptions.value = []; return }
+  try {
+    const res = await fetch('/api/brand-stores/city-brands?city=' + encodeURIComponent(potentialCity.value), { headers: authHeader() })
+    const data = await res.json()
+    potentialBrandOptions.value = data.success ? (data.data || []) : []
+  } catch (e) {
+    console.error('[Potential] 加载城市品牌清单失败:', e)
+    potentialBrandOptions.value = []
+  }
+}
+
+// 弹窗打开：城市列表 + 该城市的品牌清单（城市可能是上次选好的）
+const onPotentialOpened = () => {
+  loadPotentialCities()
+  loadPotentialBrands()
+}
+
+// 城市切换 ⇒ 旧品牌在新城市可能没有数据，一律清空重选
+const onPotentialCityChange = () => {
+  potentialOther1Name.value = ''
+  potentialOther2Name.value = ''
+  loadPotentialBrands()
 }
 
 // 开店余地：加载字段列表（点击下拉时触发）

@@ -62,6 +62,28 @@ router.get('/', authenticate, (req, res) => {
   }
 })
 
+// v1.13.255：某城市在品牌库中有数据的品牌清单（供「开店余地 · 其他品牌」下拉）
+// ⚠️ 必须放在下方 `/:id` 之前 —— 否则 "city-brands" 会被当成 id 匹配掉
+router.get('/city-brands', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const city = String(req.query.city || '').trim()
+    if (!city) return res.json({ success: true, data: [] })
+    // brand_stores.city 存「上海市」，前端传「上海」⇒ REPLACE 归一后再比
+    const rows = db.prepare(`
+      SELECT brand, COUNT(*) AS cnt
+      FROM brand_stores
+      WHERE brand != '' AND REPLACE(city, '市', '') = ?
+      GROUP BY brand
+      ORDER BY cnt DESC
+    `).all(city)
+    res.json({ success: true, data: rows.map(r => ({ brand: r.brand, count: r.cnt })) })
+  } catch (error) {
+    console.error('获取城市品牌清单错误:', error)
+    res.status(500).json({ success: false, message: '获取品牌清单失败' })
+  }
+})
+
 // 获取单个品牌门店（共享数据）
 router.get('/:id', authenticate, (req, res) => {
   try {

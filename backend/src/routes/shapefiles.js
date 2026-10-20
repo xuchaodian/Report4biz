@@ -9,7 +9,6 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
-import { textSearchAll } from '../utils/amapPoi.js'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 // ⚠️ 本文件**不再使用 writeGeoText**：上传改由 Python 流式直写 + adoptGeoFile 转正
 //    （见 upload 路由与 geoStore::adoptGeoFile 的注释）。writeGeoText 仍供其他模块使用。
@@ -842,31 +841,29 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       const ob = otherBrands[i]
       if (!ob) continue
       try {
-        const sres = await textSearchAll(cityName, ob.name)
-        ob.pois = sres.pois || []
-        const totalCount = Number(sres.count) || 0
-        if (sres.error) {
-          ob.degraded = { name: ob.name, reason: 'search_failed',
-            message: `高德检索失败（${sres.error}），该品牌条件未生效` }
-        } else if (ob.pois.length === 0 && totalCount > 0) {
-          // v1.13.254：count 有封顶（>=800 一律 800）⇒ 封顶时不说「返回 N 家」
-          const cnt0 = sres.countCapped
-            ? `高德统计已达上限 ${totalCount} 家（实际可能更多）`
-            : `高德返回 ${totalCount} 家`
-          ob.degraded = { name: ob.name, reason: 'no_coords',
-            message: `${cnt0}但未取到坐标，该品牌条件未生效` }
-        } else if (totalCount > ob.pois.length) {
-          const cnt1 = sres.countCapped
-            ? `高德统计已达上限 ${totalCount} 家（实际可能更多）`
-            : `共 ${totalCount} 家`
-          ob.degraded = { name: ob.name, reason: 'truncated',
-            message: `${cnt1}，本次仅取到前 ${ob.pois.length} 家（单次上限），计数偏少` }
+        // 🔴 v1.13.255：其他品牌改为查**平台品牌库** brand_stores，不再走高德。
+        //   依据（2026-10-20 实测）：高德单次检索硬上限约 500 条、count 报 800 不可信 ——
+        //     上海·肯德基高德只能取回 491 条（覆盖 934 网格），品牌库有 708 条（覆盖 1213 网格）。
+        //   代价：只支持库中已有的品牌（前端下拉按城市动态取），换取 100% 准确 + 零 API 调用。
+        //   ⚠️ brand_stores.city 存「上海市」，前端传「上海」⇒ REPLACE 归一后再比。
+        const cityKey = String(cityName || '').trim()
+        const rows = db.prepare(`
+          SELECT latitude, longitude FROM brand_stores
+          WHERE brand = ? AND REPLACE(city, '市', '') = ?
+            AND latitude IS NOT NULL AND longitude IS NOT NULL
+        `).all(ob.name, cityKey)
+        ob.pois = rows.map(r => ({ lng: r.longitude, lat: r.latitude }))
+        ob.source = 'brand_stores'
+        if (rows.length === 0) {
+          // 兜底：品牌库未收录该城该品牌（正常不会出现 —— 下拉只列有数据的品牌）
+          ob.degraded = { name: ob.name, reason: 'no_data',
+            message: `平台品牌库中暂无「${cityKey} · ${ob.name}」数据，该品牌条件未生效` }
         }
-        console.log(`[calculate-potential] 其他品牌检索 "${ob.name}" 城市${cityName}: 高德count=${sres.count}, 收集${ob.pois.length}点${ob.degraded ? ' ⚠️' + ob.degraded.reason : ''}`)
+        console.log(`[calculate-potential] 其他品牌(品牌库) "${ob.name}" 城市${cityKey}: ${ob.pois.length} 点${ob.degraded ? ' ⚠️' + ob.degraded.reason : ''}`)
       } catch (e) {
         ob.degraded = { name: ob.name, reason: 'search_failed',
-          message: `高德检索异常（${e.message}），该品牌条件未生效` }
-        console.warn(`[calculate-potential] 高德检索"${ob.name}"失败:`, e.message)
+          message: `品牌库查询异常（${e.message}），该品牌条件未生效` }
+        console.warn(`[calculate-potential] 品牌库查询"${ob.name}"失败:`, e.message)
       }
     }
     const degradedBrands = otherBrands.filter(ob => ob && ob.degraded).map(ob => ob.degraded)
