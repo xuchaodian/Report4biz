@@ -1,6 +1,6 @@
 <template>
   <div class="account-container">
-    <el-card class="account-card">
+    <el-card class="account-card" :class="{ 'card-vip': showVipSkin }">
       <template #header>
         <div class="card-header">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
@@ -806,6 +806,10 @@ const vipExpired = computed(() => isVipExpiredFor(userStore.user?.vip_until))
 // 是否 30 天内到期（提醒）；无到期日 → null 表示不限（不参与提醒）
 const vipDaysLeft = computed(() => vipDaysRemaining(userStore.user?.vip_until))
 const vipExpiring = computed(() => isVipExpiringFor(userStore.user?.vip_until))
+// v1.13.251：VIP 身份皮肤（卡片顶部金条 + 浅金描边）—— 只在「VIP/试用 且 未过期」时点亮。
+// ⛔ 不能只看 isVip：已过期账号 role 仍是 vip，若照样镶金边，会与红色「已过期」徽章自相矛盾。
+// ⛔ 也不能用 isVipActive：它含 admin，会把「管理员」染成 VIP，与后台 .vip-role-tag 的口径分叉。
+const showVipSkin = computed(() => isVip.value && !vipExpired.value)
 
 // ===== v1.13.205：VIP 试用申请（普通用户提交 → 管理员审核 → 30 天试用）=====
 // 只在「普通用户」身份下出现入口：vip / trial 本身已是 VIP，admin 无需申请。
@@ -4356,6 +4360,27 @@ const handleExportExcel = async () => {
 .account-card {
   max-width: 600px;
   margin: 0 auto 20px auto;
+
+  /* v1.13.251：VIP 身份皮肤 —— 顶部金条 + 浅金描边 + 暖色阴影，仅 VIP/试用且未过期时生效。
+     el-card 自带 overflow:hidden ⇒ 金条在圆角处会被自然裁切，无需额外圆角处理。
+     ⚠️ 颜色刻意与 .vip-badge 的金（#8a5e00）分工：此处是「装饰性浅金」，不承载文字，
+        故不受 vipColorUnifyGuard 约束（它只断言徽章/角色标签的文字与底色）。 */
+  &.card-vip {
+    position: relative;
+    border-color: #ecd9ae;
+    box-shadow: 0 2px 18px rgba(160, 120, 40, 0.10);
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #d4a349, #f2cc85, #d4a349);
+      z-index: 2;
+    }
+  }
 
   .card-header {
     font-size: 18px;
