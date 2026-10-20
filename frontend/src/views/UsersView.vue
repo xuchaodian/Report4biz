@@ -1697,17 +1697,19 @@ onMounted(() => {
 .vip-expiring { color: #916012; font-weight: 600; }
 .vip-expired { color: #b91c1c; font-weight: 600; }
 
-/* VIP 家族统一金色（v1.13.212；原为紫 #7c3aed on #f3e8ff）。
-   文字取深金 #8a5e00：on #fff7e6 = 5.35:1 ✅ 过 WCAG AA(4.5:1)，
-   与个人中心 `.vip-badge` 同色 ⇒ 全站 VIP 家族一个颜色。
-   ⛔ 勿改成 #b8860b（徽章旧色）—— on #fff7e6 仅 3.05:1 ❌，会引入对比度回归。
+/* VIP 家族统一金（v1.13.212 立；v1.13.252 由「浅金底 + 深金字」改「实心深金底 + 白字」）。
+   ✅ 白字压渐变两端：#ffffff on #8a5e00 = 5.68:1 / on #6f4a00 = 7.30:1，均过 WCAG AA(4.5:1)。
+   与个人中心 `.vip-badge` **同色同形** ⇒ 全站 VIP 家族一个颜色（vipColorUnifyGuard 断言两处 color 相等）。
+   ⛔ 勿改成 #b8860b（徽章旧色，本身过亮）。
    ⚠️ 选择器**刻意不写** `.el-tag` 前缀：scoped 会补 `[data-v-x]` ⇒ (0,2,0)，
       恒高于 EP 的 `.el-tag`(0,1,0)。main.scss 那 6 条只改 `--el-tag-text-color`
-      变量、不声明 `color`，故与此处无冲突，也不受打包顺序影响。 */
+      变量、不声明 `color`，故与此处无冲突，也不受打包顺序影响。
+   ⚠️ el-tag 底色走 `--el-tag-bg-color`(background-color)，用 `background` 简写才能同时盖掉
+      底色并叠上渐变（简写会把 background-color 重置为 transparent）。 */
 .vip-role-tag {
-  background: #fff7e6;
-  border-color: #f5d78e;
-  color: #8a5e00;
+  background: linear-gradient(135deg, #8a5e00, #6f4a00);
+  border-color: #6f4a00;
+  color: #ffffff;
 }
 
 /* ===== 配额采购履历（v1.13.115）===== */

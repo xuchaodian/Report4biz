@@ -4394,23 +4394,25 @@ const handleExportExcel = async () => {
     flex-wrap: wrap;
     gap: 10px;
   }
-  /* v1.13.212：VIP 金色统一为「深金 #8a5e00」（文字与图标同色）。
-     ⛔ 原为 #b8860b —— on #fff7e6 仅 3.05:1，不过 WCAG AA(4.5:1)；
-        且 #b8860b 在任何浅底上都到不了 4.5（它本身过亮）⇒ 不能当统一基准。
-     #8a5e00 on #fff7e6 = 5.35:1 ✅（渐变深端 #ffe7ba 上 4.72:1 ✅）。
-     与后台 UsersView 的 `.vip-role-tag` 用同一个金，见 vipColorUnifyGuard.test.js。 */
+  /* v1.13.212：VIP 金统一到「深金」；v1.13.252 起由「浅金底 + 深金字」改为「实心深金底 + 白字」。
+     ⛔ 不要退回 #b8860b（on 浅金底仅 3.05:1，且它本身过亮，在任何浅底都到不了 4.5）。
+     ✅ 白字压渐变两端均达标：#ffffff on #8a5e00 = 5.68:1 / on #6f4a00 = 7.30:1。
+     ⚠️ vipColorUnifyGuard 会**实算渐变里每一个色标**的对比度 ⇒ 不得为好看加更亮的色标
+        （试过 #9a6b00：白字仅 4.46:1，差 0.04 就红）。
+     与后台 UsersView 的 `.vip-role-tag` 同色，见 vipColorUnifyGuard.test.js。 */
   .vip-badge {
     font-size: 14px;
     font-weight: 600;
-    color: #8a5e00;
-    background: linear-gradient(135deg, #fff7e6, #ffe7ba);
-    border: 1px solid #f5d78e;
+    color: #ffffff;
+    background: linear-gradient(135deg, #8a5e00, #6f4a00);
+    border: 1px solid #6f4a00;
     border-radius: 20px;
     padding: 3px 12px;
     white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(111, 74, 0, 0.22);
   }
   .vip-badge .app-icon {
-    color: #8a5e00;
+    color: #ffffff;
     /* 尺寸 token 只有 14/16/20/26 四档，此处需 18px 随徽章文字放大，故直接覆盖 .app-icon--md */
     font-size: 18px;
   }

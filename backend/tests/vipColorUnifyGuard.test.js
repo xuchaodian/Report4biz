@@ -21,6 +21,11 @@
  *   ④ 谁把颜色改成一个对比度 < 4.5:1 的值 → 红（测试内**实算**，不是抄注释里的数字）
  * （前端无独立测试框架，故与 vipGateGuard / tokenVersionRoleChangeGuard 一致挂在 backend vitest 下。）
  *
+ * v1.13.252（方案 D）：VIP 徽章/角色标签改为「实心深金底 + 白字」——
+ *   前景由 #8a5e00 变 #ffffff，金退到背景渐变（#8a5e00 / #6f4a00）。
+ *   断言同步升级：除原有的「两端对比度」外，新增「两处色标必须同组」与
+ *   「不得退回浅金底」，同时把后台标签的对比度从「只查首个色标」改为「查全部」。
+ *
  * ⚠️ 设计取舍：本文件**不用**「剥注释后再全文正则」的路子 —— 上一批（211）在那条路上
  *   踩过坑（裸正则把字符串里的 `/import/*` 与真块注释配成对，静默吃掉 70 行 → 假绿）。
  *   这里改为**按选择器做花括号配对切片**，只断言规则体内那几行声明；注释天然在体外，
@@ -42,7 +47,11 @@ const ACCOUNT = 'views/MyAccountView.vue'
 const USERS = 'views/UsersView.vue'
 
 // ===== 期望值（唯一权威）=====
-const GOLD = '#8a5e00' // VIP 家族统一金（文字＝图标）
+// v1.13.252：徽章与角色标签由「浅金底 + 深金字」改为「实心深金底 + 白字」（方案 D）。
+//   ⇒ 前景不再是金色而是白色；金退到背景层（渐变两端）。
+//   ⚠️ 底色渐变里的**每一个色标**都会被实算对比度 —— 想加更亮的色标（如 #9a6b00 白字仅 4.46:1）会红。
+const VIP_FG = '#ffffff' // 实心金底上的白字（文字＝图标）
+const VIP_BG_STOPS = ['#8a5e00', '#6f4a00'] // 渐变浅端 5.68:1 / 深端 7.30:1
 const DANGER = '#b91c1c' // 已过期（与 main.scss a11y B 档同值）
 const WARN = '#916012' // 30 天内到期（同上）
 
@@ -126,12 +135,33 @@ describe('VIP 配色统一（v1.13.212）· 切片自检', () => {
   })
 })
 
-describe('VIP 配色统一（v1.13.212）· 前后台同一个金', () => {
-  it('个人中心徽章与后台角色标签用同一个金（含大小写归一）', () => {
+describe('VIP 配色统一（v1.13.212 / v1.13.252 实心金）· 前后台同一套色', () => {
+  it('个人中心徽章与后台角色标签用同一个前景色（含大小写归一）', () => {
     const a = decl(badge, 'color').toLowerCase()
     const b = decl(roleTag, 'color').toLowerCase()
-    expect(a, '前后台 VIP 金分叉了').toBe(b)
-    expect(a).toBe(GOLD)
+    expect(a, '前后台 VIP 前景色分叉了').toBe(b)
+    expect(a).toBe(VIP_FG)
+  })
+
+  it('两处底色渐变都用同一组深金色标（防止单边偷偷改亮）', () => {
+    for (const [block, label] of [
+      [badge, '个人中心徽章'],
+      [roleTag, '后台角色标签'],
+    ]) {
+      const stops = hexes(decl(block, 'background')).map((x) => x.toLowerCase()).sort()
+      expect(stops, `${label} 的渐变色标与基准不一致`).toEqual([...VIP_BG_STOPS].sort())
+    }
+  })
+
+  it('⛔ 不得退回「浅金底 + 深金字」旧形态', () => {
+    for (const [block, label] of [
+      [badge, '个人中心徽章'],
+      [roleTag, '后台角色标签'],
+    ]) {
+      for (const old of ['#fff7e6', '#ffe7ba', '#f5d78e']) {
+        expect(block.toLowerCase(), `${label} 又出现旧浅金底 ${old}`).not.toContain(old)
+      }
+    }
   })
 
   it('⛔ 金色不得退回 #b8860b（on #fff7e6 仅 3.05:1，过不了 AA）', () => {
@@ -205,11 +235,14 @@ describe('VIP 配色统一（v1.13.212）· 对比度实算 ≥ 4.5:1', () => {
     }
   })
 
-  it('后台角色标签：文字压自家浅底达标', () => {
+  it('后台角色标签：文字压渐变**每一个色标**都达标', () => {
     const fg = decl(roleTag, 'color')
-    const bg = hexes(decl(roleTag, 'background'))[0]
-    const v = contrast(fg, bg)
-    expect(v, `${fg} on ${bg} = ${v.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA)
+    const stops = hexes(decl(roleTag, 'background'))
+    expect(stops.length, '角色标签 background 应能解析出渐变两端色').toBeGreaterThanOrEqual(2)
+    for (const bg of stops) {
+      const v = contrast(fg, bg)
+      expect(v, `${fg} on ${bg} = ${v.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA)
+    }
   })
 
   it('后台「VIP到期日」两态文字压在表格白底上达标', () => {
