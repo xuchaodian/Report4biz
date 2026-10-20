@@ -11,6 +11,26 @@ const http = axios.create({ timeout: 10000 })
 // 高德地图 Web服务 API Key（来自环境变量）
 const AMAP_KEY = CONFIG_AMAP_KEY;
 const AMAP_PLACE_URL = 'https://restapi.amap.com/v3/place';
+
+/**
+ * 高德 v3 `count` 的**封顶值**：>= 800 一律返回 800，不代表真实门店数。
+ * 2026-10-20 实测：上海/北京/广州/深圳/杭州的「肯德基」全部 800；
+ * 上海「麦当劳」652（未封顶，可当真）⇒ 800 是 cap。
+ * ⚠️ 调用方展示时必须写成「已达上限 800 家（实际可能更多）」，⛔ 不可直接说「共 800 家」。
+ */
+const COUNT_CAP = 800;
+
+/**
+ * 翻页间隔：高德 QPS 限制很紧 —— 实测连续快速请求第 10 次即返回
+ * CUQPS_HAS_EXCEEDED_THE_LIMIT（此前 8 页连发无节流，偶发整个品牌被降级）。
+ * 400ms ≈ 2.5 次/秒，8 页共约 +2.8s。
+ */
+const PAGE_DELAY_MS = 400;
+/** 命中限频后的重试等待（只重试一次，避免拖长整体耗时） */
+const RATE_LIMIT_WAIT_MS = 1000;
+
+/** 简易延时（仅用于翻页节流，无外部依赖） */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const AMAP_GEO_URL = 'https://restapi.amap.com/v3/geocode';
 
 // GCJ-02 坐标转换为高德坐标（高德API使用GCJ-02，直接返回）
@@ -188,6 +208,8 @@ async function textSearchAll(city, keywords, maxPages = 8) {
   let count = 0
   let error = null
   for (let page = 1; page <= maxPages; page++) {
+    // v1.13.254：翻页节流 —— 8 连发会偶发 CUQPS，导致整个品牌被判「检索失败」
+    if (page > 1) await sleep(PAGE_DELAY_MS)
     const params = {
       key: AMAP_KEY,
       city: city || '全国',
@@ -197,7 +219,23 @@ async function textSearchAll(city, keywords, maxPages = 8) {
       page,
       extensions: 'all'
     }
-    const resp = await http.get(`${AMAP_PLACE_URL}/text`, { params })
+    let resp
+    try {
+      resp = await http.get(`${AMAP_PLACE_URL}/text`, { params })
+    } catch (e) {
+      error = e.message
+      break
+    }
+    // 命中限频 → 等 1s 重试一次（仍失败才判 error，交给调用方降级）
+    if (resp.data.status !== '1' && /CUQPS|LIMIT|FREQUENT|TOO_MANY/i.test(resp.data.info || '')) {
+      await sleep(RATE_LIMIT_WAIT_MS)
+      try {
+        resp = await http.get(`${AMAP_PLACE_URL}/text`, { params })
+      } catch (e) {
+        error = e.message
+        break
+      }
+    }
     if (resp.data.status !== '1') { error = resp.data.info || ('status=' + resp.data.status); break }
     const pois = (resp.data.pois || []).map(p => {
       const parts = (p.location || '0,0').split(',')
@@ -207,7 +245,14 @@ async function textSearchAll(city, keywords, maxPages = 8) {
     all.push(...pois)
     if (pois.length < 20 || all.length >= count || all.length >= maxPages * 20) break
   }
-  return { count, pois: all, error, truncated: count > all.length }
+  return {
+    count,
+    pois: all,
+    error,
+    truncated: count > all.length,
+    // 调用方据此把文案写成「已达上限 N 家（实际可能更多）」而不是「共 N 家」
+    countCapped: count >= COUNT_CAP
+  }
 }
 
 /**

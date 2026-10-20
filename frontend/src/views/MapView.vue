@@ -7980,7 +7980,12 @@ const calculatePotential = async () => {
           fillOpacity: 0.12,
           interactive: false
         })
-        const otherText = (r.otherStores || []).map(o => o.name + ':' + (o.count == null ? '未取到' : o.count)).join(' ')
+        // v1.13.254：truncated 时 count 只是**下限**（高德单次最多取回约 500 条），
+        // 若直接显示数字会被误读成精确值 ⇒ 加 "≥"。
+        const otherText = (r.otherStores || []).map(o => {
+          if (o.count == null) return o.name + ':未取到'
+          return o.name + ':' + (o.reason === 'truncated' ? '≥' + o.count : o.count)
+        }).join(' ')
         circle.bindTooltip('门店:' + r.myStores + ' 竞品:' + r.competitors + (otherText ? ' ' + otherText : ''), {
           permanent: false, direction: 'center', className: 'potential-tooltip'
         })

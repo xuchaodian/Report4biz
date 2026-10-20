@@ -849,11 +849,18 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
           ob.degraded = { name: ob.name, reason: 'search_failed',
             message: `高德检索失败（${sres.error}），该品牌条件未生效` }
         } else if (ob.pois.length === 0 && totalCount > 0) {
+          // v1.13.254：count 有封顶（>=800 一律 800）⇒ 封顶时不说「返回 N 家」
+          const cnt0 = sres.countCapped
+            ? `高德统计已达上限 ${totalCount} 家（实际可能更多）`
+            : `高德返回 ${totalCount} 家`
           ob.degraded = { name: ob.name, reason: 'no_coords',
-            message: `高德返回 ${totalCount} 家但未取到坐标，该品牌条件未生效` }
+            message: `${cnt0}但未取到坐标，该品牌条件未生效` }
         } else if (totalCount > ob.pois.length) {
+          const cnt1 = sres.countCapped
+            ? `高德统计已达上限 ${totalCount} 家（实际可能更多）`
+            : `共 ${totalCount} 家`
           ob.degraded = { name: ob.name, reason: 'truncated',
-            message: `共 ${totalCount} 家，仅取到前 ${ob.pois.length} 家（单次上限），计数可能偏少` }
+            message: `${cnt1}，本次仅取到前 ${ob.pois.length} 家（单次上限），计数偏少` }
         }
         console.log(`[calculate-potential] 其他品牌检索 "${ob.name}" 城市${cityName}: 高德count=${sres.count}, 收集${ob.pois.length}点${ob.degraded ? ' ⚠️' + ob.degraded.reason : ''}`)
       } catch (e) {
@@ -938,9 +945,14 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
       const otherCounts = []
       let otherOk = true
       for (const ob of otherBrands) {
-        // 降级品牌：条件无法判定 ⇒ 不参与筛选，count 记 null 让前端显示「未取到」
         if (!ob) { otherCounts.push(0); continue }
-        if (ob.degraded) { otherCounts.push(null); continue }
+        // 🔴🔴 v1.13.254：只有「真没数据」才跳过筛选。
+        //   truncated 属于**数据不全但仍有部分点**（本次已取到 160 个），必须参与筛选 ——
+        //   旧写法把它和 search_failed/no_coords 一样整段 continue，导致「条件等于没设」：
+        //   实测上海·肯德基「>= 1」把 7417 个网格全部放行（应为少数）。
+        //   ⚠️ 代价：truncated 时的计数只是**下限**（可能偏小），前端已有提示说明。
+        const unusable = ob.degraded && ob.degraded.reason !== 'truncated'
+        if (unusable) { otherCounts.push(null); continue }
         // ⚠️ 旧实现还有 `|| ob.pois.length === 0 ⇒ 直接放行`，等于该城市确实 0 家时
         //    运算符也不再判定（设「>= 1」也会通过）。现改为按 cnt = 0 正常走运算符。
         let cnt = 0
