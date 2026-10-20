@@ -77,7 +77,7 @@
             <!-- v1.13.160：走 store 的 effectiveLogo —— 子公司账号无自有 Logo 时
                  自动显示所属集团的品牌 Logo（父级需求：子公司无需重复上传） -->
             <el-avatar v-if="userStore.effectiveLogo" :size="32" :src="userStore.effectiveLogo" alt="" />
-            <el-avatar v-else :size="32" :icon="UserFilled" />
+            <el-avatar v-else :size="32" :icon="UserFilled" class="avatar-fallback" />
             <span class="username">{{ userStore.username }}</span>
             <el-icon class="arrow"><ArrowDown /></el-icon>
           </span>
@@ -811,6 +811,16 @@ const doExport = async (type) => {
       
       .el-avatar {
         background: transparent;  /* 头像背景透明（logo 图时无灰色底） */
+      }
+
+      /* v1.13.253：上面那条 transparent 会把「无 logo 时的默认头像」一起坑掉 ——
+         Element Plus 的 .el-avatar 默认 color 为 #fff，白图标压在白色导航栏上等于隐形
+         （实测：背景 rgba(0,0,0,0) + 图标 rgb(255,255,255)）。
+         这里只对 v-else 的默认头像补浅灰底 + 深灰图标。
+         #606266 on #e4e7ed = 4.68:1，过 WCAG AA（本项目 a11y 统一按 4.5 口径）。 */
+      .el-avatar.avatar-fallback {
+        background: #e4e7ed;
+        color: #606266;
       }
       
       &:hover {
