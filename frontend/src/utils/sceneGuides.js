@@ -66,6 +66,21 @@ export const SCENES = [
         how: '打开「网点优化 → 自家相互蚕食」，看重叠率高的点位。',
         actionLabel: '打开自家重叠度',
         action: 'overlap'
+      },
+      {
+        // v1.13.259：第 6 步 —— 放在最后是刻意的。
+        // 🔴 联通人口是**按次付费**（每次查询扣减 1 次配额），先让用户用免费数据
+        //    （人口网格 / 竞品 / 开店余地 / 重叠度）把候选点收敛到 2~3 个，再做高精度终验，
+        //    把钱花在刀刃上。⛔ 不要把它挪到前面，那会让新手一上来就烧配额。
+        key: 'smartsteps',
+        title: '联通人口终验',
+        why: '运营商真实客流/人口，比免费网格更细更新。留到最后只验少数候选点，才是花钱的正确方式。',
+        how: '打开「联通人口」，在地图上选点、设半径后查询。每次查询单独计费，查询前会弹确认框。',
+        actionLabel: '打开联通人口',
+        action: 'smartsteps',
+        paid: true,
+        // ⚠️ 不要在这里重复「按次收费」四个字 —— 角标已写明，重复会渲染成「按次收费 按次收费：…」
+        priceNote: '每次查询扣减 1 次联通配额。建议先用上面 5 步把候选点收到 2~3 个再来。'
       }
     ]
   }
@@ -76,3 +91,11 @@ export const getScene = (key) => SCENES.find(s => s.key === key) || null
 /** 场景里 VIP 专属步骤的数量（用于入口提前告知，避免走到第 4 步才被门禁拦） */
 export const countVipSteps = (scene) =>
   (scene?.steps || []).filter(s => s.vip).length
+
+/**
+ * 场景里**按次付费**步骤的数量（v1.13.259）。
+ * 与 VIP 分开计数：VIP 是「权限不够」，付费是「要花钱」，两者的告知话术与心理成本不同。
+ * ⚠️ 必须在场景卡上提前露出，⛔ 不能让用户走到最后一步才发现要扣配额。
+ */
+export const countPaidSteps = (scene) =>
+  (scene?.steps || []).filter(s => s.paid).length

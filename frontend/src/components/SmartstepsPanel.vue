@@ -179,7 +179,7 @@ const props = defineProps({
   map: Object
 })
 
-const emit = defineEmits(['update:visible', 'start-select'])
+const emit = defineEmits(['update:visible', 'start-select', 'queried'])
 
 const userStore = useUserStore()
 
@@ -470,6 +470,11 @@ async function executePurchase() {
 
     // 刷新配额
     loadQuota()
+
+    // v1.13.259：向父级上报「本次查询已走完」——供场景引导判定第 6 步完成。
+    // 🔴 必须用真实结果上报，⛔ 不能以「点开面板」为完成依据。
+    // ⚠️ refunded（空数据返还配额）也算完成动作：用户确实走完了流程，卡住他重试没有意义。
+    emit('queried')
   } catch (e) {
     console.error('查询失败:', e)
     // v1.13.217：后端闸门拒绝时按 code 分流 —— 「平台池空」与「账号额度空」给**不同出口**

@@ -19,7 +19,7 @@
           </div>
           <div class="sg-scene-sub">{{ s.summary }}</div>
           <div class="sg-scene-meta">
-            {{ s.steps.length }} 步<template v-if="vipCount(s)"> · 含 {{ vipCount(s) }} 个 VIP 步骤</template>
+            {{ s.steps.length }} 步<template v-if="vipCount(s)"> · 含 {{ vipCount(s) }} 个 VIP</template><template v-if="paidCount(s)"> · 含 {{ paidCount(s) }} 个按次付费</template>
           </div>
         </div>
       </div>
@@ -39,6 +39,7 @@
             </span>
             <span class="sg-step-title">{{ st.title }}</span>
             <span v-if="st.vip" class="sg-vip">VIP</span>
+            <span v-if="st.paid" class="sg-paid">按次</span>
           </div>
 
           <!-- 仅当前步骤展开细节，避免面板过长 -->
@@ -50,6 +51,10 @@
             </el-button>
             <p v-if="st.vip && !vipActive" class="sg-step-vipnote">
               这一步需要 VIP 权限，点击后会提示如何申请
+            </p>
+            <!-- v1.13.259：付费步骤必须**在点按钮之前**把费用说清，⛔ 不能等用户点完再告知 -->
+            <p v-if="st.paid" class="sg-step-paidnote">
+              <span class="sg-step-paidnote-tag">按次收费</span>{{ st.priceNote }}
             </p>
           </div>
         </div>
@@ -84,7 +89,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Close, QuestionFilled } from '@element-plus/icons-vue'
-import { SCENES, getScene, countVipSteps } from '@/utils/sceneGuides.js'
+import { SCENES, getScene, countVipSteps, countPaidSteps } from '@/utils/sceneGuides.js'
 // 🔴 按 uid 命名的本地存储一律走 utils/currentUser.js，⛔ 不要直接读 localStorage.getItem('userId')（会串档）
 import { currentUidOr } from '@/utils/currentUser.js'
 
@@ -105,6 +110,7 @@ const activeKey = ref(null)
 const activeScene = computed(() => getScene(activeKey.value))
 
 const vipCount = (s) => countVipSteps(s)
+const paidCount = (s) => countPaidSteps(s)
 const doneCount = computed(() =>
   (activeScene.value?.steps || []).filter(s => props.done[s.key]).length)
 const allDone = computed(() =>
@@ -425,6 +431,40 @@ onUnmounted(clearTipTimers)
   color: #c0c4cc;
   text-decoration: line-through;
 }
+/* 按次付费角标（v1.13.259）：用红不用橙 —— 橙色已是入口主色，且"花钱"比"权限"更需要警示 */
+.sg-paid {
+  font-size: 9px;
+  color: #fff;
+  background: #b91c1c;
+  border-radius: 8px;
+  padding: 1px 5px;
+  line-height: 14px;
+  flex-shrink: 0;
+}
+
+/* 付费说明块：比 vipnote 更重（底色 + 标签），因为这是**真花钱** */
+.sg-step-paidnote {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #b91c1c;
+  line-height: 1.6;
+}
+.sg-step-paidnote-tag {
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: #b91c1c;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* VIP 专属角标 */
 .sg-vip {
   font-size: 9px;
   color: #fff;

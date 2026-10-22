@@ -919,6 +919,7 @@
       :visible="smartstepsVisible"
       :map="map"
       @update:visible="smartstepsVisible = $event"
+      @queried="sceneDone.smartsteps = true"
     />
 
     <!-- 门店联通人口对话框（M1：异步组件，首次打开才加载） -->
@@ -1797,7 +1798,8 @@ const sceneDone = reactive({
   population: false,
   competition: false,
   potential: false,
-  overlap: false
+  overlap: false,
+  smartsteps: false   // v1.13.259：第 6 步「联通人口终验」（按次付费）
 })
 // 数据未就绪（一处都没有）时不显示入口 ⇒ 此时应走 OnboardingGuide 的数据准备流程
 const sceneHasData = computed(() =>
@@ -7477,6 +7479,11 @@ const runSceneAction = async (action) => {
       break
     case 'overlap':
       selectStoreCircleMode('overlap')
+      break
+    case 'smartsteps':
+      // v1.13.259：只负责打开面板 —— 真正扣配额发生在面板内的查询（且查询前有确认框）。
+      // ⛔ 本处不做任何计费/确认，避免与面板内的付费确认重复弹两次。
+      smartstepsVisible.value = true
       break
     default:
       console.warn('[场景引导] 未知动作：' + action)
