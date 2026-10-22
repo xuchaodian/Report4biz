@@ -64,18 +64,29 @@
       </div>
     </div>
 
-    <!-- 收起态：常驻入口 -->
-    <div v-else class="sg-fab" role="button" tabindex="0" @click="open = true" @keydown.enter="open = true">
-      <el-icon><QuestionFilled /></el-icon>
-      <span>怎么做？</span>
+    <!-- 收起态：常驻入口（v1.13.258：改 48×48 正圆 —— 与 .ai-fab / .ai-lang 同形同构同阴影） -->
+    <div v-else class="sg-fab" role="button" tabindex="0"
+         aria-label="怎么做？打开操作引导" title="不知道怎么用？点这里"
+         @click="openGuide" @keydown.enter="openGuide">
+      <el-icon class="sg-fab-icon"><QuestionFilled /></el-icon>
+      <span class="sg-fab-label">引导</span>
+    </div>
+
+    <!-- 首次气泡：只对没点过的人显示 5 秒（圆形按钮放不下"怎么做"三个字，
+         用它补一次可读性；关掉后写 localStorage，不再打扰） -->
+    <div v-if="tipVisible" class="sg-tip" role="status">
+      不知道怎么用？点这里
+      <span class="sg-tip-arrow" aria-hidden="true"></span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Close, QuestionFilled } from '@element-plus/icons-vue'
 import { SCENES, getScene, countVipSteps } from '@/utils/sceneGuides.js'
+// 🔴 按 uid 命名的本地存储一律走 utils/currentUser.js，⛔ 不要直接读 localStorage.getItem('userId')（会串档）
+import { currentUidOr } from '@/utils/currentUser.js'
 
 const props = defineProps({
   /** 各步骤完成状态，由 MapView 依据**真实操作结果**置位（key 与配置里的 step.key 一致） */
@@ -112,6 +123,55 @@ const currentIndex = computed(() => {
 const isCurrent = (i) => currentIndex.value === i
 
 const selectScene = (key) => { activeKey.value = key }
+
+// ===== 首次气泡（v1.13.258）=====
+// 目的：圆形按钮只能写"引导"两个字，对完全没用过的人不够自解释。
+// 做法：第一次进地图页且数据已就绪时，右侧浮出 5 秒文字气泡，点过/看过即写标记，之后不再出现。
+const TIP_STORAGE_KEY = () => `scene_guide_tip_${currentUidOr('anon')}`
+const tipVisible = ref(false)
+let tipShowTimer = null
+let tipHideTimer = null
+
+const clearTipTimers = () => {
+  if (tipShowTimer) { clearTimeout(tipShowTimer); tipShowTimer = null }
+  if (tipHideTimer) { clearTimeout(tipHideTimer); tipHideTimer = null }
+}
+
+const markTipSeen = () => {
+  // localStorage 在隐私模式/配额满时可能抛错 —— 吞掉，气泡多做一次不等于功能坏了
+  try { localStorage.setItem(TIP_STORAGE_KEY(), '1') } catch (e) { /* noop */ }
+}
+
+const hasSeenTip = () => {
+  try { return localStorage.getItem(TIP_STORAGE_KEY()) === '1' } catch (e) { return true }
+}
+
+const hideTip = (markSeen = true) => {
+  tipVisible.value = false
+  clearTipTimers()
+  if (markSeen) markTipSeen()
+}
+
+const tryShowTip = () => {
+  if (!props.hasData || open.value || hasSeenTip()) return
+  clearTipTimers()
+  // 延迟 1.2s：避开地图首屏渲染与 OnboardingGuide 的弹窗抢注意力
+  tipShowTimer = setTimeout(() => {
+    if (props.hasData && !open.value) tipVisible.value = true
+  }, 1200)
+  tipHideTimer = setTimeout(() => hideTip(true), 6500)
+}
+
+// 用户点开引导 ⇒ 气泡已完成使命，立刻收起并记标记
+const openGuide = () => {
+  if (tipVisible.value) hideTip(true)
+  open.value = true
+}
+
+onMounted(tryShowTip)
+// hasData 依赖 store 异步加载（markers/competitors），可能在 mounted 之后才变 true
+watch(() => props.hasData, (v) => { if (v) tryShowTip() })
+onUnmounted(clearTipTimers)
 </script>
 
 <style scoped>
@@ -131,29 +191,73 @@ const selectScene = (key) => { activeKey.value = key }
   font-family: inherit;
 }
 
-/* 收起态入口 */
+/* 收起态入口（v1.13.258：与 .ai-fab / .ai-lang 完全同形同构）
+   参照 AiAssistant.vue:471 .ai-fab —— 48×48 正圆 / 渐变底 / 白字 / 同参数发光阴影 / hover 放大 1.08。
+   颜色取橙：本系统「商圈工具」面板主色就是 #ff8800 橙，语义一致，且与 AI(靛紫)、语言(蓝青) 区分明确。 */
 .sg-fab {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f59e0b, #ea580c);
+  color: #fff;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14);
-  font-size: 13px;
-  color: #303133;
+  justify-content: center;
   cursor: pointer;
+  border: none;
+  box-shadow: 0 4px 16px rgba(234, 88, 12, 0.45);
+  transition: all 0.25s;
   user-select: none;
-  transition: border-color 0.15s, color 0.15s;
 }
 .sg-fab:hover {
-  border-color: #409eff;
-  color: #409eff;
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(234, 88, 12, 0.55);
 }
-.sg-fab .el-icon {
-  color: #409eff;
-  font-size: 15px;
+.sg-fab-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.sg-fab-label {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+/* 首次气泡：贴在圆的右侧，左指小三角 */
+.sg-tip {
+  position: absolute;
+  left: 58px;
+  top: 9px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  font-size: 12px;
+  color: #303133;
+  white-space: nowrap;
+  animation: sg-tip-in 0.25s ease-out;
+}
+.sg-tip-arrow {
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  margin-top: -5px;
+  width: 9px;
+  height: 9px;
+  background: #fff;
+  border-left: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
+  transform: rotate(45deg);
+}
+@keyframes sg-tip-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* 面板 */
@@ -165,9 +269,10 @@ const selectScene = (key) => { activeKey.value = key }
   display: flex;
   flex-direction: column;
   background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+  /* v1.13.258：对齐 AiAssistant.vue:511 的 .ai-panel（border-radius:16 / 0 8px 40px），
+     ⛔ 原来 8px + 0 4px 20px 会让展开面板与 AI 面板质感差一截 */
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
 
