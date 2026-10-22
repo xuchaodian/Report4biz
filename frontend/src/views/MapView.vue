@@ -75,6 +75,14 @@
       @clear-drawings="clearDrawings"
     />
 
+    <!-- 场景引导（v1.13.256）：数据就绪后才出现 ⇒ 与 OnboardingGuide（数据准备向导）天然互斥 -->
+    <SceneGuide
+      :done="sceneDone"
+      :vip-active="userStore.isVipActive"
+      :has-data="sceneHasData"
+      @action="runSceneAction"
+    />
+
     <!-- 城市商圈选择对话框 -->
     <CityTradeAreaDialog
       v-model:visible="cityTradeAreaVisible"
@@ -1656,6 +1664,8 @@ import MapToolbar from '@/components/map/MapToolbar.vue'
 import AddressSearchPanel from '@/components/map/AddressSearchPanel.vue'
 import StoreControlPanel from '@/components/map/StoreControlPanel.vue'
 import CityTradeAreaDialog from '@/components/map/dialogs/CityTradeAreaDialog.vue'
+import SceneGuide from '@/components/guide/SceneGuide.vue'
+import { requireVip } from '@/utils/vipGate'
 import { executeTool } from '@/utils/aiExecutor'
 import {
   createCustomIcon, createSvgIcon, createBrandImageIcon, svgMarkerStyles, getCategoryIcon, getStatusColor, getStoreTypeColor, getStoreTypeBorderColor, isStoreClosed,
@@ -1775,6 +1785,23 @@ let measureLabelMarkers = []     // 各点的距离标签
 // 状态变量
 const activeTool = ref('')
 const toolbarExpanded = ref(false) // 默认收起
+
+// ===== 场景引导（v1.13.256）=====
+/**
+ * 各步骤完成状态。🔴 只能由**真实操作结果**置位（见下方 5 处 sceneDone.xxx = true），
+ * ⛔ 绝不以「点过按钮」为完成依据 —— 否则引导变成自欺，用户还是不会用。
+ * 配置与文案见 utils/sceneGuides.js。
+ */
+const sceneDone = reactive({
+  cityArea: false,
+  population: false,
+  competition: false,
+  potential: false,
+  overlap: false
+})
+// 数据未就绪（一处都没有）时不显示入口 ⇒ 此时应走 OnboardingGuide 的数据准备流程
+const sceneHasData = computed(() =>
+  markerStore.markers.length > 0 || competitorStore.competitors.length > 0)
 // 城市商圈
 const cityTradeAreaVisible = ref(false)
 const cityTradeAreaLoading = ref(false)
@@ -4306,6 +4333,7 @@ const analyzePopulationDistribution = async () => {
 
     console.log(`分析完成: 找到 ${grandTotal.toLocaleString()}（${fieldName}），共 ${allValues.length} 个多边形`)
     ElMessage.success(`找到 ${grandTotal.toLocaleString()}（${fieldName}），共 ${allValues.length} 个多边形`)
+    sceneDone.population = true
 
   } catch (error) {
     console.error('分析人口分布失败:', error)
@@ -7096,6 +7124,7 @@ const applyStoreCircles = () => {
     console.log('[legend] competition mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
     const totalInFilter = drawnCount
     ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因品牌数量筛选未显示）` : ''}`)
+    sceneDone.competition = true
     return
   }
 
@@ -7304,6 +7333,7 @@ const applyStoreCircles = () => {
   saveOverlapThresholds()  // 保存本次设置的重叠率阈值
   console.log('[legend] overlap mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
   ElMessage.success(`已为 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 商圈${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因筛选未显示）` : ''}`)
+  sceneDone.overlap = true
 }
 
 // 城市商圈
@@ -7415,11 +7445,41 @@ const loadCityTradeArea = async (selectedCities) => {
       totalFeatures += geojson.features.length
     }
     ElMessage.success(`已显示 ${selectedCities.length} 个城市的 ${totalFeatures} 个商圈面`)
+    sceneDone.cityArea = true
   } catch (e) {
     console.error('[cityTradeArea] 加载商圈数据失败:', e)
     handleApiError(e, { context: '加载商圈数据' })
   } finally {
     cityTradeAreaLoading.value = false
+  }
+}
+
+/**
+ * 场景引导的动作分发（v1.13.256）。
+ * 🔴 只做「把人送到正确的入口」，**不在这里重新实现业务逻辑** —— 全部转调已有方法。
+ * 🔴 开店余地是 VIP 门禁功能：必须走 utils/vipGate.js 的 requireVip（单一入口），
+ *    ⛔ 不能直接置 potentialVisible = true，否则绕过门禁。
+ */
+const runSceneAction = async (action) => {
+  switch (action) {
+    case 'cityArea':
+      openCityTradeArea()
+      break
+    case 'population':
+      openPopulationDistribution()
+      break
+    case 'competition':
+      selectStoreCircleMode('competition')
+      break
+    case 'potential':
+      if (!(await requireVip('openingRoom'))) return
+      potentialVisible.value = true
+      break
+    case 'overlap':
+      selectStoreCircleMode('overlap')
+      break
+    default:
+      console.warn('[场景引导] 未知动作：' + action)
   }
 }
 
@@ -8000,6 +8060,7 @@ const calculatePotential = async () => {
     }
     if (data.data.matched > 0) {
       potentialResults.value = data.data.results
+      sceneDone.potential = true
       // 在地图上显示符合条件的圆
       const circles = []
       for (const r of data.data.results) {
