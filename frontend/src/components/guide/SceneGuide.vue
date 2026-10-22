@@ -116,9 +116,17 @@ const selectScene = (key) => { activeKey.value = key }
 
 <style scoped>
 .scene-guide {
-  position: absolute;
-  left: 12px;
-  bottom: 48px;
+  /* v1.13.257：从「左下角」移到「左上角 AI 助手 / 语言切换按钮下方」——
+     原 left:12 bottom:48 在部分屏宽下会压住右下角图层面板（.layer-switcher）。
+     🔴 必须用 fixed、⛔ 不能用 absolute：目标锚点 .ai-fab / .ai-lang 都是 `position: fixed`
+        （见 AiAssistant.vue:440 / 471，left:18、top:180 与 236），属**视口坐标系**；
+        本组件外层是地图容器，容器顶部还有 header(60) + OnboardingGuide 引导条(41) 的偏移，
+        且**引导条可被用户关闭** ⇒ absolute 的偏移量是动态的，一旦对齐就会随引导条显隐错位 41px
+        （首版实测：absolute+top:292 渲染成 y=393，与语言按钮间距变成 109px 而非 8px）。
+     ⚠️ top:292 是锚定值 = 语言按钮底边 284 + 8px 间距。若 .ai-fab/.ai-lang 位置或尺寸变化，此处同步改。 */
+  position: fixed;
+  left: 18px;
+  top: 292px;
   z-index: 1001;
   font-family: inherit;
 }
@@ -151,7 +159,9 @@ const selectScene = (key) => { activeKey.value = key }
 /* 面板 */
 .sg-panel {
   width: 300px;
-  max-height: 72vh;
+  /* v1.13.257：改用 top 定位后，72vh 会从 292px 起算溢出屏幕底部（900 屏 => 292+648 > 900）
+     ⇒ 按「视口高 − 顶部锚点 − 底部余量」计算，矮屏仍可滚动 */
+  max-height: calc(100vh - 330px);
   display: flex;
   flex-direction: column;
   background: #fff;
