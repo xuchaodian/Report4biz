@@ -71,6 +71,10 @@
 
         <div class="sg-foot">
           <span class="sg-back" role="button" tabindex="0" @click="activeKey = null" @keydown.enter="activeKey = null">← 换个任务</span>
+          <!-- v1.13.261：情境入口 —— 用户卡住时眼睛正盯着这个面板，
+               此时反馈会自动带上「哪个场景第几步」，比让他自己描述准得多 -->
+          <span class="sg-feedback" role="button" tabindex="0"
+                @click="feedbackVisible = true" @keydown.enter="feedbackVisible = true">没找到答案？反馈</span>
         </div>
       </div>
     </div>
@@ -89,6 +93,13 @@
       不知道怎么用？点这里
       <span class="sg-tip-arrow" aria-hidden="true"></span>
     </div>
+
+    <!-- 反馈弹窗（v1.13.261）：带上当前场景与步骤 -->
+    <FeedbackDialog
+      v-model="feedbackVisible"
+      :scene-key="activeScene?.key || ''"
+      :scene-step="currentStepKey"
+    />
   </div>
 </template>
 
@@ -98,6 +109,7 @@ import { Close, QuestionFilled } from '@element-plus/icons-vue'
 import { SCENES, getScene, countVipSteps, countPaidSteps } from '@/utils/sceneGuides.js'
 // 🔴 按 uid 命名的本地存储一律走 utils/currentUser.js，⛔ 不要直接读 localStorage.getItem('userId')（会串档）
 import { currentUidOr } from '@/utils/currentUser.js'
+import FeedbackDialog from '@/components/FeedbackDialog.vue'
 
 const props = defineProps({
   /** 各步骤完成状态，由 MapView 依据**真实操作结果**置位（key 与配置里的 step.key 一致） */
@@ -135,6 +147,15 @@ const currentIndex = computed(() => {
 const isCurrent = (i) => currentIndex.value === i
 
 const selectScene = (key) => { activeKey.value = key }
+
+// ===== 反馈入口（v1.13.261）=====
+const feedbackVisible = ref(false)
+// 当前步骤 key：随进度自动变，反馈时会带上「卡在哪一步」
+const currentStepKey = computed(() => {
+  const steps = activeScene.value?.steps || []
+  const i = currentIndex.value
+  return i >= 0 && steps[i] ? steps[i].key : ''
+})
 
 // ===== 首次气泡（v1.13.258）=====
 // 目的：圆形按钮只能写"引导"两个字，对完全没用过的人不够自解释。
@@ -536,6 +557,17 @@ onUnmounted(clearTipTimers)
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid #ebeef5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sg-feedback {
+  font-size: 11px;
+  color: #909399;
+  cursor: pointer;
+}
+.sg-feedback:hover {
+  color: #409eff;
 }
 .sg-back {
   font-size: 11px;

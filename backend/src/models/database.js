@@ -1010,6 +1010,35 @@ export async function initDatabase() {
   // 🔴 同一账号同时只能有 1 条 pending（存储层兜底；路由会先行返回 400 友好提示）
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_vip_app_pending ON vip_applications(user_id) WHERE status = 'pending'`)
 
+  // 用户意见反馈（v1.13.261）
+  // 外部客户自助注册后，在使用中提交「用着有问题 / 有改进建议」；
+  // 落库 + 邮件通知内部收件人（config.js::FEEDBACK_NOTIFY_EMAIL）。
+  // ⚠️ 一期不做管理后台列表页 —— 量小，直接看邮件处理；status/admin_note 先留着给二期用。
+  // 🔴 context 字段（page_path / scene_key / scene_step）是这套设计的核心：
+  //    让「用户在引导第 3 步卡住」这种信息自动被记下来，⛔ 不要指望用户自己描述清楚。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS feedbacks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      username TEXT,
+      type TEXT NOT NULL DEFAULT 'bug',
+      content TEXT NOT NULL,
+      page_path TEXT,
+      scene_key TEXT,
+      scene_step TEXT,
+      user_agent TEXT,
+      screen TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      admin_note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      handled_at DATETIME
+    )
+  `)
+  // 处理侧按「未处理 + 时间倒序」看
+  db.run(`CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedbacks(status, created_at DESC)`)
+  // 限流与「某人提交过什么」⇒ (user_id, created_at) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedbacks(user_id, created_at DESC)`)
+
   // 配额采购申请单（v1.13.218）
   // 背景（设计文档 §4.4）：用户账号的「联通人口数据」可用次数不足时，页面给出采购引导；
   // 用户填意向单 → 我方商务（jyo@youshi-tech.com）收到内部通知邮件 → 管理员在用户管理页受理。

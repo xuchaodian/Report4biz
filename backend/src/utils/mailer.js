@@ -183,3 +183,90 @@ export async function sendQuotaPurchaseNotice({
   })
   return info
 }
+
+
+/**
+ * 发送「用户意见反馈」内部通知（v1.13.261）。
+ *
+ * ⚠️ 调用方约束（routes/feedbacks.js 的 POST / 已按此实现）：
+ *   ① 必须在 INSERT **之后**调用 —— 外部 IO 绝不进事务/事务边界；
+ *   ② 必须「先回响应、后发信」＋ `.catch()` 兜住 —— SMTP socketTimeout 达 30s，
+ *      await 会让用户干等；发信失败绝不能把「反馈已提交」变成 500；
+ *   ③ `content` 是用户自由文本，text 版原样保留换行，html 版 escapeHtml 后把 \n 转 <br>。
+ *
+ * 🔴 为什么邮件里要带 page_path / scene_key / scene_step：
+ *    用户只会说「点不动」，但这三个字段能直接告诉我们是哪个页面、哪个引导场景的第几步。
+ *    ⛔ 不要为了"简洁"把这几个上下文砍掉 —— 它们是这个功能真正的价值。
+ *
+ * @param {{ to: string, id?: number, type?: string, content?: string, username?: string,
+ *           userEmail?: string, pagePath?: string, sceneKey?: string, sceneStep?: string,
+ *           userAgent?: string, screen?: string, createdAt?: string }} opts
+ * @returns {Promise<object>} nodemailer 的发送结果（含 messageId）
+ */
+export async function sendFeedbackNotice({
+  to, id, type, content, username, userEmail,
+  pagePath, sceneKey, sceneStep, userAgent, screen, createdAt
+}) {
+  const t = getTransporter()
+  if (!t) throw new Error('邮件服务未配置')
+
+  const fid = id ?? '—'
+  const typeText = type === 'idea' ? '改进建议' : '问题反馈'
+  const sceneText = sceneKey ? (sceneStep ? `${sceneKey} / ${sceneStep}` : sceneKey) : '—'
+  const subject = `【${MAIL_FROM_NAME}】用户反馈 #${fid}（${typeText}${username ? ' · ' + username : ''}）`
+
+  const lines = [
+    ['类型', typeText],
+    ['反馈人', username || '—'],
+    ['注册邮箱', userEmail || '—'],
+    ['所在页面', pagePath || '—'],
+    ['引导位置', sceneText],
+    ['屏幕', screen || '—'],
+    ['浏览器', userAgent || '—'],
+    ['提交时间', createdAt || '—']
+  ].map(([k, v]) => [k, String(v)])
+
+  const bodyText = String(content || '—')
+
+  const text = [
+    `收到一条新的「${MAIL_FROM_NAME}」用户反馈（#${fid}）：`,
+    '',
+    ...lines.map(([k, v]) => `${k}：${v}`),
+    '',
+    '反馈内容：',
+    bodyText,
+    '',
+    '—— 可直接回复本邮件？⛔ 不行，本邮件为系统自动发送；请用「注册邮箱」联系用户。',
+    `—— ${MAIL_FROM_NAME}`
+  ].join('\n')
+
+  const rowsHtml = lines.map(([k, v]) => (
+    `<tr>` +
+    `<td style="padding:7px 12px;border:1px solid #eeeeee;background:#fafafa;color:#666;font-size:13px;white-space:nowrap;">${escapeHtml(k)}</td>` +
+    `<td style="padding:7px 12px;border:1px solid #eeeeee;color:#333;font-size:13px;word-break:break-all;">${escapeHtml(v)}</td>` +
+    `</tr>`
+  )).join('')
+
+  const contentHtml = escapeHtml(bodyText).replace(/\n/g, '<br>')
+
+  const html = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:640px;margin:0 auto;padding:24px;">
+  <h2 style="font-size:16px;color:#333;margin:0 0 16px;">用户反馈 #${escapeHtml(String(fid))}</h2>
+  <table style="border-collapse:collapse;width:100%;margin-bottom:16px;">${rowsHtml}</table>
+  <div style="background:#fafafa;border:1px solid #eeeeee;border-radius:6px;padding:14px 16px;">
+    <p style="font-size:12px;color:#999;margin:0 0 8px;">反馈内容</p>
+    <p style="font-size:13px;color:#333;line-height:1.8;margin:0;white-space:normal;">${contentHtml}</p>
+  </div>
+  <p style="font-size:12px;color:#aaaaaa;line-height:1.7;margin:16px 0 0;">请用「注册邮箱」联系用户，本邮件由系统自动发送，请勿直接回复</p>
+  <p style="font-size:12px;color:#aaaaaa;line-height:1.7;margin:0;">${MAIL_FROM_NAME}</p>
+</div>`.trim()
+
+  const info = await t.sendMail({
+    from: `"${MAIL_FROM_NAME}" <${SMTP_USER}>`,
+    to,
+    subject,
+    text,
+    html
+  })
+  return info
+}

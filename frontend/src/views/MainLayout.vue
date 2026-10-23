@@ -118,6 +118,11 @@
               <el-dropdown-item command="help">
                 <el-icon><Reading /></el-icon>使用帮助
               </el-dropdown-item>
+              <!-- v1.13.261：意见反馈（常规入口）。另一个入口在场景引导面板里，
+                   那个会带上「卡在第几步」的上下文 -->
+              <el-dropdown-item command="feedback">
+                <el-icon><ChatDotRound /></el-icon>意见反馈
+              </el-dropdown-item>
               <!-- 仅集团账号（总部 / 子公司）可见：不属于任何集团时该页只有空态，没必要展示入口 -->
               <el-dropdown-item v-if="userStore.hasOrg" command="dataSync">
                 <el-icon><RefreshRight /></el-icon>数据同步
@@ -263,6 +268,9 @@
         <el-button type="primary" :loading="exportLoading" @click="doExport('both')">导出Excel+PDF</el-button>
       </template>
     </el-dialog>
+
+    <!-- 意见反馈（v1.13.261）：从用户下拉菜单打开，无场景上下文 -->
+    <FeedbackDialog v-model="feedbackVisible" />
   </div>
 </template>
 
@@ -270,11 +278,12 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
+import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import axios from 'axios'
 
 const router = useRouter()
@@ -438,6 +447,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityForVip)
 })
 
+const feedbackVisible = ref(false)
+
 const handleCommand = async (command) => {
   if (command === 'users') {
     router.push('/users')
@@ -452,6 +463,8 @@ const handleCommand = async (command) => {
   } else if (command === 'purchase') {
     // 跳转到个人中心并自动打开购买履历
     router.push('/account?openHistory=true')
+  } else if (command === 'feedback') {
+    feedbackVisible.value = true
   } else if (command === 'help') {
     // 打开用户手册静态页（新标签），不走 vue-router
     window.open('/help/', '_blank', 'noopener')
