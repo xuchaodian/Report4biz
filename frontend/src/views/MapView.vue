@@ -1799,7 +1799,12 @@ const sceneDone = reactive({
   competition: false,
   potential: false,
   overlap: false,
-  smartsteps: false   // v1.13.259：第 6 步「联通人口终验」（按次付费）
+  smartsteps: false,  // v1.13.259：第 6 步「联通人口终验」（按次付费）
+  // v1.13.260：场景二「单店评估」—— key 刻意与网点规划不共用（两场景进度独立）
+  siteLocate: false,
+  siteEnv: false,
+  siteCircle: false,
+  siteRival: false
 })
 // 数据未就绪（一处都没有）时不显示入口 ⇒ 此时应走 OnboardingGuide 的数据准备流程
 const sceneHasData = computed(() =>
@@ -2612,6 +2617,7 @@ const analyzeCircleStores = () => {
   circleDialogVisible.value = false
   
   circleAnalysisVisible.value = true
+  sceneDone.siteCircle = true   // v1.13.260 单店评估第3步：圆形内门店分析完成
 }
 
 // 关闭圆形对话框
@@ -4989,6 +4995,7 @@ const goToLocation = (result) => {
     }).addTo(map)
     // map操作不移除，搜索了新地点后自动覆盖
     window._searchHighlightMarker = marker
+    sceneDone.siteLocate = true   // v1.13.260 单店评估第1步：地址搜索成功定位
   }
 }
 
@@ -7242,6 +7249,7 @@ const applyStoreCircles = () => {
     storeCircleLegendItems.value = trackLegendMap.filter(item => trackFilters[item.key]).map(item => ({ key: item.key, color: item.color, label: item.label }))
     storeCircleLegendVisible.value = true
     ElMessage.success(`已为 ${trackBrand.value} 的 ${drawnCount} 家门店生成 ${storeCircleRadius.value}km 竞争门店追踪${drawnCount < trackStores.length ? `（${trackStores.length - drawnCount} 家因筛选未显示）` : ''}`)
+    sceneDone.siteRival = true    // v1.13.260 单店评估第4步：竞争追踪生成
     return
   }
 
@@ -7484,6 +7492,17 @@ const runSceneAction = async (action) => {
       // v1.13.259：只负责打开面板 —— 真正扣配额发生在面板内的查询（且查询前有确认框）。
       // ⛔ 本处不做任何计费/确认，避免与面板内的付费确认重复弹两次。
       smartstepsVisible.value = true
+      break
+    // ===== 场景二「单店评估」（v1.13.260）=====
+    // ⚠️ 第 1 步 siteLocate 是 observeOnly，没有按钮，不会走到这里。
+    case 'siteEnv':
+      startEnvScore()
+      break
+    case 'siteCircle':
+      setTool('circle')
+      break
+    case 'siteRival':
+      selectStoreCircleMode('track')
       break
     default:
       console.warn('[场景引导] 未知动作：' + action)
@@ -8997,6 +9016,7 @@ const fetchEnvScore = async () => {
     })
     if (data.success) {
       envScoreData.value = data
+      sceneDone.siteEnv = true      // v1.13.260 单店评估第2步：配套评分出结果
     } else {
       envScoreData.value = null
       ElMessage.error(data.error || '评估失败')

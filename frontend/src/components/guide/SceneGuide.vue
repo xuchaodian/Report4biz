@@ -46,9 +46,15 @@
           <div v-if="isCurrent(i)" class="sg-step-detail">
             <p class="sg-step-why">{{ st.why }}</p>
             <p class="sg-step-how">{{ st.how }}</p>
-            <el-button type="primary" size="small" class="sg-step-btn" @click="$emit('action', st.action)">
+            <!-- v1.13.260：observeOnly 步骤不由按钮代劳（如「在搜索框输入地址」），
+                 只给操作提示；完成状态仍由真实结果置位 -->
+            <el-button v-if="!st.observeOnly" type="primary" size="small" class="sg-step-btn"
+                       @click="$emit('action', st.action)">
               {{ st.actionLabel }}
             </el-button>
+            <p v-else class="sg-step-observe">
+              这一步需要你在界面上自己操作，做对了会自动打勾。
+            </p>
             <p v-if="st.vip && !vipActive" class="sg-step-vipnote">
               这一步需要 VIP 权限，点击后会提示如何申请
             </p>
@@ -60,7 +66,7 @@
         </div>
 
         <div v-if="allDone" class="sg-finish">
-          <p class="sg-finish-txt">这条流程走完了。想换城市再来一遍，直接重新选范围即可。</p>
+          <p class="sg-finish-txt">{{ activeScene.finishNote || '这条流程走完了。' }}</p>
         </div>
 
         <div class="sg-foot">
@@ -493,6 +499,18 @@ onUnmounted(clearTipTimers)
 .sg-step-btn {
   width: 100%;
 }
+/* observeOnly 步骤的提示（替代按钮） */
+.sg-step-observe {
+  margin: 0;
+  padding: 6px 8px;
+  background: #f5f7fa;
+  border: 1px dashed #dcdfe6;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.6;
+}
+
 .sg-step-vipnote {
   margin: 6px 0 0;
   font-size: 11px;
