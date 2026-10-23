@@ -1088,15 +1088,24 @@
             <el-radio-button :value="2000">2km</el-radio-button>
           </el-radio-group>
         </div>
+        <!-- v1.13.262：降级提示 —— 让用户知道分数为什么偏低，⛔ 不要默默给个低分 -->
+        <div v-if="envScoreDegraded" style="margin:0 0 12px;padding:8px 10px;background:#fdf6ec;border:1px solid #faecd8;border-radius:6px;font-size:12px;color:#b88230;line-height:1.6;">
+          部分类目因查询频率限制未取到{{ envScoreData?.degradedKeys?.length ? `（${envScoreData.degradedKeys.join('、')}）` : '' }}，综合分偏低、仅供参考。稍后重新点选即可重试。
+        </div>
         <!-- 8 项指标 -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div v-for="item in envScoreItems" :key="item.key" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fafafa;border:0.5px solid #ebeef5;border-radius:6px;">
             <span style="width:52px;font-size:12px;color:#606266;flex-shrink:0;">{{ item.label }}</span>
-            <span style="color:#ba7517;font-size:13px;letter-spacing:1px;white-space:nowrap;">{{ '★'.repeat(item.stars) }}<span style="color:#ddd;">{{ '★'.repeat(5 - item.stars) }}</span></span>
-            <span style="margin-left:auto;font-size:12px;color:#909399;">{{ item.count }}个</span>
+            <span v-if="item.count === null" style="color:#c0c4cc;font-size:12px;">—— 未取到</span>
+            <template v-else>
+              <span style="color:#ba7517;font-size:13px;letter-spacing:1px;white-space:nowrap;">{{ '★'.repeat(item.stars) }}<span style="color:#ddd;">{{ '★'.repeat(5 - item.stars) }}</span></span>
+              <span style="margin-left:auto;font-size:12px;color:#909399;">{{ item.count }}个</span>
+            </template>
           </div>
         </div>
-        <div style="font-size:11px;color:#c0c4cc;margin-top:10px;">数据来源：高德地图 POI · 免费 · 已缓存 24h</div>
+        <div style="font-size:11px;color:#c0c4cc;margin-top:10px;">
+          数据来源：高德地图 POI · 免费 · {{ envScoreDegraded ? '本次含缺失类目，未写入缓存' : '已缓存 24h' }}
+        </div>
       </template>
       <template v-else>
         <div style="text-align:center;padding:30px;color:#999;">暂无数据</div>
@@ -9032,13 +9041,23 @@ const fetchEnvScore = async () => {
 // 打分卡各项（含星级）
 const envScoreItems = computed(() => {
   if (!envScoreData.value?.counts) return []
-  return ENV_DIMENSIONS.map(d => ({
-    key: d.key,
-    label: d.label,
-    count: envScoreData.value.counts[d.key] || 0,
-    stars: envStarRule(d.key, envScoreData.value.counts[d.key] || 0, envScoreRadius.value)
-  }))
+  return ENV_DIMENSIONS.map(d => {
+    // 🔴 v1.13.262：区分「0 家」（真的没有）与「null」（限流没取到）。
+    //    ⛔ 不要写 `|| 0` —— 那会把未取到的类目算成 0 家，评分偏低且用户无从察觉。
+    const raw = envScoreData.value.counts[d.key]
+    const known = raw !== null && raw !== undefined
+    const n = known ? Number(raw) : 0
+    return {
+      key: d.key,
+      label: d.label,
+      count: known ? n : null,
+      stars: known ? envStarRule(d.key, n, envScoreRadius.value) : 0
+    }
+  })
 })
+
+/** 本次结果是否因限流降级（部分类目未取到） */
+const envScoreDegraded = computed(() => !!envScoreData.value?.degraded)
 
 // 综合分（星级×权重加权）
 const envScoreTotal = computed(() => {

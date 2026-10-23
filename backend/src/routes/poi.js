@@ -13,6 +13,76 @@ const BUSINESS_POI_TYPES = [
 ]
 
 /**
+ * 限流类错误（高德 QPS 超限）判定。
+ * 🔴 v1.13.262：命中就**不再重试** —— 上一版被限流后还 sleep 400ms 再补一刀，
+ *    只会把 QPS 打得更死（生产日志里 COQPS 报错就是这么堆出来的）。
+ */
+function isQuotaError(e) {
+  return /CUQPS_HAS_EXCEEDED_THE_LIMIT|CUQPS/i.test(String(e?.message || ''))
+}
+
+/**
+ * 按类目逐个统计某点半径内的 POI 数量（串行）。
+ *
+ * 🔴 降级语义（v1.13.262）：某类目没查到时 `counts[key] = null`（**未知**），
+ *    ⛔ 不是 0 —— 0 的含义是「确实一家都没有」，两者不能混。前端据 null 显示「—」。
+ *    （项目铁律：缺数据恒 null）
+ *
+ * @returns {{ counts: Record<string, number|null>, degradedKeys: string[] }}
+ */
+async function countPoiByTypes(lng, lat, radius, cats) {
+  const counts = {}
+  const degradedKeys = []
+  // 🔴 调用间隔（v1.13.262 实测得出）：高德 Web 服务 QPS 限制约 3 次/秒，
+  //    串行紧挨着发必被打满 —— 生产实测 5 类里第 5 个就 `CUQPS_HAS_EXCEEDED_THE_LIMIT`，
+  //    紧接着再请求一次会 5 类全挂。
+  //    ⛔ 上一版靠「失败后 sleep 400ms 重试」硬扛，那是先违约再补救，反而把 QPS 打得更死。
+  //    ⇒ 改成**发之前**统一间隔 350ms（≈2.8 次/秒）。慢 ~1s，但换来不再降级。
+  const GAP_MS = 350
+  for (let i = 0; i < cats.length; i++) {
+    const cat = cats[i]
+    if (i > 0) await new Promise(r => setTimeout(r, GAP_MS))
+    let count = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await aroundSearch(lng, lat, radius, '', cat.types)
+        count = result.count || 0
+        break
+      } catch (e) {
+        if (isQuotaError(e)) {
+          // 限流 ⇒ 直接降级，不重试
+          console.warn(`POI[${cat.key}] 被限流，降级为未知（不重试）`)
+          break
+        }
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 400))
+          continue
+        }
+        console.warn(`POI[${cat.key}] 查询失败:`, e.message)
+      }
+    }
+    counts[cat.key] = count
+    if (count === null) degradedKeys.push(cat.key)
+  }
+  return { counts, degradedKeys }
+}
+
+/** 求和时跳过未知（null），⛔ 不要把 null 当 0 累加 */
+function sumKnown(counts) {
+  let total = 0
+  for (const v of Object.values(counts)) {
+    if (typeof v === 'number') total += v
+  }
+  return total
+}
+
+// 商业成熟度缓存（v1.13.262 新增）
+// 🔴 必须与 envScoreCache **分开存**：两者类目不同（business 5 类 / env 8 类），
+//    共用同一个 Map 会按同一 cacheKey 串数据（后写的覆盖前者，读出来缺维度）。
+const businessCache = new Map()
+const BUSINESS_CACHE_TTL = 24 * 60 * 60 * 1000 // 24h
+
+/**
  * 商业成熟度统计：统计指定半径内的商场/写字楼/学校/医院/酒店数量
  * POST /api/poi/business-count
  * Body: { lng, lat, radius }
@@ -23,33 +93,40 @@ router.post('/business-count', async (req, res) => {
     if (!lng || !lat) {
       return res.status(400).json({ error: '缺少经纬度参数' })
     }
+    const lngN = parseFloat(lng)
+    const latN = parseFloat(lat)
+    const rN = Number(radius)
 
     // 入参为系统内 GCJ-02 坐标（全链路一致），高德 around 要求 GCJ-02，直接透传
     // （v1.13.103 B1 修复：原在此 wgs84ToGcj02 二次转换 → 门店 GCJ-02 被再转一次，检索圆心偏移 ~500m）
 
-    // 按分类分别查询（高德 around 单次返回有限，分类查询更准；限流时重试一次）
-    const counts = {}
-    let total = 0
-    for (const cat of BUSINESS_POI_TYPES) {
-      let count = 0
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const result = await aroundSearch(parseFloat(lng), parseFloat(lat), radius, '', cat.types)
-          count = result.count || 0
-          break
-        } catch (e) {
-          if (attempt === 0) {
-            await new Promise(r => setTimeout(r, 500))
-            continue
-          }
-          console.warn(`POI分类[${cat.key}]查询失败:`, e.message)
-        }
-      }
-      counts[cat.key] = count
-      total += count
+    const cacheKey = `${lngN.toFixed(5)},${latN.toFixed(5)},${rN}`
+    const cached = businessCache.get(cacheKey)
+    if (cached && Date.now() - cached.ts < BUSINESS_CACHE_TTL) {
+      return res.json({ ...cached.payload, fromCache: true })
     }
 
-    res.json({ success: true, radius, counts, total })
+    const { counts, degradedKeys } = await countPoiByTypes(lngN, latN, rN, BUSINESS_POI_TYPES)
+    const payload = {
+      success: true,
+      radius: rN,
+      counts,
+      total: sumKnown(counts),
+      degraded: degradedKeys.length > 0,
+      degradedKeys
+    }
+
+    // 🔴 降级结果**不写缓存**：把「8 类里 3 类没查到」的结果缓存 24h，
+    //    等于让用户一整天都看到偏低的分数。宁可下次重新查。
+    if (degradedKeys.length === 0) {
+      businessCache.set(cacheKey, { payload, ts: Date.now() })
+      if (businessCache.size > 5000) {
+        const keys = [...businessCache.keys()].slice(0, 2500)
+        keys.forEach(k => businessCache.delete(k))
+      }
+    }
+
+    res.json(payload)
   } catch (error) {
     console.error('商业成熟度统计失败:', error.message)
     res.status(500).json({ error: error.message })
@@ -97,36 +174,28 @@ router.post('/environment-score', async (req, res) => {
       return res.json({ success: true, radius: rN, counts: cached.counts, total: cached.total, fromCache: true })
     }
 
-    const counts = {}
-    let total = 0
-    for (const cat of ENV_POI_TYPES) {
-      let count = 0
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const result = await aroundSearch(lngN, latN, rN, '', cat.types)
-          count = result.count || 0
-          break
-        } catch (e) {
-          if (attempt === 0) {
-            await new Promise(r => setTimeout(r, 400))
-            continue
-          }
-          console.warn(`环境POI[${cat.key}]查询失败:`, e.message)
-        }
+    // v1.13.262：改用公共 helper —— 限流时直接降级（不重试），缺失类目记 null
+    const { counts, degradedKeys } = await countPoiByTypes(lngN, latN, rN, ENV_POI_TYPES)
+    const total = sumKnown(counts)
+
+    // 🔴 降级结果不写缓存（见 business-count 同处注释）
+    if (degradedKeys.length === 0) {
+      envScoreCache.set(cacheKey, { counts, total, ts: Date.now() })
+      if (envScoreCache.size > 5000) {
+        // 简单清理：删除最早一半
+        const keys = [...envScoreCache.keys()].slice(0, 2500)
+        keys.forEach(k => envScoreCache.delete(k))
       }
-      counts[cat.key] = count
-      total += count
+    } else {
+      console.warn(`[environment-score] 降级（${degradedKeys.join(',')} 未取到），本次结果不缓存`)
     }
 
-    // 写缓存
-    envScoreCache.set(cacheKey, { counts, total, ts: Date.now() })
-    if (envScoreCache.size > 5000) {
-      // 简单清理：删除最早一半
-      const keys = [...envScoreCache.keys()].slice(0, 2500)
-      keys.forEach(k => envScoreCache.delete(k))
-    }
-
-    res.json({ success: true, radius: rN, counts, total, fromCache: false })
+    res.json({
+      success: true, radius: rN, counts, total,
+      degraded: degradedKeys.length > 0,
+      degradedKeys,
+      fromCache: false
+    })
   } catch (error) {
     console.error('环境打分统计失败:', error.message)
     res.status(500).json({ error: error.message })
