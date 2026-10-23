@@ -4,6 +4,7 @@
  */
 import axios from 'axios'
 import { AMAP_KEY as CONFIG_AMAP_KEY } from '../config.js'
+import { geocodeByTencent, isTencentMapEnabled } from './tencentMap.js'
 
 // L6：统一 10s 超时，避免高德挂起导致请求永久 pending
 const http = axios.create({ timeout: 10000 })
@@ -92,6 +93,20 @@ function gcj02ToWgs84(lng, lat) {
  * @returns {Promise<{lng: number, lat: number, province: string, city: string, district: string}>}
  */
 async function geocode(address) {
+  // ===== v1.13.263：优先腾讯（分流高德配额）=====
+  // 为什么改这里而不是别处：`geocode` 是**所有地址解析的唯一入口**
+  //   （`routes/poi.js` 的 /geocode 与 /batch-geocode 都调它），改一处两处受益。
+  // 回退策略：腾讯抛错（含配额/未授权）或返回 null（明确无结果）⇒ 都继续走原高德逻辑。
+  //   ⚠️ 「腾讯无结果」也要试高德 —— 两家 POI 库不同，高德可能命中，不能直接放弃。
+  if (isTencentMapEnabled()) {
+    try {
+      const viaTencent = await geocodeByTencent(address)
+      if (viaTencent) return viaTencent
+    } catch (e) {
+      console.warn('[geocode] 腾讯失败，回退高德:', e.message)
+    }
+  }
+
   const params = {
     key: AMAP_KEY,
     address: address

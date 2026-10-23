@@ -2,6 +2,7 @@ import express from 'express'
 import https from 'https'
 import http from 'http'
 import { AMAP_KEY } from '../config.js'
+import { suggestByTencent, isTencentMapEnabled } from '../utils/tencentMap.js'
 
 const router = express.Router()
 
@@ -60,13 +61,29 @@ router.get('/geocode', (req, res) => {
 })
 
 // 搜索建议：模糊匹配，返回提示列表
-router.get('/suggest', (req, res) => {
+router.get('/suggest', async (req, res) => {
   const rawKeyword = req.query.keyword
   if (!rawKeyword) {
     return res.status(400).json({ error: '关键词不能为空' })
   }
 
   const keyword = ensureProperEncoding(rawKeyword)
+
+  // ===== v1.13.263：优先腾讯（分流高德配额）=====
+  // 地址搜索建议对「数据源一致性」不敏感（用户只是选个地址），所以切腾讯是安全的。
+  // ⚠️ 与 POI 分类计数不同：那个绝不能换源（分类体系不同会让评分漂移）。
+  if (isTencentMapEnabled()) {
+    try {
+      const results = await suggestByTencent(keyword)
+      if (results.length > 0) {
+        return res.json({ success: true, results })
+      }
+      // 腾讯无结果 ⇒ 继续走高德（两家库不同，高德可能命中）
+    } catch (e) {
+      console.warn('[suggest] 腾讯失败，回退高德:', e.message)
+    }
+  }
+
   const encodedKeyword = encodeURIComponent(keyword)
   // 使用高德搜索建议API
   const url = `https://restapi.amap.com/v3/assistant/inputtips?keywords=${encodedKeyword}&key=${AMap_KEY}`

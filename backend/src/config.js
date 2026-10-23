@@ -74,6 +74,13 @@ const JWT_SECRET = getJwtSecret()
 // 生产环境务必通过系统环境变量或 backend/.env 提供。
 const AMAP_KEY = process.env.AMAP_KEY || ''
 const TENCENT_LBS_KEY = process.env.TENCENT_LBS_KEY || ''
+// ---- 腾讯位置服务 WebServiceAPI key（v1.13.263）----
+// 🔴 与上面的 TENCENT_LBS_KEY **刻意分开，⛔ 不要合并**：
+//    · TENCENT_LBS_KEY      → 街景（302 跳转，最终由**用户浏览器**发起，靠 Referer 域名白名单）
+//    · TENCENT_WEBSERVICE_KEY → 后端调用（无 Referer，必须用「授权IP」白名单）
+//    若把街景那个 key 改成 IP 授权，街景会全挂（来源 IP 是用户自己的）。
+// 未配置时：腾讯分流整体不启用，全部走原来的高德路径。
+const TENCENT_WEBSERVICE_KEY = process.env.TENCENT_WEBSERVICE_KEY || ''
 const ARK_API_KEY = process.env.ARK_API_KEY || ''
 const SMARTSTEPS_API_KEY = process.env.SMARTSTEPS_API_KEY || ''
 // 分享密钥（v1.13.105 S-H2）：禁止默认回退公开值（原 'Report4biz_share_2026' 源码可见 → 可伪造分享 token）。
@@ -120,7 +127,7 @@ if (!MAIL_ENABLED) {
 }
 
 export {
-  JWT_SECRET, AMAP_KEY, TENCENT_LBS_KEY, ARK_API_KEY, SMARTSTEPS_API_KEY, PURCHASE_SHARE_SECRET,
+  JWT_SECRET, AMAP_KEY, TENCENT_LBS_KEY, TENCENT_WEBSERVICE_KEY, ARK_API_KEY, SMARTSTEPS_API_KEY, PURCHASE_SHARE_SECRET,
   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM_NAME, MAIL_ENABLED, APP_BASE_URL,
   QUOTA_NOTIFY_EMAIL, FEEDBACK_NOTIFY_EMAIL
 }
