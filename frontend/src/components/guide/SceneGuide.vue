@@ -109,6 +109,8 @@ import { Close, QuestionFilled } from '@element-plus/icons-vue'
 import { SCENES, getScene, countVipSteps, countPaidSteps } from '@/utils/sceneGuides.js'
 // 🔴 按 uid 命名的本地存储一律走 utils/currentUser.js，⛔ 不要直接读 localStorage.getItem('userId')（会串档）
 import { currentUidOr } from '@/utils/currentUser.js'
+// v1.13.264 完成率埋点：只记「打开/选场景/走完」，⛔ 不记任何业务数据
+import { trackGuideOpen, trackSceneStart, trackSceneFinish } from '@/utils/sceneTrack.js'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 
 const props = defineProps({
@@ -146,7 +148,10 @@ const currentIndex = computed(() => {
 })
 const isCurrent = (i) => currentIndex.value === i
 
-const selectScene = (key) => { activeKey.value = key }
+const selectScene = (key) => {
+  activeKey.value = key
+  trackSceneStart(key)          // 分母：选了这个场景的人
+}
 
 // ===== 反馈入口（v1.13.261）=====
 const feedbackVisible = ref(false)
@@ -199,7 +204,11 @@ const tryShowTip = () => {
 const openGuide = () => {
   if (tipVisible.value) hideTip(true)
   open.value = true
+  trackGuideOpen()              // 入口有没有被看见
 }
+
+// 全部步骤完成 ⇒ 记「走完整条流程」
+watch(allDone, (v) => { if (v && activeScene.value) trackSceneFinish(activeScene.value.key) })
 
 onMounted(tryShowTip)
 // hasData 依赖 store 异步加载（markers/competitors），可能在 mounted 之后才变 true

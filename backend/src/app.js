@@ -15,6 +15,7 @@ import vipApplicationRoutes from './routes/vipApplications.js'
 // 配额采购申请单（v1.13.218）：配额不足 → 提交采购意向 → 内部邮件通知 ＋ 管理员受理
 import quotaRequestRoutes from './routes/quotaRequests.js'
 import feedbackRoutes from './routes/feedbacks.js'
+import sceneEventRoutes from './routes/sceneEvents.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
@@ -111,6 +112,7 @@ async function start() {
     // 配额采购申请（用户提交 / 管理员受理）。⚠️ 同样独立前缀，避免与 /api/users/:id 动态段互吞
     app.use('/api/quota-requests', quotaRequestRoutes)
     app.use('/api/feedbacks', feedbackRoutes)
+    app.use('/api/scene-events', sceneEventRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)

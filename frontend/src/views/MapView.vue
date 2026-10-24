@@ -1675,6 +1675,7 @@ import AddressSearchPanel from '@/components/map/AddressSearchPanel.vue'
 import StoreControlPanel from '@/components/map/StoreControlPanel.vue'
 import CityTradeAreaDialog from '@/components/map/dialogs/CityTradeAreaDialog.vue'
 import SceneGuide from '@/components/guide/SceneGuide.vue'
+import { trackStepDone } from '@/utils/sceneTrack.js'
 import { requireVip } from '@/utils/vipGate'
 import { executeTool } from '@/utils/aiExecutor'
 import {
@@ -1815,6 +1816,20 @@ const sceneDone = reactive({
   siteCircle: false,
   siteRival: false
 })
+
+// ===== 完成率埋点（v1.13.264）=====
+// 🔴 唯一上报入口：监听 sceneDone 的**置位**，与「真实结果」同一时刻发生。
+//    ⛔ 不要在 10 处置位点各写一行 trackStepDone（漏一处就少一步数据），
+//       也不要挂到按钮 @click（点了没结果也会打勾，数据变假）。
+// ⚠️ 对 reactive 对象 deep watch 时 newVal === oldVal（同一引用），
+//    所以必须自己留快照比对 —— 别指望 watch 的第二个参数。
+let __doneSnap = { ...sceneDone }
+watch(sceneDone, () => {
+  for (const k of Object.keys(sceneDone)) {
+    if (sceneDone[k] && !__doneSnap[k]) trackStepDone(k)
+  }
+  __doneSnap = { ...sceneDone }
+}, { deep: true })
 // 数据未就绪（一处都没有）时不显示入口 ⇒ 此时应走 OnboardingGuide 的数据准备流程
 const sceneHasData = computed(() =>
   markerStore.markers.length > 0 || competitorStore.competitors.length > 0)

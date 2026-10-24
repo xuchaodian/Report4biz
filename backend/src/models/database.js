@@ -1039,6 +1039,27 @@ export async function initDatabase() {
   // 限流与「某人提交过什么」⇒ (user_id, created_at) 覆盖
   db.run(`CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedbacks(user_id, created_at DESC)`)
 
+  // 场景引导完成率埋点（v1.13.264）
+  // 只记「谁在哪个场景做了哪一步」，⛔ 不存任何业务数据（门店/地址/评分）。
+  // 🔴 step_done 只由真实结果上报（挂在 MapView 的 sceneDone 置位处），⛔ 不挂点击处。
+  // ⭐ 服务端 24h 去重 ⇒ 表体积有上界（人数 × 步骤 × 事件 / 天）。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS scene_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      username TEXT,
+      event TEXT NOT NULL,
+      scene TEXT,
+      step TEXT,
+      step_index INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+  // 汇总按 (event, scene) 扫，再按 step 聚合
+  db.run(`CREATE INDEX IF NOT EXISTS idx_scene_ev_sum ON scene_events(event, scene, step, created_at)`)
+  // 去重查询：同人同事件同场景同步骤 + 时间窗
+  db.run(`CREATE INDEX IF NOT EXISTS idx_scene_ev_user ON scene_events(user_id, event, scene, step, created_at)`)
+
   // 配额采购申请单（v1.13.218）
   // 背景（设计文档 §4.4）：用户账号的「联通人口数据」可用次数不足时，页面给出采购引导；
   // 用户填意向单 → 我方商务（jyo@youshi-tech.com）收到内部通知邮件 → 管理员在用户管理页受理。
