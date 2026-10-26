@@ -5,6 +5,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { execFile } from 'child_process'
+import zlib from 'zlib'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
@@ -284,6 +285,269 @@ router.get('/', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取 Shapefile 列表失败:', error)
     res.status(500).json({ message: '服务器错误' })
+  }
+})
+
+// ============================================================================
+// 整城 1km 网格分级渲染（v1.13.266）
+// 「商圈工具 → 常住人口分布 → 选择城市」：选城市/区县/字段，把该范围的 1km 网格
+// 按 6 档铺在地图上。与原有「地图选点」的区别：不设圆心半径，直接铺整个行政区。
+//
+// 🔴 五条约束（改动前必读）
+//   ① 分级两口径：`equal`＝**等值均分**（区间等宽，默认，遵业主 spec）；
+//      `quantile`＝**等量分档**（分位数，每档网格数相近）。
+//      ⚠️ 实测上海 7417 网格：等值均分下 **92.2% 落在第 1 档**（p50=0、max=75574）
+//      ⇒ 只做等值均分会让整城一片同色，故必须同时提供等量分档。
+//   ② 等值均分**左闭右开**，最后一档闭合 ⇒ 每个网格只落一档（max 归第 6 档）。
+//   ③ 分级范围＝**当前所选范围**（选了区县就按该区县 min/max）
+//      ⇒ 不同区县颜色**不可横向比较**，前端图例必须写明这一点。
+//   ④ 只返回**精简 GeoJSON**：geometry + `{v,b}`，坐标取 5 位小数（≈1m）。
+//      原始属性全部丢弃 —— 最大城市 75,825 网格、原文件 30MB，全字段透传会撑到上百 MB。
+//   ⑤ 解析对象**不自建缓存**（沿用 geoStore「大文件不缓存对象」策略，1.6GB 内存所限），
+//      只缓存**精简后的结果**（字节预算 LRU）。
+// ============================================================================
+// 🔴 缓存的是**已经 gzip 过的 Buffer**，既不是对象也不是原文字符串。
+//    实测（v1.13.266 重庆整城 75,825 格）：
+//      · 原文 JSON ≈ 20~25MB，V8 对象 3~4 倍（1.6GB 机器扛不住）
+//      · 只缓存原文字符串仍需每次 gzip（20MB 压缩 ~1.5s）⇒ 命中也要 3.0s
+//      · 缓存 gzip Buffer ⇒ 体积仅 1.3MB，命中时**零压缩零序列化**，直出
+//    这也是「重活只在第一次做」的正确切法：一次请求只序列化 + 压缩各一次。
+const GRID_CACHE_MAX_BYTES = 24 * 1024 * 1024   // 结果缓存总预算（gzip 后字节）
+const GRID_CACHE_ITEM_MAX = 8 * 1024 * 1024     // 单条 gzip 后超过 8MB 就不缓存（现实里远小于此）
+const GRID_CLASSES = 6
+const GRID_NON_NUMERIC = new Set(['RecID', '区县', '城市'])
+const gridPayloadCache = new Map()   // key -> { body, bytes }
+const gridDistrictCache = new Map()  // id -> string[]
+let gridCacheBytes = 0
+
+/** 城市名：优先 DB 的 city 列，多数行为空 ⇒ 从文件名解析（"上海1km网格人口.zip"） */
+function resolveGridCity(row) {
+  const c = String(row.city || '').trim()
+  if (c) return c
+  const m = String(row.name || '').match(/^(.+?)1?km网格人口/)
+  if (m) return m[1].trim()
+  return String(row.name || '').replace(/\.zip$/i, '').trim()
+}
+
+function gridNumericFields(fieldNames) {
+  return (fieldNames || []).filter(f => f && !GRID_NON_NUMERIC.has(f))
+}
+
+/** 按城市名找文件（同城多份时取 id 最大 = 最近一次上传） */
+function findGridRow(db, user, city) {
+  const vis = visibilityClause(user)
+  const rows = db.prepare(
+    `SELECT id, name, city, field_names, feature_count FROM shapefiles
+     WHERE category = 'population' AND ${vis.clause} ORDER BY id DESC`
+  ).all(...vis.params)
+  for (const r of rows) {
+    if (resolveGridCity(r) === city) return r
+  }
+  return null
+}
+
+/** 坐标取 5 位小数（≈1m 精度；1km 网格用不到更高精度，能显著压小响应） */
+const round5 = (x) => Math.round(x * 1e5) / 1e5
+function roundGeometry(g) {
+  if (!g || !g.type) return g
+  const walk = (c) => (Array.isArray(c[0]) ? c.map(walk) : [round5(c[0]), round5(c[1])])
+  return { type: g.type, coordinates: walk(g.coordinates) }
+}
+
+/**
+ * 计算 6 档分界。
+ * equal：等宽；quantile：等频（分位数）。
+ * ⚠️ 分位数会**出现重复分界**（大量网格值为 0 时）⇒ 部分档位为空，属正常现象，
+ *    前端图例如实显示「0 ~ 0」即可，⛔ 不要为了好看去合并档位（会改变档数语义）。
+ */
+function buildBreaks(sorted, mode) {
+  const n = sorted.length
+  const min = sorted[0]
+  const max = sorted[n - 1]
+  if (mode === 'quantile') {
+    const breaks = []
+    for (let i = 0; i <= GRID_CLASSES; i++) {
+      breaks.push(sorted[Math.min(n - 1, Math.floor((n - 1) * i / GRID_CLASSES))])
+    }
+    breaks[0] = min
+    breaks[GRID_CLASSES] = max
+    return { min, max, breaks, width: null }
+  }
+  const width = (max - min) / GRID_CLASSES
+  return { min, max, width, breaks: Array.from({ length: GRID_CLASSES + 1 }, (_, i) => min + width * i) }
+}
+
+/** 落档：等值均分用左闭右开（max 归最后一档）；等量分档用「第一个上界大于 v 的档」 */
+function gridBinOf(v, min, width, mode, breaks) {
+  if (mode === 'quantile') {
+    for (let i = 0; i < GRID_CLASSES; i++) if (v < breaks[i + 1]) return i
+    return GRID_CLASSES - 1
+  }
+  if (!(width > 0)) return 0   // 全范围同值 ⇒ 单档（前端按「数值一致」显示）
+  const b = Math.floor((v - min) / width)
+  return Math.min(GRID_CLASSES - 1, Math.max(0, b))
+}
+
+// 可选城市列表（不解析文件 ⇒ 秒回）
+router.get('/population-grid/cities', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const vis = visibilityClause(req.user)
+    const rows = db.prepare(
+      `SELECT id, name, city, field_names, feature_count FROM shapefiles
+       WHERE category = 'population' AND ${vis.clause} ORDER BY id DESC`
+    ).all(...vis.params)
+
+    const seen = new Map()
+    for (const r of rows) {
+      const city = resolveGridCity(r)
+      if (!city) continue
+      if (seen.has(city)) continue   // id 倒序 ⇒ 首个即最新
+      let fields = []
+      try { fields = gridNumericFields(JSON.parse(r.field_names || '[]')) } catch (e) {}
+      seen.set(city, {
+        city,
+        id: r.id,
+        featureCount: r.feature_count || 0,
+        fields
+      })
+    }
+    res.json({ success: true, data: [...seen.values()].sort((a, b) => a.city.localeCompare(b.city, 'zh')) })
+  } catch (error) {
+    console.error('[grid] 城市列表失败:', error)
+    res.status(500).json({ message: '获取城市列表失败' })
+  }
+})
+
+// 某城市的区县列表（需解析一次文件 ⇒ 结果常驻内存，几十字节/城）
+router.get('/population-grid/districts', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const city = String(req.query.city || '').trim()
+    if (!city) return res.status(400).json({ message: '缺少 city 参数' })
+
+    const row = findGridRow(db, req.user, city)
+    if (!row) return res.status(404).json({ message: '该城市暂无 1km 网格数据' })
+
+    const cached = gridDistrictCache.get(row.id)
+    if (cached) return res.json({ success: true, city, districts: cached })
+
+    const geo = getGeoObject(row.id)
+    const set = new Set()
+    for (const f of (geo?.features || [])) {
+      const d = String(f.properties?.['区县'] ?? '').trim()
+      if (d) set.add(d)
+    }
+    const districts = [...set].sort((a, b) => a.localeCompare(b, 'zh'))
+    gridDistrictCache.set(row.id, districts)
+    res.json({ success: true, city, districts })
+  } catch (error) {
+    console.error('[grid] 区县列表失败:', error)
+    res.status(500).json({ message: '获取区县列表失败' })
+  }
+})
+
+// 分级数据（精简 GeoJSON + 分档元信息）
+router.get('/population-grid/data', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const city = String(req.query.city || '').trim()
+    const district = String(req.query.district || '').trim()
+    const field = String(req.query.field || '').trim()
+    const mode = req.query.mode === 'quantile' ? 'quantile' : 'equal'
+    if (!city || !field) return res.status(400).json({ message: '缺少 city / field 参数' })
+
+    const row = findGridRow(db, req.user, city)
+    if (!row) return res.status(404).json({ message: '该城市暂无 1km 网格数据' })
+
+    let fieldNames = []
+    try { fieldNames = JSON.parse(row.field_names || '[]') } catch (e) {}
+    if (!fieldNames.includes(field)) {
+      return res.status(400).json({ message: `字段不存在：${field}` })
+    }
+
+    const cacheKey = `${row.id}|${district}|${field}|${mode}`
+    const hit = gridPayloadCache.get(cacheKey)
+    if (hit) {
+      // ⚠️ 必须自己设 Content-Encoding：express 的 compression 中间件看到它就会跳过压缩
+      return res.set('Content-Encoding', 'gzip').type('application/json').send(hit.gz)
+    }
+
+    const geo = getGeoObject(row.id)
+    if (!geo) return res.status(500).json({ message: '网格文件缺失或损坏' })
+
+    // 1) 过滤 + 取值
+    const picked = []
+    let skipped = 0
+    for (const f of (geo.features || [])) {
+      const p = f.properties || {}
+      if (district && String(p['区县'] ?? '').trim() !== district) continue
+      const raw = p[field]
+      if (raw === null || raw === undefined || raw === '') { skipped++; continue }
+      const v = Number(raw)
+      if (!Number.isFinite(v)) { skipped++; continue }
+      picked.push({ f, v })
+    }
+    if (!picked.length) {
+      return res.status(404).json({ message: district ? `${district} 内没有该字段的有效网格` : '该城市没有该字段的有效网格' })
+    }
+
+    // 2) 分档
+    const sorted = picked.map(x => x.v).sort((a, b) => a - b)
+    const { min, max, breaks, width } = buildBreaks(sorted, mode)
+    const bins = new Array(GRID_CLASSES).fill(0)
+    const features = new Array(picked.length)
+    for (let i = 0; i < picked.length; i++) {
+      const { f, v } = picked[i]
+      const b = gridBinOf(v, min, width, mode, breaks)
+      bins[b]++
+      features[i] = {
+        type: 'Feature',
+        // ⚠️ 只保留 geometry；几何类型保持原样（Polygon / MultiPolygon 都有可能出现）
+        geometry: roundGeometry(f.geometry),
+        properties: { v: Math.round(v * 100) / 100, b }
+      }
+    }
+
+    const body = {
+      success: true,
+      meta: {
+        city,
+        district: district || null,
+        field,
+        mode,
+        min,
+        max,
+        breaks,
+        width,
+        classes: GRID_CLASSES,
+        count: features.length,
+        skipped,
+        bins,
+        fileId: row.id,
+        featureCount: row.feature_count || 0
+      },
+      geojson: { type: 'FeatureCollection', features }
+    }
+
+    // 3) 序列化 + 压缩各一次，响应与缓存共用同一份 buffer
+    //    ⛔ 不要分别 stringify/gzip 两遍 —— 20MB 体量下每次都是几百 ms~1.5s
+    const gz = zlib.gzipSync(Buffer.from(JSON.stringify(body), 'utf8'))
+    const bytes = gz.length
+    if (bytes <= GRID_CACHE_ITEM_MAX) {
+      gridPayloadCache.set(cacheKey, { gz, bytes })
+      gridCacheBytes += bytes
+      while (gridCacheBytes > GRID_CACHE_MAX_BYTES && gridPayloadCache.size > 1) {
+        const k = gridPayloadCache.keys().next().value
+        gridCacheBytes -= gridPayloadCache.get(k).bytes
+        gridPayloadCache.delete(k)
+      }
+    }
+
+    res.set('Content-Encoding', 'gzip').type('application/json').send(gz)
+  } catch (error) {
+    console.error('[grid] 分级数据失败:', error)
+    res.status(500).json({ message: '生成网格分级失败：' + (error?.message || '未知错误') })
   }
 })
 

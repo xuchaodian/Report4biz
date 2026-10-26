@@ -41,7 +41,7 @@ export const SCENES = [
         key: 'population',
         title: '看人口密度',
         why: '人口密度决定客流上限。同样租金，选人多的片区。',
-        how: '打开「常住人口分布」，在地图上点圆心、设半径，看热力分档。',
+        how: '打开「常住人口分布」→ 选「地图选点」，点圆心、设半径，看热力分档。（另有一路「选择城市」可铺整城网格）',
         actionLabel: '看常住人口分布',
         action: 'population'
       },

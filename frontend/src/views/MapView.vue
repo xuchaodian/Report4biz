@@ -842,6 +842,27 @@
     <!-- 地图容器 -->
     <div id="map" class="map-container" />
 
+    <!-- 整城网格分级图例（v1.13.266） -->
+    <div v-if="gridMeta" class="grid-legend">
+      <div class="grid-legend-head">
+        <span>{{ gridMeta.city }}{{ gridMeta.district ? ' · ' + gridMeta.district : ' · 整城' }}</span>
+        <i class="grid-legend-close" role="button" tabindex="0" aria-label="关闭图例"
+           @click="clearCityGridLayer" @keydown.enter="clearCityGridLayer">✕</i>
+      </div>
+      <div class="grid-legend-sub">
+        {{ gridMeta.field }} · {{ gridMeta.mode === 'quantile' ? '等量分档' : '等值均分' }} · {{ gridMeta.count }} 格
+      </div>
+      <div v-for="(r, i) in gridLegendRanges" :key="i" class="grid-legend-row">
+        <i class="grid-legend-swatch" :style="{ background: r.color }"></i>
+        <span class="grid-legend-range">{{ r.lo }} ~ {{ r.hi }}</span>
+        <em class="grid-legend-count">{{ r.count }}</em>
+      </div>
+      <div class="grid-legend-note">
+        分级基于当前所选范围，跨区县颜色不可直接比较
+        <template v-if="!gridMeta.tips"><br />网格较多，已关闭悬浮提示</template>
+      </div>
+    </div>
+
     <!-- 地图加载骨架屏 -->
     <div v-if="mapLoading" class="map-loading-overlay">
       <div class="map-loading-content">
@@ -1053,6 +1074,45 @@
         <span>{{ mapLocked ? '解锁地图（图标可移动）' : '锁定地图（拖动不误触图标）' }}</span>
       </div>
     </div>
+
+    <!-- 整城 1km 网格分级（v1.13.266）-->
+    <el-dialog v-model="gridDialogVisible" title="按城市查看常住人口分布" width="460px"
+               class="dialog-fancy" :close-on-click-modal="false">
+      <el-form label-width="88px">
+        <el-form-item label="城市">
+          <el-select v-model="gridForm.city" filterable style="width:100%" @change="onGridCityChange"
+                     aria-label="选择城市">
+            <el-option v-for="c in gridCities" :key="c.city"
+                       :label="`${c.city}（${c.featureCount} 格）`" :value="c.city" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="区县">
+          <el-select v-model="gridForm.district" filterable clearable placeholder="全部区县（整城）"
+                     style="width:100%" :loading="gridDistrictsLoading" aria-label="选择区县">
+            <el-option v-for="d in gridDistricts" :key="d" :label="d" :value="d" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="统计字段">
+          <el-select v-model="gridForm.field" filterable style="width:100%" aria-label="选择统计字段">
+            <el-option v-for="f in gridFields" :key="f" :label="f" :value="f" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分级方式">
+          <el-radio-group v-model="gridForm.mode">
+            <el-radio value="equal">等值均分</el-radio>
+            <el-radio value="quantile">等量分档</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <p class="grid-dialog-hint">
+        等值均分＝区间等宽；等量分档＝每档网格数相近（人口长尾时更易看出差异）。<br />
+        整城网格较多时渲染会慢些，选到区县更快。
+      </p>
+      <template #footer>
+        <el-button @click="gridDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="gridLoading" @click="applyCityGrid">显示</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 周边环境打分卡弹窗 -->
     <el-dialog v-model="envScoreDialogVisible" width="560px" class="dialog-fancy" :close-on-click-modal="false" draggable @closed="clearEnvScoreLayer">
@@ -2693,9 +2753,32 @@ function showTempCenterMarker(latlng) {
   }).addTo(map)
 }
 
-// 商圈人口分布 - 打开对话框
+// 常住人口分布入口（v1.13.266）：先让用户二选一
+//   选择城市 = 直接铺整个行政区（区县可选）的 1km 网格
+//   地图选点 = 原流程（圆心＋半径统计）
+// ⚠️ 『close』（ESC / 右上角）按"什么都没选"处理 —— ⛔ 不要当成取消后自动走地图选点，
+//    那是替用户做决定。
 const openPopulationDistribution = async () => {
-  console.log('openPopulationDistribution开始执行')
+  try {
+    await ElMessageBox.confirm(
+      '选择城市：铺整个行政区（或指定区县）的 1km 网格，按字段分级着色。地图选点：以圆心＋半径统计人口。',
+      '常住人口分布',
+      {
+        confirmButtonText: '选择城市',
+        cancelButtonText: '地图选点',
+        distinguishCancelAndClose: true,
+        type: 'info'
+      }
+    )
+    openCityGridDialog()
+  } catch (action) {
+    if (action === 'cancel') openCirclePopulationDistribution()
+  }
+}
+
+// 地图选点（原流程，逻辑一行未改，仅改名）
+const openCirclePopulationDistribution = async () => {
+  console.log('openCirclePopulationDistribution开始执行')
   if (!map) {
     console.error('地图对象未初始化')
     return
@@ -2851,6 +2934,184 @@ const openPopulationDistribution = async () => {
     circleDialogVisible.value = true
   })
 }
+
+// ===== 整城 1km 网格分级（v1.13.266）=====
+// 数据来自 `/api/shapefiles/population-grid/` 三个接口：后端已按 6 档算好 `b`（档位）与 `v`（数值），
+// 前端只负责着色与图例 —— ⛔ 不要在前端重算分档（口径必须与后端一致，两边各算必分叉）。
+const GRID_COLORS = ['#fff5eb', '#fee6ce', '#fdd0a2', '#fdae6b', '#e6550d', '#a63603']
+const GRID_TIP_MAX = 20000        // 超过就关掉悬浮提示（7.5 万个 tooltip 会拖垮交互）
+const GRID_RENDER_CHUNK = 1200    // 分帧渲染粒度（与人口分布同一思路，避免主线程长阻塞）
+
+const gridDialogVisible = ref(false)
+const gridCities = ref([])
+const gridDistricts = ref([])
+const gridFields = ref([])
+const gridForm = reactive({ city: '', district: '', field: '', mode: 'equal' })
+const gridDistrictsLoading = ref(false)
+const gridLoading = ref(false)
+const gridMeta = ref(null)
+
+let gridLayer = null
+let gridRenderToken = 0
+let gridCanvasRenderer = null
+
+const gridFetch = async (url) => {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${userStore.token}` } })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.message || `请求失败（${res.status}）`)
+  return data
+}
+
+const applyGridFields = (c) => {
+  const fs = (c && c.fields) || []
+  gridFields.value = fs
+  gridForm.field = fs.includes('常住人口') ? '常住人口' : (fs[0] || '')
+}
+
+const loadGridDistricts = async (city) => {
+  gridDistricts.value = []
+  if (!city) return
+  gridDistrictsLoading.value = true
+  try {
+    const r = await gridFetch(`/api/shapefiles/population-grid/districts?city=${encodeURIComponent(city)}`)
+    gridDistricts.value = r.districts || []
+  } catch (e) {
+    ElMessage.warning('区县列表加载失败：' + e.message)
+  } finally {
+    gridDistrictsLoading.value = false
+  }
+}
+
+const openCityGridDialog = async () => {
+  if (!map) return
+  businessCircleExpanded.value = false
+  gridForm.city = ''
+  gridForm.district = ''
+  gridForm.field = ''
+  gridForm.mode = 'equal'
+  gridFields.value = []
+  gridDistricts.value = []
+  gridDialogVisible.value = true
+  try {
+    const r = await gridFetch('/api/shapefiles/population-grid/cities')
+    gridCities.value = r.data || []
+    if (!gridCities.value.length) {
+      ElMessage.warning('暂无 1km 网格数据')
+      return
+    }
+    const first = gridCities.value.find(c => c.city === '上海') || gridCities.value[0]
+    gridForm.city = first.city
+    applyGridFields(first)
+    await loadGridDistricts(first.city)
+  } catch (e) {
+    ElMessage.error('城市列表加载失败：' + e.message)
+  }
+}
+
+const onGridCityChange = async (city) => {
+  const c = gridCities.value.find(x => x.city === city)
+  applyGridFields(c)
+  gridForm.district = ''
+  await loadGridDistricts(city)
+}
+
+const clearCityGridLayer = () => {
+  gridRenderToken++          // 作废仍在跑的分帧循环
+  if (map && gridLayer) map.removeLayer(gridLayer)
+  gridLayer = null
+  gridMeta.value = null
+}
+
+const renderCityGrid = (meta, geojson) => {
+  if (!map) return
+  clearCityGridLayer()
+  const token = ++gridRenderToken
+  if (!gridCanvasRenderer) gridCanvasRenderer = L.canvas({ padding: 0.4 })
+
+  const group = L.featureGroup().addTo(map)
+  gridLayer = group
+  const feats = geojson.features || []
+  const withTip = feats.length <= GRID_TIP_MAX
+
+  const styleFn = (f) => {
+    const b = f.properties?.b ?? 0
+    return {
+      color: 'rgba(255,255,255,0.35)',
+      weight: 0.3,
+      fillColor: GRID_COLORS[b] || GRID_COLORS[0],
+      fillOpacity: 0.78
+    }
+  }
+  const onEach = withTip
+    ? (f, layer) => { layer.bindTooltip(`${f.properties?.v} 人`, { sticky: true }) }
+    : undefined
+
+  let i = 0
+  const step = () => {
+    if (token !== gridRenderToken) return
+    const end = Math.min(i + GRID_RENDER_CHUNK, feats.length)
+    L.geoJSON(
+      { type: 'FeatureCollection', features: feats.slice(i, end) },
+      { renderer: gridCanvasRenderer, style: styleFn, onEachFeature: onEach }
+    ).addTo(group)
+    i = end
+    if (i < feats.length) { requestAnimationFrame(step); return }
+    const b = group.getBounds()
+    if (b && b.isValid()) map.fitBounds(b, { padding: [24, 24] })
+    gridMeta.value = { ...meta, tips: withTip }
+  }
+  step()
+}
+
+const applyCityGrid = async () => {
+  if (!gridForm.city || !gridForm.field) {
+    ElMessage.warning('请选择城市与统计字段')
+    return
+  }
+  const bigCity = (gridCities.value.find(c => c.city === gridForm.city)?.featureCount || 0) > 20000
+  if (bigCity && !gridForm.district) {
+    ElMessage.info('该城市网格较多（约 ' + (gridCities.value.find(c => c.city === gridForm.city)?.featureCount || 0) + ' 个），渲染会稍慢；选到区县更快')
+  }
+  gridLoading.value = true
+  try {
+    const q = new URLSearchParams({ city: gridForm.city, field: gridForm.field, mode: gridForm.mode })
+    if (gridForm.district) q.set('district', gridForm.district)
+    const r = await gridFetch(`/api/shapefiles/population-grid/data?${q.toString()}`)
+    gridDialogVisible.value = false
+    renderCityGrid(r.meta, r.geojson)
+    ElMessage.success(`已渲染 ${r.meta.count} 个 1km 网格`)
+  } catch (e) {
+    ElMessage.error('加载网格失败：' + e.message)
+  } finally {
+    gridLoading.value = false
+  }
+}
+
+// 图例区间：等值均分用**左闭右开**（整数数据下右端减 1，避免相邻两档都写同一个边界值）
+const gridLegendRanges = computed(() => {
+  const m = gridMeta.value
+  if (!m || !Array.isArray(m.breaks)) return []
+  // 等值均分 + 整数数据 ⇒ 图例按「左闭右开」显示成整数区间：
+  //   下界取 ≥lo 的最小整数（ceil），上界取 <hi 的最大整数（ceil(hi)-1），最后一档闭合。
+  // ⚠️ 只影响**显示**；落档用的是后端的精确值（见 gridBinOf）——⛔ 不要拿显示值去判档。
+  const intMode = m.mode === 'equal' && Number.isInteger(m.min) && Number.isInteger(m.max)
+  const fmt = (x) => (Number.isInteger(x) ? String(x) : (Math.round(x * 10) / 10).toString())
+  const out = []
+  for (let i = 0; i < m.classes; i++) {
+    const lo = m.breaks[i]
+    const hi = m.breaks[i + 1]
+    const last = i === m.classes - 1
+    let loShow = lo
+    let hiShow = hi
+    if (intMode) {
+      loShow = Math.ceil(lo)
+      hiShow = last ? hi : Math.ceil(hi) - 1
+      if (hiShow < loShow) hiShow = loShow   // 空档（分界重复）时退化为单点
+    }
+    out.push({ lo: fmt(loShow), hi: fmt(hiShow), count: (m.bins && m.bins[i]) || 0, color: GRID_COLORS[i] })
+  }
+  return out
+})
 
 // v1.13.227：高精人口分布（250m 网格）—— 仅管理员。
 // 与 openPopulationDistribution 同构，差异三点：① category='population_hd'；
@@ -7500,7 +7761,9 @@ const runSceneAction = async (action) => {
       openCityTradeArea()
       break
     case 'population':
-      openPopulationDistribution()
+      // ⚠️ 引导第 2 步的完成判据是「圆心＋半径跑出结果」（sceneDone.population），
+      //    所以这里**必须直达地图选点**；若走二选一弹窗，用户选了「选择城市」就永远打不了勾。
+      openCirclePopulationDistribution()
       break
     case 'competition':
       selectStoreCircleMode('competition')
@@ -10883,6 +11146,73 @@ function getHeatmapCellStyle(nums, idx) {
   80%  { transform: translateY(-3px) scale(0.97); }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
+/* ===== 整城网格分级图例（v1.13.266）===== */
+.grid-legend {
+  position: absolute;
+  right: 12px;
+  bottom: 64px;
+  z-index: 1000;
+  width: 186px;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 11px;
+  color: #303133;
+}
+.grid-legend-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.grid-legend-close {
+  margin-left: auto;
+  font-style: normal;
+  color: #909399;
+  cursor: pointer;
+  line-height: 1;
+}
+.grid-legend-close:hover { color: #303133; }
+.grid-legend-sub {
+  color: #909399;
+  margin-bottom: 6px;
+}
+.grid-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 16px;
+}
+.grid-legend-swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.grid-legend-range { flex: 1; }
+.grid-legend-count {
+  font-style: normal;
+  color: #c0c4cc;
+  font-size: 10px;
+}
+.grid-legend-note {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #f0f0f0;
+  color: #b0b3b8;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.grid-dialog-hint {
+  margin: 0 0 0 88px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.7;
+}
+
 </style>
 
 // POI位置选择提示
