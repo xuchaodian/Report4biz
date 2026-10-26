@@ -316,7 +316,9 @@ const GRID_CACHE_MAX_BYTES = 24 * 1024 * 1024   // 结果缓存总预算（gzip 
 const GRID_CACHE_ITEM_MAX = 8 * 1024 * 1024     // 单条 gzip 后超过 8MB 就不缓存（现实里远小于此）
 const GRID_CLASSES = 6
 const GRID_NON_NUMERIC = new Set(['RecID', '区县', '城市'])
-const gridPayloadCache = new Map()   // key -> { body, bytes }
+const gridPayloadCache = new Map()   // key -> { gz, bytes }
+const gridMetaCache = new Map()      // key -> meta（几百字节，专供 metaOnly）
+const GRID_META_CACHE_MAX = 300      // 26 城 × 区县 × 字段 的组合上限，超出按插入序淘汰
 const gridDistrictCache = new Map()  // id -> string[]
 let gridCacheBytes = 0
 
@@ -455,6 +457,11 @@ router.get('/population-grid/data', authenticate, (req, res) => {
     const district = String(req.query.district || '').trim()
     const field = String(req.query.field || '').trim()
     const mode = req.query.mode === 'quantile' ? 'quantile' : 'equal'
+    // metaOnly=1：只回 meta（min/max/breaks/bins），不回 features。
+    // 用途：「选择城市 → 设置值域」时要先知道该范围的数值区间才能预填 6 档，
+    //   而整城 features 有 1.28MB（重庆）⇒ 只回几百字节。
+    // ⚠️ 仍会走完整的解析 + 分档 + 缓存 ⇒ 后续点「显示」时命中缓存，CPU 只需 45ms。
+    const metaOnly = String(req.query.metaOnly || '') === '1'
     if (!city || !field) return res.status(400).json({ message: '缺少 city / field 参数' })
 
     const row = findGridRow(db, req.user, city)
@@ -467,10 +474,24 @@ router.get('/population-grid/data', authenticate, (req, res) => {
     }
 
     const cacheKey = `${row.id}|${district}|${field}|${mode}`
-    const hit = gridPayloadCache.get(cacheKey)
-    if (hit) {
-      // ⚠️ 必须自己设 Content-Encoding：express 的 compression 中间件看到它就会跳过压缩
-      return res.set('Content-Encoding', 'gzip').type('application/json').send(hit.gz)
+    if (metaOnly) {
+      const m = gridMetaCache.get(cacheKey)
+      if (m) return res.json({ success: true, meta: m })
+      // 有完整结果但没有 meta 缓存（升级前写入的旧条目）⇒ 解压兜底，顺便补上 meta 缓存
+      const full = gridPayloadCache.get(cacheKey)
+      if (full) {
+        const parsed = JSON.parse(zlib.gunzipSync(full.gz).toString('utf8'))
+        if (parsed?.meta) {
+          gridMetaCache.set(cacheKey, parsed.meta)
+          return res.json({ success: true, meta: parsed.meta })
+        }
+      }
+    } else {
+      const hit = gridPayloadCache.get(cacheKey)
+      if (hit) {
+        // ⚠️ 必须自己设 Content-Encoding：express 的 compression 中间件看到它就会跳过压缩
+        return res.set('Content-Encoding', 'gzip').type('application/json').send(hit.gz)
+      }
     }
 
     const geo = getGeoObject(row.id)
@@ -543,6 +564,14 @@ router.get('/population-grid/data', authenticate, (req, res) => {
         gridPayloadCache.delete(k)
       }
     }
+
+    // meta 单独存一份（几十~几百字节），供 metaOnly 直出、无需 gunzip 1.28MB
+    gridMetaCache.set(cacheKey, body.meta)
+    while (gridMetaCache.size > GRID_META_CACHE_MAX) {
+      gridMetaCache.delete(gridMetaCache.keys().next().value)
+    }
+
+    if (metaOnly) return res.json({ success: true, meta: body.meta })
 
     res.set('Content-Encoding', 'gzip').type('application/json').send(gz)
   } catch (error) {

@@ -1114,12 +1114,14 @@
         </el-form-item>
         <el-form-item label="区县">
           <el-select v-model="gridForm.district" filterable clearable placeholder="全部区县（整城）"
-                     style="width:100%" :loading="gridDistrictsLoading" aria-label="选择区县">
+                     style="width:100%" :loading="gridDistrictsLoading" aria-label="选择区县"
+                     @change="onGridTargetChange">
             <el-option v-for="d in gridDistricts" :key="d" :label="d" :value="d" />
           </el-select>
         </el-form-item>
         <el-form-item label="统计字段">
-          <el-select v-model="gridForm.field" filterable style="width:100%" aria-label="选择统计字段">
+          <el-select v-model="gridForm.field" filterable style="width:100%" aria-label="选择统计字段"
+                     @change="onGridTargetChange">
             <el-option v-for="f in gridFields" :key="f" :label="f" :value="f" />
           </el-select>
         </el-form-item>
@@ -1147,9 +1149,12 @@
                                @update:model-value="v => setGridBreak(i, v)" />
             </div>
             <div class="grid-breaks-foot">
-              <el-button size="small" text type="primary" :disabled="!gridMeta"
-                         @click="fillBreaksEvenly(gridMeta)">按数据范围等分</el-button>
-              <span v-if="gridBreakErr" class="grid-breaks-err">{{ gridBreakErr }}</span>
+              <el-button size="small" text type="primary" :disabled="!gridProbeMeta && !gridMeta"
+                         @click="fillBreaksEvenly(gridProbeMeta || gridMeta)">按数据范围等分</el-button>
+              <span v-if="gridProbeLoading && !gridBreaks.length" class="grid-breaks-loading">
+                正在读取该范围的数值区间…
+              </span>
+              <span v-else-if="gridBreakErr" class="grid-breaks-err">{{ gridBreakErr }}</span>
             </div>
           </div>
         </el-form-item>
@@ -3037,6 +3042,15 @@ const gridBreakErr = ref('')      // 值域校验错误提示
 //    displayValue 不会跟着 prop 刷新（用户刚输入过的框会保留旧值，实测复现）。
 //    用一个递增版本号作 key，强制重建输入框 —— 比逐个 setCurrentValue 省事且可靠。
 const gridBreaksRev = ref(0)
+// ===== 自动探测数值范围（v1.13.271）=====
+// 用户事先不知道所选城市/区县的 min/max，所以选完就静默探一次 metaOnly（几百字节），
+// 自动把 7 个边界填好。⚠️ 不带 features ⇒ 不占用带宽；后端会把完整结果一起缓存，
+// 所以之后点「显示/应用值域」只需要下载，CPU 已经算过了。
+const gridProbeMeta = ref(null)      // 探测到的 meta（含 min/max/breaks）
+const gridProbeLoading = ref(false)
+const gridBreaksTouched = ref(false) // 用户手动改过值域 ⇒ 不再自动覆盖
+let gridProbeToken = 0
+let gridProbeTimer = null
 
 // 最近一次成功渲染的原始要素（保留 properties.v），供本地重算
 let gridRawFeatures = null
@@ -3093,6 +3107,7 @@ const fillBreaksEvenly = (meta) => {
 }
 
 const setGridBreak = (idx, val) => {
+  gridBreaksTouched.value = true   // 手动改过 ⇒ 后续切换城市也不静默覆盖
   const next = [...gridBreaks.value]
   next[idx] = val === null || val === undefined || val === '' ? null : Number(val)
   gridBreaks.value = next
@@ -3104,12 +3119,57 @@ const setGridBreak = (idx, val) => {
   gridBreakErr.value = ''
 }
 
+// 静默探测该范围的数值区间（只拿 meta）
+const probeGridMeta = async () => {
+  if (!gridForm.city || !gridForm.field) return
+  const token = ++gridProbeToken
+  gridProbeLoading.value = true
+  try {
+    const q = new URLSearchParams({
+      city: gridForm.city, field: gridForm.field, mode: 'equal', metaOnly: '1'
+    })
+    if (gridForm.district) q.set('district', gridForm.district)
+    const r = await gridFetch(`/api/shapefiles/population-grid/data?${q.toString()}`)
+    if (token !== gridProbeToken) return          // 已有更新的探测 ⇒ 丢弃本次结果
+    if (!r.meta) return
+    gridProbeMeta.value = r.meta
+    if (!gridBreaksTouched.value) fillBreaksEvenly(r.meta)
+  } catch (e) {
+    // 静默失败：用户点「应用值域」时还会走完整请求，那里会给出明确报错
+  } finally {
+    if (token === gridProbeToken) gridProbeLoading.value = false
+  }
+}
+
+const scheduleProbe = (delay = 450) => {
+  if (gridProbeTimer) clearTimeout(gridProbeTimer)
+  gridProbeTimer = setTimeout(() => { gridProbeTimer = null; probeGridMeta() }, delay)
+}
+
+// 城市/区县/字段变了 ⇒ 旧值域作废（不同范围内的 min/max 完全不同，留着会误导）
+const onGridTargetChange = () => {
+  gridBreaksTouched.value = false
+  gridBreaks.value = []
+  gridProbeMeta.value = null
+  gridBreakErr.value = ''
+  scheduleProbe()
+}
+
 const onGridModeChange = (mode) => {
   if (mode !== 'custom') return
-  // 切到「设置值域」时：优先用当前已渲染数据的等值均分结果预填，省得用户从零填
+  if (gridBreaksTouched.value && gridBreaks.value.length) return   // 用户已自定义，别覆盖
+  // ① 当前图上就有同目标的数据 ⇒ 直接用它的 min/max
   if (gridRawMeta && gridRawKey && gridRawKey === gridTargetKey()) {
     if (!gridBreaks.value.length) fillBreaksEvenly(gridRawMeta)
+    return
   }
+  // ② 已经探测过 ⇒ 用探测结果
+  if (gridProbeMeta.value) {
+    if (!gridBreaks.value.length) fillBreaksEvenly(gridProbeMeta.value)
+    return
+  }
+  // ③ 都还没有 ⇒ 立刻探测（值域区会显示「正在读取…」）
+  probeGridMeta()
 }
 
 // 本地重算：只改 properties.b 与样式，⛔ 不重建图层（7.5 万格重建要好几秒）
@@ -3212,6 +3272,7 @@ const openCityGridDialog = async () => {
     gridForm.city = first.city
     applyGridFields(first)
     await loadGridDistricts(first.city)
+    scheduleProbe(600)      // 预热：让用户切到「设置值域」时立刻有数（小城市 0.2s）
   } catch (e) {
     ElMessage.error('城市列表加载失败：' + e.message)
   }
@@ -3222,6 +3283,7 @@ const onGridCityChange = async (city) => {
   applyGridFields(c)
   gridForm.district = ''
   await loadGridDistricts(city)
+  onGridTargetChange()      // 换城市 ⇒ 值域重填（见 onGridTargetChange 注释）
 }
 
 const clearCityGridLayer = () => {
@@ -3231,8 +3293,12 @@ const clearCityGridLayer = () => {
   gridMeta.value = null
 }
 
-const renderCityGrid = (meta, geojson, targetKey) => {
-  if (!map) return
+// 🔴 返回 Promise：分帧渲染是**异步**的（每帧 1200 格），收尾时才写 gridMeta。
+//    调用方必须 await 之后再做「按值域重算」，否则 applyCustomBreaks 设的
+//    mode:'custom' 会被收尾的 {...meta}（mode:'equal'）覆盖 ⇒ 图例显示等值均分
+//    但区间其实是值域（v1.13.271 真机撞到，v1.13.270 就已存在）。
+const renderCityGrid = (meta, geojson, targetKey) => new Promise((resolve) => {
+  if (!map) { resolve(null); return }
   clearCityGridLayer()
   const token = ++gridRenderToken
   if (!gridCanvasRenderer) gridCanvasRenderer = L.canvas({ padding: 0.4 })
@@ -3262,7 +3328,8 @@ const renderCityGrid = (meta, geojson, targetKey) => {
 
   let i = 0
   const step = () => {
-    if (token !== gridRenderToken) return
+    // 被作废（换了城市/关了图层）⇒ 也要 resolve，否则调用方 await 会挂死
+    if (token !== gridRenderToken) { resolve(null); return }
     const end = Math.min(i + GRID_RENDER_CHUNK, feats.length)
     L.geoJSON(
       { type: 'FeatureCollection', features: feats.slice(i, end) },
@@ -3273,9 +3340,10 @@ const renderCityGrid = (meta, geojson, targetKey) => {
     const b = group.getBounds()
     if (b && b.isValid()) map.fitBounds(b, { padding: [24, 24] })
     gridMeta.value = { ...meta, tips: withTip }
+    resolve(gridMeta.value)
   }
   step()
-}
+})
 
 const applyCityGrid = async () => {
   if (!gridForm.city || !gridForm.field) {
@@ -3310,7 +3378,7 @@ const applyCityGrid = async () => {
     const r = await gridFetch(`/api/shapefiles/population-grid/data?${q.toString()}`)
     // 先把色块定格再关弹窗：图例与图层必须用同一组颜色
     gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
-    renderCityGrid(r.meta, r.geojson, key)
+    await renderCityGrid(r.meta, r.geojson, key)
 
     if (gridForm.mode === 'custom') {
       // 保持弹窗打开 —— 用户要在这里反复调值域
@@ -11571,6 +11639,11 @@ function getHeatmapCellStyle(nums, idx) {
 }
 .grid-breaks-err {
   color: #f56c6c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.grid-breaks-loading {
+  color: #909399;
   font-size: 11px;
   line-height: 1.4;
 }
