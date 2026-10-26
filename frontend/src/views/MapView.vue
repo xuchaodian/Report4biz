@@ -1075,6 +1075,28 @@
       </div>
     </div>
 
+    <!-- 常住人口分布：二选一（v1.13.267）-->
+    <el-dialog v-model="popModeVisible" title="常住人口分布" width="420px" class="dialog-fancy">
+      <div class="pop-mode-list">
+        <div class="pop-mode-card" role="button" tabindex="0"
+             @click="choosePopCity" @keydown.enter="choosePopCity">
+          <span class="pop-mode-icon"><AppIcon><MapLocation /></AppIcon></span>
+          <div class="pop-mode-text">
+            <div class="pop-mode-title">选择城市</div>
+            <div class="pop-mode-sub">查看城市或区县的人口分布</div>
+          </div>
+        </div>
+        <div class="pop-mode-card" role="button" tabindex="0"
+             @click="choosePopMap" @keydown.enter="choosePopMap">
+          <span class="pop-mode-icon"><AppIcon><Aim /></AppIcon></span>
+          <div class="pop-mode-text">
+            <div class="pop-mode-title">地图选点</div>
+            <div class="pop-mode-sub">查看具体位置的人口分布</div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 整城 1km 网格分级（v1.13.266）-->
     <el-dialog v-model="gridDialogVisible" title="按城市查看常住人口分布" width="460px"
                class="dialog-fancy" :close-on-click-modal="false">
@@ -2753,27 +2775,26 @@ function showTempCenterMarker(latlng) {
   }).addTo(map)
 }
 
-// 常住人口分布入口（v1.13.266）：先让用户二选一
+// 常住人口分布入口（v1.13.267）：先让用户二选一
 //   选择城市 = 直接铺整个行政区（区县可选）的 1km 网格
 //   地图选点 = 原流程（圆心＋半径统计）
-// ⚠️ 『close』（ESC / 右上角）按"什么都没选"处理 —— ⛔ 不要当成取消后自动走地图选点，
-//    那是替用户做决定。
-const openPopulationDistribution = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '选择城市：铺整个行政区（或指定区县）的 1km 网格，按字段分级着色。地图选点：以圆心＋半径统计人口。',
-      '常住人口分布',
-      {
-        confirmButtonText: '选择城市',
-        cancelButtonText: '地图选点',
-        distinguishCancelAndClose: true,
-        type: 'info'
-      }
-    )
-    openCityGridDialog()
-  } catch (action) {
-    if (action === 'cancel') openCirclePopulationDistribution()
-  }
+// ⚠️ 关掉弹窗＝"什么都没选"（⛔ 不要当成取消后自动走某一路，那是替用户做决定）。
+// v1.13.267：从 ElMessageBox 换成**两张选项卡片** —— 原来两个按钮只有文字，
+//   用户看不出「选择城市」和「地图选点」到底差在哪，得点进去才知道。
+//   卡片带图标 + 一句副标题，选择成本更低。
+const popModeVisible = ref(false)
+const openPopulationDistribution = () => {
+  if (!map) return
+  businessCircleExpanded.value = false   // 先收起商圈工具面板，免得和弹窗叠在一起
+  popModeVisible.value = true
+}
+const choosePopCity = () => {
+  popModeVisible.value = false
+  openCityGridDialog()
+}
+const choosePopMap = () => {
+  popModeVisible.value = false
+  openCirclePopulationDistribution()
 }
 
 // 地图选点（原流程，逻辑一行未改，仅改名）
@@ -11211,6 +11232,58 @@ function getHeatmapCellStyle(nums, idx) {
   font-size: 12px;
   color: #909399;
   line-height: 1.7;
+}
+
+/* ===== 常住人口分布 二选一卡片（v1.13.267）===== */
+.pop-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pop-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.pop-mode-card:hover {
+  border-color: #ff8800;
+  background: #fff8f0;
+  box-shadow: 0 2px 10px rgba(255, 136, 0, 0.15);
+}
+.pop-mode-card:focus-visible {
+  outline: 2px solid #ff8800;
+  outline-offset: 2px;
+}
+.pop-mode-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #fff4e6;
+  color: #ff8800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.pop-mode-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  transition: color .2s;
+}
+.pop-mode-card:hover .pop-mode-title { color: #ff8800; }
+.pop-mode-sub {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 3px;
+  line-height: 1.5;
 }
 
 </style>
