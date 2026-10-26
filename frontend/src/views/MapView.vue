@@ -1171,11 +1171,11 @@
       </el-form>
       <p class="grid-dialog-hint">
         等值均分＝按数据范围自动等宽分 6 档；设置值域＝自己填 6 档区间（左闭右开，最后一档闭合）。<br />
-        超出值域的网格不着色；整城网格较多时首次载入会慢些，选到区县更快。
+        点「显示」后弹窗会关闭以查看地图；再调值域可重新打开（上次的选择与值域会保留）。
       </p>
       <template #footer>
         <el-button @click="gridDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="gridLoading" @click="applyCityGrid">{{ gridApplyLabel }}</el-button>
+        <el-button type="primary" :loading="gridLoading" @click="applyCityGrid">显示</el-button>
       </template>
     </el-dialog>
 
@@ -3202,18 +3202,20 @@ const applyCustomBreaks = () => {
     if (b >= 0) bins[b]++
   }
 
-  // 逐个 layer 改样式；超值域的**移出图层**（不是设透明——canvas 仍会命中 tooltip，
-  // 用户会 hover 到一个看不见的格子却弹出数值）
-  const all = []
-  gridLayer.eachLayer(l => all.push(l))
-  for (const l of all) {
+  // 逐个**多边形**改样式；超值域的移出所属批次组
+  //   ⛔ 不要用 gridLayer.eachLayer —— 那拿到的是批次 layerGroup（没有 feature），
+  //      会把全部格子判成超范围并清空（v1.13.270~273 的真凶，canvas 采样全 0）。
+  //   ⛔ 也不要设 fillOpacity:0 代替移除 —— canvas 仍会命中 tooltip，
+  //      用户会 hover 到看不见的格子却弹出数值。
+  for (const item of gridPolyLayers) {
+    const l = item.layer
     const b = l.feature?.properties?.b
-    if (b >= 0) {
+    if (typeof b === 'number' && b >= 0) {
       l.setStyle({ color: 'rgba(255,255,255,0.35)', weight: 0.3, fillColor: colors[b] || colors[0], fillOpacity: 0.78 })
-      if (l.__gridHidden) { gridLayer.addLayer(l); l.__gridHidden = false }
+      if (l.__gridHidden) { item.group.addLayer(l); l.__gridHidden = false }
     } else {
       l.setStyle({ weight: 0, fillOpacity: 0 })
-      if (!l.__gridHidden) { gridLayer.removeLayer(l); l.__gridHidden = true }
+      if (!l.__gridHidden) { item.group.removeLayer(l); l.__gridHidden = true }
     }
   }
 
@@ -3232,6 +3234,10 @@ const applyCustomBreaks = () => {
 
 let gridLayer = null
 let gridRenderToken = 0
+// 🔴 分帧渲染时每批是 `L.geoJSON(...)` 整体，`gridLayer.eachLayer()` 拿到的是 **layerGroup**，
+//    不是多边形 ⇒ `layer.feature` 为 undefined，会被当成「超出值域」全部移除（实测 canvas 全空）。
+//    所以必须自己记下真正的多边形引用及其所属批次组。
+let gridPolyLayers = []   // [{ layer, group }]
 let gridCanvasRenderer = null
 
 const gridFetch = async (url) => {
@@ -3264,20 +3270,24 @@ const loadGridDistricts = async (city) => {
 const openCityGridDialog = async () => {
   if (!map) return
   businessCircleExpanded.value = false
-  gridForm.city = ''
-  gridForm.district = ''
-  gridForm.field = ''
-  gridForm.mode = 'equal'
-  gridForm.scheme = GRID_DEFAULT_SCHEME
-  gridFields.value = []
-  gridDistricts.value = []
-  // 🔴 值域必须一起清 —— 之前漏了这一步：重开对话框时城市/区县已重置，
-  //    值域却还是上一个区县的，且 touched=true 不会重填 ⇒ 数据范围与值域错配。
-  gridBreaks.value = []
-  gridBreaksKey.value = ''
-  gridBreaksTouched.value = false
-  gridProbeMeta.value = null
-  gridBreakErr.value = ''
+  // v1.13.273：**保留上次的选择**（城市/区县/字段/分级方式/值域）。
+  //   因为「显示」后弹窗会关闭，用户想微调值域就得重开 —— 每次都清空会让人抓狂。
+  //   数据一致性由 gridBreaksKey 兜底（换目标时值域自动作废，见 applyCityGrid）。
+  const restoring = !!gridForm.city
+  if (!restoring) {
+    gridForm.city = ''
+    gridForm.district = ''
+    gridForm.field = ''
+    gridForm.mode = 'equal'
+    gridForm.scheme = GRID_DEFAULT_SCHEME
+    gridFields.value = []
+    gridDistricts.value = []
+    gridBreaks.value = []
+    gridBreaksKey.value = ''
+    gridBreaksTouched.value = false
+    gridProbeMeta.value = null
+    gridBreakErr.value = ''
+  }
   gridDialogVisible.value = true
   try {
     const r = await gridFetch('/api/shapefiles/population-grid/cities')
@@ -3285,6 +3295,22 @@ const openCityGridDialog = async () => {
     if (!gridCities.value.length) {
       ElMessage.warning('暂无 1km 网格数据')
       return
+    }
+    if (restoring) {
+      // 恢复上次选择：城市仍存在则重载区县列表；值域不属当前目标就清掉重探
+      const keep = gridCities.value.find(c => c.city === gridForm.city)
+      if (!keep) { gridForm.city = '' }
+      if (gridForm.city) {
+        applyGridFields(keep)
+        await loadGridDistricts(gridForm.city)
+        if (!gridBreaksMatchesTarget.value) {
+          gridBreaks.value = []
+          gridBreaksTouched.value = false
+          gridProbeMeta.value = null
+        }
+        if (!gridBreaks.value.length) scheduleProbe(300)
+        return
+      }
     }
     const first = gridCities.value.find(c => c.city === '上海') || gridCities.value[0]
     gridForm.city = first.city
@@ -3308,6 +3334,7 @@ const clearCityGridLayer = () => {
   gridRenderToken++          // 作废仍在跑的分帧循环
   if (map && gridLayer) map.removeLayer(gridLayer)
   gridLayer = null
+  gridPolyLayers = []
   gridMeta.value = null
 }
 
@@ -3349,10 +3376,12 @@ const renderCityGrid = (meta, geojson, targetKey) => new Promise((resolve) => {
     // 被作废（换了城市/关了图层）⇒ 也要 resolve，否则调用方 await 会挂死
     if (token !== gridRenderToken) { resolve(null); return }
     const end = Math.min(i + GRID_RENDER_CHUNK, feats.length)
-    L.geoJSON(
+    const batch = L.geoJSON(
       { type: 'FeatureCollection', features: feats.slice(i, end) },
       { renderer: gridCanvasRenderer, style: styleFn, onEachFeature: onEach }
     ).addTo(group)
+    // 记下每个多边形及其所属批次组（局部改样式 / 暂时移除都要靠它）
+    batch.eachLayer(pl => gridPolyLayers.push({ layer: pl, group: batch }))
     i = end
     if (i < feats.length) { requestAnimationFrame(step); return }
     const b = group.getBounds()
@@ -3384,13 +3413,18 @@ const applyCityGrid = async () => {
     }
   }
 
-  // ① 设置值域 + 同城同区同字段的数据已在内存 ⇒ **纯本地重算**（秒级）
-  //    否则用户每改一个数字都要重新下载 1.28MB（重庆整城 4 秒），根本没法调
+  // ① 设置值域 + 同城同区同字段的数据已在内存 ⇒ **纯本地重算**（秒级，不重新下载）
+  //    ⚠️ 算完必须**关弹窗**：值域模式下弹窗有 6 行输入，实测高 763px，
+  //       在 900px 视口里几乎盖满地图（只剩底部 ~90px）⇒ 用户以为「没显示网格」。
+  //       v1.13.273 起：按钮统一叫「显示」，点完就关，行为与等值均分完全一致；
+  //       想再调就重开对话框（表单状态会保留，见 openCityGridDialog）。
   if (gridForm.mode === 'custom' && gridLayer && gridRawFeatures && gridRawKey === key) {
     gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
     const ok = applyCustomBreaks()
     if (ok) {
-      // 重算后也定位到数据范围：否则图层若在视野外，用户会以为「没反应」
+      gridDialogVisible.value = false
+      // 用**全部**多边形的范围定位（gridLayer.getBounds 只算还在组里的，
+      // 值域收窄时会被裁小，导致地图缩得太近）
       const b = gridLayer.getBounds()
       if (b && b.isValid()) map.fitBounds(b, { padding: [24, 24] })
       ElMessage.success(`已按设定值域着色（${gridMeta.value.count} 格${gridMeta.value.outOfRange ? '，' + gridMeta.value.outOfRange + ' 格超出值域' : ''}）`)
@@ -3413,13 +3447,13 @@ const applyCityGrid = async () => {
     gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
     await renderCityGrid(r.meta, r.geojson, key)
 
+    // 两种分级方式行为一致：算完关弹窗，让用户直接看到地图
+    gridDialogVisible.value = false
     if (gridForm.mode === 'custom') {
-      // 保持弹窗打开 —— 用户要在这里反复调值域
       if (!gridBreaks.value.length) fillBreaksEvenly(r.meta)
       if (gridBreaksValid.value) applyCustomBreaks()
-      ElMessage.success(`已载入 ${r.meta.count} 个网格，可调整下方值域后点「应用值域」`)
+      ElMessage.success(`已按设定值域着色（${gridMeta.value?.count ?? r.meta.count} 格${gridMeta.value?.outOfRange ? '，' + gridMeta.value.outOfRange + ' 格超出值域' : ''}）`)
     } else {
-      gridDialogVisible.value = false
       ElMessage.success(`已渲染 ${r.meta.count} 个 1km 网格`)
     }
   } catch (e) {
@@ -3429,8 +3463,6 @@ const applyCityGrid = async () => {
   }
 }
 
-// 主按钮文案：值域模式下是「应用」（本地重算），不是重新加载
-const gridApplyLabel = computed(() => (gridForm.mode === 'custom' ? '应用值域' : '显示'))
 
 // ===== 网格图例可拖动（v1.13.268）=====
 // ⚠️ 本文件已有两套拖拽（`onDragStart` 检索面板、`onLegendDragStart` 门店商圈图例），
