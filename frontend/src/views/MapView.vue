@@ -1127,6 +1127,16 @@
             <el-radio value="quantile">等量分档</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="设置色块">
+          <el-select v-model="gridForm.scheme" style="width:100%" aria-label="设置色块">
+            <el-option v-for="(v, k) in POPULATION_COLOR_SCHEMES" :key="k" :label="v.name" :value="k">
+              <span class="grid-scheme-opt">
+                <span class="grid-scheme-name">{{ v.name }}</span>
+                <span class="grid-scheme-bar" :style="{ background: 'linear-gradient(90deg,' + v.colors6.join(',') + ')' }"></span>
+              </span>
+            </el-option>
+          </el-select>
+        </el-form-item>
       </el-form>
       <p class="grid-dialog-hint">
         等值均分＝区间等宽；等量分档＝每档网格数相近（人口长尾时更易看出差异）。<br />
@@ -2403,30 +2413,39 @@ const circleForm = reactive({
 })
 
 // 色块方案预设
+// ⚠️ 每套都带两组色阶：
+//   `colors`  = **5 档**，给「地图选点」的圆形热力分档用（原有，⛔ 不要改长度）
+//   `colors6` = **6 档**，给「选择城市」的整城网格分级用（v1.13.269 新增）
+//   两者共用同一套 name，下拉里只出现一次，用户不必理解两套档数差异。
 const POPULATION_COLOR_SCHEMES = {
   'blue-green-yellow-orange-red': {
     name: '蓝-绿-黄-橙-红（默认）',
     colors: ['#2b83f6', '#abdda4', '#ffffbf', '#fdae61', '#d7191c'],
+    colors6: ['#4575b4', '#91bfdb', '#e0f3f8', '#fee090', '#fc8d59', '#d73027'],
     gradient: 'to bottom, #d7191c, #fdae61, #ffffbf, #abdda4, #2b83f6'
   },
   'blue-tone': {
     name: '蓝色调',
     colors: ['#deebf7', '#9ecae1', '#6baed6', '#3182bd', '#08519c'],
+    colors6: ['#eff3ff', '#bdd7e7', '#6baed6', '#3182bd', '#2171b5', '#08519c'],
     gradient: 'to bottom, #08519c, #3182bd, #6baed6, #9ecae1, #deebf7'
   },
   'purple-tone': {
     name: '紫色调',
     colors: ['#efedf5', '#dadaeb', '#bcbddc', '#807dba', '#54278f'],
+    colors6: ['#f2f0f7', '#dadaeb', '#bcbddc', '#9e9ac8', '#807dba', '#54278f'],
     gradient: 'to bottom, #54278f, #807dba, #bcbddc, #dadaeb, #efedf5'
   },
   'mono-orange': {
     name: '橙色调',
     colors: ['#fef0d9', '#fdd49e', '#fdbb84', '#fc8d59', '#d7301f'],
+    colors6: ['#fff5eb', '#fee6ce', '#fdd0a2', '#fdae6b', '#e6550d', '#a63603'],
     gradient: 'to bottom, #d7301f, #fc8d59, #fdbb84, #fdd49e, #fef0d9'
   },
   'green-tone': {
     name: '绿色调',
     colors: ['#e5f5e0', '#a1d99b', '#74c476', '#31a354', '#006d2c'],
+    colors6: ['#edf8e9', '#c7e9c0', '#a1d99b', '#74c476', '#31a354', '#006d2c'],
     gradient: 'to bottom, #006d2c, #31a354, #74c476, #a1d99b, #e5f5e0'
   }
 }
@@ -2961,7 +2980,12 @@ const openCirclePopulationDistribution = async () => {
 // ===== 整城 1km 网格分级（v1.13.266）=====
 // 数据来自 `/api/shapefiles/population-grid/` 三个接口：后端已按 6 档算好 `b`（档位）与 `v`（数值），
 // 前端只负责着色与图例 —— ⛔ 不要在前端重算分档（口径必须与后端一致，两边各算必分叉）。
-const GRID_COLORS = ['#fff5eb', '#fee6ce', '#fdd0a2', '#fdae6b', '#e6550d', '#a63603']
+// 默认色块＝「橙色调」的 6 档（与 261~268 版的观感一致，⛔ 别随手改默认值）
+const GRID_DEFAULT_SCHEME = 'mono-orange'
+const GRID_COLORS = POPULATION_COLOR_SCHEMES[GRID_DEFAULT_SCHEME].colors6
+// 实际渲染用的色块：**在点「显示」时**按 gridForm.scheme 定格，
+// 之后即使改下拉也不影响已铺好的图层（图例必须与图层同源，⛔ 不要在渲染时直接读表单）
+const gridColors = ref([...GRID_COLORS])
 const GRID_TIP_MAX = 20000        // 超过就关掉悬浮提示（7.5 万个 tooltip 会拖垮交互）
 const GRID_RENDER_CHUNK = 1200    // 分帧渲染粒度（与人口分布同一思路，避免主线程长阻塞）
 
@@ -2969,7 +2993,7 @@ const gridDialogVisible = ref(false)
 const gridCities = ref([])
 const gridDistricts = ref([])
 const gridFields = ref([])
-const gridForm = reactive({ city: '', district: '', field: '', mode: 'equal' })
+const gridForm = reactive({ city: '', district: '', field: '', mode: 'equal', scheme: GRID_DEFAULT_SCHEME })
 const gridDistrictsLoading = ref(false)
 const gridLoading = ref(false)
 const gridMeta = ref(null)
@@ -3012,6 +3036,7 @@ const openCityGridDialog = async () => {
   gridForm.district = ''
   gridForm.field = ''
   gridForm.mode = 'equal'
+  gridForm.scheme = GRID_DEFAULT_SCHEME
   gridFields.value = []
   gridDistricts.value = []
   gridDialogVisible.value = true
@@ -3055,13 +3080,14 @@ const renderCityGrid = (meta, geojson) => {
   gridLayer = group
   const feats = geojson.features || []
   const withTip = feats.length <= GRID_TIP_MAX
+  const colors = gridColors.value   // 定格色块（见 applyCityGrid 注释）
 
   const styleFn = (f) => {
     const b = f.properties?.b ?? 0
     return {
       color: 'rgba(255,255,255,0.35)',
       weight: 0.3,
-      fillColor: GRID_COLORS[b] || GRID_COLORS[0],
+      fillColor: colors[b] || colors[0],
       fillOpacity: 0.78
     }
   }
@@ -3100,6 +3126,8 @@ const applyCityGrid = async () => {
     const q = new URLSearchParams({ city: gridForm.city, field: gridForm.field, mode: gridForm.mode })
     if (gridForm.district) q.set('district', gridForm.district)
     const r = await gridFetch(`/api/shapefiles/population-grid/data?${q.toString()}`)
+    // 先把色块定格再关弹窗：图例与图层必须用同一组颜色
+    gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
     gridDialogVisible.value = false
     renderCityGrid(r.meta, r.geojson)
     ElMessage.success(`已渲染 ${r.meta.count} 个 1km 网格`)
@@ -3185,7 +3213,7 @@ const gridLegendRanges = computed(() => {
       hiShow = last ? hi : Math.ceil(hi) - 1
       if (hiShow < loShow) hiShow = loShow   // 空档（分界重复）时退化为单点
     }
-    out.push({ lo: fmt(loShow), hi: fmt(hiShow), count: (m.bins && m.bins[i]) || 0, color: GRID_COLORS[i] })
+    out.push({ lo: fmt(loShow), hi: fmt(hiShow), count: (m.bins && m.bins[i]) || 0, color: gridColors.value[i] || GRID_COLORS[i] })
   }
   return out
 })
@@ -11300,6 +11328,22 @@ function getHeatmapCellStyle(nums, idx) {
   color: #b0b3b8;
   font-size: 10px;
   line-height: 1.5;
+}
+/* 设置色块下拉里的渐变小条（v1.13.269） */
+.grid-scheme-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 右侧留出 Element Plus 选中勾的位置，否则色条会被勾压住（实测挤在一起） */
+  padding-right: 20px;
+}
+.grid-scheme-name { flex: 1; }
+.grid-scheme-bar {
+  width: 66px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid #ebeef5;
+  flex-shrink: 0;
 }
 .grid-dialog-hint {
   margin: 0 0 0 88px;
