@@ -852,7 +852,7 @@
            @pointerdown.stop @click="clearCityGridLayer" @keydown.enter="clearCityGridLayer">✕</i>
       </div>
       <div class="grid-legend-sub">
-        {{ gridMeta.field }} · {{ gridMeta.mode === 'quantile' ? '等量分档' : '等值均分' }} · {{ gridMeta.count }} 格
+        {{ gridMeta.field }} · {{ gridMeta.mode === 'custom' ? '设置值域' : '等值均分' }} · {{ gridMeta.count }} 格
       </div>
       <div v-for="(r, i) in gridLegendRanges" :key="i" class="grid-legend-row">
         <i class="grid-legend-swatch" :style="{ background: r.color }"></i>
@@ -861,6 +861,7 @@
       </div>
       <div class="grid-legend-note">
         分级基于当前所选范围，跨区县颜色不可直接比较
+        <template v-if="gridMeta.outOfRange"><br />另有 {{ gridMeta.outOfRange }} 格超出设定值域（未着色）</template>
         <template v-if="!gridMeta.tips"><br />网格较多，已关闭悬浮提示</template>
       </div>
     </div>
@@ -1101,7 +1102,8 @@
 
     <!-- 整城 1km 网格分级（v1.13.266）-->
     <el-dialog v-model="gridDialogVisible" title="按城市查看常住人口分布" width="460px"
-               class="dialog-fancy" :close-on-click-modal="false">
+               top="5vh" class="dialog-fancy" :close-on-click-modal="false"
+               :modal="gridForm.mode !== 'custom'">
       <el-form label-width="88px">
         <el-form-item label="城市">
           <el-select v-model="gridForm.city" filterable style="width:100%" @change="onGridCityChange"
@@ -1122,10 +1124,34 @@
           </el-select>
         </el-form-item>
         <el-form-item label="分级方式">
-          <el-radio-group v-model="gridForm.mode">
+          <el-radio-group v-model="gridForm.mode" @change="onGridModeChange">
             <el-radio value="equal">等值均分</el-radio>
-            <el-radio value="quantile">等量分档</el-radio>
+            <el-radio value="custom">设置值域</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <!-- 设置值域（v1.13.270）：6 档 = 7 个边界，相邻档共用 -->
+        <el-form-item v-if="gridForm.mode === 'custom'" label="档位区间">
+          <div class="grid-breaks">
+            <div v-for="i in 6" :key="i" class="grid-breaks-row">
+              <span class="grid-breaks-idx">{{ i }}</span>
+              <!-- 第 1 档下限可编辑；其余档的下限＝上一档上限（只读，避免同一值绑两个输入框） -->
+              <el-input-number v-if="i === 1" :key="'lb' + gridBreaksRev" :model-value="gridBreaks[0]"
+                               size="small" :controls="false"
+                               class="grid-breaks-input" aria-label="值域下限"
+                               @update:model-value="v => setGridBreak(0, v)" />
+              <span v-else class="grid-breaks-bound">{{ gridBreaks[i - 1] }}</span>
+              <span class="grid-breaks-tilde">~</span>
+              <el-input-number :key="'ub' + gridBreaksRev + '-' + i" :model-value="gridBreaks[i]"
+                               size="small" :controls="false"
+                               class="grid-breaks-input" aria-label="档位上限"
+                               @update:model-value="v => setGridBreak(i, v)" />
+            </div>
+            <div class="grid-breaks-foot">
+              <el-button size="small" text type="primary" :disabled="!gridMeta"
+                         @click="fillBreaksEvenly(gridMeta)">按数据范围等分</el-button>
+              <span v-if="gridBreakErr" class="grid-breaks-err">{{ gridBreakErr }}</span>
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="设置色块">
           <el-select v-model="gridForm.scheme" style="width:100%" aria-label="设置色块">
@@ -1139,12 +1165,12 @@
         </el-form-item>
       </el-form>
       <p class="grid-dialog-hint">
-        等值均分＝区间等宽；等量分档＝每档网格数相近（人口长尾时更易看出差异）。<br />
-        整城网格较多时渲染会慢些，选到区县更快。
+        等值均分＝按数据范围自动等宽分 6 档；设置值域＝自己填 6 档区间（左闭右开，最后一档闭合）。<br />
+        超出值域的网格不着色；整城网格较多时首次载入会慢些，选到区县更快。
       </p>
       <template #footer>
         <el-button @click="gridDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="gridLoading" @click="applyCityGrid">显示</el-button>
+        <el-button type="primary" :loading="gridLoading" @click="applyCityGrid">{{ gridApplyLabel }}</el-button>
       </template>
     </el-dialog>
 
@@ -2998,6 +3024,141 @@ const gridDistrictsLoading = ref(false)
 const gridLoading = ref(false)
 const gridMeta = ref(null)
 
+// ===== 自定义值域（v1.13.270）=====
+// 「设置值域」= 用户自己填 6 档的数值区间。6 档 ⇒ 7 个边界，相邻档共用边界，
+// 所以界面上是 6 行「下限 ~ 上限」，但只改一个数会同时影响两行（同一个数组元素）。
+// 🔴 **不重新请求后端**：数据（含原始数值 v）已经在内存里，
+//    改值域只重算档位 + 改样式 ⇒ 秒级反馈。否则重庆整城每改一个数就要等 4 秒。
+// ⚠️ 落档逻辑必须与后端 `gridBinOf`（routes/shapefiles.js）**逐字一致**：
+//    左闭右开、最后一档闭合。两边分叉会导致图例档位数与格子颜色对不上。
+const gridBreaks = ref([])        // 7 个边界值；空数组＝尚未设定
+const gridBreakErr = ref('')      // 值域校验错误提示
+// 🔴 整体替换 gridBreaks 时（如点「按数据范围等分」），el-input-number 内部
+//    displayValue 不会跟着 prop 刷新（用户刚输入过的框会保留旧值，实测复现）。
+//    用一个递增版本号作 key，强制重建输入框 —— 比逐个 setCurrentValue 省事且可靠。
+const gridBreaksRev = ref(0)
+
+// 最近一次成功渲染的原始要素（保留 properties.v），供本地重算
+let gridRawFeatures = null
+let gridRawMeta = null
+let gridRawKey = ''               // 城市|区县|字段，用于判断"能否复用已下载数据"
+
+const gridTargetKey = () => `${gridForm.city}|${gridForm.district}|${gridForm.field}`
+
+const gridBreaksValid = computed(() => {
+  const b = gridBreaks.value
+  if (!Array.isArray(b) || b.length !== 7) return false
+  for (let i = 0; i < 7; i++) {
+    if (!Number.isFinite(Number(b[i]))) return false
+  }
+  for (let i = 1; i < 7; i++) {
+    if (Number(b[i]) <= Number(b[i - 1])) return false
+  }
+  return true
+})
+
+// 把数值落到 6 档之一；返回 -1 表示超出设定值域（不着色）
+// 🔴 与后端 gridBinOf 的 equal 分支同口径：左闭右开，最后一档闭合
+const binOfBreaks = (v, breaks) => {
+  const n = breaks.length - 1
+  if (v < breaks[0] || v > breaks[n]) return -1
+  for (let i = 0; i < n; i++) {
+    if (i === n - 1) return v <= breaks[i + 1] ? i : -1
+    if (v >= breaks[i] && v < breaks[i + 1]) return i
+  }
+  return -1
+}
+
+// 用给定 meta 的 min/max 等分填满 7 个边界（"按数据范围等分"与首次载入都用它）
+const fillBreaksEvenly = (meta) => {
+  if (!meta || !Number.isFinite(Number(meta.min)) || !Number.isFinite(Number(meta.max))) return false
+  const min = Number(meta.min), max = Number(meta.max)
+  const step = (max - min) / 6
+  const arr = []
+  for (let i = 0; i <= 6; i++) {
+    // 整数数据取整，避免输入框里出现 12615.833333
+    arr.push(Number.isInteger(min) && Number.isInteger(max) ? Math.round(min + step * i) : Number((min + step * i).toFixed(2)))
+  }
+  arr[0] = min
+  arr[6] = max
+  // 取整后可能出现相邻相等（min==max 或范围极小）⇒ 退回未取整值，保证严格递增
+  for (let i = 1; i < 7; i++) {
+    if (arr[i] <= arr[i - 1]) { arr[i] = Number((arr[i - 1] + (step || 1)).toFixed(2)) }
+  }
+  arr[6] = Math.max(arr[6], arr[5] + 1)
+  gridBreaks.value = arr
+  gridBreaksRev.value++      // 强制重建输入框（见 gridBreaksRev 注释）
+  gridBreakErr.value = ''
+  return true
+}
+
+const setGridBreak = (idx, val) => {
+  const next = [...gridBreaks.value]
+  next[idx] = val === null || val === undefined || val === '' ? null : Number(val)
+  gridBreaks.value = next
+  // 即时校验，让用户在点按钮前就看到问题
+  if (next.some(x => !Number.isFinite(Number(x)))) { gridBreakErr.value = '有空白或非数字值'; return }
+  for (let i = 1; i < next.length; i++) {
+    if (Number(next[i]) <= Number(next[i - 1])) { gridBreakErr.value = `第 ${i} 个边界必须大于前一个`; return }
+  }
+  gridBreakErr.value = ''
+}
+
+const onGridModeChange = (mode) => {
+  if (mode !== 'custom') return
+  // 切到「设置值域」时：优先用当前已渲染数据的等值均分结果预填，省得用户从零填
+  if (gridRawMeta && gridRawKey && gridRawKey === gridTargetKey()) {
+    if (!gridBreaks.value.length) fillBreaksEvenly(gridRawMeta)
+  }
+}
+
+// 本地重算：只改 properties.b 与样式，⛔ 不重建图层（7.5 万格重建要好几秒）
+const applyCustomBreaks = () => {
+  if (!gridRawFeatures || !gridLayer) return false
+  if (!gridBreaksValid.value) return false
+  const breaks = gridBreaks.value.map(Number)
+  const colors = gridColors.value
+  const bins = new Array(6).fill(0)
+  let below = 0, above = 0
+
+  for (const f of gridRawFeatures) {
+    const v = Number(f.properties?.v)
+    if (!Number.isFinite(v)) { f.properties.b = -1; continue }
+    if (v < breaks[0]) { below++; f.properties.b = -1; continue }
+    if (v > breaks[6]) { above++; f.properties.b = -1; continue }
+    const b = binOfBreaks(v, breaks)
+    f.properties.b = b
+    if (b >= 0) bins[b]++
+  }
+
+  // 逐个 layer 改样式；超值域的**移出图层**（不是设透明——canvas 仍会命中 tooltip，
+  // 用户会 hover 到一个看不见的格子却弹出数值）
+  const all = []
+  gridLayer.eachLayer(l => all.push(l))
+  for (const l of all) {
+    const b = l.feature?.properties?.b
+    if (b >= 0) {
+      l.setStyle({ color: 'rgba(255,255,255,0.35)', weight: 0.3, fillColor: colors[b] || colors[0], fillOpacity: 0.78 })
+      if (l.__gridHidden) { gridLayer.addLayer(l); l.__gridHidden = false }
+    } else {
+      l.setStyle({ weight: 0, fillOpacity: 0 })
+      if (!l.__gridHidden) { gridLayer.removeLayer(l); l.__gridHidden = true }
+    }
+  }
+
+  gridMeta.value = {
+    ...gridRawMeta,
+    mode: 'custom',
+    breaks,
+    bins,
+    outOfRange: below + above,
+    belowCount: below,
+    aboveCount: above,
+    count: bins.reduce((a, b) => a + b, 0)
+  }
+  return true
+}
+
 let gridLayer = null
 let gridRenderToken = 0
 let gridCanvasRenderer = null
@@ -3070,7 +3231,7 @@ const clearCityGridLayer = () => {
   gridMeta.value = null
 }
 
-const renderCityGrid = (meta, geojson) => {
+const renderCityGrid = (meta, geojson, targetKey) => {
   if (!map) return
   clearCityGridLayer()
   const token = ++gridRenderToken
@@ -3079,6 +3240,10 @@ const renderCityGrid = (meta, geojson) => {
   const group = L.featureGroup().addTo(map)
   gridLayer = group
   const feats = geojson.features || []
+  // 留存原始要素（含 properties.v）⇒「设置值域」时直接本地重算，⛔ 不再请求后端
+  gridRawFeatures = feats
+  gridRawMeta = meta
+  gridRawKey = targetKey || gridTargetKey()
   const withTip = feats.length <= GRID_TIP_MAX
   const colors = gridColors.value   // 定格色块（见 applyCityGrid 注释）
 
@@ -3117,26 +3282,54 @@ const applyCityGrid = async () => {
     ElMessage.warning('请选择城市与统计字段')
     return
   }
+  const key = gridTargetKey()
+
+  // ① 设置值域 + 同城同区同字段的数据已在内存 ⇒ **纯本地重算**（秒级）
+  //    否则用户每改一个数字都要重新下载 1.28MB（重庆整城 4 秒），根本没法调
+  if (gridForm.mode === 'custom' && gridLayer && gridRawFeatures && gridRawKey === key) {
+    if (!gridBreaksValid.value) {
+      ElMessage.warning(gridBreakErr.value || '值域需 7 个递增数值')
+      return
+    }
+    gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
+    const ok = applyCustomBreaks()
+    if (ok) ElMessage.success(`已按设定值域着色（${gridMeta.value.count} 格${gridMeta.value.outOfRange ? '，' + gridMeta.value.outOfRange + ' 格超出值域' : ''}）`)
+    return
+  }
+
   const bigCity = (gridCities.value.find(c => c.city === gridForm.city)?.featureCount || 0) > 20000
   if (bigCity && !gridForm.district) {
     ElMessage.info('该城市网格较多（约 ' + (gridCities.value.find(c => c.city === gridForm.city)?.featureCount || 0) + ' 个），渲染会稍慢；选到区县更快')
   }
   gridLoading.value = true
   try {
-    const q = new URLSearchParams({ city: gridForm.city, field: gridForm.field, mode: gridForm.mode })
+    // ⚠️ 一律按 equal 取数：后端只负责「取全部网格 + 附带原始数值 v」，
+    //    分档在前端做（见 applyCustomBreaks）⇒ 后端零改动，且改值域不用重新请求
+    const q = new URLSearchParams({ city: gridForm.city, field: gridForm.field, mode: 'equal' })
     if (gridForm.district) q.set('district', gridForm.district)
     const r = await gridFetch(`/api/shapefiles/population-grid/data?${q.toString()}`)
     // 先把色块定格再关弹窗：图例与图层必须用同一组颜色
     gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
-    gridDialogVisible.value = false
-    renderCityGrid(r.meta, r.geojson)
-    ElMessage.success(`已渲染 ${r.meta.count} 个 1km 网格`)
+    renderCityGrid(r.meta, r.geojson, key)
+
+    if (gridForm.mode === 'custom') {
+      // 保持弹窗打开 —— 用户要在这里反复调值域
+      if (!gridBreaks.value.length) fillBreaksEvenly(r.meta)
+      if (gridBreaksValid.value) applyCustomBreaks()
+      ElMessage.success(`已载入 ${r.meta.count} 个网格，可调整下方值域后点「应用值域」`)
+    } else {
+      gridDialogVisible.value = false
+      ElMessage.success(`已渲染 ${r.meta.count} 个 1km 网格`)
+    }
   } catch (e) {
     ElMessage.error('加载网格失败：' + e.message)
   } finally {
     gridLoading.value = false
   }
 }
+
+// 主按钮文案：值域模式下是「应用」（本地重算），不是重新加载
+const gridApplyLabel = computed(() => (gridForm.mode === 'custom' ? '应用值域' : '显示'))
 
 // ===== 网格图例可拖动（v1.13.268）=====
 // ⚠️ 本文件已有两套拖拽（`onDragStart` 检索面板、`onLegendDragStart` 门店商圈图例），
@@ -3199,7 +3392,13 @@ const gridLegendRanges = computed(() => {
   // 等值均分 + 整数数据 ⇒ 图例按「左闭右开」显示成整数区间：
   //   下界取 ≥lo 的最小整数（ceil），上界取 <hi 的最大整数（ceil(hi)-1），最后一档闭合。
   // ⚠️ 只影响**显示**；落档用的是后端的精确值（见 gridBinOf）——⛔ 不要拿显示值去判档。
-  const intMode = m.mode === 'equal' && Number.isInteger(m.min) && Number.isInteger(m.max)
+  // 整数口径（左闭右开减 1）只在「数据本身是整数」时启用：
+  //   · 等值均分：后端算出的 breaks 带小数（如 6368.83）⇒ 判 **min/max** 是否整数
+  //   · 设置值域：用户填的就是边界 ⇒ 判 **7 个边界**是否整数
+  // ⚠️ 两种模式判据不同 —— 之前统一判 breaks，导致等值均分图例退化成「0 ~ 6368.8」。
+  const intMode = m.mode === 'custom'
+    ? (m.breaks || []).every(x => Number.isInteger(x))
+    : (Number.isInteger(m.min) && Number.isInteger(m.max))
   const fmt = (x) => (Number.isInteger(x) ? String(x) : (Math.round(x * 10) / 10).toString())
   const out = []
   for (let i = 0; i < m.classes; i++) {
@@ -11329,6 +11528,53 @@ function getHeatmapCellStyle(nums, idx) {
   font-size: 10px;
   line-height: 1.5;
 }
+/* ===== 设置值域：6 行「下限 ~ 上限」（v1.13.270）===== */
+.grid-breaks { width: 100%; }
+.grid-breaks-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.grid-breaks-idx {
+  width: 15px;
+  height: 15px;
+  line-height: 15px;
+  text-align: center;
+  border-radius: 3px;
+  background: #fff4e6;
+  color: #ff8800;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.grid-breaks-input { width: 96px; }
+.grid-breaks-bound {
+  width: 96px;
+  text-align: right;
+  color: #a8abb2;
+  font-size: 12px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.grid-breaks-tilde {
+  color: #c0c4cc;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.grid-breaks-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.grid-breaks-err {
+  color: #f56c6c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* 设置色块下拉里的渐变小条（v1.13.269） */
 .grid-scheme-opt {
   display: flex;
