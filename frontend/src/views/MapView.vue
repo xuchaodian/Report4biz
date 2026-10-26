@@ -3049,6 +3049,10 @@ const gridBreaksRev = ref(0)
 const gridProbeMeta = ref(null)      // 探测到的 meta（含 min/max/breaks）
 const gridProbeLoading = ref(false)
 const gridBreaksTouched = ref(false) // 用户手动改过值域 ⇒ 不再自动覆盖
+// 🔴 值域是为「哪个城市|区县|字段」算出来的。不匹配就必须重填 ——
+//    否则会出现「整城数据按上一个区县的值域着色」：实测业主看到
+//    「7344 格 + 73 格超出值域」（7344+73=7417＝上海整城，值域却是闵行区的 0~38213）。
+const gridBreaksKey = ref('')
 let gridProbeToken = 0
 let gridProbeTimer = null
 
@@ -3070,6 +3074,10 @@ const gridBreaksValid = computed(() => {
   }
   return true
 })
+
+// 当前值域是否适配当前所选范围（城市/区县/字段）
+const gridBreaksMatchesTarget = computed(() =>
+  gridBreaks.value.length === 7 && gridBreaksKey.value === gridTargetKey())
 
 // 把数值落到 6 档之一；返回 -1 表示超出设定值域（不着色）
 // 🔴 与后端 gridBinOf 的 equal 分支同口径：左闭右开，最后一档闭合
@@ -3101,6 +3109,7 @@ const fillBreaksEvenly = (meta) => {
   }
   arr[6] = Math.max(arr[6], arr[5] + 1)
   gridBreaks.value = arr
+  gridBreaksKey.value = gridTargetKey()   // 记下这批值域属于哪个范围
   gridBreaksRev.value++      // 强制重建输入框（见 gridBreaksRev 注释）
   gridBreakErr.value = ''
   return true
@@ -3157,7 +3166,9 @@ const onGridTargetChange = () => {
 
 const onGridModeChange = (mode) => {
   if (mode !== 'custom') return
-  if (gridBreaksTouched.value && gridBreaks.value.length) return   // 用户已自定义，别覆盖
+  // 只有「用户改过」且「值域属于当前范围」才不覆盖；
+  // 换了范围（重开对话框 / 换城市）⇒ 必须重填，否则会拿旧范围的值域去套新数据
+  if (gridBreaksTouched.value && gridBreaksMatchesTarget.value) return
   // ① 当前图上就有同目标的数据 ⇒ 直接用它的 min/max
   if (gridRawMeta && gridRawKey && gridRawKey === gridTargetKey()) {
     if (!gridBreaks.value.length) fillBreaksEvenly(gridRawMeta)
@@ -3260,6 +3271,13 @@ const openCityGridDialog = async () => {
   gridForm.scheme = GRID_DEFAULT_SCHEME
   gridFields.value = []
   gridDistricts.value = []
+  // 🔴 值域必须一起清 —— 之前漏了这一步：重开对话框时城市/区县已重置，
+  //    值域却还是上一个区县的，且 touched=true 不会重填 ⇒ 数据范围与值域错配。
+  gridBreaks.value = []
+  gridBreaksKey.value = ''
+  gridBreaksTouched.value = false
+  gridProbeMeta.value = null
+  gridBreakErr.value = ''
   gridDialogVisible.value = true
   try {
     const r = await gridFetch('/api/shapefiles/population-grid/cities')
@@ -3352,16 +3370,31 @@ const applyCityGrid = async () => {
   }
   const key = gridTargetKey()
 
-  // ① 设置值域 + 同城同区同字段的数据已在内存 ⇒ **纯本地重算**（秒级）
-  //    否则用户每改一个数字都要重新下载 1.28MB（重庆整城 4 秒），根本没法调
-  if (gridForm.mode === 'custom' && gridLayer && gridRawFeatures && gridRawKey === key) {
-    if (!gridBreaksValid.value) {
+  if (gridForm.mode === 'custom') {
+    // 🔴 值域属于别的范围（换城市/区县/字段后没重填）⇒ 直接作废，别拿去套新数据
+    if (gridBreaks.value.length && !gridBreaksMatchesTarget.value) {
+      gridBreaks.value = []
+      gridBreaksTouched.value = false
+      gridBreakErr.value = ''
+    }
+    // 🔴 有值域就必须有效：⛔ 不能无效时静默退化成等值均分（用户会以为值域生效了）
+    if (gridBreaks.value.length && !gridBreaksValid.value) {
       ElMessage.warning(gridBreakErr.value || '值域需 7 个递增数值')
       return
     }
+  }
+
+  // ① 设置值域 + 同城同区同字段的数据已在内存 ⇒ **纯本地重算**（秒级）
+  //    否则用户每改一个数字都要重新下载 1.28MB（重庆整城 4 秒），根本没法调
+  if (gridForm.mode === 'custom' && gridLayer && gridRawFeatures && gridRawKey === key) {
     gridColors.value = [...(POPULATION_COLOR_SCHEMES[gridForm.scheme]?.colors6 || GRID_COLORS)]
     const ok = applyCustomBreaks()
-    if (ok) ElMessage.success(`已按设定值域着色（${gridMeta.value.count} 格${gridMeta.value.outOfRange ? '，' + gridMeta.value.outOfRange + ' 格超出值域' : ''}）`)
+    if (ok) {
+      // 重算后也定位到数据范围：否则图层若在视野外，用户会以为「没反应」
+      const b = gridLayer.getBounds()
+      if (b && b.isValid()) map.fitBounds(b, { padding: [24, 24] })
+      ElMessage.success(`已按设定值域着色（${gridMeta.value.count} 格${gridMeta.value.outOfRange ? '，' + gridMeta.value.outOfRange + ' 格超出值域' : ''}）`)
+    }
     return
   }
 
