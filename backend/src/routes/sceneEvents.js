@@ -110,13 +110,32 @@ router.get('/summary', authenticate, requireAdmin, (req, res) => {
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365)
     const since = `-${days} days`
 
+    // 🔴 默认**排除 admin**（v1.13.265）：`admin` 是平台管理号，它的点击是测试行为，
+    //    混进漏斗会把「完成率」算成假的（比如自己测一遍就 100%）。
+    //    ⚠️ 事件本身**仍然照常记录**（不拦 admin 上报）—— 否则每次改埋点都没法自验；
+    //       只是统计时剔除。需要连 admin 一起看时用 `?include_admin=1`。
+    const includeAdmin = String(req.query.include_admin || '') === '1'
+    const adminFilter = includeAdmin ? '' : " AND u.role <> 'admin'"
+
     const rows = db.prepare(
-      `SELECT event, scene, step, step_index,
-              COUNT(DISTINCT user_id) AS users
-       FROM scene_events
-       WHERE created_at >= datetime('now', ?)
-       GROUP BY event, scene, step`
+      `SELECT e.event, e.scene, e.step, e.step_index,
+              COUNT(DISTINCT e.user_id) AS users
+       FROM scene_events e
+       JOIN users u ON u.id = e.user_id
+       WHERE e.created_at >= datetime('now', ?)${adminFilter}
+       GROUP BY e.event, e.scene, e.step`
     ).all(since)
+
+    // 透明化：告诉调用方「被剔掉多少条」，否则会怀疑数据丢了
+    let adminRows = 0
+    if (!includeAdmin) {
+      const r = db.prepare(
+        `SELECT COUNT(*) AS n FROM scene_events e
+         JOIN users u ON u.id = e.user_id
+         WHERE e.created_at >= datetime('now', ?) AND u.role = 'admin'`
+      ).get(since)
+      adminRows = Number(r?.n) || 0
+    }
 
     const scenes = new Map()
     const ensure = (k) => {
@@ -153,7 +172,7 @@ router.get('/summary', authenticate, requireAdmin, (req, res) => {
       return s
     }).sort((a, b) => b.started - a.started)
 
-    res.json({ success: true, days, opened, scenes: list })
+    res.json({ success: true, days, includeAdmin, adminRows, opened, scenes: list })
   } catch (error) {
     console.error('[scene-events] 汇总失败:', error)
     res.status(500).json({ message: '汇总失败：' + (error?.message || '未知错误') })
