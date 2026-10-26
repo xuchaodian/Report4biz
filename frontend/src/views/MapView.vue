@@ -843,11 +843,13 @@
     <div id="map" class="map-container" />
 
     <!-- 整城网格分级图例（v1.13.266） -->
-    <div v-if="gridMeta" class="grid-legend">
-      <div class="grid-legend-head">
-        <span>{{ gridMeta.city }}{{ gridMeta.district ? ' · ' + gridMeta.district : ' · 整城' }}</span>
+    <div v-if="gridMeta" class="grid-legend" :style="gridLegendStyle">
+      <!-- v1.13.268：标题栏即可拖动（拖到左下/右上都不挡地图），位置按容器坐标保存 -->
+      <div class="grid-legend-head" title="按住可拖动" @pointerdown="onGridLegendDragStart">
+        <span class="grid-legend-grip" aria-hidden="true">⋮⋮</span>
+        <span class="grid-legend-city">{{ gridMeta.city }}{{ gridMeta.district ? ' · ' + gridMeta.district : ' · 整城' }}</span>
         <i class="grid-legend-close" role="button" tabindex="0" aria-label="关闭图例"
-           @click="clearCityGridLayer" @keydown.enter="clearCityGridLayer">✕</i>
+           @pointerdown.stop @click="clearCityGridLayer" @keydown.enter="clearCityGridLayer">✕</i>
       </div>
       <div class="grid-legend-sub">
         {{ gridMeta.field }} · {{ gridMeta.mode === 'quantile' ? '等量分档' : '等值均分' }} · {{ gridMeta.count }} 格
@@ -3106,6 +3108,60 @@ const applyCityGrid = async () => {
   } finally {
     gridLoading.value = false
   }
+}
+
+// ===== 网格图例可拖动（v1.13.268）=====
+// ⚠️ 本文件已有两套拖拽（`onDragStart` 检索面板、`onLegendDragStart` 门店商圈图例），
+//    都用 mousedown + document 监听、且**不夹边界**。本实现用 pointer 事件 + 容器夹边界，
+//    故函数名加 Grid 前缀避免撞名。⛔ 不要把它们混着改：三处状态各自独立。
+//    📌 技术债：三套拖拽应抽成一个 `useDraggable(posRef, opts)`（留待后续统一）。
+// 为什么用 pointer 事件而不是 mousedown：pointer 统一覆盖鼠标/触屏，且能 setPointerCapture
+// ⇒ 拖动时鼠标移出面板也不会丢事件。
+// ⚠️ 位置用**容器坐标**（相对 offsetParent）保存，⛔ 不用 clientX/Y 直接存 ——
+//    后者会把「相对视口」和「相对容器」混在一起，滚动或布局变化后就飘。
+const gridLegendPos = ref(null)     // { x, y } px（相对 offsetParent）；null = 默认右下角
+const gridLegendStyle = computed(() => (gridLegendPos.value
+  ? { left: gridLegendPos.value.x + 'px', top: gridLegendPos.value.y + 'px', right: 'auto', bottom: 'auto' }
+  : {}))
+
+let gridLegendDrag = null
+
+const onGridLegendDragStart = (e) => {
+  const panel = e.currentTarget.closest('.grid-legend')
+  if (!panel) return
+  const host = panel.offsetParent || panel.parentElement
+  const hostRect = host.getBoundingClientRect()
+  const rect = panel.getBoundingClientRect()
+  gridLegendDrag = {
+    offsetX: e.clientX - rect.left,   // 抓住点在面板内的偏移
+    offsetY: e.clientY - rect.top,
+    hostRect,
+    w: rect.width,
+    h: rect.height
+  }
+  // 先把当前位置钉成 left/top，再接管移动（否则默认 right/bottom 会与 left/top 打架）
+  gridLegendPos.value = { x: rect.left - hostRect.left, y: rect.top - hostRect.top }
+  try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* 老浏览器忽略 */ }
+  window.addEventListener('pointermove', onGridLegendDragMove)
+  window.addEventListener('pointerup', onGridLegendDragEnd)
+  window.addEventListener('pointercancel', onGridLegendDragEnd)
+  e.preventDefault()
+}
+
+const onGridLegendDragMove = (e) => {
+  if (!gridLegendDrag) return
+  const { offsetX, offsetY, hostRect, w, h } = gridLegendDrag
+  const EDGE = 4   // 留 4px，避免拖到边缘后抓不回来
+  const x = Math.max(EDGE, Math.min(e.clientX - hostRect.left - offsetX, hostRect.width - w - EDGE))
+  const y = Math.max(EDGE, Math.min(e.clientY - hostRect.top - offsetY, hostRect.height - h - EDGE))
+  gridLegendPos.value = { x, y }
+}
+
+const onGridLegendDragEnd = () => {
+  gridLegendDrag = null
+  window.removeEventListener('pointermove', onGridLegendDragMove)
+  window.removeEventListener('pointerup', onGridLegendDragEnd)
+  window.removeEventListener('pointercancel', onGridLegendDragEnd)
 }
 
 // 图例区间：等值均分用**左闭右开**（整数数据下右端减 1，避免相邻两档都写同一个边界值）
@@ -11188,6 +11244,22 @@ function getHeatmapCellStyle(nums, idx) {
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 2px;
+  /* v1.13.268：整条标题是拖拽把手 */
+  cursor: move;
+  user-select: none;
+  touch-action: none;   /* 触屏拖动时不要触发页面滚动 */
+}
+.grid-legend-grip {
+  color: #c8cbd0;
+  letter-spacing: -2px;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.grid-legend-city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .grid-legend-close {
   margin-left: auto;
@@ -11195,6 +11267,8 @@ function getHeatmapCellStyle(nums, idx) {
   color: #909399;
   cursor: pointer;
   line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
 }
 .grid-legend-close:hover { color: #303133; }
 .grid-legend-sub {
