@@ -115,7 +115,10 @@
     </div>
 
     <!-- 对比弹窗 -->
-    <el-dialog v-model="compareVisible" width="860px" :close-on-click-modal="false">
+    <!-- v1.13.279：去掉「数据」列后列宽合计 680，860px 会在右侧留大片空白 ⇒ 收窄。
+         实测 el-dialog 左右内边距合计 72px，故宽度须 ≥ 680+72；768 留 16px 余量，
+         再窄就会触发 el-table 的横向滚动条（740 实测会溢出 12px）。 -->
+    <el-dialog v-model="compareVisible" width="768px" :close-on-click-modal="false">
       <template #header>
         <span class="dlg-title"><AppIcon><DataAnalysis /></AppIcon>商圈对比</span>
       </template>
@@ -151,17 +154,14 @@
             <span :class="{ 'dv-best': isLowest(row, 'competitorCount') }">{{ row.competitorCount }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="数据" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" type="warning">{{ row.dataMonth || '联通人口版' }}</el-tag>
-          </template>
-        </el-table-column>
+        <!-- v1.13.279：去掉「数据」列（未刷新的行恒显示「联通人口版」标签，纯噪音）。
+             刷新后的期次由详情卡底部按钮「刷新最新数据（YYYYMM）」承载，此处不重复。 -->
       </el-table>
       <p style="font-size:12px;color:#909399;margin:8px 0 0;">
         <span class="dv-best" style="padding:1px 6px;border-radius:4px;">绿色高亮</span> = 该列最优值（评分/人口/居住/工作/到访取最高，竞品数取最低）
       </p>
       <p style="font-size:12px;color:#b88230;margin:6px 0 0;">
-        注：基础数据的「居住」「工作」为联通人口版的<b>实测细分</b>；仅当该商圈点过「刷新最新数据」后（数据列显示具体月份），联通 1001 只回商圈总人口，两端按各半拆分，此时为<b>近似值</b>。
+        注：基础数据的「居住」「工作」为联通人口版的<b>实测细分</b>；仅当该商圈点过「刷新最新数据」后，联通 1001 只回商圈总人口，两端按各半拆分（此时该商圈详情卡会标「估算」），<b>对比表里无法区分</b>，横向比较前请先点开单个商圈确认。
       </p>
     </el-dialog>
   </div>
