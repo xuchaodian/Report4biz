@@ -5,6 +5,7 @@ import { PersistentCache } from '../utils/persistentCache.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getGeoObject } from '../models/geoStore.js'
+import { normalizeDistrictProps } from '../utils/districtProps.js'
 import { readableUserIds, placeholders } from '../utils/visibleScope.js'
 import { isVipActive, loadAiUser } from '../utils/aiQuota.js'
 
@@ -95,7 +96,10 @@ function getAllDistricts() {
     const geojson = getGeoObject(f.id)
     if (!geojson || !geojson.features) continue
     for (const ft of geojson.features) {
-      const p = ft.properties || {}
+      // v1.13.276：商圈面数据已换版（名称→商圈名、居住人数→居住、RecID→biz_id），
+      // 必须先归一到旧名再取数；否则 p['名称'] 恒 undefined ⇒ 整个城市商圈被 continue 掉、
+      // districtProfileVector 全 0，销售预测静默降级到「无环境信息」。
+      const p = normalizeDistrictProps(ft.properties || {})
       if (!p['名称']) continue
       list.push({
         city,

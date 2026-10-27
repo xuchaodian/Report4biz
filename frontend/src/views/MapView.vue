@@ -8085,17 +8085,22 @@ const openCityTradeArea = async () => {
     })
     const json = await res.json()
     const files = json.data || []
-    // 按城市分组：从文件名提取城市名（如"上海商圈"->"上海"）
+    // 按城市分组：从文件名提取城市名（如"上海商圈"->"上海"、"上海.zip"->"上海"）
     const cityMap = {}
     files.forEach(f => {
       // 用 shapefile name 中的城市名
-      let cityName = f.name.replace(/商圈/g, '').replace(/区域/g, '').trim()
+      // ⚠️ 必须同时剥掉 .zip 后缀：存量 16 城的 name 是「上海.zip」，
+      // 漏了就会在弹窗里显示成「上海.zip（151 个商圈）」（v1.13.276 修）
+      let cityName = f.name.replace(/商圈/g, '').replace(/区域/g, '').replace(/\.zip$/i, '').trim()
       if (!cityName) cityName = f.name
       if (!cityMap[cityName]) {
         cityMap[cityName] = { name: cityName, ids: [], count: 0 }
       }
       cityMap[cityName].ids.push(f.id)
-      cityMap[cityName].count++
+      // ⚠️ 弹窗里写的是「N 个商圈」，所以必须累加**要素数**而不是文件数：
+      //    每城恰好 1 个 zip，用 files.length 会让每个城市都显示「1 个商圈」
+      //    （上海实际 177 个）。v1.13.276 修。
+      cityMap[cityName].count += (f.feature_count || 0)
     })
     cityTradeAreaList.value = Object.values(cityMap)
   } catch (e) {

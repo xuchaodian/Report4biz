@@ -5,11 +5,11 @@
       <div>
         <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><OfficeBuilding /></AppIcon>{{ $t('nav.districtInsight') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
-          综合评分 = 人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（数据基准 2022-04）
+          综合评分 = 人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（基础数据：联通人口版，未标注期次）
         </p>
       </div>
       <div class="dv-header-right">
-        <el-tag type="warning" effect="light" size="small">数据时间 2022-04</el-tag>
+        <el-tag type="warning" effect="light" size="small">联通人口版</el-tag>
         <el-button size="small" :disabled="compareList.length < 2" style="margin-left:10px;" @click="openCompare">
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>商圈对比{{ compareList.length > 0 ? ` (${compareList.length})` : '' }}
         </el-button>
@@ -66,7 +66,23 @@
           </div>
           <div class="dv-detail-info">
             <span>{{ selectedDistrict.province }} · {{ selectedDistrict.city }} · {{ selectedDistrict.district || '-' }}</span>
-            <span style="color:#f56c6c;font-size:11px;">数据时间 2022-04</span>
+            <span style="color:#f56c6c;font-size:11px;">{{ periodLabel(selectedDistrict.dataMonth) }}</span>
+          </div>
+          <!-- v1.13.276：联通人口版新增的三列画像标签（旧版数据没有 ⇒ 整行不渲染）。
+               「居民类」在源数据里叫居民类，对外统一显示为「居民特征」。 -->
+          <div v-if="hasProfile(selectedDistrict)" class="dv-profile">
+            <span v-if="selectedDistrict.crowd" class="dv-prof">
+              <em>客群</em>
+              <el-tag size="small" :type="crowdTagType(selectedDistrict.crowd)" effect="light">{{ selectedDistrict.crowd }}</el-tag>
+            </span>
+            <span v-if="selectedDistrict.level" class="dv-prof">
+              <em>能级</em>
+              <el-tag size="small" type="info" effect="light">{{ selectedDistrict.level }}</el-tag>
+            </span>
+            <span v-if="selectedDistrict.resident" class="dv-prof">
+              <em>居民特征</em>
+              <el-tag size="small" type="success" effect="light">{{ selectedDistrict.resident }}</el-tag>
+            </span>
           </div>
           <div class="dv-dims">
             <div v-for="dim in dims" :key="dim.key" class="dv-dim">
@@ -76,8 +92,8 @@
             </div>
           </div>
           <div class="dv-facts">
-            <div class="dv-fact"><span>居住人口<em class="dv-est" title="联通 1001 未提供「居住/工作」细分，此处按商圈总人口各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.population) }}</b></div>
-            <div class="dv-fact"><span>工作人口<em class="dv-est" title="联通 1001 未提供「居住/工作」细分，此处按商圈总人口各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
+            <div class="dv-fact"><span>居住人口<em v-if="selectedDistrict.dataMonth" class="dv-est" title="点「刷新最新数据」后，联通 1001 只回商圈总人口，居住/工作按各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.population) }}</b></div>
+            <div class="dv-fact"><span>工作人口<em v-if="selectedDistrict.dataMonth" class="dv-est" title="点「刷新最新数据」后，联通 1001 只回商圈总人口，居住/工作按各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
             <div class="dv-fact"><span>到访人次</span><b>{{ formatNum(selectedDistrict.visit) }}</b></div>
             <div class="dv-fact"><span>竞品门店</span><b>{{ selectedDistrict.competitorCount }} 家</b></div>
             <div class="dv-fact" :class="{ 'dv-fact-warn': selectedDistrict.myStoreCount > 0 }"><span>我的门店</span><b>{{ selectedDistrict.myStoreCount || 0 }} 家</b></div>
@@ -93,7 +109,7 @@
             <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:#909399;">该商圈边界内暂无购物中心</div>
           </div>
           <el-button type="primary" plain style="width:100%;margin-top:10px;" :loading="refreshing" @click="refreshDistrict">
-            <el-icon><Refresh /></el-icon>&nbsp;刷新最新数据{{ selectedDistrict.dataMonth !== '202204' ? `（${selectedDistrict.dataMonth}）` : '' }}
+            <el-icon><Refresh /></el-icon>&nbsp;刷新最新数据{{ selectedDistrict.dataMonth ? `（${selectedDistrict.dataMonth}）` : '' }}
           </el-button>
         </div>
       </div>
@@ -136,15 +152,17 @@
             <span :class="{ 'dv-best': isLowest(row, 'competitorCount') }">{{ row.competitorCount }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="数据" width="80" align="center">
-          <template #default><el-tag size="small" type="warning">2022-04</el-tag></template>
+        <el-table-column label="数据" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" type="warning">{{ row.dataMonth || '联通人口版' }}</el-tag>
+          </template>
         </el-table-column>
       </el-table>
       <p style="font-size:12px;color:#909399;margin:8px 0 0;">
         <span class="dv-best" style="padding:1px 6px;border-radius:4px;">绿色高亮</span> = 该列最优值（评分/人口/居住/工作/到访取最高，竞品数取最低）
       </p>
       <p style="font-size:12px;color:#b88230;margin:6px 0 0;">
-        注：「居住(估)」「工作(估)」为联通 1001 商圈总人口按各半拆分的<b>近似值</b>（该服务未提供居住/工作细分），仅供横向对比参考。
+        注：基础数据的「居住」「工作」为联通人口版的<b>实测细分</b>；仅当该商圈点过「刷新最新数据」后（数据列显示具体月份），联通 1001 只回商圈总人口，两端按各半拆分，此时为<b>近似值</b>。
       </p>
     </el-dialog>
   </div>
@@ -203,6 +221,24 @@ function scoreTagType(s) {
   if (s >= 75) return 'success'
   if (s >= 50) return 'warning'
   return 'danger'
+}
+// v1.13.276：期次文案。基础数据（联通人口版）**未标注月份** ⇒ 只写口径不编月份；
+// 用户点过「刷新最新数据」后后端回 'YYYYMM'，才显示具体期次。
+function periodLabel(m) {
+  if (!m) return '联通人口版（未标注期次）'
+  const s = String(m)
+  if (/^\d{6}$/.test(s)) return `数据时间 ${s.slice(0, 4)}-${s.slice(4)}`
+  return `数据时间 ${s}`
+}
+// 三列画像标签都是联通人口版新增，旧数据没有 ⇒ 用「任一有值」控制整行显隐
+function hasProfile(d) {
+  return !!(d && (d.crowd || d.level || d.resident))
+}
+// 客群只区分「居住主导 / 职住均衡 / 商务主导」三态，配色按语义走
+function crowdTagType(crowd) {
+  if (crowd === '商务主导') return 'warning'
+  if (crowd === '职住均衡') return 'primary'
+  return 'success'
 }
 function formatNum(n) {
   if (n == null) return '-'
@@ -566,6 +602,27 @@ async function refreshDistrict() {
   margin: 6px 0 10px;
   font-size: 12px;
   color: #909399;
+}
+/* 画像标签行（客群 / 能级 / 居民特征） */
+.dv-profile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  background: #f7f9fc;
+  border-radius: 6px;
+}
+.dv-prof {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #909399;
+}
+.dv-prof em {
+  font-style: normal;
+  white-space: nowrap;
 }
 .dv-dim {
   display: flex;

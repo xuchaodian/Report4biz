@@ -39,6 +39,12 @@ DBF_ENCODING_CANDIDATES = ['utf-8', 'gb18030', 'gbk']
 # 坐标转换开关：默认转换 WGS84→GCJ-02，设为 True 则跳过
 SKIP_COORD_CONVERT = False
 
+# 落盘坐标保留小数位（v1.13.276）
+# 理由：新商圈数据的源 SHP 是**满精度 double**（形如 121.8912957962747），
+#   不裁位会让单城 geojson 从 561KB 涨到 837KB（+49%），而 1e-6° 已约等于 0.1m，
+#   远小于商圈边界的实际精度。存量 16 城产物本身就是 6 位小数，这里与之对齐。
+COORD_DECIMALS = 6
+
 
 def try_decode(value, encodings=None):
     """尝试用多种编码解码字符串"""
@@ -159,6 +165,63 @@ def wgs84_to_gcj02(lng, lat):
     return transform(lng, lat)
 
 
+def _ring_signed_area(ring):
+    """鞋带公式（带符号）：用于按面积降序排环，符号不参与判断（SHP 的环方向在
+    各家导出工具里并不统一，靠方向区分外环/内洞并不可靠）。"""
+    s = 0.0
+    for i in range(len(ring) - 1):
+        s += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]
+    return s / 2.0
+
+
+def _point_in_ring(pt, ring):
+    """射线法（环已闭合，首尾点相同）"""
+    x, y = pt
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        xi, yi = ring[i]
+        xj, yj = ring[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def assemble_polygon(rings):
+    """把 SHP 的多 part 组装成 GeoJSON Polygon / MultiPolygon。
+
+    🔴 为什么必须做（v1.13.276）：
+      SHP 一个要素的 parts **既可能是「一个面 + 若干内洞」，也可能是互不相连的多个面**。
+      实测新商圈数据（20 城 2394 要素）：多环要素 178 个附加环里 **172 个是分离面、
+      只有 6 个是内洞**。旧实现把所有 part 一律塞进 `Polygon.coordinates` —— 按 GeoJSON
+      语义除第 0 环外**全部被当成洞** ⇒ Leaflet 与各消费方会把分离面渲染成「挖空」，
+      面积、点位落圈、竞品计数全部失真，而且不报错。
+
+    判据（不依赖环方向）：按 |面积| 降序，逐环统计「被几个已落位的环包含」= 嵌套深度。
+      · 深度 0 ⇒ 独立外环（新多边形）
+      · 深度奇 ⇒ 内洞，归入包含它的**最小**环
+      · 深度偶 ⇒ 洞中之岛，独立外环
+    单环要素走快路径直接返回，**不做任何 PIP** —— 人口网格（10 万级要素）逐要素跑
+    包含判定会白烧 CPU，且产物与旧实现逐字节一致。
+    """
+    if len(rings) <= 1:
+        return ('Polygon', rings)
+
+    placed = []   # [{'ring': ring, 'holes': [ring, ...]}]
+    for ring in sorted(rings, key=lambda r: abs(_ring_signed_area(r)), reverse=True):
+        containers = [p for p in placed if _point_in_ring(ring[0], p['ring'])]
+        if len(containers) % 2 == 1:
+            parent = min(containers, key=lambda p: abs(_ring_signed_area(p['ring'])))
+            parent['holes'].append(ring)
+        else:
+            placed.append({'ring': ring, 'holes': []})
+
+    if len(placed) == 1:
+        return ('Polygon', [placed[0]['ring']] + placed[0]['holes'])
+    return ('MultiPolygon', [[p['ring']] + p['holes'] for p in placed])
+
+
 def parse_shapefile_from_zip(zip_path, out_path=None):
     """从 ZIP 文件中解析 Shapefile
 
@@ -230,32 +293,39 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
                         properties[decoded_key] = decoded_value
 
                     # 转换几何坐标
+                    # v1.13.276：多 part 要素改为按「嵌套深度」组装成 Polygon / MultiPolygon
+                    #（旧实现一律塞进一个 Polygon ⇒ 分离面被当成洞，详见 assemble_polygon 注释）
                     coordinates = []
                     if shape.shapeType == 5:  # Polygon
                         parts = list(shape.parts) + [len(shape.points)]
+                        rings = []
                         for p, part_start in enumerate(shape.parts):
                             part_end = parts[p + 1]
                             part_coords = []
                             for j in range(part_start, part_end):
                                 lng, lat = shape.points[j]
                                 if SKIP_COORD_CONVERT:
-                                    part_coords.append([lng, lat])
+                                    part_coords.append([round(lng, COORD_DECIMALS), round(lat, COORD_DECIMALS)])
                                 else:
                                     gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
-                                    part_coords.append([gcj_lng, gcj_lat])
-                            coordinates.append(part_coords)
+                                    part_coords.append([round(gcj_lng, COORD_DECIMALS), round(gcj_lat, COORD_DECIMALS)])
+                            rings.append(part_coords)
+                        geom_type, coordinates = assemble_polygon(rings)
                     elif shape.shapeType == 1:  # Point
                         lng, lat = shape.points[0]
                         if SKIP_COORD_CONVERT:
-                            coordinates = [[lng, lat]]
+                            coordinates = [[round(lng, COORD_DECIMALS), round(lat, COORD_DECIMALS)]]
                         else:
                             gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
-                            coordinates = [[gcj_lng, gcj_lat]]
+                            coordinates = [[round(gcj_lng, COORD_DECIMALS), round(gcj_lat, COORD_DECIMALS)]]
+                        geom_type = 'Point'
+                    else:
+                        geom_type = 'Polygon'
 
                     feature = {
                         'type': 'Feature',
                         'geometry': {
-                            'type': 'Polygon' if shape.shapeType == 5 else 'Point',
+                            'type': geom_type,
                             'coordinates': coordinates
                         },
                         'properties': properties

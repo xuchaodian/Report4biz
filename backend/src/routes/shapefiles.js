@@ -1051,10 +1051,11 @@ router.post('/search-commerce', authenticate, (req, res) => {
         const geojson = JSON.parse(row.geojson)
         const features = geojson.features || []
 
-        // 确定名称字段（名称 / name / Name）
+        // 确定名称字段（名称 / name / Name / 商圈名）
+        // v1.13.276：联通人口版商圈把「名称」改成了「商圈名」，漏掉就整城搜不到
         let nameField = null
         const fields = row.field_names ? JSON.parse(row.field_names) : []
-        nameField = fields.find(f => ['名称', 'name', 'Name', 'NAME'].includes(f))
+        nameField = fields.find(f => ['名称', '商圈名', 'name', 'Name', 'NAME'].includes(f))
 
         if (!nameField) continue
 

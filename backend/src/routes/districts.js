@@ -5,10 +5,19 @@ import { getAuthorization } from './smartsteps.js'
 import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { getGeoObject } from '../models/geoStore.js'
+import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
 
 const router = express.Router()
+
+// v1.13.276：商圈面数据换版（2022 年度版 → 联通人口版），字段名整代更换
+// （名称→商圈名、居住人数→居住、…、RecID→biz_id）。所有读取点一律先过
+// normalizeDistrictProps() 归一到旧名，⛔ 不要在这里直接写 props['居住人数']。
+//
+// 基础数据期次：联通人口版**未标注月份** ⇒ 基线展示「联通人口版（未标注期次）」，
+// 用户点「刷新最新数据」后由联通 1001 返回真实期次（形如 '202510'）覆盖。
+const BASE_DATA_MONTH = ''
 
 // v1.13.143：geojson 已外置到文件（models/geoStore.js），原先这里的
 // geojsonCache（1 小时 TTL、与 shapefiles.js 的 1 分钟缓存各自为政）已删除，
@@ -137,6 +146,13 @@ function ringCentroid(ring) {
 /**
  * 外扩逻辑：面积 < 0.3 km² 的商圈，以质心为缩放中心等比放大到 0.3 km²
  * 保证请求联通 polygon 时满足面积下限要求
+ *
+ * 🔴 v1.13.276：MultiPolygon **只取主体面**（外环面积最大的那块）再判面积/外扩。
+ *   原因：联通人口版商圈大量是「主城区 + 若干飞地/碎片」的多面要素（实测上海 177 个
+ *   商圈里 50 个多环，附加环 178 个中 172 个是分离面）。若逐块外扩，一次请求会变成
+ *   十几个 ≥0.3km² 的离散色块 ⇒ 联通按这个 polygon 统计出来的人口既不等于商圈实际，
+ *   也不可解释，而且用户看到的是"刷新成功"。取主体面是这里唯一自洽的口径：
+ *   联通 1001 的入参本来就是「一个 0.3km² 以上的连续面」。
  */
 function expandToMinArea(geometry, minKm2 = MIN_AREA_KM2) {
   if (!geometry) return geometry
@@ -150,17 +166,10 @@ function expandToMinArea(geometry, minKm2 = MIN_AREA_KM2) {
     return { type: 'Polygon', coordinates: [expanded, ...geometry.coordinates.slice(1)] }
   }
   if (geometry.type === 'MultiPolygon') {
-    return {
-      type: 'MultiPolygon',
-      coordinates: geometry.coordinates.map(poly => {
-        const outer = poly[0]
-        const area = ringAreaKm2(outer)
-        if (area >= minKm2) return poly
-        const [cx, cy] = ringCentroid(outer)
-        const factor = Math.sqrt(minKm2 / (area || minKm2))
-        return [[outer.map(p => [cx + (p[0] - cx) * factor, cy + (p[1] - cy) * factor]), ...poly.slice(1)]]
-      })
-    }
+    const dominant = geometry.coordinates.reduce((best, poly) =>
+      ringAreaKm2(poly[0]) > ringAreaKm2(best[0]) ? poly : best
+    )
+    return expandToMinArea({ type: 'Polygon', coordinates: dominant }, minKm2)
   }
   return geometry
 }
@@ -504,7 +513,8 @@ router.get('/', authenticate, (req, res) => {
       const geojson = getGeojson(f.id)
       if (!geojson || !geojson.features) continue
       for (const feature of geojson.features) {
-        const props = feature.properties || {}
+        // v1.13.276：字段名整代更换，必须先归一再取数（否则评分/画像静默归零）
+        const props = normalizeDistrictProps(feature.properties || {})
         const name = props['名称'] || props['name'] || '未命名商圈'
         const compCount = countCompetitorsInDistrict(feature.geometry)
         const myStoreCount = countMyStoresInDistrict(feature.geometry)
@@ -526,8 +536,12 @@ router.get('/', authenticate, (req, res) => {
             affluent: Number(props['富裕人数']) || 0,
             rich: Number(props['富人人数']) || 0
           },
+          // v1.13.276：联通人口版新增的三列画像标签（旧版数据没有 ⇒ 空串，前端不渲染）
+          crowd: dstr(props, '客群'),
+          level: dstr(props, '能级'),
+          resident: dstr(props, '居民类'),
           competitorCount: compCount,
-          dataMonth: '202204',  // 数据基准 2022-04
+          dataMonth: BASE_DATA_MONTH,
           ...scores,
           geometry: feature.geometry
         })
@@ -555,11 +569,12 @@ router.get('/detail', authenticate, (req, res) => {
       const geojson = getGeojson(f.id)
       if (!geojson || !geojson.features) continue
       const feature = geojson.features.find(ft => {
-        const props = ft.properties || {}
+        // v1.13.276：名称在联通人口版里叫「商圈名」⇒ 判等前必须归一，否则详情永远 404
+        const props = normalizeDistrictProps(ft.properties || {})
         return (props['名称'] || '') === name
       })
       if (feature) {
-        const props = feature.properties || {}
+        const props = normalizeDistrictProps(feature.properties || {})
         const compCount = countCompetitorsInDistrict(feature.geometry)
         const myStoreCount = countMyStoresInDistrict(feature.geometry)
         const scores = computeScore(props, compCount, myStoreCount)
@@ -585,11 +600,14 @@ router.get('/detail', authenticate, (req, res) => {
             work: Number(props['工作人数']) || 0,
             visit: Number(props['到访人次']) || 0,
             income: props,
+            crowd: dstr(props, '客群'),
+            level: dstr(props, '能级'),
+            resident: dstr(props, '居民类'),
             competitorCount: compCount,
             myStoreCount,
             shoppingCenters: inDistrict.slice(0, 10),
             shoppingCenterCount: inDistrict.length,
-            dataMonth: '202204',
+            dataMonth: BASE_DATA_MONTH,
             ...scores,
             geometry: feature.geometry
           }
