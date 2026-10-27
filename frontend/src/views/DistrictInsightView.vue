@@ -24,14 +24,58 @@
           </el-option-group>
         </el-select>
 
-        <div v-if="districts.length > 0" class="dv-list">
+        <!-- v1.13.280：画像筛选。纯前端过滤（单城最多两百来条，后端零改动）。
+             ⚠️ 四项一律**单选**：320px 左栏放不下多选标签，且同维度多选
+             （如「居住主导 + 职住均衡」）几乎等于不筛，收益低而控件复杂度高。
+             ⚠️ 选项按**当前城市实际存在的取值**动态生成，⛔ 不要列全库取值 ——
+             选到本城不存在的值只会得到 0 条，用户会以为数据没了。
+             居民特征在源数据里是「人群-层次」单值（如「青年-中产」），
+             这里拆成「人群 / 消费层次」两维分别筛，比从 20 个组合里挑更顺手。 -->
+        <div v-if="districts.length > 0" class="dv-filter">
+          <div class="dv-filter-grid">
+            <div class="dv-f">
+              <span class="dv-f-label">客群</span>
+              <el-select v-model="filterCrowd" size="small" placeholder="全部" aria-label="按客群筛选">
+                <el-option label="全部" value="" />
+                <el-option v-for="v in crowdOptions" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+            <div class="dv-f">
+              <span class="dv-f-label">能级</span>
+              <el-select v-model="filterLevel" size="small" placeholder="全部" aria-label="按能级筛选">
+                <el-option label="全部" value="" />
+                <el-option v-for="v in levelOptions" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+            <div class="dv-f">
+              <span class="dv-f-label">人群</span>
+              <el-select v-model="filterPeople" size="small" placeholder="全部" aria-label="按人群筛选">
+                <el-option label="全部" value="" />
+                <el-option v-for="v in peopleOptions" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+            <div class="dv-f">
+              <span class="dv-f-label">消费层次</span>
+              <el-select v-model="filterTier" size="small" placeholder="全部" aria-label="按消费层次筛选">
+                <el-option label="全部" value="" />
+                <el-option v-for="v in tierOptions" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+          </div>
+          <div class="dv-filter-foot">
+            <span>符合 <b>{{ filteredDistricts.length }}</b> / {{ districts.length }} 个商圈</span>
+            <el-button v-if="hasFilter" text size="small" @click="resetFilters">清空筛选</el-button>
+          </div>
+        </div>
+
+        <div v-if="filteredDistricts.length > 0" class="dv-list">
           <div class="dv-list-head">
-            <span>共 {{ districts.length }} 个商圈（按评分排序）</span>
+            <span>按评分排序</span>
             <el-checkbox v-model="selectAll" @change="toggleSelectAll">全选对比</el-checkbox>
           </div>
           <div class="dv-list-body">
             <div
-              v-for="d in districts"
+              v-for="d in filteredDistricts"
               :key="d.name"
               class="dv-item"
               :class="{ active: selectedDistrict?.name === d.name }"
@@ -50,6 +94,9 @@
             </div>
           </div>
         </div>
+        <el-empty v-else-if="selectedCity && districts.length > 0" description="没有符合条件的商圈">
+          <el-button size="small" @click="resetFilters">清空筛选</el-button>
+        </el-empty>
         <el-empty v-else-if="selectedCity" description="该城市暂无商圈数据" :image-size="60" />
       </div>
 
@@ -168,7 +215,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
@@ -191,6 +238,66 @@ const selectedDistrict = ref(null)
 const compareList = ref([])
 const compareVisible = ref(false)
 const selectAll = ref(false)
+
+// ── v1.13.280 画像筛选（纯前端）────────────────────────────────────────
+// 四项单选，空串 = 不筛。居民特征拆成「人群 / 消费层次」两维。
+const filterCrowd = ref('')
+const filterLevel = ref('')
+const filterPeople = ref('')
+const filterTier = ref('')
+
+// 固定业务顺序（⛔ 不按频次排 —— 否则切城市时选项顺序会跳）
+const CROWD_ORDER = ['商务主导', '职住均衡', '居住主导']
+const LEVEL_ORDER = ['核心级', '城市级', '片区级', '社区级']
+const PEOPLE_ORDER = ['青年', '家庭', '均衡', '成熟', '老年']
+const SPEND_ORDER = ['大众', '小康', '中产', '富裕']
+
+/** 居民类「青年-中产」→ { people:'青年', spend:'中产' }；格式意外时按首段/末段兜底 */
+function splitResident(v) {
+  const parts = String(v || '').split('-').filter(Boolean)
+  if (parts.length === 0) return { people: '', spend: '' }
+  return { people: parts[0], spend: parts[parts.length - 1] }
+}
+
+/** 只保留「当前城市真实存在」的取值，且维持给定顺序 */
+function optionsInOrder(order, present) {
+  return order.filter(v => present.has(v))
+}
+
+const crowdOptions = computed(() => optionsInOrder(CROWD_ORDER, new Set(districts.value.map(d => d.crowd).filter(Boolean))))
+const levelOptions = computed(() => optionsInOrder(LEVEL_ORDER, new Set(districts.value.map(d => d.level).filter(Boolean))))
+const peopleOptions = computed(() => optionsInOrder(PEOPLE_ORDER, new Set(districts.value.map(d => splitResident(d.resident).people).filter(Boolean))))
+const tierOptions = computed(() => optionsInOrder(SPEND_ORDER, new Set(districts.value.map(d => splitResident(d.resident).spend).filter(Boolean))))
+
+const hasFilter = computed(() => !!(filterCrowd.value || filterLevel.value || filterPeople.value || filterTier.value))
+
+/** 条件之间 AND、条件内部单选 ⇒ 全中才算命中 */
+function districtMatches(d) {
+  if (filterCrowd.value && d.crowd !== filterCrowd.value) return false
+  if (filterLevel.value && d.level !== filterLevel.value) return false
+  if (filterPeople.value || filterTier.value) {
+    const r = splitResident(d.resident)
+    if (filterPeople.value && r.people !== filterPeople.value) return false
+    if (filterTier.value && r.spend !== filterTier.value) return false
+  }
+  return true
+}
+
+// ⚠️ filter 只是「从已排好序的数组里挑」，**不改排序**：结果仍是全城综合评分降序的子序列
+const filteredDistricts = computed(() => districts.value.filter(districtMatches))
+
+function resetFilters() {
+  filterCrowd.value = ''
+  filterLevel.value = ''
+  filterPeople.value = ''
+  filterTier.value = ''
+}
+
+// 筛选变化 ⇒ 列表自动重算，地图需要手动重刷样式（不符合的变淡，保留整城参照）
+watch([filterCrowd, filterLevel, filterPeople, filterTier], () => {
+  selectAll.value = false
+  applyFilterStyles()
+})
 
 const TIER_ORDER = { '一线城市': 0, '新一线城市': 1, '二三线城市': 2 }
 const cityGroups = computed(() => {
@@ -289,6 +396,10 @@ async function loadCities() {
 }
 
 async function onCityChange(city) {
+  // ⚠️ 必须先清筛选：各城的客群/能级/人群/层次取值集合不同，残留的旧条件
+  //    在新城市里常常一条都命中不了（表现为「0 个商圈」，用户会以为数据没了）
+  resetFilters()
+  selectAll.value = false
   await loadDistricts(city)
 }
 
@@ -322,17 +433,25 @@ function firstCoord(geometry) {
   return null
 }
 
+// v1.13.280：不符合筛选条件的边界**变淡**而不是移除 —— 保留整城参照，
+// 否则只看列表会出现「177 个面糊成一片、看不出符合条件的那几个在哪」。
+const DIM_STYLE = { color: '#c8ccd4', weight: 0.8, opacity: 0.55, fillColor: '#c8ccd4', fillOpacity: 0.05 }
+
+function styleForDistrict(d) {
+  if (!d || !districtMatches(d)) return { ...DIM_STYLE }
+  const color = scoreColor(d.score)
+  return { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 }
+}
+
 function renderDistricts() {
   if (!map) return
   if (districtLayer) map.removeLayer(districtLayer)
   districtLayer = L.layerGroup().addTo(map)
   districtLayerMap = {}
   for (const d of districts.value) {
-    const color = scoreColor(d.score)
-    const layer = L.geoJSON(d.geometry, {
-      style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 }
-    })
+    const layer = L.geoJSON(d.geometry, { style: styleForDistrict(d) })
     layer._districtScore = d.score
+    layer._districtData = d
     layer.on('click', () => selectDistrict(d))
     layer.bindTooltip(`${d.name} · ${d.score}分`, { sticky: true })
     layer.addTo(districtLayer)
@@ -340,12 +459,21 @@ function renderDistricts() {
   }
 }
 
-// 重置所有商圈边界样式为默认
+// 重置所有商圈边界样式为默认（默认 = 按当前筛选，符合的正常着色、不符合的变淡）
 function resetDistrictStyles() {
   Object.values(districtLayerMap).forEach(layer => {
-    const color = scoreColor(layer._districtScore)
-    layer.setStyle({ color, weight: 1.5, fillColor: color, fillOpacity: 0.18 })
+    layer.setStyle(styleForDistrict(layer._districtData))
   })
+}
+
+/** 筛选变化后刷新地图着色；选中的商圈若仍在结果里则保持高亮 */
+function applyFilterStyles() {
+  if (!map) return
+  resetDistrictStyles()
+  const sel = selectedDistrict.value
+  if (sel && districtLayerMap[sel.name] && districtMatches(sel)) {
+    highlightDistrict(districtLayerMap[sel.name])
+  }
 }
 
 // 选中商圈：边界加粗高亮 + 地图跳转到整个范围
@@ -418,7 +546,8 @@ function toggleCompare(d, checked) {
   }
 }
 function toggleSelectAll(val) {
-  compareList.value = val ? districts.value.slice(0, 5) : []
+  // 全选比对的是**筛选结果**，不是全城（否则会把看不见的商圈塞进对比表）
+  compareList.value = val ? filteredDistricts.value.slice(0, 5) : []
 }
 function openCompare() {
   if (compareList.value.length < 2) { ElMessage.warning('请至少选择 2 个商圈'); return }
@@ -501,6 +630,47 @@ async function refreshDistrict() {
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+}
+/* v1.13.280：画像筛选区（客群 / 能级 / 人群 / 消费层次，2×2 网格） */
+.dv-filter {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  padding: 8px 10px 6px;
+  flex: none;
+}
+.dv-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 8px;
+}
+.dv-f {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.dv-f-label {
+  font-size: 11px;
+  color: #909399;
+  white-space: nowrap;
+  flex: none;
+}
+.dv-f :deep(.el-select) {
+  flex: 1;
+  min-width: 0;
+}
+.dv-filter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #909399;
+}
+.dv-filter-foot b {
+  color: #303133;
+  font-weight: 600;
 }
 .dv-list {
   flex: 1;
