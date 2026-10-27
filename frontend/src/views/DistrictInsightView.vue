@@ -5,7 +5,7 @@
       <div>
         <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><OfficeBuilding /></AppIcon>{{ $t('nav.districtInsight') }}</h2>
         <p style="margin:4px 0 0;font-size:13px;color:#909399;">
-          综合评分 = 人口规模 40% + 消费能力 25% + 竞争强度 25% + 客流活跃 10%（基础数据：联通人口版，未标注期次）
+          综合评分 = 人口规模 40% + 消费能力 25% + 竞争宽松度 25% + 客流活跃 10%（基础数据：联通人口版，未标注期次）
         </p>
       </div>
       <div class="dv-header-right">
@@ -91,6 +91,7 @@
               <b style="width:32px;text-align:right;" :style="{ color: dim.color }">{{ selectedDistrict[dim.key] }}</b>
             </div>
           </div>
+          <p class="dv-dim-note">分越高＝周边竞争越少；自家门店按 2 家计</p>
           <div class="dv-facts">
             <div class="dv-fact"><span>居住人口<em v-if="selectedDistrict.dataMonth" class="dv-est" title="点「刷新最新数据」后，联通 1001 只回商圈总人口，居住/工作按各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.population) }}</b></div>
             <div class="dv-fact"><span>工作人口<em v-if="selectedDistrict.dataMonth" class="dv-est" title="点「刷新最新数据」后，联通 1001 只回商圈总人口，居住/工作按各半近似（非实测值）">估算</em></span><b>{{ formatNum(selectedDistrict.work) }}</b></div>
@@ -205,10 +206,12 @@ const cityGroups = computed(() => {
     .map(([tier, cs]) => ({ tier, cities: cs }))
 })
 
+// v1.13.277：第四项原叫「竞争强度」，但它是**分越高＝竞争越少**（2 家竞品 90 分、30 家 20 分），
+// 配进度条必然被读反 ⇒ 更名为「竞争宽松度」，并在卡内补一行口径说明。
 const dims = [
   { key: 'scorePopulation', label: '人口规模', color: '#378ADD' },
   { key: 'scoreConsumption', label: '消费能力', color: '#1D9E75' },
-  { key: 'scoreCompetition', label: '竞争强度', color: '#7F77DD' },
+  { key: 'scoreCompetition', label: '竞争宽松度', color: '#7F77DD' },
   { key: 'scoreActivity', label: '客流活跃', color: '#D4537E' }
 ]
 
@@ -631,9 +634,18 @@ async function refreshDistrict() {
   margin-bottom: 8px;
 }
 .dv-dim-label {
-  width: 56px;
+  /* 5 字标签（竞争宽松度）48→60px，56px 会被挤成两行 */
+  width: 62px;
   font-size: 12px;
   color: #606266;
+  white-space: nowrap;
+}
+/* 竞争宽松度的方向说明（分越高＝竞争越少），避免继续被读反 */
+.dv-dim-note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #a8abb2;
+  line-height: 1.5;
 }
 .dv-facts {
   display: grid;

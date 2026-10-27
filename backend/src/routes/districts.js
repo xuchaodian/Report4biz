@@ -6,6 +6,7 @@ import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
+import { readableUserIds } from '../utils/visibleScope.js'
 import crypto from 'crypto'
 import NodeCache from 'node-cache'
 
@@ -379,18 +380,41 @@ function pointInFeature(pt, geometry) {
   return false
 }
 
-// 计算商圈内竞品数量（H4：bbox SQL 预筛替代全表拉取 + 60s 缓存，射线仅在 bbox 内少量候选上跑）
-function countCompetitorsInDistrict(geometry) {
+// ============================================================================
+// 商圈内门店计数（竞品 / 自家门店）—— 决定「竞争宽松度」分
+//
+// 🔴🔴 v1.13.277 修跨账号聚合：原实现是 `SELECT ... FROM competitors` / `FROM markers`
+//    **完全没有 user_id 条件**，缓存 key 里也没有用户 ⇒ 每个账号看到的「竞品 N 家 /
+//    我的门店 M 家」都是**全平台**的。生产实测门店分属 20+ 个账号、竞品集中在 3 个账号，
+//    结果只有那 3 个账号的分是"对的"，其他账号全被别人数据算出的竞争分覆盖，
+//    而综合分里竞争占 25%（90 分与 20 分相差 17.5 分）⇒ 静默失真、且属跨用户数据聚合。
+//
+// 口径：走 `visibleScope.readableUserIds()` 这个**唯一**读时可见域入口
+//   （自己 + 本集团允许被拉取的子公司；平台 admin 刻意不放大，与 /api/markers 一致），
+//   ⛔ 不要在这里手写 `user_id = req.user.id` 或 `1=1`。
+// ⚠️ 传空数组时必须返回 0（判无权），⛔ 绝不退化成「不过滤」。
+// ⚠️ 缓存 key 必须含用户集合：否则甲用户的结果会被乙用户直接命中（同一 bug 的镜像）。
+// ============================================================================
+
+/** 可见域 id 列表 → 稳定的缓存 key 片段（排序去重，避免顺序不同导致缓存不命中） */
+function scopeKeyOf(ids) {
+  return Array.from(new Set(ids.map(Number).filter(Boolean))).sort((a, b) => a - b).join('.')
+}
+
+// 计算商圈内竞品数量（bbox SQL 预筛替代全表拉取 + 60s 缓存，射线仅在 bbox 内少量候选上跑）
+function countCompetitorsInDistrict(geometry, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0
   const bbox = geometryBBox(geometry)
   const db = getDb()
   const ver = storeDataVersion(db)
-  const cacheKey = 'comp|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
+  const cacheKey = 'comp|' + scopeKeyOf(ids) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
   const cached = districtCountCache.get(cacheKey)
   if (cached !== undefined) return cached
 
+  const ph = ids.map(() => '?').join(',')
   const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all()
+    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(...ids)
   let count = 0
   for (const c of rows) {
     if (c.longitude && c.latitude && pointInFeature([c.longitude, c.latitude], geometry)) {
@@ -402,18 +426,20 @@ function countCompetitorsInDistrict(geometry) {
 }
 
 
-// 计算商圈内我的门店数量（自家门店相互蚕食：竞争强度计分时加权；H4 同 bbox 预筛 + 缓存）
-function countMyStoresInDistrict(geometry) {
+// 计算商圈内我的门店数量（自家门店相互蚕食：竞争宽松度计分时权重 ×2；同 bbox 预筛 + 缓存）
+function countMyStoresInDistrict(geometry, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0
   const bbox = geometryBBox(geometry)
   const db = getDb()
   const ver = storeDataVersion(db)
-  const cacheKey = 'store|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
+  const cacheKey = 'store|' + scopeKeyOf(ids) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
   const cached = districtCountCache.get(cacheKey)
   if (cached !== undefined) return cached
 
+  const ph = ids.map(() => '?').join(',')
   const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM markers`).all()
+    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph})`).all(...ids)
   let count = 0
   for (const s of rows) {
     if (s.longitude && s.latitude && pointInFeature([s.longitude, s.latitude], geometry)) {
@@ -451,7 +477,8 @@ function populationScore(props) {
   return 22
 }
 
-// 竞争强度分（竞品 + 我的门店，越少越高）
+// 竞争宽松度分（v1.13.277 更名：原名「竞争强度」但分越高＝竞争越少，人人看反）
+// 口径：n = 竞品数 + 我的门店数 × 2（自家门店之间互相蚕食，比竞品更该避），n 越小分越高
 // 我的门店（自家蚕食）权重 ×2：自家门店相互蚕食比竞品更应避免
 function competitionScore(compCount, myStoreCount = 0) {
   const count = (compCount || 0) + (myStoreCount || 0) * 2
@@ -505,6 +532,9 @@ router.get('/', authenticate, (req, res) => {
     const { city } = req.query
     if (!city) return res.status(400).json({ message: '缺少城市参数' })
     const db = getDb()
+    // v1.13.277：门店/竞品计数按「我可见的账号集合」统计（自己 + 集团允许拉取的子公司），
+    // 整单算一次，逐商圈复用 —— ⛔ 不要放进循环里调（每个商圈一次多两跳查询）
+    const scopeIds = readableUserIds(db, req.user.id)
     const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     if (files.length === 0) return res.json({ districts: [] })
 
@@ -516,8 +546,8 @@ router.get('/', authenticate, (req, res) => {
         // v1.13.276：字段名整代更换，必须先归一再取数（否则评分/画像静默归零）
         const props = normalizeDistrictProps(feature.properties || {})
         const name = props['名称'] || props['name'] || '未命名商圈'
-        const compCount = countCompetitorsInDistrict(feature.geometry)
-        const myStoreCount = countMyStoresInDistrict(feature.geometry)
+        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+        const myStoreCount = countMyStoresInDistrict(feature.geometry, scopeIds)
         const scores = computeScore(props, compCount, myStoreCount)
         districts.push({
           name,
@@ -564,6 +594,8 @@ router.get('/detail', authenticate, (req, res) => {
     const { city, name } = req.query
     if (!city || !name) return res.status(400).json({ message: '缺少参数' })
     const db = getDb()
+    // v1.13.277：同列表接口 —— 计数按可见域（自己 + 集团允许拉取的子公司）
+    const scopeIds = readableUserIds(db, req.user.id)
     const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     for (const f of files) {
       const geojson = getGeojson(f.id)
@@ -575,8 +607,8 @@ router.get('/detail', authenticate, (req, res) => {
       })
       if (feature) {
         const props = normalizeDistrictProps(feature.properties || {})
-        const compCount = countCompetitorsInDistrict(feature.geometry)
-        const myStoreCount = countMyStoresInDistrict(feature.geometry)
+        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+        const myStoreCount = countMyStoresInDistrict(feature.geometry, scopeIds)
         const scores = computeScore(props, compCount, myStoreCount)
         // 商圈内购物中心（bbox 预筛 + polygon 包含判定，取前 10；H4 免全表拉取）
         const scBbox = geometryBBox(feature.geometry)
