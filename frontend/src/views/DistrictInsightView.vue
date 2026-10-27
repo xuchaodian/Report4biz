@@ -9,8 +9,7 @@
         </p>
       </div>
       <div class="dv-header-right">
-        <el-tag type="warning" effect="light" size="small">联通人口版</el-tag>
-        <el-button size="small" :disabled="compareList.length < 2" style="margin-left:10px;" @click="openCompare">
+        <el-button size="small" :disabled="compareList.length < 2" @click="openCompare">
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>商圈对比{{ compareList.length > 0 ? ` (${compareList.length})` : '' }}
         </el-button>
       </div>
@@ -66,7 +65,6 @@
           </div>
           <div class="dv-detail-info">
             <span>{{ selectedDistrict.province }} · {{ selectedDistrict.city }} · {{ selectedDistrict.district || '-' }}</span>
-            <span style="color:#f56c6c;font-size:11px;">{{ periodLabel(selectedDistrict.dataMonth) }}</span>
           </div>
           <!-- v1.13.276：联通人口版新增的三列画像标签（旧版数据没有 ⇒ 整行不渲染）。
                「居民类」在源数据里叫居民类，对外统一显示为「居民特征」。 -->
@@ -225,14 +223,8 @@ function scoreTagType(s) {
   if (s >= 50) return 'warning'
   return 'danger'
 }
-// v1.13.276：期次文案。基础数据（联通人口版）**未标注月份** ⇒ 只写口径不编月份；
-// 用户点过「刷新最新数据」后后端回 'YYYYMM'，才显示具体期次。
-function periodLabel(m) {
-  if (!m) return '联通人口版（未标注期次）'
-  const s = String(m)
-  if (/^\d{6}$/.test(s)) return `数据时间 ${s.slice(0, 4)}-${s.slice(4)}`
-  return `数据时间 ${s}`
-}
+// v1.13.278：卡片顶部不再显示期次标识（页头已有一句「基础数据：联通人口版，未标注期次」，
+// 刷新后的具体月份由底部按钮「刷新最新数据（YYYYMM）」承载）⇒ periodLabel 已删除。
 // 三列画像标签都是联通人口版新增，旧数据没有 ⇒ 用「任一有值」控制整行显隐
 function hasProfile(d) {
   return !!(d && (d.crowd || d.level || d.resident))
