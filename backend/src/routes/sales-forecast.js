@@ -531,7 +531,8 @@ function buildX(store, area, dr, dv, pop, nearby, year, mallCode, tradeCode, uni
 }
 // 构建训练集：该用户已开业店 × 有销售记录的年份（年度记录 month=0 + 月度按年聚合），不跨用户
 function buildTrainingSet(db, userId, isAdmin) {
-  const ms = db.prepare(isAdmin ? `SELECT * FROM markers` : `SELECT * FROM markers WHERE user_id = ?`).all(...(isAdmin ? [] : [userId]))
+  // v1.13.283：排除已合并的重复门店行 —— 否则同一家店会被当成两个样本，把训练集撑大
+  const ms = db.prepare(isAdmin ? `SELECT * FROM markers WHERE merged_into IS NULL` : `SELECT * FROM markers WHERE user_id = ? AND merged_into IS NULL`).all(...(isAdmin ? [] : [userId]))
   const open = ms.filter(m => m.store_type === '已开业')
   const annual = db.prepare(`SELECT store_id, year, SUM(sales_amount) AS amount, MAX(delivery_ratio) AS dr, AVG(store_area) AS area FROM store_sales WHERE month > 0 GROUP BY store_id, year`).all()
   const y0 = db.prepare(`SELECT * FROM store_sales WHERE month = 0`).all()
@@ -682,8 +683,8 @@ router.get('/stats', authenticate, requireVip, (req, res) => {
     const isAdmin = req.user.role === 'admin'
     const userId = req.user.id
     const stores = db.prepare(
-      isAdmin ? `SELECT COUNT(*) c FROM markers WHERE store_type = '已开业'`
-              : `SELECT COUNT(*) c FROM markers WHERE user_id = ? AND store_type = '已开业'`
+      isAdmin ? `SELECT COUNT(*) c FROM markers WHERE store_type = '已开业' AND merged_into IS NULL`
+              : `SELECT COUNT(*) c FROM markers WHERE user_id = ? AND store_type = '已开业' AND merged_into IS NULL`
     ).get(...(isAdmin ? [] : [userId])).c
     const samples = db.prepare(
       `SELECT COUNT(*) c FROM (

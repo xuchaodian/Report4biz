@@ -9,7 +9,7 @@ import { parsePaging } from '../utils/paging.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
-import { findStoreDuplicates } from '../utils/storeDedup.js'
+import { findStoreDuplicates, distanceMeters, normalizeBrand } from '../utils/storeDedup.js'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
@@ -23,7 +23,8 @@ router.get('/', authenticate, (req, res) => {
     const { limit, offset, wantTotal } = parsePaging(req.query)
 
     // 每个用户只看自己的门店数据
-    let sql = `SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC`
+    // v1.13.283：排除已被合并的重复行（merged_into 非空）—— 否则"合并"等于没合并
+    let sql = `SELECT * FROM markers WHERE user_id = ? AND merged_into IS NULL ORDER BY created_at DESC`
     const params = [req.user.id]
     if (limit) {
       sql += ` LIMIT ? OFFSET ?`
@@ -33,7 +34,7 @@ router.get('/', authenticate, (req, res) => {
 
     const payload = { markers }
     if (wantTotal) {
-      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE user_id = ?`).get(req.user.id)?.c || 0
+      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM markers WHERE user_id = ? AND merged_into IS NULL`).get(req.user.id)?.c || 0
     }
     res.json(payload)
   } catch (error) {
@@ -82,6 +83,145 @@ router.get('/duplicates', authenticate, (req, res) => {
   } catch (error) {
     console.error('[Markers] 台账去重检查失败:', error)
     res.status(500).json({ message: '台账去重检查失败' })
+  }
+})
+
+// ============================================================================
+// 合并重复门店（v1.13.283）
+// POST /api/markers/merge { keepId, mergeIds:[...], epsM?:50 }
+// POST /api/markers/unmerge { ids:[...] }   ← 撤销合并（回滚）
+//
+// 🔴 软删：只写 merged_into 指向保留行，**不删行** ⇒ 可撤销。
+//    ⇒ 因此所有统计/分析类查询都要加 `merged_into IS NULL`（见各路由），
+//      而单行读取/更新/删除**不能加**，否则撤销不了。
+// 🔴 拒绝跨品牌合并：同账号多品牌、同商场双品牌同址是常态，合并掉就是删了客户真实的一家店。
+// 🔴 有销售记录的门店**拒绝合并**（409）：合并后它的销售会挂在一个隐藏行上，
+//    等于让客户的历史数据再也录不进去。宁可不合并，也不做隐性数据丢失。
+// ============================================================================
+router.post('/merge', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const keepId = Number(req.body?.keepId)
+    const mergeIds = [...new Set((Array.isArray(req.body?.mergeIds) ? req.body.mergeIds : [])
+      .map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+    const epsM = Number(req.body?.epsM) > 0 ? Number(req.body.epsM) : 50
+
+    if (!Number.isInteger(keepId) || keepId <= 0) return res.status(400).json({ message: '缺少 keepId' })
+    if (mergeIds.length === 0) return res.status(400).json({ message: '缺少 mergeIds' })
+    if (mergeIds.includes(keepId)) return res.status(400).json({ message: 'keepId 不能同时出现在 mergeIds 里' })
+
+    const ids = [keepId, ...mergeIds]
+    const ph = ids.map(() => '?').join(',')
+    const rows = db.prepare(`
+      SELECT id, name, brand, longitude, latitude, merged_into
+        FROM markers WHERE user_id = ? AND id IN (${ph})
+    `).all(req.user.id, ...ids)
+    if (rows.length !== ids.length) {
+      return res.status(404).json({ message: '部分门店不存在，或不属于当前账号' })
+    }
+
+    const keep = rows.find((r) => r.id === keepId)
+    if (keep.merged_into) {
+      return res.status(400).json({ message: '要保留的这条门店本身已被合并到别处，请先撤销' })
+    }
+    const keepBrand = normalizeBrand(keep.brand)
+    if (!keepBrand) {
+      return res.status(400).json({ message: '要保留的门店品牌为空，无法确认同品牌，请先补品牌' })
+    }
+
+    const problems = []
+    for (const id of mergeIds) {
+      const s = rows.find((r) => r.id === id)
+      if (s.merged_into) { problems.push(`「${s.name}」已被合并过`); continue }
+      if (normalizeBrand(s.brand) !== keepBrand) {
+        problems.push(`「${s.name}」品牌不同（${s.brand || '空'} ≠ ${keep.brand || '空'}）`)
+        continue
+      }
+      const dist = distanceMeters(keep, s)
+      if (dist > epsM) problems.push(`「${s.name}」距离 ${Math.round(dist)}m，超过 ${epsM}m 阈值`)
+    }
+    if (problems.length) {
+      return res.status(400).json({ message: '合并被拒绝：' + problems.join('；'), problems })
+    }
+
+    // 销售记录保护：有销售行 ⇒ 拒绝（避免隐性数据丢失）
+    const salesPh = mergeIds.map(() => '?').join(',')
+    const sales = db.prepare(`
+      SELECT store_id, COUNT(*) AS n FROM store_sales
+       WHERE user_id = ? AND store_id IN (${salesPh}) GROUP BY store_id
+    `).all(req.user.id, ...mergeIds)
+    if (sales.length) {
+      const detail = sales.map((s) => `id ${s.store_id}（${s.n} 条）`).join('、')
+      return res.status(409).json({
+        message: `这些门店已有销售记录，合并后其历史销售将挂在隐藏行上、无法再录入：${detail}。请先处理销售记录再合并。`
+      })
+    }
+
+    db.beginTx()
+    try {
+      const upd = db.prepare(`
+        UPDATE markers SET merged_into = ?, merged_at = datetime('now'), updated_at = datetime('now')
+         WHERE user_id = ? AND id = ?
+      `)
+      for (const id of mergeIds) upd.run(keepId, req.user.id, id)
+      // 🔴 必须 touch 保留行：商圈计数的缓存版本取自 MAX(updated_at) FROM markers，
+      //    不 touch 就会命中旧缓存，合并后竞争分仍是旧值
+      db.prepare(`UPDATE markers SET updated_at = datetime('now') WHERE id = ?`).run(keepId)
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (_) { /* 忽略 */ }
+      throw txErr
+    }
+
+    res.json({
+      success: true,
+      keepId,
+      keepName: keep.name,
+      mergedCount: mergeIds.length,
+      message: `已把 ${mergeIds.length} 条重复门店合并到「${keep.name}」（可撤销）`
+    })
+  } catch (error) {
+    console.error('[Markers] 合并门店失败:', error)
+    res.status(500).json({ message: '合并门店失败' })
+  }
+})
+
+router.post('/unmerge', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const raw = Array.isArray(req.body?.ids) ? req.body.ids : (req.body?.id ? [req.body.id] : [])
+    const ids = [...new Set(raw.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+    if (ids.length === 0) return res.status(400).json({ message: '缺少 ids' })
+
+    const ph = ids.map(() => '?').join(',')
+    const rows = db.prepare(`
+      SELECT id, name, merged_into FROM markers
+       WHERE user_id = ? AND merged_into IS NOT NULL AND id IN (${ph})
+    `).all(req.user.id, ...ids)
+    if (rows.length === 0) {
+      return res.status(404).json({ message: '这些门店没有处于合并状态，或不属于当前账号' })
+    }
+
+    const parentIds = [...new Set(rows.map((r) => r.merged_into).filter(Boolean))]
+    db.beginTx()
+    try {
+      const clear = db.prepare(`
+        UPDATE markers SET merged_into = NULL, merged_at = NULL, updated_at = datetime('now')
+         WHERE user_id = ? AND id = ?
+      `)
+      for (const r of rows) clear.run(req.user.id, r.id)
+      const touch = db.prepare(`UPDATE markers SET updated_at = datetime('now') WHERE id = ?`)
+      for (const pid of parentIds) touch.run(pid)
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (_) { /* 忽略 */ }
+      throw txErr
+    }
+
+    res.json({ success: true, restored: rows.length, message: `已撤销 ${rows.length} 条合并` })
+  } catch (error) {
+    console.error('[Markers] 撤销合并失败:', error)
+    res.status(500).json({ message: '撤销合并失败' })
   }
 })
 

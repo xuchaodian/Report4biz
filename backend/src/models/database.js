@@ -509,6 +509,15 @@ export async function initDatabase() {
   try { db.run(`ALTER TABLE markers ADD COLUMN group_note TEXT`) } catch (e) { /* 列已存在 */ }
   // 城市兜底：导入时 city 为空则按坐标反查补全（否则无法按范围圈定，规则 13）
   try { db.run(`ALTER TABLE markers ADD COLUMN city_source TEXT`) } catch (e) { /* 列已存在 */ }
+
+  // ===== 台账去重：合并标记（v1.13.283）=====
+  // 🔴 合并采用**软删**：只写 merged_into 指向保留行，原行不删 ⇒ 可 unmerge 回滚。
+  // ⚠️ 因此**统计/分析类查询必须加 `merged_into IS NULL`**，否则合并等于没合并
+  //    （计数、竞争分、销售预测都会把重复店再算一遍）。
+  // ⚠️ 但**单行读取 / 更新 / 删除 不要加** —— 否则用户看不到、也撤销不了已合并的行。
+  try { db.run(`ALTER TABLE markers ADD COLUMN merged_into INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE markers ADD COLUMN merged_at DATETIME`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_markers_merged ON markers(user_id, merged_into)`) } catch (e) { /* 索引已存在 */ }
   // 幂等约束：同一目标账号下，(来源账号, 来源行) 唯一（规则 2）
   try {
     db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_markers_origin

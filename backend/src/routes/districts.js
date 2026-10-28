@@ -437,9 +437,10 @@ function countMyStoresInDistrict(geometry, ids) {
   if (cached !== undefined) return cached
 
   const ph = ids.map(() => '?').join(',')
+  // v1.13.283：排除已合并的重复门店行 —— 否则去重后竞争分不会变（"我的门店数"仍按重复行计）
   const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph})`).all(...ids)
+    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND merged_into IS NULL AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND merged_into IS NULL`).all(...ids)
   let count = 0
   for (const s of rows) {
     if (s.longitude && s.latitude && pointInFeature([s.longitude, s.latitude], geometry)) {
