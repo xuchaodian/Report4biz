@@ -353,8 +353,8 @@ async function calcRadiusPoints(db, lat, lng, userId, isAdmin) {
               : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
     ).all(...(isAdmin ? [] : [userId]))
     const myStores = db.prepare(
-      isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
-              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      isAdmin ? `SELECT latitude, longitude FROM markers WHERE merged_into IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND merged_into IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL`
     ).all(...(isAdmin ? [] : [userId]))
     out.competitors500 = comps.filter(c => dist(c.latitude, c.longitude) <= 500).length
     out.myStores500 = myStores.filter(s => dist(s.latitude, s.longitude) <= 500).length
@@ -386,7 +386,7 @@ function getReferenceStores(db, userId, isAdmin) {
   const curYear = new Date().getFullYear()
   const targetYear = curYear - 1 // 最近完整年份
   const ms = db.prepare(
-    isAdmin ? `SELECT * FROM markers` : `SELECT * FROM markers WHERE user_id = ?`
+    isAdmin ? `SELECT * FROM markers WHERE merged_into IS NULL` : `SELECT * FROM markers WHERE user_id = ? AND merged_into IS NULL`
   ).all(...(isAdmin ? [] : [userId]))
   // 已开业门店（非候选）
   const open = ms.filter(m => m.store_type === '已开业')
@@ -448,7 +448,7 @@ router.get('/candidates', authenticate, requireVip, (req, res) => {
     const db = getDb()
     const isAdmin = req.user.role === 'admin'
     const ms = db.prepare(
-      isAdmin ? `SELECT * FROM markers` : `SELECT * FROM markers WHERE user_id = ?`
+      isAdmin ? `SELECT * FROM markers WHERE merged_into IS NULL` : `SELECT * FROM markers WHERE user_id = ? AND merged_into IS NULL`
     ).all(...(isAdmin ? [] : [req.user.id]))
     const cands = ms.filter(m => m.store_type === '重点候选' || m.store_type === '一般候选')
     // 已购联通数据：门店名 → 半径列表（多个半径逗号展示）
@@ -510,8 +510,8 @@ function countNearby(db, lat, lng, radius, userId, isAdmin) {
               : `SELECT latitude, longitude FROM competitors WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
     ).all(...(isAdmin ? [] : [userId]))
     const my = db.prepare(
-      isAdmin ? `SELECT latitude, longitude FROM markers WHERE latitude IS NOT NULL AND longitude IS NOT NULL`
-              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND latitude IS NOT NULL AND longitude IS NOT NULL`
+      isAdmin ? `SELECT latitude, longitude FROM markers WHERE merged_into IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL`
+              : `SELECT latitude, longitude FROM markers WHERE user_id = ? AND merged_into IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL`
     ).all(...(isAdmin ? [] : [userId]))
     return { comp: comps.filter(x => dist(x.latitude, x.longitude) <= radius).length, my: my.filter(x => dist(x.latitude, x.longitude) <= radius).length }
   } catch (e) { return { comp: 0, my: 0 } }
@@ -688,7 +688,7 @@ router.get('/stats', authenticate, requireVip, (req, res) => {
     ).get(...(isAdmin ? [] : [userId])).c
     const samples = db.prepare(
       `SELECT COUNT(*) c FROM (
-         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id
+         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id AND m.merged_into IS NULL
          WHERE ${isAdmin ? '1=1' : 'm.user_id = ?'} AND m.store_type = '已开业'
          GROUP BY s.store_id, s.year
        )`
@@ -697,7 +697,7 @@ router.get('/stats', authenticate, requireVip, (req, res) => {
     // 不是用户填的精确值，前端须据此标注「预测不确定度偏大」，⛔ 不能当作等精度样本。
     const bandSamples = db.prepare(
       `SELECT COUNT(*) c FROM (
-         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id
+         SELECT s.store_id, s.year FROM store_sales s JOIN markers m ON s.store_id = m.id AND m.merged_into IS NULL
          WHERE ${isAdmin ? '1=1' : 'm.user_id = ?'} AND m.store_type = '已开业'
            AND s.sales_band IS NOT NULL
          GROUP BY s.store_id, s.year

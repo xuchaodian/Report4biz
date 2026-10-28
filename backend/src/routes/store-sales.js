@@ -42,7 +42,7 @@ function buildSalesAggregate(db) {
            COUNT(DISTINCT user_id) AS accounts
       FROM store_sales GROUP BY year ORDER BY year DESC`).all()
   const openStores = (db.prepare(
-    `SELECT COUNT(*) AS n FROM markers WHERE store_type = '已开业'`
+    `SELECT COUNT(*) AS n FROM markers WHERE merged_into IS NULL AND store_type = '已开业'`
   ).get() || {}).n || 0
   const withSales = t.stores || 0
   return {
@@ -296,8 +296,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
     // 当前用户的门店索引（admin 看全部）
     const stores = db.prepare(
       isAdmin
-        ? 'SELECT id, store_code, name, brand, city, store_area FROM markers'
-        : 'SELECT id, store_code, name, brand, city, store_area FROM markers WHERE user_id = ?'
+        ? 'SELECT id, store_code, name, brand, city, store_area FROM markers WHERE merged_into IS NULL'
+        : 'SELECT id, store_code, name, brand, city, store_area FROM markers WHERE user_id = ? AND merged_into IS NULL'
     ).all(...(isAdmin ? [] : [userId]))
 
     const upsert = db.prepare(`INSERT INTO store_sales

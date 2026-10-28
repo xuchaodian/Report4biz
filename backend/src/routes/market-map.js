@@ -67,7 +67,7 @@ router.get('/opportunity', (req, res) => {
     // 1. 我的门店按城市计数（全部门店，用于品牌渗透/空白度）
     const markerRows = db.prepare(`
       SELECT city, COUNT(*) AS c FROM markers
-      WHERE city IS NOT NULL AND city != ''
+      WHERE merged_into IS NULL AND city IS NOT NULL AND city != ''
       GROUP BY city
     `).all()
 

@@ -65,7 +65,7 @@ router.get('/duplicates', authenticate, (req, res) => {
       SELECT id, name, brand, store_code, city, district, address,
              longitude, latitude, status, store_area
         FROM markers
-       WHERE user_id = ?
+       WHERE user_id = ? AND merged_into IS NULL
     `).all(req.user.id)
 
     const result = findStoreDuplicates(rows, {
@@ -537,7 +537,8 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
 router.get('/export', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const markers = db.prepare('SELECT * FROM markers WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
+    // 导出排除已合并行：否则客户导出→再导入会把合并掉的重复记录重新灌回库
+    const markers = db.prepare('SELECT * FROM markers WHERE user_id = ? AND merged_into IS NULL ORDER BY created_at DESC').all(req.user.id)
 
     res.json(markers)
   } catch (error) {
@@ -559,6 +560,7 @@ router.get('/query/bounds', authenticate, (req, res) => {
     const markers = db.prepare(`
       SELECT * FROM markers
       WHERE user_id = ?
+      AND merged_into IS NULL
       AND latitude BETWEEN ? AND ?
       AND longitude BETWEEN ? AND ?
     `).all(req.user.id, south, north, west, east)

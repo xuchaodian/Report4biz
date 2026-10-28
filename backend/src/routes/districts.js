@@ -29,11 +29,16 @@ const BASE_DATA_MONTH = ''
 // 导入/更新/删除后自动失效，无需在写路径手动清缓存。
 const districtCountCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
 
-// 数据版本指纹：两表最新 updated_at（秒级），用于计数缓存失效
+// 数据版本指纹：两表最新 updated_at（秒级）+ **已合并行数**
+// 🔴 为什么要加已合并行数：合并只改 merged_into 与 updated_at，**行数不变**；
+//    而 updated_at 是 `datetime('now')` 秒级精度 ⇒ 同一秒内「撤销再合并」（或两次合并）
+//    指纹完全相同 ⇒ 命中旧缓存，竞争宽松度仍是合并前的值（实测踩到过）。
+//    已合并行数随每次合并/撤销确定性变化，补掉这个盲点。
 function storeDataVersion(db) {
   const r = db.prepare(`
     SELECT COALESCE((SELECT MAX(updated_at) FROM competitors), '') || '|' ||
-           COALESCE((SELECT MAX(updated_at) FROM markers), '') AS v
+           COALESCE((SELECT MAX(updated_at) FROM markers), '') || '|' ||
+           (SELECT COUNT(*) FROM markers WHERE merged_into IS NOT NULL) AS v
   `).get()
   return r?.v || ''
 }

@@ -1114,7 +1114,7 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     // 🔴 v1.13.240：再收一层 —— **只算在营门店**（`utils/storeStatus.js` 单一真源，与仪表盘 KPI 同口径）。
     //   闭店/停业/候选店不再计入，否则「我的门店数 = 1」可能只是一家早就关掉的店。
     const markers = db.prepare(
-      `SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ? ${IN_BUSINESS_SQL}`
+      `SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ? AND merged_into IS NULL ${IN_BUSINESS_SQL}`
     ).all(req.user.id, ...IN_BUSINESS_PARAMS)
     const comps = db.prepare("SELECT id, brand, latitude, longitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").all()
     // 品牌筛选（多选，空数组=不限品牌）

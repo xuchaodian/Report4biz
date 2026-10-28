@@ -293,7 +293,7 @@ router.get('/scope-options', authenticate, (req, res) => {
     }
     pushBrands(db.prepare(`
       SELECT DISTINCT brand FROM markers
-       WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
+       WHERE user_id = ? AND merged_into IS NULL AND brand IS NOT NULL AND TRIM(brand) != ''
     `).all(sourceUserId))
     pushBrands(db.prepare(`
       SELECT DISTINCT brand FROM competitors

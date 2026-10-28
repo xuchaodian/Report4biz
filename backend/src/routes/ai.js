@@ -551,8 +551,8 @@ async function buildSurroundingContext(lat, lng, radii, userId, isAdmin) {
     ).all(...(isAdmin ? [] : [userId]))
     const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
     const myStores = db.prepare(
-      isAdmin ? `SELECT longitude, latitude FROM markers WHERE longitude IS NOT NULL AND latitude IS NOT NULL`
-              : `SELECT longitude, latitude FROM markers WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL`
+      isAdmin ? `SELECT longitude, latitude FROM markers WHERE merged_into IS NULL AND longitude IS NOT NULL AND latitude IS NOT NULL`
+              : `SELECT longitude, latitude FROM markers WHERE user_id = ? AND merged_into IS NULL AND longitude IS NOT NULL AND latitude IS NOT NULL`
     ).all(...(isAdmin ? [] : [userId]))
     // 逐半径统计：竞品/购物中心/我的门店
     const compCounts = [], centerCounts = [], myCounts = []
