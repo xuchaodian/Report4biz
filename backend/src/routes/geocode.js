@@ -3,8 +3,18 @@ import https from 'https'
 import http from 'http'
 import { AMAP_KEY } from '../config.js'
 import { suggestByTencent, isTencentMapEnabled } from '../utils/tencentMap.js'
+import { authenticate } from '../middleware/auth.js'
+import { rateLimit } from '../utils/rateLimit.js'
 
 const router = express.Router()
+
+// v1.13.281：本路由组原先**既无鉴权也无速度上限** —— 任何人都能拿服务端的 AMAP_KEY
+// 去刷高德地理编码 / 搜索建议 / 行政区划，配额被刷爆只需要一个 curl 循环。
+// ⚠️ `/ip-location` 与 `/suggest` 在前端是**裸 fetch** 调用的，挂 authenticate 后
+//    必须同步给那两处补 Authorization 头，否则地图页定位与地址搜索会 401。
+router.use(authenticate)
+// 60 次/分钟兜底：地址解析的**批量**入口走 /api/poi/batch-geocode（那里另有 10 次/分钟）。
+router.use(rateLimit({ max: 60, windowMs: 60 * 1000, name: 'geocode' }))
 
 // 高德 Web 服务 Key
 const AMap_KEY = AMAP_KEY

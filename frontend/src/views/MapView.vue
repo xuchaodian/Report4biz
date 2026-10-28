@@ -5400,7 +5400,10 @@ const getLocationByIP = async () => {
   try {
     // 通过后端 /api/geocode/ip-location 获取位置
     // 后端会调用 HTTP 版本的 ip-api.com，不受浏览器 HTTPS 限制
-    const response = await fetch('/api/geocode/ip-location')
+    // v1.13.281：该路由已挂 authenticate（原先裸调服务端高德 key）⇒ 这里必须自带 token
+    const response = await fetch('/api/geocode/ip-location', {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('token') || '') }
+    })
     const data = await response.json()
     
     if (data.success && data.lat && data.lng) {
@@ -5611,7 +5614,10 @@ const searchAddress = async (keyword) => {
     try {
       const kw = keyword.trim()
       // 使用后端高德搜索建议API
-      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(kw)}`)
+      // v1.13.281：该路由已挂 authenticate ⇒ 裸 fetch 必须自带 token
+      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(kw)}`, {
+        headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('token') || '') }
+      })
       const data = await response.json()
       if (data.success && data.results && data.results.length > 0) {
         searchResults.value = data.results

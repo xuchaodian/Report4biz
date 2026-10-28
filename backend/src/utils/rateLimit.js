@@ -65,3 +65,54 @@ export function resetRateLimits() {
 export function rateLimitBuckets() {
   return hits.size
 }
+
+// ============================================================================
+// Express 中间件封装（v1.13.281）
+//
+// 由来：`/api/geocode/*` 与 `/api/poi/*` 原先**既无鉴权也无任何速度上限**，
+//   直接裸调服务端 `AMAP_KEY` ⇒ 谁都能白嫖，且能把高德配额刷爆（`batch-geocode`
+//   一次可解析上百条地址，`business-count`/`environment-score` 每次都真实烧 POI 配额）。
+//
+// ⚠️ 这是**限速**，不是鉴权。未登录时只能按 IP 计，换 IP 即可绕过 ——
+//    ⛔ 不要拿它替代 `authenticate`。
+// ⚠️ 复用上面的 `overLimit` 桶（滑动窗口 + 定时清理），⛔ 不要另建一套计数器。
+// ============================================================================
+
+/** 取客户端 IP（已在 nginx 反代之后，优先 X-Forwarded-For 第一跳） */
+export function clientIp(req) {
+  const xff = req.headers['x-forwarded-for']
+  if (xff) {
+    const first = String(xff).split(',')[0]
+    if (first && first.trim()) return first.trim()
+  }
+  const real = req.headers['x-real-ip']
+  if (real) return String(real).trim()
+  const raw = req.connection?.remoteAddress || req.socket?.remoteAddress || ''
+  return raw.startsWith('::ffff:') ? raw.slice(7) : raw
+}
+
+/**
+ * 生成限流中间件。
+ * @param {object} opts
+ * @param {number} opts.max        窗口内允许次数（必填，刻意不给默认值 —— 让调用处必须想清楚）
+ * @param {number} [opts.windowMs] 窗口长度，默认 1 分钟
+ * @param {string} [opts.name]     桶名前缀，便于排障区分是哪条链路在限流
+ * @param {(req)=>string} [opts.keyGen] 自定义 key（默认：登录按 userId，未登录按 IP）
+ */
+export function rateLimit({ max, windowMs = 60 * 1000, name = 'rl', keyGen } = {}) {
+  if (!Number.isFinite(max) || max <= 0) {
+    throw new Error('rateLimit 必须先给一个正数 max')
+  }
+  return function rateLimitMw(req, res, next) {
+    const who = keyGen ? keyGen(req) : (req.user?.id ? 'u' + req.user.id : 'ip:' + clientIp(req))
+    const key = name + '|' + who
+    if (overLimit(key, max, windowMs)) {
+      const retryAfter = Math.max(1, Math.ceil(windowMs / 1000))
+      console.warn(`[rate-limit:${name}] 命中限流 ${who}（上限 ${max}/${Math.round(windowMs / 1000)}s）`)
+      res.set('Retry-After', String(retryAfter))
+      return res.status(429).json({ message: `请求过于频繁，请稍后再试（${max} 次 / ${Math.round(windowMs / 1000)} 秒）` })
+    }
+    next()
+  }
+}
+

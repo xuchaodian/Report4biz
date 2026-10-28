@@ -1,7 +1,19 @@
 import express from 'express'
 import { aroundSearch, polygonSearch, textSearch, geocode } from '../utils/amapPoi.js'
+import { authenticate } from '../middleware/auth.js'
+import { rateLimit } from '../utils/rateLimit.js'
 
 const router = express.Router()
+
+// v1.13.281：本路由组同样**原先无任何鉴权/限速**，而它比 geocode 更贵 ——
+// `/batch-geocode` 一次能解析上百条地址、`business-count`/`environment-score`
+// 每次都真实消耗高德 POI 配额（v1.13.262 的 COQPS 报错就是这么堆出来的）。
+//
+// ⚠️ 这里只挂**限速**不挂全局 authenticate：`/around`、`/polygon` 在前端是用裸 fetch
+//    调的（MapView 4 处），一并挂 authenticate 会立刻 401。真正烧钱的
+//    `/batch-geocode` 与 `/business-count` 两处单独挂 authenticate（调用方都是 axios，
+//    本来就带 token）⇒ 便宜的先靠限速兜，贵的必须登录。
+router.use(rateLimit({ max: 120, windowMs: 60 * 1000, name: 'poi' }))
 
 // 商业成熟度 POI 分类（高德 typecode 大类码，兼容子类）
 const BUSINESS_POI_TYPES = [
@@ -87,7 +99,7 @@ const BUSINESS_CACHE_TTL = 24 * 60 * 60 * 1000 // 24h
  * POST /api/poi/business-count
  * Body: { lng, lat, radius }
  */
-router.post('/business-count', async (req, res) => {
+router.post('/business-count', authenticate, async (req, res) => {
   try {
     const { lng, lat, radius = 500 } = req.body
     if (!lng || !lat) {
@@ -302,7 +314,9 @@ router.post('/geocode', async (req, res) => {
  * POST /api/poi/batch-geocode
  * Body: { addresses: [{ name, address, city, district }] }
  */
-router.post('/batch-geocode', async (req, res) => {
+// ⚠️ 地址解析的**批量**入口：一条请求最多解析上百个地址，是本站最贵的无配额接口。
+//    必须登录（调用方 stores/marker.js 走 axios，自带 token），且 10 次/分钟。
+router.post('/batch-geocode', authenticate, rateLimit({ max: 10, windowMs: 60 * 1000, name: 'batchgeo' }), async (req, res) => {
   try {
     const { addresses } = req.body
 
