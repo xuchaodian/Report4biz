@@ -9,6 +9,7 @@ import { parsePaging } from '../utils/paging.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
+import { findStoreDuplicates } from '../utils/storeDedup.js'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
@@ -38,6 +39,49 @@ router.get('/', authenticate, (req, res) => {
   } catch (error) {
     console.error('获取门店列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })
+  }
+})
+
+// ============================================================================
+// 台账去重检查（v1.13.282）
+// GET /api/markers/duplicates?epsM=50&nearM=300
+//
+// ⚠️ 必须定义在 `GET /:id` **之前** —— 否则 `/api/markers/duplicates` 会被
+//    `/:id` 抢先匹配，把 "duplicates" 当成 id 去查，直接 404。这是本文件最经典的坑。
+//
+// 口径：只扫**自己名下**的门店（清洗要落到写操作，而写路径恒为 WHERE user_id = 自己）。
+//      集团 owner 看子公司台账的清洗不在本接口范围。
+// 🔴 去重与蚕食**只在同一品牌内判定**（同账号多品牌、同商场双品牌同址是常态），
+//    详见 utils/storeDedup.js 顶部说明。
+// 纯本地几何计算，**不消耗联通配额**。
+// ============================================================================
+router.get('/duplicates', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const epsM = Number(req.query.epsM)
+    const nearM = Number(req.query.nearM)
+    const rows = db.prepare(`
+      SELECT id, name, brand, store_code, city, district, address,
+             longitude, latitude, status, store_area
+        FROM markers
+       WHERE user_id = ?
+    `).all(req.user.id)
+
+    const result = findStoreDuplicates(rows, {
+      epsM: Number.isFinite(epsM) ? epsM : undefined,
+      nearM: Number.isFinite(nearM) ? nearM : undefined
+    })
+
+    res.json({
+      success: true,
+      ...result,
+      note: result.stats.truncated
+        ? `门店数超过 ${50000} 条，已跳过计算（请按城市分批）`
+        : '仅在同一品牌内判定重复与蚕食；跨品牌同址不报'
+    })
+  } catch (error) {
+    console.error('[Markers] 台账去重检查失败:', error)
+    res.status(500).json({ message: '台账去重检查失败' })
   }
 })
 
