@@ -5597,6 +5597,72 @@ const initMap = async () => {
 
 // 地址搜索（使用高德地图API，支持模糊检索）
 const searchTimerRef = ref(null)
+
+/**
+ * 检索结果排序：**当前视野内的优先**（v1.13.286）
+ *
+ * 背景：高德/腾讯的建议接口都是全国范围的，用户在「上海」搜「人民广场」时，
+ * 排在前面的可能是别的城市的同名地点，一选中地图就跳到外地去了。
+ *
+ * 为什么不按「城市」判：城市边界数据不在前端，服务端 /suggest 也只回 district（区）
+ * 不回 city。而「当前视野」在选址场景里本来就是「当前城市」的更准确等价物 ——
+ * 用户看着哪片区域，就想在那片区域里找。
+ *
+ * 排序规则：视野内 → 视野外；同组内按到地图中心的距离，仍相同则保持原顺序（稳定）。
+ * 视野内一个都没有（如在上海搜「天安门」）⇒ 保持接口原顺序 ⇒ 自然会跳到有结果的城市。
+ */
+const rankResultsByCurrentView = (results) => {
+  if (!map || !Array.isArray(results) || results.length < 2) {
+    return { ranked: results, inViewCount: 0 }
+  }
+  let bounds, center
+  try {
+    bounds = map.getBounds()
+    center = map.getCenter()
+  } catch (e) {
+    return { ranked: results, inViewCount: 0 }
+  }
+  const cosLat = Math.cos((center.lat * Math.PI) / 180)
+  const items = results.map((r, i) => {
+    const lat = parseFloat(r.lat)
+    const lon = parseFloat(r.lon)
+    const valid = !Number.isNaN(lat) && !Number.isNaN(lon)
+    const inView = valid && bounds.contains([lat, lon])
+    // 粗略的「度距离」，只用于同一个视野分组内排序，不需要换算成米
+    const dist = valid ? (lat - center.lat) ** 2 + ((lon - center.lng) * cosLat) ** 2 : Infinity
+    return { r, inView, dist, i }
+  })
+  items.sort((a, b) => {
+    if (a.inView !== b.inView) return a.inView ? -1 : 1
+    if (a.dist !== b.dist) return a.dist - b.dist
+    return a.i - b.i
+  })
+  return { ranked: items.map((x) => x.r), inViewCount: items.filter((x) => x.inView).length }
+}
+
+/**
+ * 决定「把地图缩放到前几条结果」（v1.13.286）
+ *
+ * 视野内有命中 ⇒ 只框这批（用户就在这座城市，不要出城）。
+ * 视野内一个都没有（如在上海搜「天安门」）⇒ 框「首个结果周边 0.5°（≈50km）」的同类结果。
+ * ⚠️ 这一步不能省：直接把所有结果 fitBounds，北京+上海会被一起框进去 ⇒ 缩成全国视图，
+ *    既看不清也违背「跳到有结果的城市」的初衷。
+ */
+const pickFocusCount = (ranked, inViewCount) => {
+  if (!Array.isArray(ranked) || ranked.length === 0) return 0
+  if (inViewCount > 0) return inViewCount
+  const lat0 = parseFloat(ranked[0].lat)
+  const lon0 = parseFloat(ranked[0].lon)
+  if (Number.isNaN(lat0) || Number.isNaN(lon0)) return 1
+  let n = 0
+  for (const r of ranked) {
+    const lat = parseFloat(r.lat)
+    const lon = parseFloat(r.lon)
+    if (Number.isNaN(lat) || Number.isNaN(lon)) continue
+    if (Math.abs(lat - lat0) <= 0.5 && Math.abs(lon - lon0) <= 0.5) n += 1
+  }
+  return n > 0 ? n : 1
+}
 const searchAddress = async (keyword) => {
   if (!keyword || !keyword.trim()) {
     searchResults.value = []
@@ -5620,9 +5686,12 @@ const searchAddress = async (keyword) => {
       })
       const data = await response.json()
       if (data.success && data.results && data.results.length > 0) {
-        searchResults.value = data.results
-        // 在地图上绘制搜索结果标记
-        drawSearchMarkers(data.results)
+        // v1.13.286：当前视野内的结果排前面（否则搜同名词会被带到外地城市）
+        const { ranked, inViewCount } = rankResultsByCurrentView(data.results)
+        searchResults.value = ranked
+        // 缩放目标：视野内有命中 → 只框这一批（不出城）；一个都没命中 → 框「首个结果周边 ~50km」
+        // 的同类结果。⛔ 不能把所有结果一起 fitBounds，否则搜「人民广场」会被拉成全国视图。
+        drawSearchMarkers(ranked, pickFocusCount(ranked, inViewCount))
       } else {
         searchResults.value = []
         clearSearchMarkers()
@@ -5636,7 +5705,9 @@ const searchAddress = async (keyword) => {
 }
 
 // 在地图上绘制搜索结果标记
-const drawSearchMarkers = (results) => {
+// inViewCount：前 N 条是「当前视野内」的结果（v1.13.286）。有视野内结果时，
+// 只把这一批缩放进视野 —— 否则搜「人民广场」会把北京的同名点也算进 bounds，地图被拉成全国视图。
+const drawSearchMarkers = (results, inViewCount = 0) => {
   clearSearchMarkers()
   // 清除旧的高亮标记
   if (window._searchHighlightMarker && map) {
@@ -5682,10 +5753,19 @@ const drawSearchMarkers = (results) => {
     searchMarkersLayer.addLayer(marker)
   })
 
-  // 将所有搜索结果缩放到视野内
+  // 缩放：优先进「当前视野内」那批；一个都没有时退回全部结果（⇒ 跳到有结果的城市）
   if (results.length > 0) {
     try {
-      const bounds = searchMarkersLayer.getBounds()
+      const focusCount = inViewCount > 0 ? inViewCount : results.length
+      const focusLayer = L.featureGroup()
+      let added = 0
+      searchMarkersLayer.eachLayer((layer) => {
+        if (added < focusCount) {
+          focusLayer.addLayer(layer)
+          added += 1
+        }
+      })
+      const bounds = (focusLayer.getLayers().length ? focusLayer : searchMarkersLayer).getBounds()
       if (bounds && bounds.isValid()) {
         map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
       }
@@ -5694,10 +5774,17 @@ const drawSearchMarkers = (results) => {
 }
 
 // 清除搜索结果标记
+// 🔴 v1.13.286：同时移除「红色定位标签」（window._searchHighlightMarker）。
+//   原来只清图层 ⇒ 点输入框右侧 ✕ 清空列表后，地图上那个标签还留着，用户以为没清干净。
+//   注意 drawSearchMarkers 开头也会调本函数 ⇒ 换关键词时旧标签一并消失，属预期。
 const clearSearchMarkers = () => {
   if (searchMarkersLayer && map) {
     map.removeLayer(searchMarkersLayer)
     searchMarkersLayer = null
+  }
+  if (window._searchHighlightMarker && map) {
+    map.removeLayer(window._searchHighlightMarker)
+    window._searchHighlightMarker = null
   }
 }
 

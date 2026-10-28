@@ -65,7 +65,11 @@ watch(() => props.results, (newResults) => {
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  z-index: 1001;
+  /* v1.13.286：检索结果列表必须压住左上角那三个浮层，否则结果看不清。
+     现有层级：SceneGuide 引导 1001｜AI 助手面板 1199 / AI 按钮 1200 / 语言切换 1199。
+     ⇒ 这里取 1400（.map-view 是 position:relative 但无 z-index，不构成层叠上下文，
+        因此本值与上面几个直接比较）。 */
+  z-index: 1400;
   overflow: hidden;
   border: 2px solid #409eff;
 }
