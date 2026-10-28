@@ -25,6 +25,7 @@
               <el-dropdown-item command="import"><el-icon><Upload /></el-icon>导入</el-dropdown-item>
               <el-dropdown-item command="geocode"><el-icon><MapLocation /></el-icon>地址解析</el-dropdown-item>
               <el-dropdown-item command="export"><el-icon><Download /></el-icon>导出</el-dropdown-item>
+              <el-dropdown-item command="dedup" divided><el-icon><Document /></el-icon>台账清洗</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -467,6 +468,104 @@
             导入到门店库
           </el-button>
         </template>
+      </template>
+    </el-dialog>
+
+    <!-- 台账清洗（v1.13.285）：同品牌重复录入检测 → 合并 / 撤销 -->
+    <el-dialog v-model="dedupVisible" title="台账清洗" width="900px" draggable :close-on-click-modal="false">
+      <p class="dedup-note">
+        只在<b>同一品牌</b>内判定：坐标相同或相距 ≤ 50m 视为<b>疑似重复录入</b>；50~300m 为<b>邻近门店</b>（可能是两家真店）。
+        同一商场里两个不同品牌的门店<b>不会被判为重复</b>，跨品牌合并也会被后端拒绝。
+      </p>
+
+      <div v-if="dedupLoading" class="dedup-loading">
+        <el-icon class="is-loading"><Loading /></el-icon> 正在检测…
+      </div>
+
+      <template v-else>
+        <div class="dedup-stats">
+          <span>台账记录 <b>{{ dedupStats.total || 0 }}</b></span>
+          <span>可评估 <b>{{ dedupStats.valid || 0 }}</b></span>
+          <span>疑似重复 <b class="warn">{{ dedupStats.duplicateGroups || 0 }}</b> 组</span>
+          <span>冗余记录 <b class="warn">{{ dedupStats.redundantRecords || 0 }}</b> 条</span>
+          <span>去重后独立门店 <b>{{ dedupStats.distinctStores || 0 }}</b></span>
+          <span v-if="dedupStats.skipped">缺坐标跳过 <b>{{ dedupStats.skipped }}</b></span>
+        </div>
+
+        <div v-if="dedupStats.truncated" class="dedup-warn">门店数过多，已跳过检测，请按城市分批处理。</div>
+
+        <div v-if="dedupVisibleGroups.length === 0" class="dedup-empty">
+          <el-empty
+            :image-size="60"
+            :description="dedupAllGroups.length === 0 ? '没有发现疑似重复录入' : '已把 ' + dedupAllGroups.length + ' 组标记为「两家不同门店」'"
+          >
+            <el-button v-if="dedupAllGroups.length > 0" size="small" @click="resetDedupIgnored">恢复这些提示</el-button>
+          </el-empty>
+        </div>
+
+        <div v-else class="dedup-list">
+          <div v-for="(g, gi) in dedupVisibleGroups" :key="g.key" class="dedup-group">
+            <div class="dedup-group-head">
+              <span class="dg-idx">{{ gi + 1 }}</span>
+              <span class="dg-brand">{{ g.brand || '品牌未填' }}</span>
+              <span class="dg-meta">{{ g.size }} 条 · 组内最远相距 {{ g.maxDistanceM }}m</span>
+            </div>
+            <label v-for="s in g.stores" :key="s.id" class="dedup-row" :class="{ keep: dedupChoice[g.key] === s.id }">
+              <input
+                type="radio"
+                :name="'dedup-' + g.key"
+                :value="s.id"
+                :checked="dedupChoice[g.key] === s.id"
+                @change="dedupChoice[g.key] = s.id"
+              />
+              <span class="dr-name">{{ s.name || '(未命名)' }}</span>
+              <!-- 同组内城市必然相同 ⇒ 只显示区+地址，避免「上海 · 宝山区 · 上海市宝山区…」重复 -->
+              <span class="dr-meta">{{ [s.district, s.address].filter(Boolean).join(' · ') || (s.city || '无地址') }}</span>
+              <span class="dr-tags">
+                <el-tag v-if="s.store_code" size="small" type="success">有编码</el-tag>
+                <el-tag v-if="s.store_area" size="small">{{ s.store_area }}㎡</el-tag>
+              </span>
+            </label>
+            <div class="dedup-group-foot">
+              <span class="dg-hint">选一条保留，其余隐藏（可撤销）</span>
+              <div>
+                <el-button size="small" @click="ignoreDedupGroup(g)">确认是两家</el-button>
+                <el-button size="small" type="primary" :loading="dedupMergingKey === g.key" @click="mergeDedupGroup(g)">合并为一家</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="dedupLastMerge" class="dedup-undo">
+          <el-alert type="success" :closable="false" show-icon>
+            <template #title>
+              已把 {{ dedupLastMerge.count }} 条合并进「{{ dedupLastMerge.label }}」
+              <el-button link type="primary" size="small" @click="undoDedupMerge">撤销</el-button>
+            </template>
+          </el-alert>
+        </div>
+
+        <div v-if="(dedupData.nearbyPairs || []).length" class="dedup-nearby">
+          <el-button link type="primary" @click="dedupShowNearby = !dedupShowNearby">
+            {{ dedupShowNearby ? '收起' : '查看' }} {{ dedupData.nearbyPairs.length }} 对邻近门店（50~300m）
+          </el-button>
+          <div v-if="dedupShowNearby" class="dedup-pair-list">
+            <div v-for="(p, pi) in dedupData.nearbyPairs" :key="pi" class="dedup-pair">
+              <span class="dp-dist">{{ p.distanceM }}m</span>
+              <span>{{ p.stores[0].name }}</span>
+              <span class="dp-vs">↔</span>
+              <span>{{ p.stores[1].name }}</span>
+              <el-tag v-if="p.brandUnknown" size="small" type="warning">品牌缺失，需人工判断</el-tag>
+            </div>
+            <p class="dp-hint">这一档距离更像「同商圈的两家真店」，所以只列出来、不提供合并按钮。</p>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <span class="dedup-foot-note">合并只隐藏不删除，可撤销；跨品牌的记录永远不会被合并</span>
+        <el-button @click="dedupVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="dedupLoading" @click="loadDedup">重新检测</el-button>
       </template>
     </el-dialog>
 
@@ -1440,6 +1539,132 @@ const handleImportMenuCommand = (command) => {
     showGeocodeDialog()
   } else if (command === 'export') {
     handleExport()
+  } else if (command === 'dedup') {
+    openDedupDialog()
+  }
+}
+
+// ===== 台账清洗（v1.13.285）==================================================
+// 后端：GET /api/markers/duplicates → POST /api/markers/merge → POST /api/markers/unmerge
+// 🔴 只在**同一品牌**内判定（同一商场双品牌同址是常态，不算重复；跨品牌合并后端会拒绝）。
+// 🔴 合并是软删（后端只写 merged_into），所以必须给「撤销」入口。
+const dedupVisible = ref(false)
+const dedupLoading = ref(false)
+const dedupMergingKey = ref('')
+const dedupData = ref({ duplicateGroups: [], nearbyPairs: [], stats: {} })
+const dedupChoice = reactive({})        // 组 key → 要保留的门店 id
+const dedupIgnored = ref([])            // 用户点过「确认是两家」的组 key（按 uid 持久化）
+const dedupLastMerge = ref(null)        // { ids, label, count }
+const dedupShowNearby = ref(false)
+
+const dedupStats = computed(() => dedupData.value.stats || {})
+// 组 key ＝ 品牌 + 升序 id 列表（同一批门店即同一组，与后端返回顺序无关）
+const dedupGroupKey = (g) => `${g.brand || '_'}|${g.stores.map((s) => s.id).sort((a, b) => a - b).join(',')}`
+const dedupAllGroups = computed(() => (dedupData.value.duplicateGroups || []).map((g) => ({ ...g, key: dedupGroupKey(g) })))
+const dedupVisibleGroups = computed(() => dedupAllGroups.value.filter((g) => !dedupIgnored.value.includes(g.key)))
+
+// 默认保留「信息更完整」的那条：有编码 > 有面积 > 名字更长（避免保留「文峰」这种残缺名）
+const dedupCompleteness = (s) => (s.store_code ? 100 : 0) + (s.store_area ? 10 : 0) + Math.min(String(s.name || '').length, 9)
+const dedupDefaultKeeper = (g) => g.stores.slice().sort((a, b) => dedupCompleteness(b) - dedupCompleteness(a))[0]?.id
+
+// 本地忽略列表：⛔ 不走 localStorage.getItem('userId')，统一 utils/currentUser.js（防串档）
+const dedupIgnoreKey = () => 'dedupIgnored_' + currentUidOr('')
+const loadDedupIgnored = () => {
+  try {
+    const raw = localStorage.getItem(dedupIgnoreKey())
+    const arr = raw ? JSON.parse(raw) : []
+    dedupIgnored.value = Array.isArray(arr) ? arr : []
+  } catch (e) {
+    dedupIgnored.value = []
+  }
+}
+const saveDedupIgnored = () => {
+  try { localStorage.setItem(dedupIgnoreKey(), JSON.stringify(dedupIgnored.value)) } catch (e) { /* 隐私模式忽略 */ }
+}
+
+const loadDedup = async () => {
+  dedupLoading.value = true
+  try {
+    const res = await axios.get('/api/markers/duplicates')
+    dedupData.value = res.data || {}
+    // 合并后分组会重算 ⇒ 选择项整体重置为「默认最完整那条」（保留用户已改的选择没有意义）
+    Object.keys(dedupChoice).forEach((k) => delete dedupChoice[k])
+    for (const g of dedupAllGroups.value) dedupChoice[g.key] = dedupDefaultKeeper(g)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '检测失败，请稍后重试')
+  } finally {
+    dedupLoading.value = false
+  }
+}
+
+const openDedupDialog = () => {
+  dedupLastMerge.value = null
+  dedupVisible.value = true
+  loadDedupIgnored()
+  loadDedup()
+}
+
+const ignoreDedupGroup = (g) => {
+  if (!dedupIgnored.value.includes(g.key)) dedupIgnored.value.push(g.key)
+  saveDedupIgnored()
+  ElMessage.info('已标记为两家不同门店，本机不再提示')
+}
+
+// 「确认是两家」是本地记住的忽略项，必须留一条回来的路（否则一旦误点就再也看不到）
+const resetDedupIgnored = () => {
+  dedupIgnored.value = []
+  saveDedupIgnored()
+  ElMessage.success('已恢复全部提示')
+}
+
+const mergeDedupGroup = async (g) => {
+  const keepId = dedupChoice[g.key]
+  const keep = g.stores.find((s) => s.id === keepId)
+  const mergeIds = g.stores.filter((s) => s.id !== keepId).map((s) => s.id)
+  if (!keep || mergeIds.length === 0) {
+    ElMessage.warning('请先选择要保留的那一条')
+    return
+  }
+  const hiddenNames = g.stores.filter((s) => s.id !== keepId).map((s) => '「' + s.name + '」').join('、')
+  try {
+    await ElMessageBox.confirm(
+      '保留「' + keep.name + '」，隐藏 ' + hiddenNames + '（共 ' + mergeIds.length + ' 条）。\n合并只是隐藏、不删数据，可立即撤销。',
+      '合并为一家？',
+      { type: 'warning', confirmButtonText: '合并', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return
+  }
+
+  dedupMergingKey.value = g.key
+  try {
+    const res = await axios.post('/api/markers/merge', { keepId, mergeIds })
+    const merged = (res.data && res.data.merged) || mergeIds.length
+    dedupLastMerge.value = { ids: mergeIds, label: keep.name, count: merged }
+    dedupIgnored.value = dedupIgnored.value.filter((k) => k !== g.key)
+    saveDedupIgnored()
+    ElMessage.success('已合并 ' + merged + ' 条')
+    await loadDedup()
+    markerStore.fetchMarkers(true)   // 强制刷新门店列表（绕过 H2 新鲜期去重）
+  } catch (e) {
+    // 后端会明确拒绝：跨品牌 / 距离超限 / 被合并门店已有销售记录（409）
+    ElMessage.error((e?.response?.data?.message) || '合并失败，请稍后重试')
+  } finally {
+    dedupMergingKey.value = ''
+  }
+}
+
+const undoDedupMerge = async () => {
+  const last = dedupLastMerge.value
+  if (!last) return
+  try {
+    await axios.post('/api/markers/unmerge', { ids: last.ids })
+    ElMessage.success('已撤销合并')
+    dedupLastMerge.value = null
+    await loadDedup()
+    markerStore.fetchMarkers(true)
+  } catch (e) {
+    ElMessage.error((e?.response?.data?.message) || '撤销失败，请稍后重试')
   }
 }
 
@@ -2388,5 +2613,158 @@ const resetRanking = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* ===== 台账清洗（v1.13.285）=====
+   ⚠️ el-dialog 内的自建元素只用单类选择器：弹窗根节点不继承父 scopeId，
+   后代选择器（如 .dedup-list .x）在部分场景会静默失效（见项目铁律）。 */
+.dedup-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #606266;
+  background: #f5f7fa;
+  border-left: 3px solid #409eff;
+  border-radius: 4px;
+}
+.dedup-loading {
+  padding: 40px 0;
+  text-align: center;
+  font-size: 13px;
+  color: #909399;
+}
+.dedup-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #606266;
+}
+.dedup-stats b {
+  color: #303133;
+}
+.dedup-stats b.warn {
+  color: #e6a23c;
+}
+.dedup-warn {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #f56c6c;
+}
+.dedup-list {
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.dedup-group {
+  margin-bottom: 10px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+.dedup-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #ebeef5;
+}
+.dg-idx {
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: #e6a23c;
+  color: #fff;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.dg-brand {
+  font-weight: 600;
+  color: #303133;
+}
+.dg-meta {
+  color: #909399;
+}
+.dedup-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 1px dashed #f2f6fc;
+}
+.dedup-row.keep {
+  background: #ecf5ff;
+}
+.dr-name {
+  flex: 0 0 auto;
+  min-width: 120px;
+  font-weight: 600;
+  color: #303133;
+}
+.dr-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dr-tags {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+.dedup-group-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+}
+.dg-hint {
+  font-size: 11px;
+  color: #a8abb2;
+}
+.dedup-empty {
+  padding: 6px 0;
+}
+.dedup-undo {
+  margin-top: 10px;
+}
+.dedup-nearby {
+  margin-top: 10px;
+}
+.dedup-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: #606266;
+  border-bottom: 1px dashed #f2f6fc;
+}
+.dp-dist {
+  flex: 0 0 auto;
+  min-width: 46px;
+  color: #909399;
+}
+.dp-vs {
+  color: #c0c4cc;
+}
+.dp-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.dedup-foot-note {
+  float: left;
+  line-height: 32px;
+  font-size: 11px;
+  color: #909399;
 }
 </style>
