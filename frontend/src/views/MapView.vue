@@ -5632,12 +5632,20 @@ const rankResultsByCurrentView = (results) => {
     const dist = valid ? (lat - center.lat) ** 2 + ((lon - center.lng) * cosLat) ** 2 : Infinity
     return { r, inView, dist, i }
   })
+  const inViewCount = items.filter((x) => x.inView).length
+  // 🔴 v1.13.287 修：视野内**一个都没有**时，必须保持上游顺序，不许按距离重排。
+  //   实测反例：在上海搜「天安门」，高德/腾讯已经把北京天安门排在第一位，
+  //   但按「到地图中心距离」重排后，江阴的「华西公园-天安门」、厦门的「同安影视城-天安门」
+  //   这两个仿建景点（更近）会顶到最前 —— 地图随即跳到无锡，把上游的城市优先彻底覆盖掉。
+  //   只有当有结果落在当前视野里时，才有资格把它们提上来（同组内再按距离）。
+  if (inViewCount === 0) return { ranked: results, inViewCount: 0 }
+
   items.sort((a, b) => {
     if (a.inView !== b.inView) return a.inView ? -1 : 1
     if (a.dist !== b.dist) return a.dist - b.dist
     return a.i - b.i
   })
-  return { ranked: items.map((x) => x.r), inViewCount: items.filter((x) => x.inView).length }
+  return { ranked: items.map((x) => x.r), inViewCount }
 }
 
 /**
@@ -5648,20 +5656,33 @@ const rankResultsByCurrentView = (results) => {
  * ⚠️ 这一步不能省：直接把所有结果 fitBounds，北京+上海会被一起框进去 ⇒ 缩成全国视图，
  *    既看不清也违背「跳到有结果的城市」的初衷。
  */
-const pickFocusCount = (ranked, inViewCount) => {
-  if (!Array.isArray(ranked) || ranked.length === 0) return 0
-  if (inViewCount > 0) return inViewCount
-  const lat0 = parseFloat(ranked[0].lat)
-  const lon0 = parseFloat(ranked[0].lon)
-  if (Number.isNaN(lat0) || Number.isNaN(lon0)) return 1
-  let n = 0
-  for (const r of ranked) {
-    const lat = parseFloat(r.lat)
-    const lon = parseFloat(r.lon)
-    if (Number.isNaN(lat) || Number.isNaN(lon)) continue
-    if (Math.abs(lat - lat0) <= 0.5 && Math.abs(lon - lon0) <= 0.5) n += 1
+/**
+ * 取「当前地图中心所在城市」（v1.13.287）
+ *
+ * 为什么要城市名：服务端 /suggest 用 city 做「优先但不限定」的偏置，
+ * 这是实测下来唯一既能让「上海搜寿司郎」出上海门店、又不会让「上海搜天安门」
+ * 只出「天安中心/天安广场」这种同名小店的参数（citylimit=true 会误杀连锁 POI）。
+ *
+ * 成本：只有**搜索时**才调，且前端按 0.02°（≈2km）网格缓存，后端另有 24h 缓存。
+ * ⛔ 反查失败就当没有城市（退化成纯距离偏置），绝不阻断搜索。
+ */
+let cityLookupCache = { key: '', city: '' }
+const lookupCityName = async (center) => {
+  if (!center) return ''
+  const key = center.lng.toFixed(2) + ',' + center.lat.toFixed(2)
+  if (cityLookupCache.key === key) return cityLookupCache.city
+  try {
+    const res = await fetch(`/api/geocode/regeo?lng=${center.lng.toFixed(6)}&lat=${center.lat.toFixed(6)}`, {
+      headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('token') || '') }
+    })
+    const d = await res.json()
+    const city = d && d.success && d.city ? String(d.city) : ''
+    cityLookupCache = { key, city }
+    return city
+  } catch (e) {
+    cityLookupCache = { key, city: '' }
+    return ''
   }
-  return n > 0 ? n : 1
 }
 const searchAddress = async (keyword) => {
   if (!keyword || !keyword.trim()) {
@@ -5679,9 +5700,22 @@ const searchAddress = async (keyword) => {
   searchTimerRef.value = createSafeTimeout(async () => {
     try {
       const kw = keyword.trim()
-      // 使用后端高德搜索建议API
+      // 使用后端搜索建议API
       // v1.13.281：该路由已挂 authenticate ⇒ 裸 fetch 必须自带 token
-      const response = await fetch(`/api/geocode/suggest?keyword=${encodeURIComponent(kw)}`, {
+      // v1.13.287：带上当前地图中心做「就近偏置」。🔴 这一步不能省 ——
+      //   服务端不做偏置时高德按全国相关度返回，在上海搜「寿司郎」给的是
+      //   北京/武汉/深圳/宁波的门店，**一条本城都没有**，前端再怎么排序也排不出来。
+      const center = map ? map.getCenter() : null
+      const qs = new URLSearchParams({ keyword: kw })
+      if (center) {
+        qs.set('lng', center.lng.toFixed(6))
+        qs.set('lat', center.lat.toFixed(6))
+      }
+      // 城市优先：上海搜「寿司郎」必须出上海门店（纯距离偏置会给出宁波等外地店，
+      // 而纯全国相关度排序一条本城的都没有）。反查失败则不传 city，退化为就近偏置。
+      const cityName = await lookupCityName(center)
+      if (cityName) qs.set('city', cityName)
+      const response = await fetch(`/api/geocode/suggest?${qs.toString()}`, {
         headers: { 'Authorization': 'Bearer ' + (sessionStorage.getItem('token') || '') }
       })
       const data = await response.json()
@@ -5689,9 +5723,9 @@ const searchAddress = async (keyword) => {
         // v1.13.286：当前视野内的结果排前面（否则搜同名词会被带到外地城市）
         const { ranked, inViewCount } = rankResultsByCurrentView(data.results)
         searchResults.value = ranked
-        // 缩放目标：视野内有命中 → 只框这一批（不出城）；一个都没命中 → 框「首个结果周边 ~50km」
-        // 的同类结果。⛔ 不能把所有结果一起 fitBounds，否则搜「人民广场」会被拉成全国视图。
-        drawSearchMarkers(ranked, pickFocusCount(ranked, inViewCount))
+        // 缩放：视野内有命中 → 只框这一批（不出城）；全在视野外 → 落到首个结果（城市级）。
+        // ⛔ 不能把所有结果一起 fitBounds，否则搜「天安门」会把北京+福建+上海一起框成全国视图。
+        drawSearchMarkers(ranked, inViewCount)
       } else {
         searchResults.value = []
         clearSearchMarkers()
@@ -5753,21 +5787,29 @@ const drawSearchMarkers = (results, inViewCount = 0) => {
     searchMarkersLayer.addLayer(marker)
   })
 
-  // 缩放：优先进「当前视野内」那批；一个都没有时退回全部结果（⇒ 跳到有结果的城市）
+  // 缩放策略（v1.13.287 定稿）：
+  //   ① 有结果落在当前视野里 ⇒ 只框这一批（用户就在这儿找，别把镜头拉走）；
+  //   ② 结果全在视野外 ⇒ 直接落到**第一个结果**（z13 城市级）。
+  // 🔴 绝不能「框全部结果」：搜「天安门」时结果散在北京/福建/上海，框全部会缩成全国视图
+  //    （实测两次），既看不清也违背「跳到有结果的城市」。
   if (results.length > 0) {
     try {
-      const focusCount = inViewCount > 0 ? inViewCount : results.length
-      const focusLayer = L.featureGroup()
-      let added = 0
-      searchMarkersLayer.eachLayer((layer) => {
-        if (added < focusCount) {
-          focusLayer.addLayer(layer)
-          added += 1
+      if (inViewCount > 0) {
+        const focusLayer = L.featureGroup()
+        let added = 0
+        searchMarkersLayer.eachLayer((layer) => {
+          if (added < inViewCount) {
+            focusLayer.addLayer(layer)
+            added += 1
+          }
+        })
+        const bounds = (focusLayer.getLayers().length ? focusLayer : searchMarkersLayer).getBounds()
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
         }
-      })
-      const bounds = (focusLayer.getLayers().length ? focusLayer : searchMarkersLayer).getBounds()
-      if (bounds && bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 })
+      } else {
+        const first = results.find((r) => !Number.isNaN(parseFloat(r.lat)) && !Number.isNaN(parseFloat(r.lon)))
+        if (first) map.setView([parseFloat(first.lat), parseFloat(first.lon)], 13)
       }
     } catch (_) {}
   }

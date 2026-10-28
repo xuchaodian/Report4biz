@@ -3,6 +3,7 @@ import https from 'https'
 import http from 'http'
 import { AMAP_KEY } from '../config.js'
 import { suggestByTencent, isTencentMapEnabled } from '../utils/tencentMap.js'
+import { normalizeLngLat } from '../utils/geocodeParams.js'
 import { authenticate } from '../middleware/auth.js'
 import { rateLimit } from '../utils/rateLimit.js'
 
@@ -79,12 +80,23 @@ router.get('/suggest', async (req, res) => {
 
   const keyword = ensureProperEncoding(rawKeyword)
 
+  // v1.13.287：可选「就近偏置」—— lng/lat 传当前地图中心。
+  // 🔴 必须在**查询阶段**偏置，不能只在前端重排：实测「寿司郎」无偏置时前 10 条
+  //    全是北京/武汉/深圳/宁波，**一条上海都没有** ⇒ 前端再怎么排也排不出本城的店。
+  //    传 location 后高德按距离排序，前 6 条立刻变成本城各分店。
+  const bias = normalizeLngLat(req.query.lng, req.query.lat)
+  // v1.13.287：当前城市（由前端用 /regeo 反查后传入）。
+  // 🔴 只传 city、**不加 citylimit**：实测 citylimit=true 会按行政区字段过滤，
+  //    而没有 city 字段的连锁 POI 会被**直接误杀**（「寿司郎」在上海 citylimit=true 返回 0 条，
+  //    不加 limit 时前 6 条全是上海门店）。所以 city 只当「优先」，不当「限定」。
+  const city = String(req.query.city || '').trim().slice(0, 20)
+
   // ===== v1.13.263：优先腾讯（分流高德配额）=====
   // 地址搜索建议对「数据源一致性」不敏感（用户只是选个地址），所以切腾讯是安全的。
   // ⚠️ 与 POI 分类计数不同：那个绝不能换源（分类体系不同会让评分漂移）。
   if (isTencentMapEnabled()) {
     try {
-      const results = await suggestByTencent(keyword)
+      const results = await suggestByTencent(keyword, city || undefined, bias)
       if (results.length > 0) {
         return res.json({ success: true, results })
       }
@@ -96,7 +108,10 @@ router.get('/suggest', async (req, res) => {
 
   const encodedKeyword = encodeURIComponent(keyword)
   // 使用高德搜索建议API
-  const url = `https://restapi.amap.com/v3/assistant/inputtips?keywords=${encodedKeyword}&key=${AMap_KEY}`
+  // 高德的 location 是「经度在前、纬度在后」，与 lat/lng 的习惯顺序相反 —— 这里显式拼。
+  const locPart = bias ? `&location=${bias.lng},${bias.lat}` : ''
+  const cityPart = city ? `&city=${encodeURIComponent(city)}` : ''
+  const url = `https://restapi.amap.com/v3/assistant/inputtips?keywords=${encodedKeyword}&key=${AMap_KEY}${cityPart}${locPart}`
   
   const amapReq = https.get(url, (apiRes) => {
     let data = ''
@@ -311,6 +326,62 @@ router.get('/ip-location', (req, res) => {
 })
 
 // 行政区域边界查询 - 使用高德行政区域API
+// ============================================================================
+// 逆地理编码（v1.13.287）
+// GET /api/geocode/regeo?lng=&lat=  →  { city, district, province }
+//
+// 用途：地址搜索要「当前城市优先」，而前端没有城市边界数据 ⇒ 用地图中心反查城市名，
+// 再把它作为 city 传给 /suggest（只当优先，不当限定，见 /suggest 处注释）。
+//
+// 成本控制（不便宜的东西不要每次拖动都调）：
+//   · 只有前端**在搜索时**才调，不是 onmove 轮询；
+//   · 按 0.02°（≈2km）网格缓存 24h；
+//   · 缓存上限 500 条，满了整体清空（城市名几乎不变，不需要 LRU）。
+// ============================================================================
+const regeoCache = new Map()
+const REGEO_TTL = 24 * 60 * 60 * 1000
+const REGEO_MAX = 500
+
+router.get('/regeo', (req, res) => {
+  const pos = normalizeLngLat(req.query.lng, req.query.lat)
+  if (!pos) return res.status(400).json({ success: false, message: '缺少或非法的 lng/lat' })
+
+  const key = `${pos.lng.toFixed(2)},${pos.lat.toFixed(2)}`
+  const hit = regeoCache.get(key)
+  if (hit && hit.expireAt > Date.now()) {
+    return res.json({ success: true, cached: true, ...hit.data })
+  }
+
+  const url = `https://restapi.amap.com/v3/geocode/regeo?location=${pos.lng},${pos.lat}&key=${AMap_KEY}&extensions=base`
+  const apiReq = https.get(url, (apiRes) => {
+    let data = ''
+    apiRes.on('data', (chunk) => { data += chunk })
+    apiRes.on('end', () => {
+      try {
+        const json = JSON.parse(data)
+        const ac = (json && json.regeocode && json.regeocode.addressComponent) || {}
+        // 高德对直辖市（北京/上海/天津/重庆）的 city 常常返回空数组 ⇒ 用 province 兜底
+        const pick = (v) => (Array.isArray(v) ? (v[0] || '') : (v || ''))
+        const province = pick(ac.province)
+        const city = pick(ac.city) || province
+        const payload = { city, district: pick(ac.district), province }
+        if (json.status === '1' && city) {
+          if (regeoCache.size >= REGEO_MAX) regeoCache.clear()
+          regeoCache.set(key, { data: payload, expireAt: Date.now() + REGEO_TTL })
+        }
+        res.json({ success: json.status === '1', ...payload })
+      } catch (e) {
+        console.error('[regeo] 解析失败:', e.message)
+        res.json({ success: false, city: '', district: '', province: '' })
+      }
+    })
+  }).on('error', (e) => {
+    console.error('[regeo] 请求失败:', e.message)
+    res.json({ success: false, city: '', district: '', province: '' })
+  })
+  apiReq.setTimeout(8000, () => apiReq.destroy(new Error('逆地理编码请求超时(8s)')))
+})
+
 router.get('/district', (req, res) => {
   const rawCity = req.query.city
   if (!rawCity) return res.status(400).json({ error: '城市名不能为空' })

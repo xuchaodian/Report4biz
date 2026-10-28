@@ -127,9 +127,10 @@ export async function geocodeByTencent(address) {
  *
  * @param {string} keyword
  * @param {string} [city] 可选，限定城市
+ * @param {{lng:number,lat:number}} [bias] 可选，就近偏置（v1.13.287：地图当前中心）
  * @returns {Promise<Array<{id:string,name:string,district:string,address:string,display_name:string,lat:number,lon:number}>>}
  */
-export async function suggestByTencent(keyword, city) {
+export async function suggestByTencent(keyword, city, bias) {
   const params = {
     keyword,
     key: TENCENT_WEBSERVICE_KEY,
@@ -137,6 +138,13 @@ export async function suggestByTencent(keyword, city) {
   }
   // 腾讯用 region 限定城市（不传则全国）
   if (city) params.region = city
+  // v1.13.287：就近偏置 —— 腾讯的 location 是「latitude,longitude」，且要 region_fix=0
+  // 才表示「按距离优先、不强制限定区域」。不带这两个参数时它按全国相关度返回，
+  // 会出现「在上海搜某连锁，全返回外地门店」的问题。
+  if (bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng)) {
+    params.location = `${bias.lat},${bias.lng}`
+    params.region_fix = 0
+  }
 
   const res = await http.get(`${TENCENT_WS}/place/v1/suggestion`, { params })
   const d = res.data || {}
