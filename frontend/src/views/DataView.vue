@@ -867,7 +867,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen, Document, Lock } from '@element-plus/icons-vue'
@@ -878,12 +878,14 @@ import { escapeHtml } from '@/utils/escapeHtml'
 import { currentUidOr } from '@/utils/currentUser.js'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { SALES_BAND_OPTIONS, bandLabel } from '@/utils/salesBand'
+import { downloadStoreTemplate, downloadSalesTemplate } from '@/utils/importTemplates.js'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
 const userStore = useUserStore()
@@ -1376,18 +1378,8 @@ const loadAllSales = async () => {
 const saleFileInput = ref(null)
 const saleImporting = ref(false)
 const downloadSaleTemplate = async () => {
-  try {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
-    const res = await fetch('/api/store-sales/template', { headers: { Authorization: 'Bearer ' + token } })
-    if (!res.ok) { ElMessage.error('模板下载失败'); return }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'sales-import-template.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) { ElMessage.error('模板下载失败') }
+  const ok = await downloadSalesTemplate()
+  if (!ok) ElMessage.error('模板下载失败')
 }
 const handleSaleImport = async (e) => {
   const file = e.target.files?.[0]
@@ -1793,18 +1785,13 @@ const handleExport = async () => {
   }
 }
 
-// 下载模板
+// 下载模板（v1.13.292：模板列改由 utils/importSpecs.js 生成，⛔ 不再在这里硬写一串列名）
 const downloadTemplate = () => {
-  const template = `store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,latitude,longitude,description
-BJ001,星巴克,星巴克国贸店,已开业,北京市,朝阳区,国贸大厦一层,2023-01-15,07:00-22:00,200,80,,直营,正常,,,39.9088,116.4610,CBD核心区
-BJ002,星巴克,星巴克望京候选,重点候选,北京市,朝阳区,,,,,,,加盟,正常,,,39.9965,116.4710,重点跟进`
-  const blob = new Blob(['\ufeff' + template], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'store_template.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    downloadStoreTemplate()
+  } catch (e) {
+    ElMessage.error('模板下载失败')
+  }
 }
 
 // ===== 地址解析 =====
@@ -2046,6 +2033,21 @@ onMounted(async () => {
       showStoreRankingDialog()
       if (radius) rankingRadius.value = radius
     }, 500)
+  }
+
+  // v1.13.292：体检页 / 销售预测页的「怎么补」直接落到对应弹窗，
+  // 而不是把人丢在门店列表里自己找按钮。
+  // ⚠️ 先 replace 掉 query 再开弹窗：否则用户关掉弹窗一刷新，又会被弹一次。
+  const q = route.query || {}
+  if (q.sale === '1' || q.geocode === '1') {
+    router.replace({ path: '/data' })
+    await nextTick()
+    if (q.sale === '1') {
+      if (filteredMarkers.value.length) openSaleDialog(filteredMarkers.value)
+      else ElMessage.warning('当前没有可录入的门店')
+    } else {
+      geocodeDialogVisible.value = true
+    }
   }
 })
 

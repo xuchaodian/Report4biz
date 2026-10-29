@@ -30,13 +30,21 @@
       <el-alert v-if="stats && stats.samples < stats.l2" type="info" :closable="false" style="margin-bottom: 12px;">
         <template #title>
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>当前销售样本 {{ stats.samples }} 行（已开业店 {{ stats.stores }} 家）——距离 <b>L2 回归</b>（{{ stats.l2 }} 行）还差 <b>{{ stats.l2Gap }}</b> 行，录满后自动升级（预测更准）
-          <el-button size="small" type="primary" link style="margin-left: 8px;" @click="$router.push('/data')">去录入销售<AppIcon style="margin-left:2px;"><ArrowRight /></AppIcon></el-button>
+          <div class="fc-guide-links">
+            <el-button size="small" type="primary" link @click="goSale">去录入销售<AppIcon style="margin-left:2px;"><ArrowRight /></AppIcon></el-button>
+            <el-button size="small" type="primary" link @click="downloadSales">下载模板</el-button>
+            <el-button size="small" type="primary" link @click="openGuide()">字段说明</el-button>
+          </div>
         </template>
       </el-alert>
       <el-alert v-else-if="stats && stats.samples >= stats.l2 && stats.samples < stats.l3" type="success" :closable="false" style="margin-bottom: 12px;">
         <template #title>
           <AppIcon class="icon-text"><CircleCheck /></AppIcon>L2 回归已启用（{{ stats.samples }} 行样本）——距离 <b>L3 机器学习</b>（{{ stats.l3 }} 行）还差 {{ stats.l3Gap }} 行，持续录入可解锁开店影响模拟
-          <el-button size="small" type="primary" link style="margin-left: 8px;" @click="$router.push('/data')">去录入销售<AppIcon style="margin-left:2px;"><ArrowRight /></AppIcon></el-button>
+          <div class="fc-guide-links">
+            <el-button size="small" type="primary" link @click="goSale">去录入销售<AppIcon style="margin-left:2px;"><ArrowRight /></AppIcon></el-button>
+            <el-button size="small" type="primary" link @click="downloadSales">下载模板</el-button>
+            <el-button size="small" type="primary" link @click="openGuide()">字段说明</el-button>
+          </div>
         </template>
       </el-alert>
 
@@ -59,6 +67,9 @@
           <el-option label="未购买" value="0" />
         </el-select>
         <span class="fc-tip">{{ filteredCandidates.length }} 个候选门店（重点候选/一般候选）</span>
+        <el-button size="small" @click="openGuide()" title="销售记录该填哪些列、怎么只填档位">
+          <AppIcon class="icon-text"><Document /></AppIcon>录入字段说明
+        </el-button>
       </div>
 
       <el-table :data="filteredCandidates" v-loading="loading" max-height="380" size="small">
@@ -189,6 +200,9 @@
       <el-empty v-else-if="!loading && filteredCandidates.length === 0" description="暂无候选门店（重点候选/一般候选）" />
     </el-card>
   </div>
+
+  <!-- 销售录入字段说明（与体检页共用同一份，字段清单来自 utils/importSpecs.js） -->
+  <ImportGuideDialog v-model="guideVisible" tab="sales" @go="onGuideGo" />
 </template>
 
 <script setup>
@@ -196,9 +210,12 @@ import { ref, computed, onMounted } from 'vue'
 import api from '../utils/api.js'
 import { currentUidOr } from '../utils/currentUser.js'
 import { ElMessage } from 'element-plus'
-import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled, Lock, GoldMedal } from '@element-plus/icons-vue'
+import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, WarningFilled, Lock, GoldMedal, Document } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
+import ImportGuideDialog from '@/components/ImportGuideDialog.vue'
+import { downloadSalesTemplate } from '@/utils/importTemplates.js'
 import { useUserStore } from '@/stores/user'
+import { useRouter } from 'vue-router'
 
 const userStore = useUserStore()
 // ★ v1.13.209 VIP 功能门禁判据：与「AI 选址建议 / 开店余地 / 网点优化」共用
@@ -206,6 +223,27 @@ const userStore = useUserStore()
 //   ⛔ 不得就地写 role === 'vip' || role === 'admin' —— 那会漏掉 trial 试用用户，
 //      正是 v1.13.208 线上 bug 的成因；backend/tests/vipGateGuard.test.js 会判红。
 const isVip = computed(() => userStore.isVipActive)
+
+// ===== 录入引导（v1.13.292）=====
+// 字段清单与模板统一来自 utils/importSpecs.js / importTemplates.js，
+// 与「门店位置体检」页共用同一个弹窗，⛔ 不在这里另写一份列名。
+const router = useRouter()
+const guideVisible = ref(false)
+
+function openGuide() {
+  guideVisible.value = true
+}
+async function downloadSales() {
+  const ok = await downloadSalesTemplate()
+  if (!ok) ElMessage.error('模板下载失败，请稍后重试')
+}
+/** 直接落到「录入销售」弹窗，而不是只把人丢到门店列表页 */
+function goSale() { router.push({ path: '/data', query: { sale: '1' } }) }
+function onGuideGo(kind) {
+  guideVisible.value = false
+  if (kind === 'sales') goSale()
+  else router.push('/data')
+}
 
 const loading = ref(false)
 const candidates = ref([])
@@ -421,6 +459,8 @@ onMounted(() => {
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
+.fc-guide-links { display: flex; align-items: center; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+
 .fc-tip {
   font-size: 12px;
   color: #909399;

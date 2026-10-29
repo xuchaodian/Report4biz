@@ -168,7 +168,7 @@
           <p class="ck-card-sub">这一节不讲我们收录了多少数据，只讲<b>哪些结论现在下不了</b>。</p>
           <table class="ck-comp">
             <thead>
-              <tr><th>检查项</th><th>现状</th><th>对结论的影响</th></tr>
+              <tr><th>检查项</th><th>现状</th><th>对结论的影响</th><th>怎么补</th></tr>
             </thead>
             <tbody>
               <tr :class="{ bad: data.completeness.salesRows === 0 }">
@@ -185,25 +185,49 @@
                   </template>
                   <template v-else>可结合销售做经营判断（本页仍只展示结构）</template>
                 </td>
+                <td class="ck-fix">
+                  <el-button link type="primary" size="small" @click="openGuide('sales')">看字段说明</el-button>
+                  <el-button link type="primary" size="small" @click="downloadSales">下载模板</el-button>
+                </td>
               </tr>
               <tr :class="{ bad: data.completeness.categoryEmpty > 0 }">
                 <td>门店品类</td>
                 <td>{{ data.completeness.categoryEmpty }} 家为空</td>
                 <td>品类为空时无法按业态比较，也无法参与销售预测的同业态降级</td>
+                <td class="ck-fix">
+                  <el-button link type="primary" size="small" @click="openGuide('store', 'store_category')">补「门店区分」</el-button>
+                </td>
               </tr>
               <tr :class="{ bad: data.completeness.areaMissing > 0 }">
                 <td>营业面积</td>
                 <td>{{ data.completeness.areaMissing }} 家缺</td>
                 <td>缺面积的店无法判店型（大店/小店），也进不了销售预测</td>
+                <td class="ck-fix">
+                  <el-button link type="primary" size="small" @click="openGuide('store', 'store_area')">补「门店面积」</el-button>
+                </td>
               </tr>
               <tr :class="{ bad: data.completeness.coordMissing > 0 }">
                 <td>经纬度</td>
                 <td>{{ data.completeness.coordMissing }} 家缺</td>
                 <td>没有坐标的店不参与任何间距计算，本页所有数字都不含它们</td>
+                <td class="ck-fix">
+                  <el-button link type="primary" size="small" @click="goGeocode">去地址解析</el-button>
+                </td>
               </tr>
             </tbody>
           </table>
+          <p class="ck-foot-note">
+            字段含义与示例值见弹窗里的「导入字段说明」（与系统实际解析的列同源）。
+            销售记录可只填<b>档位区间</b>，不必暴露精确营业额。
+          </p>
         </section>
+
+        <ImportGuideDialog
+          v-model="guideVisible"
+          :tab="guideTab"
+          :highlight="guideHighlight"
+          @go="onGuideGo"
+        />
 
         <p class="ck-disclaimer">{{ data.note }}｜本页不消耗任何第三方数据配额。</p>
       </template>
@@ -216,12 +240,41 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import ImportGuideDialog from '@/components/ImportGuideDialog.vue'
+import { downloadSalesTemplate } from '@/utils/importTemplates.js'
 
 const router = useRouter()
 const loading = ref(false)
 const errorMsg = ref('')
 const data = ref(null)
 const nearM = ref(300)
+
+// 「怎么补」：所有字段说明都指向同一个弹窗，⛔ 不在本页另写一份字段清单
+const guideVisible = ref(false)
+const guideTab = ref('store')
+const guideHighlight = ref('')
+
+function openGuide(tab, highlight = '') {
+  guideTab.value = tab
+  guideHighlight.value = highlight
+  guideVisible.value = true
+}
+
+async function downloadSales() {
+  const ok = await downloadSalesTemplate()
+  if (!ok) ElMessage.error('模板下载失败，请稍后重试')
+}
+
+/** 补坐标要成批做，直接把人送到「地址解析」并自动打开它 */
+function goGeocode() { router.push({ path: '/data', query: { geocode: '1' } }) }
+
+/** 弹窗里的「去录入」：销售要落到具体的录入弹窗，别只丢到列表页 */
+function onGuideGo(kind) {
+  guideVisible.value = false
+  if (kind === 'sales') router.push({ path: '/data', query: { sale: '1' } })
+  else router.push('/data')
+}
 
 // 分档顺序与后端 utils/storeCheckup.js 的 DISTANCE_BUCKETS 一一对应
 // ⚠️ 两边改一处必须同改，否则条形图会错位（数值对不上标签）
@@ -345,6 +398,8 @@ onMounted(() => load(1))
 .ck-comp td:nth-child(2) { white-space: nowrap; color: #111827; }
 .ck-comp tr.bad td:nth-child(2) { color: #b91c1c; font-weight: 600; }
 .ck-comp td:last-child { color: #4b5563; line-height: 1.6; }
+.ck-comp td.ck-fix { white-space: nowrap; }
+.ck-comp td.ck-fix .el-button + .el-button { margin-left: 4px; }
 
 .ck-disclaimer { font-size: 12px; color: #9ca3af; margin: 0; }
 </style>
