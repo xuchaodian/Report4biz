@@ -25,7 +25,7 @@
               <el-dropdown-item command="import"><el-icon><Upload /></el-icon>导入</el-dropdown-item>
               <el-dropdown-item command="geocode"><el-icon><MapLocation /></el-icon>地址解析</el-dropdown-item>
               <el-dropdown-item command="export"><el-icon><Download /></el-icon>导出</el-dropdown-item>
-              <el-dropdown-item command="dedup" divided><el-icon><Document /></el-icon>台账清洗</el-dropdown-item>
+              <el-dropdown-item command="dedup" divided><el-icon><Document /></el-icon>门店清洗</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -471,8 +471,8 @@
       </template>
     </el-dialog>
 
-    <!-- 台账清洗（v1.13.285）：同品牌重复录入检测 → 合并 / 撤销 -->
-    <el-dialog v-model="dedupVisible" title="台账清洗" width="900px" draggable :close-on-click-modal="false">
+    <!-- 门店清洗（v1.13.288 更名，原「台账清洗」）：同品牌贴邻检测 → 合并 / 撤销 -->
+    <el-dialog v-model="dedupVisible" title="门店清洗" width="900px" draggable :close-on-click-modal="false">
       <p class="dedup-note">
         只在<b>同一品牌</b>内判定：坐标相同或相距 ≤ 50m 视为<b>疑似重复录入</b>；50~300m 为<b>邻近门店</b>（可能是两家真店）。
         同一商场里两个不同品牌的门店<b>不会被判为重复</b>，跨品牌合并也会被后端拒绝。
@@ -484,7 +484,7 @@
 
       <template v-else>
         <div class="dedup-stats">
-          <span>台账记录 <b>{{ dedupStats.total || 0 }}</b></span>
+          <span>门店记录 <b>{{ dedupStats.total || 0 }}</b></span>
           <span>可评估 <b>{{ dedupStats.valid || 0 }}</b></span>
           <span>疑似重复 <b class="warn">{{ dedupStats.duplicateGroups || 0 }}</b> 组</span>
           <span>冗余记录 <b class="warn">{{ dedupStats.redundantRecords || 0 }}</b> 条</span>
@@ -1544,7 +1544,7 @@ const handleImportMenuCommand = (command) => {
   }
 }
 
-// ===== 台账清洗（v1.13.285）==================================================
+// ===== 门店清洗（v1.13.285 上线，v1.13.288 更名）===============================
 // 后端：GET /api/markers/duplicates → POST /api/markers/merge → POST /api/markers/unmerge
 // 🔴 只在**同一品牌**内判定（同一商场双品牌同址是常态，不算重复；跨品牌合并后端会拒绝）。
 // 🔴 合并是软删（后端只写 merged_into），所以必须给「撤销」入口。
@@ -1602,6 +1602,40 @@ const openDedupDialog = () => {
   dedupVisible.value = true
   loadDedupIgnored()
   loadDedup()
+}
+
+/**
+ * 导入成功后主动引导「门店清洗」（v1.13.288）
+ *
+ * 为什么放在这一刻：门店刚进来、用户正等着看结果，此时"顺手查一下有没有贴太近的"意愿最高。
+ * 只放进下拉菜单里等人自己找，绝大多数人不会去找 —— 清洗是体检的前置步骤，漏了它后面的
+ * 蚕食/重叠结论都会被同址门店污染。
+ *
+ * ⚠️ 刻意不做成自动执行：清洗弹窗里逐组「合并/确认两家」都会改数据，
+ *    必须先让用户知道要看什么，不能导入完就替他点。
+ * ⚠️ 延迟 320ms：让上一个弹窗（导入/地址解析）的关闭动画走完，否则两个 overlay 会闪一下。
+ */
+const askCleanupAfterImport = (count) => {
+  if (!count || count <= 0) return
+  setTimeout(async () => {
+    try {
+      await ElMessageBox.confirm(
+        `已导入 <b>${count}</b> 家门店。要不要现在做一次「门店清洗」？<br/>` +
+        '<span style="color:#909399;font-size:12px">只检查同品牌、位置贴得过近的门店；合并前会逐组让你确认，不会自动改动数据。</span>',
+        '接着检查一下门店位置？',
+        {
+          dangerouslyUseHTMLString: true,
+          confirmButtonText: '开始清洗',
+          cancelButtonText: '暂不清洗',
+          type: 'info',
+          closeOnClickModal: false
+        }
+      )
+    } catch (e) {
+      return // 用户选了「暂不清洗」或直接关闭
+    }
+    openDedupDialog()
+  }, 320)
 }
 
 const ignoreDedupGroup = (g) => {
@@ -1696,6 +1730,8 @@ const handleImportConfirm = async () => {
     if (result.success) {
       ElMessage.success(`成功导入 ${result.count} 条数据`)
       importDialogVisible.value = false
+      // v1.13.288：导入完成即引导清洗（不做则同址门店会污染后续体检结论）
+      askCleanupAfterImport(result.count)
     } else {
       ElMessage.error(result.message)
     }
@@ -1901,6 +1937,8 @@ const handleGeocodeImport = async () => {
     ElMessage.success(`成功导入 ${importCount} 条${failCount > 0 ? `，失败 ${failCount} 条` : ''}`)
     geocodeDialogVisible.value = false
     markerStore.fetchMarkers(true)  // 批量导入后强制刷新（绕过 H2 新鲜期去重）
+    // v1.13.288：地址解析入库后同样引导清洗（只提示、不自动执行）
+    askCleanupAfterImport(importCount)
   } catch (err) {
     ElMessage.error('导入出错：' + err.message)
   } finally {
@@ -2614,7 +2652,7 @@ const resetRanking = () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* ===== 台账清洗（v1.13.285）=====
+/* ===== 门店清洗（v1.13.285 上线，v1.13.288 更名）=====
    ⚠️ el-dialog 内的自建元素只用单类选择器：弹窗根节点不继承父 scopeId，
    后代选择器（如 .dedup-list .x）在部分场景会静默失效（见项目铁律）。 */
 .dedup-note {
