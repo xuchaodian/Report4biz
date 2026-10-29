@@ -6,6 +6,7 @@ import { readCsvText } from '../utils/csvEncoding.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
+import { buildStoreCheckup } from '../utils/storeCheckup.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -86,6 +87,72 @@ router.get('/duplicates', authenticate, (req, res) => {
   } catch (error) {
     console.error('[Markers] 门店清洗（重复检查）失败:', error)
     res.status(500).json({ message: '门店清洗检查失败，请稍后重试' })
+  }
+})
+
+// ============================================================================
+// 门店位置体检（v1.13.291）
+// GET /api/markers/checkup?nearM=300&page=1&pageSize=50
+//
+// 只算**本人**门店（WHERE user_id）—— ⛔ 刻意不走集团可见域放大：
+//   体检是「我这批门店布局有没有问题」的自我检查，混进子公司的店会让人误判自己的结构。
+//   与「门店清洗」同口径（那里也只扫 WHERE user_id）。
+//
+// 🔴 统计口径：⛔ 必须 `merged_into IS NULL`（已合并的行不算独立门店）。
+// 🔴 路由**必须定义在 `GET /:id` 之前**，否则 '/checkup' 会被当成 id 命中。
+// ⭐ 纯本地几何计算 + 一次聚合查询，**不消耗联通/高德任何配额** ⇒ 可全免费。
+// ============================================================================
+router.get('/checkup', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const userId = req.user.id
+    const nearM = Math.min(Math.max(Number(req.query.nearM) || 300, 10), 5000)
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 10), 200)
+
+    const stores = db.prepare(
+      `SELECT id, name, brand, store_code, store_area, latitude, longitude,
+              city, address, store_type, store_category
+         FROM markers
+        WHERE user_id = ? AND merged_into IS NULL`
+    ).all(userId)
+
+    const result = buildStoreCheckup(stores, { nearM })
+
+    // 完备度：销售记录数决定「上面这些结构结论能推多远」
+    const salesRows = db.prepare(
+      `SELECT COUNT(*) c FROM store_sales s
+         JOIN markers m ON s.store_id = m.id AND m.merged_into IS NULL
+        WHERE m.user_id = ?`
+    ).get(userId).c
+
+    const categoryEmpty = stores.filter((s) => !String(s.store_category || '').trim()).length
+
+    const start = (page - 1) * pageSize
+    res.json({
+      success: true,
+      nearM,
+      counts: result.counts,
+      bucketCounts: result.bucketCounts,
+      medianNearestM: result.medianNearestM,
+      medianBasis: result.medianBasis,
+      noNeighbor: result.noNeighbor,
+      areaBuckets: result.areaBuckets,
+      completeness: {
+        salesRows,
+        categoryEmpty,
+        areaMissing: result.counts.noArea,
+        coordMissing: result.counts.noCoord
+      },
+      pairsTotal: result.pairs.length,
+      page,
+      pageSize,
+      pairs: result.pairs.slice(start, start + pageSize),
+      note: '仅本人门店；跨品牌同址不参与判定；同址组可能是「同一商场两套店型」，不构成合并建议'
+    })
+  } catch (error) {
+    console.error('[Markers] 门店体检失败:', error)
+    res.status(500).json({ message: '门店体检计算失败，请稍后重试' })
   }
 })
 

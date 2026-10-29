@@ -29,6 +29,10 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <!-- 门店位置体检（v1.13.291）：页面级跳转，⛔ 不塞进「导入门店」下拉（那是动作菜单） -->
+        <el-button @click="router.push('/store-checkup')">
+          <el-icon><Aim /></el-icon>位置体检
+        </el-button>
         <el-button
           v-if="selectedRows.length > 0"
           type="danger"
