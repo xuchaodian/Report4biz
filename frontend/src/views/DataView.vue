@@ -474,8 +474,12 @@
     <!-- 门店清洗（v1.13.288 更名，原「台账清洗」）：同品牌贴邻检测 → 合并 / 撤销 -->
     <el-dialog v-model="dedupVisible" title="门店清洗" width="900px" draggable :close-on-click-modal="false">
       <p class="dedup-note">
-        只在<b>同一品牌</b>内判定：坐标相同或相距 ≤ 50m 视为<b>疑似重复录入</b>；50~300m 为<b>邻近门店</b>（可能是两家真店）。
-        同一商场里两个不同品牌的门店<b>不会被判为重复</b>，跨品牌合并也会被后端拒绝。
+        只在<b>同一品牌</b>内判定，并按形态分三档：
+        <span class="tag-hint k-duplicate">编码相同</span>同一条记录录了两遍，可合并；
+        <span class="tag-hint k-dualFormat">双店型</span>编码不同且面积差 2 倍以上 ——
+        同一商场里的大店（堂食）＋小店（外卖/档口），是两家真店，<b>不可合并</b>；
+        <span class="tag-hint k-suspected">待确认</span>判不出来（面积缺失或相差不大），需要你看一眼。
+        50~300m 的邻近门店只列出、不给合并入口；跨品牌一律不报，后端也会拒绝跨品牌合并。
       </p>
 
       <div v-if="dedupLoading" class="dedup-loading">
@@ -486,7 +490,8 @@
         <div class="dedup-stats">
           <span>门店记录 <b>{{ dedupStats.total || 0 }}</b></span>
           <span>可评估 <b>{{ dedupStats.valid || 0 }}</b></span>
-          <span>疑似重复 <b class="warn">{{ dedupStats.duplicateGroups || 0 }}</b> 组</span>
+          <span>疑似重复 <b class="warn">{{ dedupMergeableGroups }}</b> 组</span>
+          <span v-if="dedupStats.dualFormatGroups">双店型 <b class="info">{{ dedupStats.dualFormatGroups }}</b> 组（不可合并）</span>
           <span>冗余记录 <b class="warn">{{ dedupStats.redundantRecords || 0 }}</b> 条</span>
           <span>去重后独立门店 <b>{{ dedupStats.distinctStores || 0 }}</b></span>
           <span v-if="dedupStats.skipped">缺坐标跳过 <b>{{ dedupStats.skipped }}</b></span>
@@ -508,10 +513,14 @@
             <div class="dedup-group-head">
               <span class="dg-idx">{{ gi + 1 }}</span>
               <span class="dg-brand">{{ g.brand || '品牌未填' }}</span>
+              <span class="dg-kind" :class="'k-' + g.kind">{{ dedupKindLabel(g.kind) }}</span>
               <span class="dg-meta">{{ g.size }} 条 · 组内最远相距 {{ g.maxDistanceM }}m</span>
             </div>
-            <label v-for="s in g.stores" :key="s.id" class="dedup-row" :class="{ keep: dedupChoice[g.key] === s.id }">
+            <p v-if="g.reason" class="dg-reason">{{ g.reason }}</p>
+            <label v-for="s in g.stores" :key="s.id" class="dedup-row"
+                   :class="{ keep: g.mergeable && dedupChoice[g.key] === s.id, 'no-pick': !g.mergeable }">
               <input
+                v-if="g.mergeable"
                 type="radio"
                 :name="'dedup-' + g.key"
                 :value="s.id"
@@ -522,15 +531,18 @@
               <!-- 同组内城市必然相同 ⇒ 只显示区+地址，避免「上海 · 宝山区 · 上海市宝山区…」重复 -->
               <span class="dr-meta">{{ [s.district, s.address].filter(Boolean).join(' · ') || (s.city || '无地址') }}</span>
               <span class="dr-tags">
-                <el-tag v-if="s.store_code" size="small" type="success">有编码</el-tag>
-                <el-tag v-if="s.store_area" size="small">{{ s.store_area }}㎡</el-tag>
+                <!-- 🔴 接口返回的是 storeCode / storeArea（camelCase），这里必须兼容两种写法，
+                     否则标签永远不渲染（282 起一直静默缺失）。双店型两组常常同名，
+                     编码与面积正是让用户分辨「哪家是大店」的唯一线索。 -->
+                <el-tag v-if="dedupStoreCode(s)" size="small" type="success">{{ dedupStoreCode(s) }}</el-tag>
+                <el-tag v-if="dedupStoreArea(s)" size="small">{{ dedupStoreArea(s) }}㎡</el-tag>
               </span>
             </label>
             <div class="dedup-group-foot">
-              <span class="dg-hint">选一条保留，其余隐藏（可撤销）</span>
+              <span class="dg-hint">{{ g.mergeable ? '选一条保留，其余隐藏（可撤销）' : '两家并存，不提供合并' }}</span>
               <div>
-                <el-button size="small" @click="ignoreDedupGroup(g)">确认是两家</el-button>
-                <el-button size="small" type="primary" :loading="dedupMergingKey === g.key" @click="mergeDedupGroup(g)">合并为一家</el-button>
+                <el-button size="small" @click="ignoreDedupGroup(g)">{{ g.mergeable ? '确认是两家' : '知道了，不再提示' }}</el-button>
+                <el-button v-if="g.mergeable" size="small" type="primary" :loading="dedupMergingKey === g.key" @click="mergeDedupGroup(g)">合并为一家</el-button>
               </div>
             </div>
           </div>
@@ -556,6 +568,7 @@
               <span class="dp-vs">↔</span>
               <span>{{ p.stores[1].name }}</span>
               <el-tag v-if="p.brandUnknown" size="small" type="warning">品牌缺失，需人工判断</el-tag>
+              <el-tag v-else-if="p.kind === 'dualFormat'" size="small" type="info">双店型</el-tag>
             </div>
             <p class="dp-hint">这一档距离更像「同商圈的两家真店」，所以只列出来、不提供合并按钮。</p>
           </div>
@@ -563,7 +576,7 @@
       </template>
 
       <template #footer>
-        <span class="dedup-foot-note">合并只隐藏不删除，可撤销；跨品牌的记录永远不会被合并</span>
+        <span class="dedup-foot-note">合并只隐藏不删除、可撤销；跨品牌与「双店型」永远不会被合并（后端同样会拒绝）</span>
         <el-button @click="dedupVisible = false">关闭</el-button>
         <el-button type="primary" :loading="dedupLoading" @click="loadDedup">重新检测</el-button>
       </template>
@@ -1561,6 +1574,23 @@ const dedupStats = computed(() => dedupData.value.stats || {})
 // 组 key ＝ 品牌 + 升序 id 列表（同一批门店即同一组，与后端返回顺序无关）
 const dedupGroupKey = (g) => `${g.brand || '_'}|${g.stores.map((s) => s.id).sort((a, b) => a - b).join(',')}`
 const dedupAllGroups = computed(() => (dedupData.value.duplicateGroups || []).map((g) => ({ ...g, key: dedupGroupKey(g) })))
+
+// 定性标签（后端 classifyStoreGroup 给的 kind）
+const DEDUP_KIND_LABEL = { duplicate: '编码相同', dualFormat: '双店型', suspected: '待确认' }
+const dedupKindLabel = (k) => DEDUP_KIND_LABEL[k] || '待确认'
+// 编码/面积取值兼容（前端历史上混用过 snake_case 与 camelCase）
+const dedupStoreCode = (s) => String(s?.storeCode ?? s?.store_code ?? '').trim()
+const dedupStoreArea = (s) => {
+  const v = s?.storeArea ?? s?.store_area
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+// 统计行显示「疑似重复」时只数可合并的组 —— 双店型是两家真店，不能算进重复里吓人
+const dedupMergeableGroups = computed(() => {
+  const n = (dedupData.value.stats || {}).mergeableGroups
+  if (Number.isFinite(n)) return n
+  return dedupAllGroups.value.filter((g) => g.mergeable).length
+})
 const dedupVisibleGroups = computed(() => dedupAllGroups.value.filter((g) => !dedupIgnored.value.includes(g.key)))
 
 // 默认保留「信息更完整」的那条：有编码 > 有面积 > 名字更长（避免保留「文峰」这种残缺名）
@@ -1652,6 +1682,10 @@ const resetDedupIgnored = () => {
 }
 
 const mergeDedupGroup = async (g) => {
+  if (g.mergeable === false) {
+    ElMessage.warning('这一组是同一商场的两个店型，不是重复录入，不能合并')
+    return
+  }
   const keepId = dedupChoice[g.key]
   const keep = g.stores.find((s) => s.id === keepId)
   const mergeIds = g.stores.filter((s) => s.id !== keepId).map((s) => s.id)
@@ -2684,6 +2718,71 @@ const resetRanking = () => {
 }
 .dedup-stats b.warn {
   color: #e6a23c;
+}
+.dedup-stats b.info {
+  color: #337ecc;
+}
+/* 口径说明里的行内小标签（与组头 .dg-kind 同色系） */
+.tag-hint {
+  display: inline-block;
+  margin: 0 4px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid;
+}
+.tag-hint.k-duplicate {
+  background: #fef0f0;
+  color: #c45656;
+  border-color: #fde2e2;
+}
+.tag-hint.k-dualFormat {
+  background: #ecf5ff;
+  color: #337ecc;
+  border-color: #d9ecff;
+}
+.tag-hint.k-suspected {
+  background: #fdf6ec;
+  color: #b88230;
+  border-color: #faecd8;
+}
+/* 组头定性标签 */
+.dg-kind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid;
+}
+.dg-kind.k-duplicate {
+  background: #fef0f0;
+  color: #c45656;
+  border-color: #fde2e2;
+}
+.dg-kind.k-dualFormat {
+  background: #ecf5ff;
+  color: #337ecc;
+  border-color: #d9ecff;
+}
+.dg-kind.k-suspected {
+  background: #fdf6ec;
+  color: #b88230;
+  border-color: #faecd8;
+}
+/* 判定依据（编码 / 面积比） */
+.dg-reason {
+  margin: 0;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: #909399;
+}
+/* 双店型的行没有单选圈，缩进对齐到有圈的行的文字位置 */
+.dedup-row.no-pick {
+  cursor: default;
+  padding-left: 30px;
+  background: #fafcff;
 }
 .dedup-warn {
   margin-bottom: 8px;

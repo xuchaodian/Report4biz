@@ -104,3 +104,32 @@ describe('单行接口不能排除已合并行（否则撤销不了）', () => {
     expect(body.includes('SET merged_into = NULL')).toBe(true)
   })
 })
+
+// ============================================================================
+// 双店型二次拦截（v1.13.289）
+//
+// UI 已经不给双店型组合并入口，但接口必须自己拒绝 —— 否则绕过 UI 直接打接口
+// 就能把「同一商场的大店 + 小店」合并掉，属灾难性数据丢失。
+// ============================================================================
+describe('双店型禁止合并（接口侧兜底）', () => {
+  const body = () => {
+    const i = markersSrc.indexOf("router.post('/merge'")
+    return markersSrc.slice(i, i + 6000)
+  }
+
+  it('必须调用 looksLikeDualFormat 并给出可读原因', () => {
+    expect(body().includes('looksLikeDualFormat')).toBe(true)
+    expect(body().includes('两个店型')).toBe(true)
+  })
+
+  it('⚠️ SELECT 必须带 store_code / store_area —— 少了它判据恒为 false，拦截静默失效', () => {
+    const sel = markersSrc.split('\n').find((l) => l.includes('SELECT id, name, brand, store_code, store_area')) || ''
+    expect(sel, '合并查询没取 store_code/store_area ⇒ 双店型拦截永远不会触发').not.toBe('')
+  })
+
+  it('/duplicates 的返回里带上 kind / mergeable（前端据此隐藏合并按钮）', () => {
+    const src = read('backend/src/utils/storeDedup.js')
+    expect(src.includes("kind: cls.kind")).toBe(true)
+    expect(src.includes('mergeable: cls.kind !== ')).toBe(true)
+  })
+})

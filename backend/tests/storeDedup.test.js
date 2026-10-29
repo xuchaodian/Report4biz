@@ -232,3 +232,87 @@ describe('路由顺序（经典坑）', () => {
     expect(line.includes('authenticate')).toBe(true)
   })
 })
+
+// ============================================================================
+// 双店型同址（v1.13.289）
+//
+// 背景：v1.13.282 的口径是「同品牌 + ≤50m ⇒ 重复」。跑真实数据后发现 youshi 233 条里
+// 那 13 组**门店编码全不同、面积比 2.3~6.3 倍**，形态是「同一商场：8xxx 大店（堂食/MEGA）
+// + 2xxx 小店（外卖/档口）」。按重复合并＝删客户真实门店。
+// ⇒ 候选组必须定性，双店型 `mergeable=false`，且不计入冗余条数。
+// ============================================================================
+describe('双店型同址：编码不同 + 面积比 ≥2', () => {
+  it('🔴 360㎡ / 137㎡ + 异码 ⇒ dualFormat、不可合并、不算冗余', () => {
+    resetSeq()
+    const r = findStoreDuplicates([
+      store('中环百联', '优事', 0, { store_code: '8005', store_area: 360 }),
+      store('中环百联', '优事', 0, { store_code: '2266', store_area: 137 })
+    ])
+    expect(r.duplicateGroups).toHaveLength(1)
+    expect(r.duplicateGroups[0].kind).toBe('dualFormat')
+    expect(r.duplicateGroups[0].mergeable).toBe(false)
+    // 两家都是真店 ⇒ 冗余 0、独立门店仍是 2
+    expect(r.stats.redundantRecords).toBe(0)
+    expect(r.stats.dualFormatGroups).toBe(1)
+    expect(r.stats.dualFormatStores).toBe(2)
+    expect(r.stats.distinctStores).toBe(2)
+    expect(r.duplicateGroups[0].reason).toContain('2.6')
+  })
+
+  it('同编码 ⇒ duplicate（可合并，冗余 1）', () => {
+    resetSeq()
+    const r = findStoreDuplicates([
+      store('文峰广场', '优事', 0, { store_code: '8006', store_area: 330 }),
+      store('文峰', '优事', 0, { store_code: '8006', store_area: 330 })
+    ])
+    expect(r.duplicateGroups[0].kind).toBe('duplicate')
+    expect(r.duplicateGroups[0].mergeable).toBe(true)
+    expect(r.stats.redundantRecords).toBe(1)
+    expect(r.stats.distinctStores).toBe(1)
+  })
+
+  it('异码但面积接近（115 / 86，1.34 倍）⇒ suspected，仍可合并', () => {
+    resetSeq()
+    const r = findStoreDuplicates([
+      store('北上海', '优事', 0, { store_code: '2240', store_area: 115 }),
+      store('北上海商业广场店', '优事', 0, { store_code: '2612', store_area: 86 })
+    ])
+    expect(r.duplicateGroups[0].kind).toBe('suspected')
+    expect(r.duplicateGroups[0].mergeable).toBe(true)
+    expect(r.stats.redundantRecords).toBe(1)
+  })
+
+  it('⚠️ 面积缺失时**不能**判双店型（否则会把真重复放过去，也会把大店小店误判）', () => {
+    resetSeq()
+    const r = findStoreDuplicates([
+      store('金虹桥商场店', '优事', 0, { store_code: '6001' }),
+      store('金虹桥', '优事', 0, { store_code: '2096', store_area: 106 })
+    ])
+    expect(r.duplicateGroups[0].kind).toBe('suspected')
+    expect(r.duplicateGroups[0].mergeable).toBe(true)
+  })
+
+  it('可合并组排在双店型前面（避免用户第一眼点到不该合并的）', () => {
+    resetSeq()
+    const r = findStoreDuplicates([
+      store('双店型-A', '优事', 0, { store_code: '8001', store_area: 380 }),
+      store('双店型-B', '优事', 0, { store_code: '2015', store_area: 88 }),
+      store('真重复-A', '优事', 20000, { store_code: '9001', store_area: 100 }),
+      store('真重复-B', '优事', 20000, { store_code: '9001', store_area: 100 })
+    ])
+    expect(r.duplicateGroups).toHaveLength(2)
+    expect(r.duplicateGroups[0].kind).toBe('duplicate')
+    expect(r.duplicateGroups[1].kind).toBe('dualFormat')
+    expect(r.stats.mergeableGroups).toBe(1)
+    expect(r.stats.dualFormatGroups).toBe(1)
+    expect(r.stats.redundantRecords).toBe(1)
+  })
+
+  it('looksLikeDualFormat 直接判：同码优先判「不是双店型」', async () => {
+    const { looksLikeDualFormat } = await import('../src/utils/storeDedup.js')
+    expect(looksLikeDualFormat({ storeCode: '1', storeArea: 300 }, { storeCode: '1', storeArea: 100 })).toBe(false)
+    expect(looksLikeDualFormat({ storeCode: '1', storeArea: 300 }, { storeCode: '2', storeArea: 100 })).toBe(true)
+    expect(looksLikeDualFormat({ storeCode: '1', storeArea: 300 }, { storeCode: '2', storeArea: 200 })).toBe(false)
+    expect(looksLikeDualFormat({ storeCode: '1' }, { storeCode: '2', storeArea: 100 })).toBe(false)
+  })
+})

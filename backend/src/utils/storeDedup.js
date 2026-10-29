@@ -11,9 +11,16 @@
  *   ⇒ 跨品牌同址**既不算重复，也不算蚕食**，本函数直接不报。
  *
  * 业务口径：
- *   · 重复（duplicate）：同品牌 + 距离 ≤ epsM（默认 50m）⇒ 用并查集合成一组（支持链式 A≈B≈C）
- *   · 邻近（nearby）   ：同品牌 + epsM < 距离 ≤ nearM（默认 300m）⇒ 成对返回，可能是真蚕食
+ *   · 候选组（candidate）：同品牌 + 距离 ≤ epsM（默认 50m）⇒ 用并查集合成一组（支持链式 A≈B≈C）
+ *   · 邻近（nearby）     ：同品牌 + epsM < 距离 ≤ nearM（默认 300m）⇒ 成对返回，可能是真蚕食
  *   · 品牌为空：无法确认同品牌 ⇒ **不判重复**，只作为 nearby 返回并标 `brandUnknown`
+ *
+ * 🔴🔴 v1.13.289 给候选组加了**定性**（`kind`），因为「≤50m 同品牌」并不等于重复：
+ *   · `duplicate`  —— 全组共用一个非空门店编码 ⇒ 同一条记录录了两遍，可合并
+ *   · `dualFormat` —— 编码不同 + 面积比 ≥2 ⇒ **同一商场的大店 + 小店**，禁止合并
+ *                     （实测 youshi 233 条里 13 组全是这种：8xxx 大店 + 2xxx 小店，面积比 2.3~6.3）
+ *   · `suspected`  —— 判不了（面积缺失、面积接近但编码不同）⇒ 提示人工，可合并
+ *   只有 `mergeable === true` 的组才允许走 POST /merge，后端另有二次拦截。
  *
  * ⚠️ 距离用 haversine（米）。台帐量级到万级时，O(n²) 会卡死 ⇒ 这里按网格分桶，
  *    只比较相邻 9 格。`maxStores` 兜底防止异常大表把内存打爆。
@@ -35,6 +42,89 @@ export function distanceMeters(a, b) {
 /** 品牌归一化：去首尾空白、合并内部空白、大小写不敏感 */
 export function normalizeBrand(b) {
   return String(b ?? '').replace(/\s+/g, ' ').trim().toUpperCase()
+}
+
+/** 门店编码（去空白）。这是判断「同一条记录录了两遍」最硬的证据 */
+export function storeCodeOf(s) {
+  const v = s?.storeCode ?? s?.store_code ?? ''
+  return String(v ?? '').trim()
+}
+
+/** 门店面积（㎡）；无效/缺失返回 0 */
+export function storeAreaOf(s) {
+  const v = s?.storeArea ?? s?.store_area
+  if (v === null || v === undefined || v === '') return 0
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/** 双店型判据的面积比阈值（大店/小店）。实测 youshi 的 17 组落在 2.3~6.3 倍 */
+export const DUAL_FORMAT_RATIO = 2
+
+/**
+ * 这两家是不是「同一商场里的大店 + 小店」（双店型同址）。
+ *
+ * 🔴🔴 这是 v1.13.289 修的一个灾难性误判：原先「同品牌 + ≤50m ⇒ 重复」，
+ *   实测 youshi 233 条里的 13 组同址门店**门店编码全不同、面积比 2.3~6.3 倍**
+ *   （8xxx 大店 298~657㎡ + 2xxx 小店 29~216㎡，两段中间有 82㎡ 空档）。
+ *   它们是真店：同一商场里堂食/MEGA 店 + 外卖/档口店。按重复合并掉 = 删客户真实门店。
+ *
+ * 判据（顺序不能反）：
+ *   · 两者编码都非空且**相同** ⇒ 不是双店型（更像重复），返回 false
+ *   · 任一面积缺失 ⇒ 无法算比 ⇒ 返回 false（交人工，不当双店型处理）
+ *   · 面积比 ≥ ratio ⇒ 双店型
+ */
+export function looksLikeDualFormat(a, b, ratio = DUAL_FORMAT_RATIO) {
+  const ca = storeCodeOf(a)
+  const cb = storeCodeOf(b)
+  if (ca && cb && ca === cb) return false
+  const aa = storeAreaOf(a)
+  const ab = storeAreaOf(b)
+  if (!aa || !ab) return false
+  return Math.max(aa, ab) / Math.min(aa, ab) >= ratio
+}
+
+/**
+ * 给一个「同品牌 + 彼此 ≤epsM」的连通组定性。
+ *
+ * @returns {{kind:'duplicate'|'dualFormat'|'suspected', codes:string[], areas:number[], reason:string}}
+ *   duplicate  —— 全组共用一个非空编码（同一条记录录了两遍），可合并
+ *   dualFormat —— 两两都是「编码不同 + 面积比 ≥2」，是同一商场的大店 + 小店，**禁止合并**
+ *   suspected  —— 其余（面积缺失、面积接近但编码不同…），提示人工判断，可合并
+ */
+export function classifyStoreGroup(group, ratio = DUAL_FORMAT_RATIO) {
+  const codes = group.map(storeCodeOf).filter(Boolean)
+  const uniq = [...new Set(codes)]
+  const areas = group.map(storeAreaOf).filter((a) => a > 0)
+
+  // ① 全组共用一个编码 ⇒ 强证据
+  if (uniq.length === 1 && codes.length === group.length) {
+    return { kind: 'duplicate', codes: uniq, areas, reason: `门店编码相同（${uniq[0]}）` }
+  }
+
+  // ② 两两都是双店型 ⇒ 整组是双店型
+  let allDual = group.length >= 2
+  for (let i = 0; i < group.length && allDual; i += 1) {
+    for (let j = i + 1; j < group.length; j += 1) {
+      if (!looksLikeDualFormat(group[i], group[j], ratio)) { allDual = false; break }
+    }
+  }
+  if (allDual) {
+    const lo = Math.min(...areas)
+    const hi = Math.max(...areas)
+    return {
+      kind: 'dualFormat',
+      codes: uniq,
+      areas,
+      reason: `编码不同 + 面积 ${lo}㎡ / ${hi}㎡（${(hi / lo).toFixed(1)} 倍）⇒ 大店 + 小店`
+    }
+  }
+
+  // ③ 判不了 ⇒ 交人工（可合并，但提示要看一眼）
+  const hint = areas.length === group.length
+    ? `面积 ${Math.min(...areas)}~${Math.max(...areas)}㎡，编码不同`
+    : '面积或编码缺失'
+  return { kind: 'suspected', codes: uniq, areas, reason: hint }
 }
 
 function validCoord(s) {
@@ -150,6 +240,11 @@ export function findStoreDuplicates(stores, opts = {}) {
             nearbyPairs.push({
               distanceM: Math.round(d),
               brandUnknown,
+              // 邻近对永远不给合并入口，但标出双店型便于 UI 解释（实测 157/159/255/278m 也是大店+小店）
+              kind: brandUnknown
+                ? 'brandUnknown'
+                : (looksLikeDualFormat(s, o) ? 'dualFormat' : 'nearby'),
+              mergeable: false,
               stores: [s, o]
             })
           }
@@ -175,14 +270,28 @@ export function findStoreDuplicates(stores, opts = {}) {
         maxD = Math.max(maxD, distanceMeters(group[i], group[j]))
       }
     }
+    const sorted = group.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
+    // 🔴 定性：重复 / 双店型 / 待确认。双店型**不可合并**（见 looksLikeDualFormat 注释）
+    const cls = classifyStoreGroup(sorted)
     duplicateGroups.push({
       brand: group[0].brand || '',
       size: group.length,
       maxDistanceM: Math.round(maxD),
-      stores: group.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'))
+      kind: cls.kind,
+      mergeable: cls.kind !== 'dualFormat',
+      reason: cls.reason,
+      storeCodes: cls.codes,
+      storeAreas: cls.areas,
+      stores: sorted
     })
   }
-  duplicateGroups.sort((a, b) => b.size - a.size || a.maxDistanceM - b.maxDistanceM)
+  // 排序：可合并的在前；同类里「编码相同」最硬（直接可判），其次待确认，最后双店型
+  // ⛔ 双店型排最后，避免用户第一眼就点到「合并不是给它们用的」那一组
+  const KIND_RANK = { duplicate: 0, suspected: 1, dualFormat: 2 }
+  duplicateGroups.sort((a, b) => Number(b.mergeable) - Number(a.mergeable)
+    || (KIND_RANK[a.kind] ?? 9) - (KIND_RANK[b.kind] ?? 9)
+    || b.size - a.size
+    || a.maxDistanceM - b.maxDistanceM)
 
   // 邻近对里去掉已经被并进同一重复组的（否则同一家店会被报两次）
   const prunedNearby = nearbyPairs
@@ -190,8 +299,14 @@ export function findStoreDuplicates(stores, opts = {}) {
     .sort((a, b) => a.distanceM - b.distanceM)
 
   stats.duplicateGroups = duplicateGroups.length
+  // 按定性拆开统计：双店型**不算冗余**（它们是两家真店），不能从独立门店数里扣
+  const mergeable = duplicateGroups.filter((g) => g.mergeable)
+  const dual = duplicateGroups.filter((g) => g.kind === 'dualFormat')
+  stats.mergeableGroups = mergeable.length
+  stats.dualFormatGroups = dual.length
+  stats.dualFormatStores = dual.reduce((n, g) => n + g.size, 0)
   stats.duplicateStores = duplicateGroups.reduce((n, g) => n + g.size, 0)
-  stats.redundantRecords = duplicateGroups.reduce((n, g) => n + g.size - 1, 0)
+  stats.redundantRecords = mergeable.reduce((n, g) => n + g.size - 1, 0)
   stats.nearbyPairs = prunedNearby.length
   stats.distinctStores = stats.valid - stats.redundantRecords
 

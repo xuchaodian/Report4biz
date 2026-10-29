@@ -9,7 +9,7 @@ import { parsePaging } from '../utils/paging.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
-import { findStoreDuplicates, distanceMeters, normalizeBrand } from '../utils/storeDedup.js'
+import { findStoreDuplicates, distanceMeters, normalizeBrand, looksLikeDualFormat, storeCodeOf, storeAreaOf } from '../utils/storeDedup.js'
 
 const router = express.Router()
 const upload = multer({ dest: 'uploads/' })
@@ -54,6 +54,9 @@ router.get('/', authenticate, (req, res) => {
 //      集团 owner 看子公司台账的清洗不在本接口范围。
 // 🔴 去重与蚕食**只在同一品牌内判定**（同账号多品牌、同商场双品牌同址是常态），
 //    详见 utils/storeDedup.js 顶部说明。
+// 🔴🔴 「同品牌 ≤50m」**不等于重复**（v1.13.289）：youshi 233 条里 13 组同址门店编码全不同、
+//    面积比 2.3~6.3 倍 ⇒ 是同一商场的大店 + 小店。为此每组带 `kind` 与 `mergeable`，
+//    双店型 `mergeable=false`，/merge 侧另有二次拦截（见下）。
 // 纯本地几何计算，**不消耗联通配额**。
 // ============================================================================
 router.get('/duplicates', authenticate, (req, res) => {
@@ -78,7 +81,7 @@ router.get('/duplicates', authenticate, (req, res) => {
       ...result,
       note: result.stats.truncated
         ? `门店数超过 ${50000} 条，已跳过计算（请按城市分批）`
-        : '仅在同一品牌内判定重复与蚕食；跨品牌同址不报'
+        : '仅在同一品牌内判定；跨品牌同址不报。候选组已定性：duplicate=编码相同（可合并）/ dualFormat=大店+小店（禁合并）/ suspected=需人工'
     })
   } catch (error) {
     console.error('[Markers] 台账去重检查失败:', error)
@@ -113,7 +116,7 @@ router.post('/merge', authenticate, (req, res) => {
     const ids = [keepId, ...mergeIds]
     const ph = ids.map(() => '?').join(',')
     const rows = db.prepare(`
-      SELECT id, name, brand, longitude, latitude, merged_into
+      SELECT id, name, brand, store_code, store_area, longitude, latitude, merged_into
         FROM markers WHERE user_id = ? AND id IN (${ph})
     `).all(req.user.id, ...ids)
     if (rows.length !== ids.length) {
@@ -139,6 +142,19 @@ router.post('/merge', authenticate, (req, res) => {
       }
       const dist = distanceMeters(keep, s)
       if (dist > epsM) problems.push(`「${s.name}」距离 ${Math.round(dist)}m，超过 ${epsM}m 阈值`)
+
+      // 🔴🔴 双店型二次拦截（v1.13.289）：UI 已不给这类组合并入口，但接口必须自己拒绝 ——
+      //   编码不同 + 面积比 ≥2 ⇒ 同一商场的大店 + 小店，合并掉就是删掉客户真实一家店。
+      if (looksLikeDualFormat(keep, s)) {
+        const kc = storeCodeOf(keep) || '空'
+        const sc = storeCodeOf(s) || '空'
+        const ka = storeAreaOf(keep)
+        const sa = storeAreaOf(s)
+        problems.push(
+          `「${s.name}」与「${keep.name}」是同一商场的两个店型（编码 ${kc} / ${sc}，面积 ${ka}㎡ / ${sa}㎡），` +
+          '不是重复录入；如确认是同一家店，请先核对编码与面积再合并'
+        )
+      }
     }
     if (problems.length) {
       return res.status(400).json({ message: '合并被拒绝：' + problems.join('；'), problems })
