@@ -12,7 +12,7 @@ import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import lightgbm as lgb
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
 
 app = FastAPI()
 MODEL = None
@@ -32,9 +32,33 @@ async def train(req: Request):
         X = np.array(body.get('X', []), dtype=float)
         y = np.array(body.get('y', []), dtype=float)
         features = body.get('features', [])
+        # v1.13.290：按门店分组切验证集。
+        # 🔴 原先 train_test_split 是**逐行随机**，同一门店的多年样本会同时出现在
+        #    训练集与验证集 —— 同店各年只有 yearCode 不同，模型等于抄答案，
+        #    返回的 mape 严重偏乐观（Node 侧 L2 的同一 bug 见 utils/forecastCv.js）。
+        # ⚠️ 分组不足（<5 家店）时无法可靠分组，退回逐行并**显式回传 cvMode='row'**，
+        #    由 Node 侧拒绝用这份指标启用 L3（⛔ 不能静默当正常指标用）。
+        groups = body.get('groups')
+        g = np.array(groups) if groups else None
+        if g is not None and len(g) != len(X):
+            g = None
         if len(X) < 50 or len(X) != len(y):
             return JSONResponse({'success': False, 'message': '样本不足或维度不一致'})
-        Xtr, Xva, ytr, yva = train_test_split(X, y, test_size=0.2, random_state=42)
+        cv_mode = 'row'
+        if g is not None:
+            uniq = np.unique(g)
+            if len(uniq) >= 5:
+                try:
+                    tr_idx, va_idx = next(
+                        GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(X, y, groups=g)
+                    )
+                    if len(tr_idx) >= 2 and len(va_idx) >= 1:
+                        Xtr, Xva, ytr, yva = X[tr_idx], X[va_idx], y[tr_idx], y[va_idx]
+                        cv_mode = 'group'
+                except Exception as e:
+                    print('[train] group split 失败，退回逐行:', e)
+        if cv_mode == 'row':
+            Xtr, Xva, ytr, yva = train_test_split(X, y, test_size=0.2, random_state=42)
         params = {
             'objective': 'regression',
             'metric': 'mape',
@@ -60,9 +84,13 @@ async def train(req: Request):
             'best_iteration': int(model.best_iteration),
             'mape': mape,
             'n': int(len(X)),
-            'importance': [{'feature': str(f), 'gain': float(g)} for f, g in imp]
+            'cvMode': cv_mode,
+            'nGroups': int(len(np.unique(g))) if g is not None else 0,
+            'importance': [{'feature': str(f), 'gain': float(gain)} for f, gain in imp]
         }
         return JSONResponse({'success': True, 'mape': mape, 'n': len(X),
+                             'cvMode': cv_mode,
+                             'nGroups': MODEL_META['nGroups'],
                              'importance': MODEL_META['importance']})
     except Exception as e:
         return JSONResponse({'success': False, 'message': str(e)})

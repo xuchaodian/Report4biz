@@ -1,8 +1,11 @@
+import { authHeaders } from './authHeaders.js'
+
 // POI搜索接口（后端代理）
+// ⚠️ v1.13.290：`/api/poi/*` 整组已挂 authenticate ⇒ 这里必须带 token，否则 401
 async function callPoiApi(endpoint, params) {
   const response = await fetch(`/api/poi/${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(params)
   })
   return response.json()

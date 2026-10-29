@@ -9,10 +9,15 @@ const router = express.Router()
 // `/batch-geocode` 一次能解析上百条地址、`business-count`/`environment-score`
 // 每次都真实消耗高德 POI 配额（v1.13.262 的 COQPS 报错就是这么堆出来的）。
 //
-// ⚠️ 这里只挂**限速**不挂全局 authenticate：`/around`、`/polygon` 在前端是用裸 fetch
-//    调的（MapView 4 处），一并挂 authenticate 会立刻 401。真正烧钱的
-//    `/batch-geocode` 与 `/business-count` 两处单独挂 authenticate（调用方都是 axios，
-//    本来就带 token）⇒ 便宜的先靠限速兜，贵的必须登录。
+// v1.13.290 ⭐ **整组收紧为必须登录**（原先只给两个烧钱端点挂 authenticate）：
+//   旧注释写的「`/around`、`/polygon` 是裸 fetch，挂了会立刻 401」是**当时的妥协**，
+//   代价是任何人无需登录即可刷服务端 `AMAP_KEY`。现已把前端 5 处 fetch
+//   （MapView 的 around×3 / polygon×2）与 `utils/aiExecutor.js` 统一换走
+//   `utils/authHeaders.js`，裸调成为历史。
+//   🔴 部署顺序：**先前端后后端**（放宽＝先后端；收紧＝先前端），否则老页面会 401。
+// ⚠️ `authenticate` 必须排在 `rateLimit` **之前**：限流桶按 `req.user.id` 计，
+//    未登录时只能按 IP 计（换 IP 即绕过），先鉴权才能让每人的额度真正独立。
+router.use(authenticate)
 router.use(rateLimit({ max: 120, windowMs: 60 * 1000, name: 'poi' }))
 
 // 商业成熟度 POI 分类（高德 typecode 大类码，兼容子类）
@@ -99,7 +104,7 @@ const BUSINESS_CACHE_TTL = 24 * 60 * 60 * 1000 // 24h
  * POST /api/poi/business-count
  * Body: { lng, lat, radius }
  */
-router.post('/business-count', authenticate, async (req, res) => {
+router.post('/business-count', async (req, res) => {
   try {
     const { lng, lat, radius = 500 } = req.body
     if (!lng || !lat) {
@@ -316,7 +321,7 @@ router.post('/geocode', async (req, res) => {
  */
 // ⚠️ 地址解析的**批量**入口：一条请求最多解析上百个地址，是本站最贵的无配额接口。
 //    必须登录（调用方 stores/marker.js 走 axios，自带 token），且 10 次/分钟。
-router.post('/batch-geocode', authenticate, rateLimit({ max: 10, windowMs: 60 * 1000, name: 'batchgeo' }), async (req, res) => {
+router.post('/batch-geocode', rateLimit({ max: 10, windowMs: 60 * 1000, name: 'batchgeo' }), async (req, res) => {
   try {
     const { addresses } = req.body
 

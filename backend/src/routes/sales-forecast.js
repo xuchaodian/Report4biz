@@ -577,59 +577,11 @@ function buildTrainingSet(db, userId, isAdmin) {
   }
   return rows
 }
-// ===== 最小矩阵运算 =====
-function matMul(A, B) {
-  const m = A.length, n = A[0].length, p = B[0].length
-  const C = Array.from({ length: m }, () => new Array(p).fill(0))
-  for (let i = 0; i < m; i++) for (let k = 0; k < n; k++) { const a = A[i][k]; if (!a) continue; for (let j = 0; j < p; j++) C[i][j] += a * B[k][j] }
-  return C
-}
-function matTrans(A) { return A[0].map((_, j) => A.map(r => r[j])) }
-function matInv(A) {
-  const n = A.length
-  const aug = A.map((row, i) => [...row, ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))])
-  for (let col = 0; col < n; col++) {
-    let pivot = col
-    for (let r = col; r < n; r++) if (Math.abs(aug[r][col]) > Math.abs(aug[pivot][col])) pivot = r
-    if (Math.abs(aug[pivot][col]) < 1e-12) throw new Error('矩阵奇异')
-    ;[aug[col], aug[pivot]] = [aug[pivot], aug[col]]
-    const pv = aug[col][col]
-    for (let j = 0; j < 2 * n; j++) aug[col][j] /= pv
-    for (let r = 0; r < n; r++) { if (r === col) continue; const f = aug[r][col]; for (let j = 0; j < 2 * n; j++) aug[r][j] -= f * aug[col][j] }
-  }
-  return aug.map(row => row.slice(n))
-}
-// Ridge 回归（特征 z-score 标准化 + 截距列 + L2 正则），返回可预测模型
-function ridgeFitStd(Xraw, y, lambda = 1) {
-  const n = Xraw.length, d = Xraw[0].length
-  const mean = new Array(d).fill(0), std = new Array(d).fill(1)
-  for (let j = 0; j < d; j++) { let s = 0; for (let i = 0; i < n; i++) s += Xraw[i][j]; mean[j] = s / n }
-  for (let j = 0; j < d; j++) { let s = 0; for (let i = 0; i < n; i++) s += (Xraw[i][j] - mean[j]) ** 2; std[j] = Math.sqrt(s / n) || 1 }
-  const X = Xraw.map(r => [1, ...r.map((v, j) => (v - mean[j]) / std[j])])
-  const Xt = matTrans(X)
-  const XtX = matMul(Xt, X)
-  for (let i = 1; i < XtX.length; i++) XtX[i][i] += lambda
-  const Xty = Xt.map(row => [row.reduce((s, v, k) => s + v * y[k], 0)])
-  const beta = matMul(matInv(XtX), Xty).map(r => r[0])
-  return {
-    mean, std, beta,
-    predictRaw(x) { const xs = x.map((v, j) => (v - this.mean[j]) / this.std[j]); return this.beta[0] + xs.reduce((s, v, i) => s + v * this.beta[i + 1], 0) }
-  }
-}
-// LOOCV：留一交叉验证 → MAPE + 残差百分比 std（置信度）
-function loocvL2(rows, lambda = 1) {
-  const errs = []
-  for (let i = 0; i < rows.length; i++) {
-    const train = rows.filter((_, j) => j !== i)
-    const model = ridgeFitStd(train.map(r => r.X), train.map(r => r.y), lambda)
-    const predEff = Math.exp(model.predictRaw(rows[i].X))
-    const actEff = Math.exp(rows[i].y)
-    errs.push(Math.abs(predEff - actEff) / actEff)
-  }
-  const mape = errs.reduce((a, b) => a + b, 0) / errs.length
-  const sd = Math.sqrt(errs.reduce((a, b) => a + (b - mape) ** 2, 0) / errs.length)
-  return { mape, residStd: sd }
-}
+// ===== 矩阵运算 / Ridge / 交叉验证 =====
+// 🔴 v1.13.290：`ridgeFitStd` 与 `loocvL2` 已抽到 utils/forecastCv.js ——
+//   ① loocvL2 改为**按门店分组留一**（原逐行留一会让同店多年样本双向泄漏）；
+//   ② 抽成纯函数模块后单测才能覆盖（本文件 import 了 turf/geoStore，测试不宜直接引）。
+import { ridgeFitStd, loocvL2 } from '../utils/forecastCv.js'
 
 // ===================== L3 机器学习（Python FastAPI + LightGBM） =====================
 import http from 'http'
@@ -840,23 +792,32 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
     // ===== L3 机器学习（LightGBM：样本 ≥ L3_MIN 且外卖占比完整率 ≥80%，验证集 MAPE 优于 L2 才启用） =====
     try {
       const drFill = trainSet.length ? trainSet.filter(r => r.deliveryRatio != null).length / trainSet.length : 0
-      console.log('[sales-forecast] L3 trainSet =', trainSet.length, 'drFill =', drFill.toFixed(2))
+      const nStores = new Set(trainSet.map(r => (r.store && r.store.id) || 0)).size
+      console.log('[sales-forecast] L3 trainSet =', trainSet.length, 'stores =', nStores, 'drFill =', drFill.toFixed(2))
       if (trainSet.length >= L3_MIN && drFill >= 0.8) {
+        // 🔴 v1.13.290：L2 侧改为按门店分组留一（不再逐行），同一份 trainSet 的分组键也传给 L3，
+        //   让 Python 侧用 GroupShuffleSplit 切验证集 —— 否则两端各留一个口径，
+        //   同一份样本会给出两个都不诚实的 MAPE。
+        const storeIds = trainSet.map(r => (r.store && r.store.id) || 0)
         const cvL2 = loocvL2(trainSet, 1)
-        const cacheKey = 'u' + req.user.id + '_n' + trainSet.length + '_d' + FEATURE_NAMES.length
+        const cacheKey = 'u' + req.user.id + '_n' + trainSet.length + '_g' + nStores + '_d' + FEATURE_NAMES.length
         let l3m = L3_CACHE.get(cacheKey)
         if (!l3m) {
-          const tr = await postJson(L3_URL + '/train', { X: trainSet.map(r => r.X), y: trainSet.map(r => r.y), features: FEATURE_NAMES })
+          const tr = await postJson(L3_URL + '/train', { X: trainSet.map(r => r.X), y: trainSet.map(r => r.y), features: FEATURE_NAMES, groups: storeIds })
           if (tr && tr.success) {
-            l3m = { mape: tr.mape, n: trainSet.length, importance: tr.importance || [] }
+            l3m = { mape: tr.mape, n: trainSet.length, cvMode: tr.cvMode || 'row', importance: tr.importance || [] }
             L3_CACHE.set(cacheKey, l3m)
             if (L3_CACHE.size > 5) L3_CACHE.delete(L3_CACHE.keys().next().value)
           }
         }
-        console.log('[sales-forecast] L3 mape =', l3m ? l3m.mape.toFixed(3) : 'N/A', '| L2 mape =', cvL2.mape.toFixed(3))
+        console.log('[sales-forecast] L3 mape =', l3m ? l3m.mape.toFixed(3) : 'N/A', 'cvMode =', l3m ? l3m.cvMode : '-', '| L2 mape =', cvL2.mape.toFixed(3), 'groups =', cvL2.groups)
         // L3 功能更全（影响模拟/归因），同等精度优先 L3；仅当明显差于 L2（>0.5pp）才回退防回归
-        const l3Use = !!(l3m && l3m.mape < 0.35 && l3m.mape <= cvL2.mape + 0.005)
-        console.log('[sales-forecast] L3 cond:', l3m ? 'model mape=' + l3m.mape.toFixed(3) : 'NO-MODEL', 'cvL2=' + cvL2.mape.toFixed(3), '=>', l3Use)
+        // 🔴 v1.13.290 三条新增：① 分组数 <2 时 L2 指标无意义（Infinity），不允许拿它当基准；
+        //   ② Python 侧必须真的按门店分组切验证集（cvMode==='group'），否则它的 MAPE 同样偏乐观；
+        //   ③ 组数不足时 Python 会回退逐行切分 ⇒ 该情形一律不启用 L3。
+        const l3Use = !!(l3m && l3m.cvMode === 'group' && cvL2.groups >= 2 &&
+          l3m.mape < 0.35 && l3m.mape <= cvL2.mape + 0.005)
+        console.log('[sales-forecast] L3 cond:', l3m ? 'model mape=' + l3m.mape.toFixed(3) + ' cvMode=' + l3m.cvMode : 'NO-MODEL', 'cvL2=' + cvL2.mape.toFixed(3), 'groups=' + cvL2.groups, '=>', l3Use)
         if (l3Use) {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
@@ -904,12 +865,12 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
       }
     } catch (e) { console.error('[sales-forecast] L3 失败回退:', e.message) }
 
-    // ===== L2 回归（样本 ≥ 50 且 LOOCV MAPE 优于 L1 经验 35%，否则回退 L1） =====
+    // ===== L2 回归（样本 ≥ 50 且**按门店分组**留一 MAPE 优于 L1 经验 35%，否则回退 L1） =====
     try {
       console.log('[sales-forecast] L2 trainSet =', trainSet.length)
       if (trainSet.length >= 50) {
         const cv = loocvL2(trainSet, 1)
-        console.log('[sales-forecast] L2 LOOCV mape =', cv.mape.toFixed(3), 'residStd =', cv.residStd.toFixed(3))
+        console.log('[sales-forecast] L2 GroupCV mape =', String(cv.mape).slice(0, 8), 'residStd =', String(cv.residStd).slice(0, 8), 'groups =', cv.groups, 'folds =', cv.folds)
         if (cv.mape < 0.35) {
           const model = ridgeFitStd(trainSet.map(r => r.X), trainSet.map(r => r.y), 1)
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]

@@ -44,7 +44,7 @@ router.get('/', authenticate, (req, res) => {
 })
 
 // ============================================================================
-// 台账去重检查（v1.13.282）
+// 门店清洗 · 重复组检查（v1.13.282 立，v1.13.288 更名「门店清洗」）
 // GET /api/markers/duplicates?epsM=50&nearM=300
 //
 // ⚠️ 必须定义在 `GET /:id` **之前** —— 否则 `/api/markers/duplicates` 会被
@@ -84,8 +84,8 @@ router.get('/duplicates', authenticate, (req, res) => {
         : '仅在同一品牌内判定；跨品牌同址不报。候选组已定性：duplicate=编码相同（可合并）/ dualFormat=大店+小店（禁合并）/ suspected=需人工'
     })
   } catch (error) {
-    console.error('[Markers] 台账去重检查失败:', error)
-    res.status(500).json({ message: '台账去重检查失败' })
+    console.error('[Markers] 门店清洗（重复检查）失败:', error)
+    res.status(500).json({ message: '门店清洗检查失败，请稍后重试' })
   }
 })
 

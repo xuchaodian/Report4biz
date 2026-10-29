@@ -1787,6 +1787,7 @@ import { useBrandStoreStore } from '@/stores/brandStore'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import { currentUidOr } from '@/utils/currentUser.js'
+import { authHeaders } from '@/utils/authHeaders.js'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
 import PoiSearchPanel from '@/components/map/PoiSearchPanel.vue'
@@ -4002,7 +4003,7 @@ const openStorePoiSearch = async (lat, lng) => {
     const loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
     const response = await fetch('/api/poi/around', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ lng, lat, radius: radiusM, keywords: keyword.trim() })
     })
     const result = await response.json()
@@ -10054,7 +10055,7 @@ const startCircleSearch = () => {
       const loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
       const response = await fetch('/api/poi/around', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           lng,
           lat,
@@ -10267,7 +10268,7 @@ const finishPolygonSearch = async () => {
     loadingMsg = ElMessage({ type: 'loading', message: '搜索中...', duration: 0 })
     const response = await fetch('/api/poi/polygon', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         coordinates: polygonCoords,
         keywords: poiKeywords.value.trim()
@@ -10390,7 +10391,7 @@ const executeViewportSearch = async (coords) => {
     loadingMsg = ElMessage({ type: 'loading', message: '视野内搜索中...', duration: 0 })
     const response = await fetch('/api/poi/polygon', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         coordinates: coords.map(p => ({ lng: p.lng, lat: p.lat })),
         keywords: poiKeywords.value.trim()
@@ -10423,7 +10424,7 @@ const executePoiSearchAtLocation = async (lat, lng) => {
   try {
     const response = await fetch('/api/poi/around', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         lng,
         lat,
