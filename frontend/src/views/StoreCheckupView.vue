@@ -3,7 +3,7 @@
     <div class="ck-head">
       <div class="ck-head-l">
         <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon>返回门店管理</el-button>
-        <h2>门店位置体检</h2>
+        <h2>门店体检</h2>
         <p class="ck-sub">
           只看<b>几何结构</b>（坐标、间距、店型），<b>不评价好坏</b>——
           结构能看出「密不密、有没有贴在一起」，看不出「赚不赚钱」。

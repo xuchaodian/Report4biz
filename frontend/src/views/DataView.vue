@@ -26,12 +26,15 @@
               <el-dropdown-item command="geocode"><el-icon><MapLocation /></el-icon>地址解析</el-dropdown-item>
               <el-dropdown-item command="export"><el-icon><Download /></el-icon>导出</el-dropdown-item>
               <el-dropdown-item command="dedup" divided><el-icon><Document /></el-icon>门店清洗</el-dropdown-item>
+              <el-dropdown-item command="category" title="批量补「门店区分」（选址形态：商场店/临街店…）">
+                <AppIcon class="icon-text"><EditPen /></AppIcon>补门店区分{{ pendingCategoryCount ? '（' + pendingCategoryCount + '）' : '' }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <!-- 门店位置体检（v1.13.291）：页面级跳转，⛔ 不塞进「导入门店」下拉（那是动作菜单） -->
+        <!-- 门店体检（v1.13.291 上线，v1.13.296 由「位置体检」更名）：整页视图，与上面的动作菜单分开 -->
         <el-button @click="router.push('/store-checkup')">
-          <el-icon><Aim /></el-icon>位置体检
+          <el-icon><Aim /></el-icon>门店体检
         </el-button>
         <el-button
           v-if="selectedRows.length > 0"
@@ -49,9 +52,6 @@
         </el-button>
         <el-button type="success" plain @click="selectedRows.length > 0 ? openSaleDialog(selectedRows) : openSaleDialogForAll()" title="有勾选时录入勾选门店，否则录入当前筛选结果">
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>销售录入{{ selectedRows.length > 0 ? '(' + selectedRows.length + ')' : '' }}
-        </el-button>
-        <el-button type="primary" plain @click="categoryDialogVisible = true" title="批量补「门店区分」（选址形态：商场店/临街店…）">
-          <AppIcon class="icon-text"><EditPen /></AppIcon>补门店区分{{ pendingCategoryCount ? '(' + pendingCategoryCount + ')' : '' }}
         </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
@@ -1569,6 +1569,8 @@ const handleImportMenuCommand = (command) => {
     handleExport()
   } else if (command === 'dedup') {
     openDedupDialog()
+  } else if (command === 'category') {
+    categoryDialogVisible.value = true
   }
 }
 

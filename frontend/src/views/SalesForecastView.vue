@@ -226,7 +226,7 @@ const isVip = computed(() => userStore.isVipActive)
 
 // ===== 录入引导（v1.13.292）=====
 // 字段清单与模板统一来自 utils/importSpecs.js / importTemplates.js，
-// 与「门店位置体检」页共用同一个弹窗，⛔ 不在这里另写一份列名。
+// 与「门店体检」页共用同一个弹窗，⛔ 不在这里另写一份列名。
 const router = useRouter()
 const guideVisible = ref(false)
 

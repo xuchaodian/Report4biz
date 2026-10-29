@@ -56,7 +56,7 @@ const routes = [
         component: () => import('@/views/DataView.vue')
       },
       {
-        // 门店位置体检（v1.13.291）：入口在门店管理页工具栏，不占顶部导航。
+        // 门店体检（v1.13.291 上线，v1.13.296 由「位置体检」更名）：入口在门店管理页工具栏，不占顶部导航。
         // 全免费（纯本地几何 + 一次聚合查询，不消耗联通/高德配额）；仅本人门店。
         path: 'store-checkup',
         name: 'StoreCheckup',
