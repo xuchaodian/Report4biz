@@ -107,29 +107,58 @@
             <span class="ck-count">共 {{ data.pairsTotal }} 对</span>
           </h3>
           <p class="ck-card-sub">
-            <b>双店型</b> = 编码不同且面积差 2 倍以上，通常是同一商场「大店 + 小店」，
+            <b>双店型</b> = 编码不同且面积差 2 倍以上，通常是同一商场「旗下不同品牌门店」，
             <b class="ck-strong">不建议合并</b>；<b>疑似</b> = 面积缺失或面积接近，请人工看一眼。
+            点门店名可在地图上定位该店（复核「是同一个门还是隔壁门」最直观）。
           </p>
 
           <div v-if="data.pairsTotal === 0" class="ck-empty-row">
             在 {{ fmtDist(data.nearM) }} 内没有同品牌贴邻门店 —— 这批门店布局是分散的。
           </div>
 
-          <el-table v-else :data="data.pairs" size="small" class="ck-table">
+          <template v-else>
+          <div class="ck-tools">
+            <el-checkbox v-model="onlySuspected" size="small">
+              只看「疑似」（当前页 {{ suspectedInPage }} 对）
+            </el-checkbox>
+            <span v-if="onlySuspected && data.pairsTotal > data.pairs.length" class="ck-tip">
+              仅筛选当前页，疑似可能分布在其它页
+            </span>
+          </div>
+
+          <el-table v-if="visiblePairs.length" :data="visiblePairs" size="small" class="ck-table">
             <el-table-column label="距离" width="86">
               <template #default="{ row }">
                 <span :class="['ck-dist', row.distance < 50 ? 'is-same' : '']">{{ fmtDist(row.distance) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="门店 A" min-width="150">
+            <el-table-column label="门店 A" min-width="160">
               <template #default="{ row }">
-                <div class="ck-store">{{ row.aName || '（未命名）' }}</div>
+                <div class="ck-store">
+                  <button
+                    type="button"
+                    class="ck-store-link"
+                    :class="{ 'is-static': row.aLat == null }"
+                    :disabled="row.aLat == null"
+                    :title="row.aLat == null ? '该店缺经纬度，无法定位' : '在地图上定位「' + (row.aName || '未命名') + '」'"
+                    @click="locate(row.aLat, row.aLng)"
+                  >{{ row.aName || '（未命名）' }}</button>
+                </div>
                 <div class="ck-store-meta">{{ row.aCode || '无编码' }} · {{ row.aArea ? row.aArea + '㎡' : '无面积' }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="门店 B" min-width="150">
+            <el-table-column label="门店 B" min-width="160">
               <template #default="{ row }">
-                <div class="ck-store">{{ row.bName || '（未命名）' }}</div>
+                <div class="ck-store">
+                  <button
+                    type="button"
+                    class="ck-store-link"
+                    :class="{ 'is-static': row.bLat == null }"
+                    :disabled="row.bLat == null"
+                    :title="row.bLat == null ? '该店缺经纬度，无法定位' : '在地图上定位「' + (row.bName || '未命名') + '」'"
+                    @click="locate(row.bLat, row.bLng)"
+                  >{{ row.bName || '（未命名）' }}</button>
+                </div>
                 <div class="ck-store-meta">{{ row.bCode || '无编码' }} · {{ row.bArea ? row.bArea + '㎡' : '无面积' }}</div>
               </template>
             </el-table-column>
@@ -145,6 +174,11 @@
               </template>
             </el-table-column>
           </el-table>
+
+          <div v-else class="ck-empty-row">
+            当前页没有需要人工判断的「疑似」记录；其余都是双店型（同集团多品牌门店），可不处理。
+          </div>
+          </template>
 
           <div v-if="data.pairsTotal > data.pageSize" class="ck-pager">
             <el-pagination
@@ -256,6 +290,19 @@ const loading = ref(false)
 const errorMsg = ref('')
 const data = ref(null)
 const nearM = ref(300)
+// 只看「疑似」：26 对里 9 对要人工判断，混在双店型里不好找（v1.13.295）
+const onlySuspected = ref(false)
+const suspectedInPage = computed(() => (data.value?.pairs || []).filter(p => !p.dualFormat).length)
+const visiblePairs = computed(() => {
+  const list = data.value?.pairs || []
+  return onlySuspected.value ? list.filter(p => !p.dualFormat) : list
+})
+
+/** 跳到地图并定位到该店（MapView 认 ?lat=&lng=，会 setView z16） */
+function locate(lat, lng) {
+  if (lat == null || lng == null) return
+  router.push({ path: '/', query: { lat, lng } })
+}
 
 // 「怎么补」：所有字段说明都指向同一个弹窗，⛔ 不在本页另写一份字段清单
 const guideVisible = ref(false)
@@ -351,7 +398,9 @@ onMounted(() => load(1))
 </script>
 
 <style scoped>
-.checkup-page { padding: 4px 2px 40px; }
+/* 🔴 v1.13.295：外层 `.main-content{overflow:hidden}` 不会滚，
+   本页不自带滚动条就永远只能看到首屏（复核清单只露 5 行、后面的既看不到也滚不到）。 */
+.checkup-page { padding: 4px 2px 40px; height: 100%; overflow-y: auto; box-sizing: border-box; }
 .ck-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .ck-head h2 { margin: 6px 0 4px; font-size: 20px; }
 .ck-sub { margin: 0; font-size: 13px; color: #6b7280; max-width: 720px; line-height: 1.6; }
@@ -395,6 +444,13 @@ onMounted(() => load(1))
 .ck-dist { font-variant-numeric: tabular-nums; color: #374151; }
 .ck-dist.is-same { color: #b91c1c; font-weight: 600; }
 .ck-store { font-size: 13px; color: #111827; }
+/* 门店名做成按钮：⛔ 不用 `<a href>` 的伪协议链接（CSP script-src 会拦，见 §6.22） */
+.ck-store-link { background: none; border: 0; padding: 0; font: inherit; color: #2563eb; cursor: pointer; text-align: left; }
+.ck-store-link:hover { text-decoration: underline; }
+.ck-store-link.is-static { color: #111827; cursor: default; }
+.ck-store-link.is-static:hover { text-decoration: none; }
+.ck-tools { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ck-tip { font-size: 12px; color: #b45309; }
 .ck-store-meta { font-size: 11px; color: #6b7280; margin-top: 1px; }
 .ck-addr { font-size: 12px; color: #4b5563; }
 .ck-pager { margin-top: 12px; display: flex; justify-content: flex-end; }

@@ -107,6 +107,10 @@ export function buildStoreCheckup(stores, opts = {}) {
           aArea: Number(a.s.store_area ?? a.s.storeArea) || 0, bArea: Number(b.s.store_area ?? b.s.storeArea) || 0,
           city: a.s.city || b.s.city || '',
           address: a.s.address || b.s.address || '',
+          // v1.13.295：带出两边坐标，前端才能「一键在地图上看这两家到底多近」
+          //（体检页的人工复核 90% 是在问「这是同一个门还是隔壁门」，只看距离数字判断不了）
+          aLat: Number(a.s.latitude) || null, aLng: Number(a.s.longitude) || null,
+          bLat: Number(b.s.latitude) || null, bLng: Number(b.s.longitude) || null,
           distance: Math.round(d),
           // 编码不同 + 面积比 ≥2 ⇒ 同一商场两套店型（禁合并，只能「确认是两家」）
           dualFormat: looksLikeDualFormat(a.s, b.s)
