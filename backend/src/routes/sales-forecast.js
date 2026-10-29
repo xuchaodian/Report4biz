@@ -896,7 +896,9 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
           const confPct = Math.max(10, Math.min(Math.round(cv.residStd * 100), 50))
           return res.json({
             success: true, status: 'ok', level: 8, engine: 'L2',
-            levelName: 'L2 回归模型（基于 ' + trainSet.length + ' 条门店×年样本，LOOCV MAPE ' + (cv.mape * 100).toFixed(1) + '%）',
+            // 🔴 v1.13.290：文案必须说清是**按门店分组**留一（GroupKFold），
+            //    写「LOOCV」会让人以为是逐行留一 —— 那个口径的 MAPE 严重偏乐观
+            levelName: 'L2 回归模型（基于 ' + trainSet.length + ' 条门店×年样本 / ' + cv.groups + ' 家门店，按门店留一 MAPE ' + (cv.mape * 100).toFixed(1) + '%）',
             candName: cand.name, candArea,
             radiusPopulation: candPop, radiusPoints: candPoints,
             predictComp, predictEff,
