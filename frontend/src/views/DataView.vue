@@ -50,6 +50,9 @@
         <el-button type="success" plain @click="selectedRows.length > 0 ? openSaleDialog(selectedRows) : openSaleDialogForAll()" title="有勾选时录入勾选门店，否则录入当前筛选结果">
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>销售录入{{ selectedRows.length > 0 ? '(' + selectedRows.length + ')' : '' }}
         </el-button>
+        <el-button type="primary" plain @click="categoryDialogVisible = true" title="批量补「门店区分」（选址形态：商场店/临街店…）">
+          <AppIcon class="icon-text"><EditPen /></AppIcon>补门店区分{{ pendingCategoryCount ? '(' + pendingCategoryCount + ')' : '' }}
+        </el-button>
         <el-button type="danger" plain @click="handleClearAll">
           <el-icon><Delete /></el-icon>全清除
         </el-button>
@@ -855,6 +858,13 @@
       </template>
     </el-dialog>
 
+    <!-- 批量补门店区分（v1.13.294） -->
+    <BatchCategoryDialog
+      v-model="categoryDialogVisible"
+      :stores="markerStore.markers"
+      @done="onCategoryDone"
+    />
+
     <!-- 批量购买对话框 -->
     <BatchSmartstepsDialog
       :visible="showBatchSmartstepsDialog"
@@ -870,6 +880,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BatchSmartstepsDialog from '@/components/BatchSmartstepsDialog.vue'
+import BatchCategoryDialog from '@/components/BatchCategoryDialog.vue'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, MapLocation, DataAnalysis, TrendCharts, Loading, Aim, EditPen, Document, Lock } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
@@ -992,6 +1003,14 @@ const selectedRows = ref([])
 const isLocked = (row) => Number(row && row.sync_readonly) === 1
 const LOCK_TIP = '由集团统一维护，只读'
 const showBatchSmartstepsDialog = ref(false)
+// 批量补门店区分（v1.13.294）：只读镜像行不计入待补（改不了，不该催客户）
+const categoryDialogVisible = ref(false)
+const pendingCategoryCount = computed(() =>
+  markerStore.markers.filter(m => !String(m.store_category || '').trim() && Number(m.sync_readonly) !== 1).length
+)
+async function onCategoryDone(updated) {
+  if (updated > 0) await markerStore.fetchMarkers(true)
+}
 
 
 
@@ -2039,10 +2058,12 @@ onMounted(async () => {
   // 而不是把人丢在门店列表里自己找按钮。
   // ⚠️ 先 replace 掉 query 再开弹窗：否则用户关掉弹窗一刷新，又会被弹一次。
   const q = route.query || {}
-  if (q.sale === '1' || q.geocode === '1') {
+  if (q.sale === '1' || q.geocode === '1' || q.category === '1') {
     router.replace({ path: '/data' })
     await nextTick()
-    if (q.sale === '1') {
+    if (q.category === '1') {
+      categoryDialogVisible.value = true
+    } else if (q.sale === '1') {
       if (filteredMarkers.value.length) openSaleDialog(filteredMarkers.value)
       else ElMessage.warning('当前没有可录入的门店')
     } else {

@@ -110,9 +110,10 @@ router.get('/checkup', authenticate, (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1)
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 10), 200)
 
+    // ⚠️ `sync_readonly` 必须一起取：完备度里要把「集团下发只读、本账号改不了」的家数单独数出来
     const stores = db.prepare(
       `SELECT id, name, brand, store_code, store_area, latitude, longitude,
-              city, address, store_type, store_category
+              city, address, store_type, store_category, sync_readonly
          FROM markers
         WHERE user_id = ? AND merged_into IS NULL`
     ).all(userId)
@@ -127,6 +128,12 @@ router.get('/checkup', authenticate, (req, res) => {
     ).get(userId).c
 
     const categoryEmpty = stores.filter((s) => !String(s.store_category || '').trim()).length
+    // 🔴 品类为空的店里，集团下发的只读镜像行**本账号改不了**（要在集团侧补）。
+    //   不单独计数的话，体检页说「11 家为空」、批量补品类弹窗说「待补 10 家」——
+    //   客户会以为少了 1 家、反复找（v1.13.294 真机对出来的口径差）。
+    const categoryEmptyReadonly = stores.filter(
+      (s) => !String(s.store_category || '').trim() && Number(s.sync_readonly) === 1
+    ).length
 
     const start = (page - 1) * pageSize
     res.json({
@@ -141,6 +148,7 @@ router.get('/checkup', authenticate, (req, res) => {
       completeness: {
         salesRows,
         categoryEmpty,
+        categoryEmptyReadonly,
         areaMissing: result.counts.noArea,
         coordMissing: result.counts.noCoord
       },
@@ -305,6 +313,99 @@ router.post('/unmerge', authenticate, (req, res) => {
   } catch (error) {
     console.error('[Markers] 撤销合并失败:', error)
     res.status(500).json({ message: '撤销合并失败' })
+  }
+})
+
+// ============================================================================
+// 批量补「门店区分」（v1.13.294）
+//
+// 起因：体检页的「门店区分」一栏常年 232/233 为空 —— 单店编辑弹窗里的下拉**选项来自
+//   已有数据的去重**（stores/marker.js::storeCategories 是写死的 8 个选址形态，
+//   但真正填过的店极少），客户要补 200 多家只能一家一家点。
+//
+// 语义：store_category 是**选址形态**（社区店/临街店/商场店/写字楼店/交通枢纽店/
+//   校园店/景区店/专业市场店），⛔ 不是「业态」（菜系品类）。它只在销售预测的
+//   typeMatchScore 里作为一个加分项参与 L3/L4 参照店匹配，填了更准、不填也能算。
+//
+// 🔴 三条约束：
+//   ① 只能改自己名下的行（`user_id = ?`），且必须 `merged_into IS NULL`；
+//   ② 集团下发的**只读镜像行**（`sync_readonly = 1`）跳过并在结果里报数，
+//      ⛔ 不整批 403 —— 批量里混着几十家镜像行，一刀切拒绝用户会无从下手；
+//      但若目标**全是**只读行，则按单店语义返回 403；
+//   ③ 品类值**不允许为空**：本接口只用于「补」，不做清空
+//      （清空走单店编辑，避免一次误操作把 200 家刷成空）。
+// ============================================================================
+router.post('/bulk-category', authenticate, (req, res) => {
+  try {
+    const { ids, storeCategory } = req.body || {}
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: '请先选择门店' })
+    }
+    if (ids.length > 500) {
+      return res.status(400).json({ message: `一次最多 500 家（当前 ${ids.length} 家），请分批提交` })
+    }
+    const cat = String(storeCategory ?? '').trim()
+    if (!cat) return res.status(400).json({ message: '门店区分不能为空' })
+    if (cat.length > 20) return res.status(400).json({ message: '门店区分名称过长（最多 20 字）' })
+
+    const uniq = [...new Set(ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
+    if (uniq.length === 0) return res.status(400).json({ message: '门店 ID 无效' })
+
+    const db = getDb()
+    const ph = uniq.map(() => '?').join(',')
+    const rows = db.prepare(
+      `SELECT id, name, store_category, sync_readonly, origin_owner, origin_user_id
+         FROM markers
+        WHERE id IN (${ph}) AND user_id = ? AND merged_into IS NULL`
+    ).all(...uniq, req.user.id)
+
+    const readonlyRows = rows.filter((r) => Number(r.sync_readonly) === 1)
+    const writableIds = rows.filter((r) => Number(r.sync_readonly) !== 1).map((r) => r.id)
+    const untouched = uniq.filter((id) => !rows.some((r) => r.id === id))   // 不存在/非本人/已合并
+
+    if (writableIds.length === 0) {
+      if (readonlyRows.length > 0) {
+        const owner = String(readonlyRows[0].origin_owner || '').trim() || `账号 #${readonlyRows[0].origin_user_id}`
+        return res.status(403).json({
+          code: 'sync_readonly',
+          message: `所选门店均由「${owner}」同步维护，不能在此修改。如需本地改动，请先「脱离同步」。`,
+          readonly: true
+        })
+      }
+      return res.status(404).json({ message: '所选门店不存在或无权修改' })
+    }
+
+    // 只改差异行：已经是目标值的跳过，避免无意义地刷新 updated_at（会让增量同步误报变更）
+    const needIds = rows
+      .filter((r) => Number(r.sync_readonly) !== 1 && String(r.store_category || '').trim() !== cat)
+      .map((r) => r.id)
+    let updated = 0
+    if (needIds.length > 0) {
+      const ph2 = needIds.map(() => '?').join(',')
+      // 单个写点，无需事务
+      const info = db.prepare(
+        `UPDATE markers SET store_category = ?, updated_at = datetime('now')
+          WHERE id IN (${ph2}) AND user_id = ? AND merged_into IS NULL
+            AND (sync_readonly IS NULL OR sync_readonly <> 1)`
+      ).run(cat, ...needIds, req.user.id)
+      updated = info.changes || 0
+      db.saveNow && db.saveNow()
+    }
+
+    res.json({
+      success: true,
+      storeCategory: cat,
+      updated,
+      unchanged: writableIds.length - needIds.length,
+      skippedReadonly: readonlyRows.length,
+      notFound: untouched.length,
+      message: updated > 0
+        ? `已把 ${updated} 家门店的门店区分设为「${cat}」`
+        : '所选门店的门店区分已经是该值，无需修改'
+    })
+  } catch (error) {
+    console.error('[Markers] 批量补门店区分失败:', error)
+    res.status(500).json({ message: '批量修改失败' })
   }
 })
 

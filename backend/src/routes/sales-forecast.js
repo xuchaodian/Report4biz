@@ -1006,7 +1006,10 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
     if (level === 0) {
       matched = refs.slice(0, 10).map(r => ({ ref: r }))
       level = 7
-      levelName = `全国同业态门店（基于 ${matched.length} 家，数据有限）`
+      // 🔴 v1.13.294：原文案写「全国同业态门店」是**错的** —— 这里就是 refs.slice(0,10)，
+      //    既没按 store_category、也没按商圈筛过。写成「同业态」会让客户以为参照店同类，
+      //    进而高估这个数字的可信度。如实说明「未按类型筛选」。
+      levelName = `全国范围（未按门店类型筛选，基于 ${matched.length} 家，数据有限）`
     }
 
     if (matched.length === 0) {

@@ -191,11 +191,18 @@
                 </td>
               </tr>
               <tr :class="{ bad: data.completeness.categoryEmpty > 0 }">
-                <td>门店品类</td>
+                <td>门店区分</td>
                 <td>{{ data.completeness.categoryEmpty }} 家为空</td>
-                <td>品类为空时无法按业态比较，也无法参与销售预测的同业态降级</td>
+                <td>
+                  选址形态（商场店/临街店/写字楼店…）未填。<b>不影响本页任何数字</b>；
+                  销售预测仍能出结果，只是参照店的「类型匹配」少一个加分项。
+                  <template v-if="data.completeness.categoryEmptyReadonly">
+                    <br/>其中 <b>{{ data.completeness.categoryEmptyReadonly }} 家</b>是集团下发门店，需在集团侧补。
+                  </template>
+                </td>
                 <td class="ck-fix">
-                  <el-button link type="primary" size="small" @click="openGuide('store', 'store_category')">补「门店区分」</el-button>
+                  <el-button link type="primary" size="small" @click="goCategory">批量补门店区分</el-button>
+                  <el-button link type="primary" size="small" @click="openGuide('store', 'store_category')">看字段</el-button>
                 </td>
               </tr>
               <tr :class="{ bad: data.completeness.areaMissing > 0 }">
@@ -265,6 +272,9 @@ async function downloadSales() {
   const ok = await downloadSalesTemplate()
   if (!ok) ElMessage.error('模板下载失败，请稍后重试')
 }
+
+/** 补门店区分同样是成批的活：直达 /data 的批量弹窗（单店编辑一次只能改一家） */
+function goCategory() { router.push({ path: '/data', query: { category: '1' } }) }
 
 /** 补坐标要成批做，直接把人送到「地址解析」并自动打开它 */
 function goGeocode() { router.push({ path: '/data', query: { geocode: '1' } }) }

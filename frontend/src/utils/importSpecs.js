@@ -40,7 +40,7 @@ export const STORE_IMPORT_FIELDS = [
   { key: 'district', label: '区县', required: false, note: '用于城市内的片区筛选' },
   { key: 'address', label: '地址', required: false, note: '体检复核清单里靠它人工确认「是不是同一个地址」' },
   { key: 'store_area', label: '门店面积（㎡）', required: false, note: '🔴 缺面积 ⇒ 判不了店型（大店/小店），体检面积分档不计它，销售预测也少一个特征' },
-  { key: 'store_category', label: '门店区分', required: false, note: '🔴 缺它 ⇒ 无法按业态横向比较，销售预测的「同业态降级」也失效' },
+  { key: 'store_category', label: '门店区分', required: false, note: '🔴 是**选址形态**（社区店/临街店/商场店/写字楼店/交通枢纽店/校园店/景区店/专业市场店），⛔ 不是菜系业态；缺它销售预测仍能算，只是参照店的「类型匹配」少一个加分项' },
   { key: 'store_status', label: '门店状态', required: false, note: '正常 / 闭店 / 停业' },
   { key: 'open_date', label: '开店日期', required: false, note: '用于「开满一年才算成熟店」这类筛选' },
   { key: 'business_hours', label: '营业时间', required: false, note: '如 07:00-22:00' },
@@ -119,7 +119,7 @@ export function salesTemplateHeaders() {
 export const UNLOCK_HINTS = {
   sales: `录满 ${ENGINE_THRESHOLDS.l2} 行门店×年样本 ⇒ 销售预测启用 L2 回归；` +
     `满 ${ENGINE_THRESHOLDS.l3} 行且覆盖 ≥${ENGINE_THRESHOLDS.l3Stores} 家门店 ⇒ 可启用 L3 机器学习`,
-  category: '补齐门店品类 ⇒ 才能按业态横向比较，销售预测的「同业态降级」也才有效',
+  category: '补齐门店区分（选址形态）⇒ 销售预测的参照店「类型匹配」多一个加分项，同城/同商圈匹配更贴近；不填也能出预测',
   area: '补齐营业面积 ⇒ 才能区分大店/小店（双店型判定的关键线索），销售预测多一个特征',
   coord: '补齐经纬度 ⇒ 门店才进入间距计算；成批地址可用「地址解析」一次性补'
 }
