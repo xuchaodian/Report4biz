@@ -6,6 +6,10 @@
  *      用作「在不在商圈里」的判据会把大片门店误判到边界外。
  *   ✅ 以**门店坐标 + 距离**为骨架；商圈画像（客群/能级）只作增强显示，本模块不涉及。
  *
+ * v1.13.299：邻店扫描抽成 `buildNeighborIndex()`，**信号灯也用同一份索引**。
+ *   原因：体检说「最近同品牌 572m」、信号灯却按另一套阈值判「蚕食」，客户一定问哪个对。
+ *   ⇒ 派生算法只允许一处实现（项目铁律）。
+ *
  * 铁律：
  *   · ⛔ **跨品牌不判**：同一账号多品牌（泉膳的滨寿司 + 食其家）、同一商场双品牌同址都是常态。
  *   · ⛔ **「≤50m 同品牌」≠ 重复**：youshi 13 组同址实为「8xxx 大店 + 2xxx 小店」两套店型，
@@ -56,16 +60,35 @@ export function median(nums) {
 
 const AREA_M_PER_DEG_LAT = 111320
 
+/** 近邻环半径（米）—— 体检的距离分档与信号灯的「自我蚕食」共用同一组阈值 */
+export const RING_RADII = [300, 800, 2000]
+
 /**
+ * 同品牌近邻索引（v1.13.299 抽出，**体检与信号灯共用**）
+ *
+ * 🔴 为什么必须共用：体检页说「最近同品牌 572m」，信号灯却用另一套阈值判「自我蚕食」，
+ *    客户第一反应是「到底哪个对」。派生算法只允许一处实现（项目铁律）。
+ *
+ * 口径：
+ *   · ⛔ 跨品牌不判（同账号多品牌 + 同商场双品牌是常态）
+ *   · 搜索窗 capM 内的同品牌门店才算邻居；窗外一律「基本独立」
+ *   · ⚠️ capM 会影响中位数，调用方要么给足（默认 20km），要么把 basis 一起报出去
+ *
  * @param {Array} stores 门店行（id/name/brand/store_code/store_area/latitude/longitude/…）
  * @param {object} [opts]
- * @param {number} [opts.nearM=300]  「需复核」阈值：同品牌最近距离 ≤ 它才列进清单
- * @param {number} [opts.capM=20000] 最近距离搜索上限（超过一律算「基本独立」）
- * @returns {object} 汇总 + 需复核对（已按距离升序）
+ * @param {number} [opts.nearM=300]    「需复核」阈值：≤ 它的同品牌对进清单
+ * @param {number} [opts.capM=20000]   邻居搜索上限
+ * @param {number[]} [opts.rings]      需要计数的环半径，默认 RING_RADII
+ * @returns {{nearM:number, capM:number, rings:number[], pts:Array, noCoord:number,
+ *            byId:Map<string,{nearestM:number,nearestId:string,nearestStore:object,ring:Object}>,
+ *            pairs:Array}}
  */
-export function buildStoreCheckup(stores, opts = {}) {
+export function buildNeighborIndex(stores, opts = {}) {
   const nearM = Number.isFinite(opts.nearM) && opts.nearM > 0 ? opts.nearM : 300
   const capM = Number.isFinite(opts.capM) && opts.capM > nearM ? opts.capM : 20000
+  const rings = (Array.isArray(opts.rings) && opts.rings.length ? opts.rings : RING_RADII)
+    .filter(r => Number.isFinite(r) && r > 0)
+    .sort((a, b) => a - b)
   const list = Array.isArray(stores) ? stores : []
 
   const pts = []
@@ -83,9 +106,19 @@ export function buildStoreCheckup(stores, opts = {}) {
 
   pts.sort((x, y) => x.latitude - y.latitude)
 
-  const nearest = new Map() // storeId -> 米
+  const byId = new Map()
   const pairs = []
   const capDeg = capM / AREA_M_PER_DEG_LAT
+
+  const touch = (id) => {
+    let e = byId.get(id)
+    if (!e) {
+      e = { nearestM: Infinity, nearestId: null, nearestStore: null, ring: {} }
+      for (const r of rings) e.ring[r] = 0
+      byId.set(id, e)
+    }
+    return e
+  }
 
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i]
@@ -95,10 +128,17 @@ export function buildStoreCheckup(stores, opts = {}) {
       if (!a.brand || a.brand !== b.brand) continue // ⛔ 跨品牌不判
       const d = distanceMeters(a, b)
       if (d > capM) continue
+
       const ka = String(a.s.id)
       const kb = String(b.s.id)
-      if (!nearest.has(ka) || d < nearest.get(ka)) nearest.set(ka, d)
-      if (!nearest.has(kb) || d < nearest.get(kb)) nearest.set(kb, d)
+      const ea = touch(ka)
+      const eb = touch(kb)
+      if (d < ea.nearestM) { ea.nearestM = d; ea.nearestId = kb; ea.nearestStore = b.s }
+      if (d < eb.nearestM) { eb.nearestM = d; eb.nearestId = ka; eb.nearestStore = a.s }
+      for (const r of rings) {
+        if (d <= r) { ea.ring[r] += 1; eb.ring[r] += 1 }
+      }
+
       if (d <= nearM) {
         pairs.push({
           aId: a.s.id, bId: b.s.id,
@@ -107,8 +147,8 @@ export function buildStoreCheckup(stores, opts = {}) {
           aArea: Number(a.s.store_area ?? a.s.storeArea) || 0, bArea: Number(b.s.store_area ?? b.s.storeArea) || 0,
           city: a.s.city || b.s.city || '',
           address: a.s.address || b.s.address || '',
-          // v1.13.295：带出两边坐标，前端才能「一键在地图上看这两家到底多近」
-          //（体检页的人工复核 90% 是在问「这是同一个门还是隔壁门」，只看距离数字判断不了）
+          // v1.13.295：带出两边坐标，前端才能「一键在地图上看到底多近」
+          //（人工复核 90% 是在问「这是同一个门还是隔壁门」，只看距离数字判断不了）
           aLat: Number(a.s.latitude) || null, aLng: Number(a.s.longitude) || null,
           bLat: Number(b.s.latitude) || null, bLng: Number(b.s.longitude) || null,
           distance: Math.round(d),
@@ -119,12 +159,25 @@ export function buildStoreCheckup(stores, opts = {}) {
     }
   }
 
+  return { nearM, capM, rings, pts, noCoord, byId, pairs }
+}
+
+/**
+ * 门店结构体检（纯几何汇总）
+ * @param {Array} stores
+ * @param {object} [opts] 同 buildNeighborIndex
+ * @returns {object} 汇总 + 需复核对（已按距离升序）
+ */
+export function buildStoreCheckup(stores, opts = {}) {
+  const { nearM, capM, pts, noCoord, byId, pairs } = buildNeighborIndex(stores, opts)
+  const list = Array.isArray(stores) ? stores : []
+
   pairs.sort((x, y) => x.distance - y.distance)
 
   const bucketCounts = Object.fromEntries(DISTANCE_BUCKETS.map(b => [b.key, 0]))
   let hasNeighbor = 0
-  for (const d of nearest.values()) {
-    bucketCounts[bucketOfDistance(d)]++
+  for (const e of byId.values()) {
+    bucketCounts[bucketOfDistance(e.nearestM)]++
     hasNeighbor++
   }
   // 搜索窗内没找到同品牌 ⇒ 必然是「>2km 基本独立」，按桶计入（⛔ 不能漏计，否则分布和≠有坐标门店数）
@@ -157,15 +210,15 @@ export function buildStoreCheckup(stores, opts = {}) {
       sameAddrStores: sameAddrStores.size,
       dualFormatPairs: pairs.filter(p => p.dualFormat).length,
       suspectedPairs: pairs.filter(p => !p.dualFormat).length,
-      noNeighbor: pts.length - nearest.size
+      noNeighbor: pts.length - hasNeighbor
     },
     bucketCounts,
     // 中位数只对「搜索窗内找到过同品牌邻居」的门店有意义；noNeighbor 要显式返回，
     // 否则界面会把「20km 内都没有同品牌」的店当成「算过了」。
-    medianBasis: nearest.size,
-    noNeighbor: pts.length - nearest.size,
+    medianBasis: hasNeighbor,
+    noNeighbor: pts.length - hasNeighbor,
     medianNearestM: (() => {
-      const m = median([...nearest.values()])
+      const m = median([...byId.values()].map(e => e.nearestM))
       return m == null ? null : Math.round(m)
     })(),
     areaBuckets,

@@ -1,23 +1,37 @@
 /**
- * 门店体检报告（Excel）的行数据构造（v1.13.298）
+ * 门店体检报告（Excel）的行数据构造（v1.13.298 起，v1.13.299 改半径口径）
  *
  * 纯函数：只做「页面数据 → 表格行」的映射，不碰 db / 不碰 xlsx 库，
  * 这样表头与口径可以被单测钉住 —— 导出的表必须和页面上看到的是同一批数字。
  *
  * 🔴 三条口径在导出里也不能走样：
- *   1. 盲区写「无法评估」，⛔ 不写「低风险」、风险分留空而不是 0；
- *   2. 城市没有商圈面数据的写「该城市暂无商圈面数据」，⛔ 不并进盲区；
+ *   1. 没评的维度写「未评」，⛔ 不写「未命中」、风险分留空而不是 0；
+ *   2. 竞争维度没有竞品点位时写「未评（该城市无竞品点位）」，⛔ 不能读成「0 家竞品 ⇒ 宽松」；
  *   3. 需复核清单里「双店型」必须写明**不建议合并**（同商场旗下不同品牌是常态）。
  */
 
 const LEVEL_TEXT = { high: '红灯·高风险', mid: '黄灯·中风险', low: '绿灯·低风险', none: '绿灯·未发现问题' }
 const STATUS_TEXT = {
   evaluated: '已评估',
-  blind: '无法评估（不在已覆盖商圈面内）',
-  no_city_data: '无法评估（该城市暂无商圈面数据）',
-  no_coord: '无法评估（缺经纬度）'
+  no_coord: '未评估（缺经纬度）'
 }
-const FLAG_TEXT = { competition: '竞争密集', cannibal: '自我蚕食', crowd: '客群偏离' }
+const COMP_TEXT = {
+  evaluated: '已评估',
+  no_data: '未评（该城市无竞品点位）',
+  no_city: '未评（门店城市为空）'
+}
+const FLAG_TEXT = {
+  cannibal: '自我蚕食（同品牌贴身）',
+  competition: '竞争密集（半径内竞品多）'
+}
+const SELF_BUCKET_TEXT = {
+  same: '同址（<50m，非双店型）',
+  sameDual: '同址双店型（不计分）',
+  close: '贴身（50–300m）',
+  overlap: '部分重叠（300–800m）',
+  far: '>800m 或无同品牌'
+}
+const distText = (m) => (m == null ? '' : `${m}m`)
 
 function flagsText(flags) {
   const list = (flags || []).map(f => FLAG_TEXT[f] || f)
@@ -26,6 +40,8 @@ function flagsText(flags) {
 
 /** 概览页：指标 / 值 / 补充 */
 function overviewSheet({ geo, lights, completeness, nearM, generatedAt }) {
+  const t = lights.thresholds || {}
+  const d = lights.rules?.selfDetail || {}
   const rows = [
     ['门店体检报告', ''],
     ['生成时间', generatedAt],
@@ -38,16 +54,24 @@ function overviewSheet({ geo, lights, completeness, nearM, generatedAt }) {
     [`需复核对数（≤${nearM}m 同品牌）`, geo.counts.pairs, `双店型 ${geo.counts.dualFormatPairs} · 疑似 ${geo.counts.suspectedPairs}`],
     ['中位最近同品牌距离', geo.medianNearestM == null ? '' : `${geo.medianNearestM}m`, `基于 ${geo.medianBasis} 家${geo.noNeighbor ? `；另 ${geo.noNeighbor} 家 20km 内无同品牌` : ''}`],
     ['', ''],
-    ['二、商圈信号灯', ''],
-    ['红灯·高风险', lights.byLevel.high, '竞争密集 + 自我蚕食（≥4 家同商圈）'],
-    ['黄灯·中风险', lights.byLevel.mid, '命中其中一条规则'],
-    ['绿灯', lights.byLevel.low + lights.byLevel.none, `其中 ${lights.byLevel.none} 家未发现问题`],
-    ['灰灯·无法评估', lights.blind, '⛔ 不等于低风险，是「没评估」'],
+    ['二、信号灯（按门店半径判定）', ''],
+    ['红灯·高风险', lights.byLevel.high, `风险分 ≥${t.riskHigh ?? 5}（自我蚕食与竞争密度同时命中）`],
+    ['黄灯·中风险', lights.byLevel.mid, `风险分 ${t.riskMid ?? 3}~${(t.riskHigh ?? 5) - 1}`],
+    ['绿灯', lights.byLevel.low + lights.byLevel.none,
+      `其中 ${lights.byLevel.none} 家未发现问题${lights.rules.competitionPartial ? `；另有 ${lights.rules.competitionPartial} 家竞争维度未评（绿灯只代表几何没问题）` : ''}`],
+    ['未评估·缺经纬度', lights.noCoord, '没有坐标就没法算距离，⛔ 不是「低风险」'],
     ['', ''],
-    ['规则①竞争密集', lights.rules.competition, `所在商圈竞争宽松度 ≤${lights.thresholds.competitionMax}（同类竞品约 16 家以上）`],
-    ['规则②自我蚕食', lights.rules.cannibal, `同一商圈内本人门店 ≥2 家，涉及 ${lights.rules.cannibalDistricts} 个商圈`],
-    ['规则③客群偏离', lights.rules.crowd, `所在商圈客群占本品牌客群构成不足 ${Math.round(lights.thresholds.crowdShareMin * 100)}%`],
-    ['城市无商圈面数据', lights.noCityData, '这是平台数据覆盖问题，不参与评估、不计入灰灯'],
+    ['规则①自我蚕食', lights.rules.cannibal,
+      `同址 ${d.same || 0} · 贴身 ${d.close || 0} · 部分重叠 ${d.overlap || 0}；同址双店型 ${d.sameDual || 0} 家不计分`],
+    ['规则②竞争密度', lights.rules.competition,
+      `门店 ${t.compRadiusM ?? 800}m 内同业态竞品 ≥${t.compHigh ?? 6} 家 +3 / ≥${t.compMid ?? 3} 家 +2`],
+    ['竞争维度已评估', lights.rules.competitionEvaluated, '该城市有竞品点位才能算'],
+    ['竞争维度未评', (lights.rules.competitionNoData || 0) + (lights.rules.competitionNoCity || 0),
+      `该城市无竞品点位 ${lights.rules.competitionNoData || 0} 家、门店城市为空 ${lights.rules.competitionNoCity || 0} 家 —— 未评 ≠ 竞争宽松`],
+    ['扎堆组（同品牌两两 ≤' + (t.overlapM ?? 800) + 'm 连通）', lights.rules.cannibalDistricts,
+      lights.rules.cannibalTop?.length
+        ? `最挤：${lights.rules.cannibalTop.map(x => `${x.district} ${x.count} 家`).join('、')}`
+        : '没有形成扎堆'],
     ['', ''],
     ['三、数据完备度', ''],
     ['销售记录（行）', completeness.salesRows, '不足 50 行时销售预测只能粗看；不足 150 行无法启用 L3'],
@@ -55,35 +79,44 @@ function overviewSheet({ geo, lights, completeness, nearM, generatedAt }) {
     ['缺营业面积', completeness.areaMissing, '缺面积无法判店型，也进不了销售预测'],
     ['缺经纬度', completeness.coordMissing, '没有坐标的门店不参与几何体检'],
     ['', ''],
-    ['口径说明', '仅统计本人门店；跨品牌同址不参与判定；本次体检未消耗任何第三方数据配额。']
+    ['口径说明', '仅统计本人门店；跨品牌不判；同址双店型不计分；本次体检未消耗任何第三方数据配额。']
   ]
-  return { name: '概览', aoa: rows, cols: [26, 28, 62] }
+  return { name: '概览', aoa: rows, cols: [30, 28, 72] }
 }
 
 /** 信号灯明细：一行一家店（全量，不截断 —— 导出的价值就是拿得到全量） */
 function lightsSheet({ lights }) {
-  const head = ['门店', '品牌', '城市', '商圈', '商圈能级', '客群', '竞争宽松度', '同商圈自有(家)',
-    '风险分', '灯', '命中规则', '状态', '纬度', '经度']
+  const head = ['门店', '品牌', '城市', '最近同品牌(m)', '最近同品牌门店', '同品牌800m内(家)',
+    '竞品800m内(家)', '竞争维度', '风险分', '灯', '命中规则', '所在商圈（仅展示）', '商圈能级', '客群',
+    '状态', '纬度', '经度']
   const rows = lights.lights.map(l => ([
     l.name || '',
     l.brand || '',
     l.city || '',
-    l.district || '',
+    distText(l.nearestM),
+    l.nearestName || '',
+    l.peers800 == null ? '' : l.peers800,
+    l.compRing == null ? '' : l.compRing,
+    COMP_TEXT[l.compStatus] || l.compStatus || '',
+    // 🔴 没评估的留空，⛔ 不要写 0：写 0 会被人当成「零风险」
+    l.riskScore == null ? '' : l.riskScore,
+    // 🔴 绿灯但竞争维度没评时，灯这一格必须自己说出来
+    //（否则导出件会被读成「竞争也查过了、没问题」）
+    l.riskLevel
+      ? (l.riskLevel === 'none' && l.partial
+        ? `${LEVEL_TEXT.none}（竞争未评）`
+        : (LEVEL_TEXT[l.riskLevel] || l.riskLevel))
+      : '未评估',
+    // 🔴 未评估的门店不能写「未命中」—— 那会被读成「查过了没问题」
+    l.status === 'evaluated' ? flagsText(l.flags) : '—',
+    l.district || '不在已导入商圈面内',
     l.districtLevel || '',
     l.crowd || '',
-    l.competitionScore == null ? '' : l.competitionScore,
-    l.ownInDistrict == null ? '' : l.ownInDistrict,
-    // 🔴 盲区留空，⛔ 不要写 0：写 0 会被人当成「零风险」
-    l.riskScore == null ? '' : l.riskScore,
-    l.riskLevel ? (LEVEL_TEXT[l.riskLevel] || l.riskLevel) : '灰灯·无法评估',
-    // 🔴 未评估的门店不能写「未命中」—— 那会被读成「查过了没问题」。
-    //   没评估就是没评估，写「—」。
-    l.status === 'evaluated' ? flagsText(l.flags) : '—',
     STATUS_TEXT[l.status] || l.status || '',
     l.lat == null ? '' : l.lat,
     l.lng == null ? '' : l.lng
   ]))
-  return { name: '信号灯明细', aoa: [head, ...rows], cols: [24, 14, 10, 20, 10, 12, 12, 14, 8, 18, 22, 34, 11, 11] }
+  return { name: '信号灯明细', aoa: [head, ...rows], cols: [24, 12, 10, 14, 24, 14, 14, 24, 8, 16, 30, 22, 10, 12, 20, 11, 11] }
 }
 
 /** 需复核清单（同品牌贴邻对） */
@@ -108,20 +141,20 @@ function pairsSheet({ geo, nearM }) {
 }
 
 /** 说明页：把口径与红线一起交付，避免报告被断章取义 */
-function notesSheet() {
+function notesSheet({ lights }) {
+  const t = lights.thresholds || {}
   const rows = [
     ['这份报告怎么读'],
     [''],
-    ['1. 门店结构（几何）', '只回答「密不密、有没有贴在一起」，不评价好坏。最近距离取「同品牌最近一家」，跨品牌不参与。'],
-    ['2. 商圈信号灯', '用平台已落库的商圈面判断四条规则，给出「先看哪几家」。不调用任何实时人口接口。'],
-    ['3. 盲区＝无法评估', '⛔ 不等于低风险。商圈面只覆盖建成区，园区、街边店常落在面外；这类门店在表里「风险分」留空。'],
-    ['4. 城市无商圈面数据', '是平台覆盖问题，不是选址问题，不参与评估、不计入盲区。'],
-    ['5. 双店型', '编码不同且面积差 2 倍以上，通常是同一商场旗下不同品牌门店，不建议合并。'],
-    ['6. 自我蚕食', '按「本人门店」计数（不含集团可见子公司），因为问题问的是「你自己在这个商圈开了几家」。'],
-    ['7. 竞争宽松度', '与「商圈洞察」同一份评分：分越高＝周边竞争越少；自家门店按 2 家计。'],
-    ['8. 本报告不消耗配额', '全部为本地几何 + 存量商圈面计算，未调用联通/高德任何计费接口。']
+    ['1. 判定单位是门店，不是商圈', `信号灯以门店坐标为圆心、按半径判：贴身 ≤${t.closeM ?? 300}m、部分重叠 ≤${t.overlapM ?? 800}m。⛔ 不用「在不在商圈面里」当判据 —— 单个商圈面 1~48 km²，会把整片区的拥挤程度当成某一家店的问题。`],
+    ['2. 商圈只用于展示', '「所在商圈 / 能级 / 客群」三列只是让人认得这家店在哪，不参与打分，也不影响是否评估。门店落在面外时这三列为空，不影响结论。'],
+    ['3. 门店结构（几何）', '只回答「密不密、有没有贴在一起」，不评价好坏。最近距离取「同品牌最近一家」，跨品牌不参与。'],
+    ['4. 同址双店型不计分', '编码不同且面积差 2 倍以上的同址门店，通常是同一商场旗下的大店 + 小店组合，是客户的经营策略，硬判蚕食等于让客户去关真店。'],
+    ['5. 竞争密度', `门店 ${t.compRadiusM ?? 800}m 内同业态竞品数：≥${t.compHigh ?? 6} 家 +3、≥${t.compMid ?? 3} 家 +2。竞品取本账号（含集团可见子公司）已导入的竞品点位。`],
+    ['6. 未评 ≠ 低风险', '该城市没有竞品点位时，竞争维度记「未评」，既不加分也不给绿灯；缺经纬度的门店整行未评估。'],
+    ['7. 本报告不消耗配额', '全部为本地几何计算 + 存量竞品点位，未调用联通/高德任何计费接口。']
   ]
-  return { name: '说明', aoa: rows, cols: [22, 96] }
+  return { name: '说明', aoa: rows, cols: [26, 110] }
 }
 
 /**
@@ -138,7 +171,7 @@ export function buildReportSheets({ geo, lights, completeness, nearM, generatedA
     overviewSheet({ geo, lights, completeness, nearM, generatedAt }),
     lightsSheet({ lights }),
     pairsSheet({ geo, nearM }),
-    notesSheet()
+    notesSheet({ lights })
   ]
   // 🔴 每行补齐到同宽：标题行只有 1~2 个单元格，若放任参差，
   //   xlsx 里会出现「有的行最后一格在 C 列、有的在 B 列」的错列观感。
@@ -152,3 +185,5 @@ export function buildReportSheets({ geo, lights, completeness, nearM, generatedA
     }
   })
 }
+
+export { SELF_BUCKET_TEXT }

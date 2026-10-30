@@ -8,14 +8,13 @@ import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
 import * as XLSX from 'xlsx'
 import { buildStoreCheckup } from '../utils/storeCheckup.js'
-// v1.13.297 红黄绿灯：几何/计数/评分一律复用商圈洞察那三份 util（⛔ 不许自写第二套）
+// v1.13.299 信号灯改「门店半径骨架」：商圈面降级为展示字段，⛔ 不再用 computeScore 参与打分
+//（实测：商圈面竞争分与「门店 500m 内竞品数」相关系数 −0.26，且与自我蚕食 100% 重叠）
 import { buildStoreLights } from '../utils/storeLights.js'
 import { buildReportSheets } from '../utils/checkupReport.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
 import { readableUserIds } from '../utils/visibleScope.js'
-import { computeScore } from '../utils/districtScore.js'
-import { countCompetitorsInDistrict, countMyStoresInDistrict } from '../utils/districtCount.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -153,7 +152,14 @@ function computeCheckupCompletion(db, userId, stores, geo) {
   }
 }
 
-/** 商圈信号灯：落圈 + 四条规则打分（商圈面按「我有门店的城市」加载） */
+/**
+ * 信号灯：**门店半径骨架**（v1.13.299）
+ *
+ * 取数只管三件事，判定全交给 utils/storeLights.js（纯函数）：
+ *   · 商圈面 —— 只为「所在商圈/能级/客群」这几列展示，⛔ 不参与打分、不影响状态
+ *   · 竞品点位 —— 按可见域取（与商圈洞察同一批点位），用于算「800m 内竞品数」
+ *   · 竞品覆盖城市 —— 该城市一个竞品点都没有 ⇒ 竞争维度「不评」，⛔ 不能当成 0 家
+ */
 function computeStoreLights(db, userId, stores) {
   const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other'`).all()
   const fileByCity = new Map()
@@ -171,33 +177,45 @@ function computeStoreLights(db, userId, stores) {
 
   const districts = []
   if (coveredCities.length) {
-    const scopeIds = readableUserIds(db, userId)
     for (const city of coveredCities) {
       for (const fileId of fileByCity.get(city)) {
         const geojson = getGeoObject(fileId)
         if (!geojson || !Array.isArray(geojson.features)) continue
         for (const feature of geojson.features) {
           if (!feature.geometry) continue
-          // 276 起字段名整代更换：必须先归一再取数，否则评分静默归零
+          // 276 起字段名整代更换：必须先归一再取数，否则名称/客群静默为空
           const props = normalizeDistrictProps(feature.properties || {})
-          const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
-          const myCount = countMyStoresInDistrict(feature.geometry, scopeIds)
-          const scores = computeScore(props, compCount, myCount)
           districts.push({
             name: props['名称'] || '未命名商圈',
             city,
             level: dstr(props, '能级'),
             crowd: dstr(props, '客群'),
-            geometry: feature.geometry,
-            scoreCompetition: scores.scoreCompetition
+            geometry: feature.geometry
           })
         }
       }
     }
   }
 
-  const result = buildStoreLights({ stores, districts, opts: { coveredCities: new Set(coveredCities) } })
-  return { result, coveredCities, uncoveredCities }
+  // 竞品点位：可见域口径（自己 + 本集团允许被拉取的子公司），与商圈洞察同源
+  const scopeIds = readableUserIds(db, userId)
+  let competitors = []
+  if (Array.isArray(scopeIds) && scopeIds.length) {
+    const ph = scopeIds.map(() => '?').join(',')
+    competitors = db.prepare(
+      `SELECT latitude, longitude, city FROM competitors
+        WHERE user_id IN (${ph})
+          AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+    ).all(...scopeIds)
+  }
+  const competitorCities = new Set()
+  for (const c of competitors) {
+    const k = CITY_KEY(c.city)
+    if (k) competitorCities.add(k)
+  }
+
+  const result = buildStoreLights({ stores, competitors, competitorCities, districts })
+  return { result, coveredCities, uncoveredCities, competitorCount: competitors.length }
 }
 
 router.get('/checkup', authenticate, (req, res) => {
@@ -237,23 +255,27 @@ router.get('/checkup', authenticate, (req, res) => {
 })
 
 // ============================================================================
-// 门店体检 · 商圈信号灯（v1.13.297）
+// 门店体检 · 信号灯（v1.13.299 口径重构：**门店半径骨架**）
 // GET /api/markers/checkup/lights?top=200
 //
-// 四条规则（阈值与实测见 `Report4biz_免费门店体检_规则与实测_20261028.md`）：
-//   ① 竞争密集 = 所在商圈竞争宽松度 ≤35                +3
-//   ② 自我蚕食 = 同一商圈内**本人**门店 2~3 家 +2 / ≥4 家 +3
-//   ③ 客群偏离 = 所在商圈客群占本品牌门店客群构成 <20%  +2
-//   ④ 覆盖盲区 = 城市有商圈面但门店不在面内 ⇒ **无法评估**（不评分、不算低风险）
+// 为什么改：v1.13.297 用商圈面当判定单位，生产实测 233 家门店暴露四个硬伤 ——
+//   · 16% 门店落在商圈面外 ⇒ 永远「无法评估」，而这批里 9 家与自家门店同址 <50m；
+//   · 「竞争密集」34 家 100% 同时命中「自我蚕食」，且商圈面竞争分与 500m 内竞品数 **负相关 −0.26**；
+//   · 「自我蚕食」156/196=80%，其中 68 家最近同品牌在 800m 外（商圈面 1~48 km² 太大）；
+//   · 「客群偏离」0 命中，基线还是拿自己门店反推的。
 //
-// 🔴 口径同源（⛔ 不许在本文件重写一份）：
-//   · 落圈判定 = utils/geoPoint.js（与商圈洞察同一套射线法）
-//   · 竞争宽松度 = utils/districtScore.js::computeScore（同一份评分）
-//   · 竞品/自有计数 = utils/districtCount.js（同一份 SQL + 同一个 60s 缓存）
-//   ⇒ 否则会出现「商圈洞察显示 55 分、体检说竞争密集」，客户第一反应就是系统乱算。
+// 现在两条规则，都以**门店坐标为圆心**：
+//   ① 自我蚕食 = 最近同品牌距离 ≤50m（双店型不计分）/ ≤300m → +3；≤800m → +2
+//   ② 竞争密度 = 门店 800m 内同业态竞品 ≥6 家 → +3；≥3 家 → +2
+//   商圈面只决定「所在商圈/能级/客群」三列展示，⛔ 不再参与打分、不影响状态。
 //
-// 🔴 城市没有商圈面数据 ⇒ 归 noCityData，**不算盲区** ——
-//   那是我们的数据覆盖问题，不是客户的选址问题（混进去就等于自证平台没用）。
+// 🔴 口径同源：
+//   · 最近同品牌距离 = storeCheckup.js::buildNeighborIndex（与体检页同一份索引）
+//   · 竞品点位 = 可见域 readableUserIds（与商圈洞察同一批点位）
+//   · 半径内竞品计数 = storeLights.js（只此一处）
+//
+// 🔴 「竞争未评」≠「低风险」：该城市没有竞品点位时不加分，但明细里必须写明未评，
+//   ⛔ 不能因为「0 家竞品」就发绿灯。
 //
 // ⚠️ 只算本人门店（WHERE user_id），与 /checkup、门店清洗同口径。
 // ============================================================================
@@ -264,31 +286,28 @@ router.get('/checkup/lights', authenticate, (req, res) => {
     const top = Math.min(Math.max(parseInt(req.query.top, 10) || 200, 10), 1000)
 
     const stores = loadCheckupStores(db, userId)
-    const { result, coveredCities, uncoveredCities } = computeStoreLights(db, userId, stores)
+    const { result, coveredCities, uncoveredCities, competitorCount } = computeStoreLights(db, userId, stores)
 
     res.json({
       success: true,
       total: result.total,
       evaluated: result.evaluated,
-      blind: result.blind,
-      noCityData: result.noCityData,
       noCoord: result.noCoord,
       byLevel: result.byLevel,
       rules: result.rules,
-      crowdBaseline: result.crowdBaseline,
       thresholds: result.thresholds,
       districtCount: result.districtCount,
+      competitorPoints: result.competitorPoints,
+      competitorCount,
       cityCoverage: { covered: coveredCities, uncovered: uncoveredCities },
-      // 🔴 两类**分别**截断：已评估的按风险排、未评估的也各自占 top 额度。
-      //   若统一 slice(0, top)，233 家店里前 200 全是已评估 ⇒ 界面上勾了「含无法评估（37 家）」
-      //   却只冒出 4 家，等于说了个数却拿不出名单（v1.13.297 真机发现）。
+      // 未评门店（现在只剩「缺坐标」）单独排后面，和已评估的一起截断
       lightsTotal: result.lights.length,
       top,
       lights: [
         ...result.lights.filter(l => l.status === 'evaluated').slice(0, top),
         ...result.lights.filter(l => l.status !== 'evaluated').slice(0, top)
       ],
-      note: '仅本人门店；盲区＝无法评估（⛔ 不等于低风险）；城市无商圈面数据的不计入盲区；本次未消耗任何配额'
+      note: '仅本人门店；跨品牌不判；同址双店型不计分（大店+小店是有意为之）；竞争维度无竞品点位时标注「未评」，不等于低风险；本次未消耗任何配额'
     })
   } catch (error) {
     console.error('[Markers] 门店体检信号灯失败:', error)

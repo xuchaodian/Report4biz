@@ -6,7 +6,7 @@
         <h2>门店体检</h2>
         <p class="ck-sub">
           两块内容：<b>几何结构</b>（坐标、间距、店型 —— 只看「密不密、有没有贴在一起」）
-          与 <b>商圈信号灯</b>（用存量商圈面判竞争 / 蚕食 / 客群 —— 给「先看哪几家」）。
+          与<b>门店信号灯</b>（以门店坐标为圆心按半径判自我蚕食 / 竞争密度 —— 给「先看哪几家」）。
           两者都<b>看不出「赚不赚钱」</b>，那要客户录销售数据。
         </p>
       </div>
@@ -83,26 +83,26 @@
         </div>
 
 
-        <!-- 商圈信号灯（v1.13.297）：先看哪几家，不消耗任何配额 -->
+        <!-- 门店信号灯（v1.13.299 半径骨架）：先看哪几家，不消耗任何配额 -->
         <section class="ck-card">
           <h3>
-            商圈信号灯
+            门店信号灯
             <span class="ck-count">先看哪几家 · 本次未消耗配额</span>
           </h3>
           <p class="ck-card-sub">
-            用已落库的商圈面判断，<b>不调用任何实时人口接口</b>。
-            红 = 竞争密集<b>且</b>自己有 4 家以上挤在同一商圈；
-            黄 = 命中一条（竞争密集 / 同商圈自有 2~3 家 / 客群偏离）；绿 = 未命中。
+            以<b>每家门店坐标为圆心</b>按半径判定，<b>不调用任何实时人口接口</b>。
+            红 = 自我蚕食（同品牌贴身）与竞争密集（半径内竞品多）同时命中；
+            黄 = 命中其中一条；绿 = 未命中。商圈名只作<b>定位参考</b>，不参与打分。
           </p>
 
-          <div v-if="lightsLoading" class="ck-lights-loading">正在匹配商圈…</div>
+          <div v-if="lightsLoading" class="ck-lights-loading">正在计算门店间距…</div>
           <div v-else-if="lightsErrorMsg" class="ck-hint-warn">{{ lightsErrorMsg }}</div>
           <template v-else-if="lights">
             <div class="ck-lights">
               <div class="ck-light l-red">
                 <div class="ck-light-n">{{ lights.byLevel.high }}</div>
                 <div class="ck-light-l">红灯 · 高风险</div>
-                <div class="ck-light-h">竞争密集 + 自我蚕食</div>
+                <div class="ck-light-h">贴身 + 半径内竞品密集</div>
               </div>
               <div class="ck-light l-yellow">
                 <div class="ck-light-n">{{ lights.byLevel.mid }}</div>
@@ -114,44 +114,53 @@
                 <div class="ck-light-l">绿灯 · 低风险</div>
                 <div class="ck-light-h">其中 {{ lights.byLevel.none }} 家未发现问题</div>
               </div>
-              <div class="ck-light l-gray" :class="{ 'is-warn': lights.blind > 0 }">
-                <div class="ck-light-n">{{ lights.blind }}</div>
-                <div class="ck-light-l">灰 · 无法评估</div>
-                <div class="ck-light-h">不在任何已覆盖商圈面内</div>
+              <div class="ck-light l-gray" :class="{ 'is-warn': lights.noCoord > 0 }">
+                <div class="ck-light-n">{{ lights.noCoord }}</div>
+                <div class="ck-light-l">未评估 · 缺经纬度</div>
+                <div class="ck-light-h">没坐标就算不了距离</div>
               </div>
             </div>
 
             <ul class="ck-rule-list">
               <li>
-                <span class="ck-rule-name">竞争密集</span>
-                <span class="ck-rule-sub">所在商圈竞争宽松度 ≤{{ lights.thresholds.competitionMax }}（同类竞品约 16 家以上）</span>
-                <span class="ck-rule-n">{{ lights.rules.competition }} 家</span>
-              </li>
-              <li>
                 <span class="ck-rule-name">自我蚕食</span>
-                <span class="ck-rule-sub">同一商圈内自有门店 ≥2 家（自有之间互相蚕食，比竞品更该避）</span>
-                <span class="ck-rule-n">{{ lights.rules.cannibal }} 家 / {{ lights.rules.cannibalDistricts }} 个商圈</span>
-                <span v-if="lights.rules.cannibalTop.length" class="ck-rule-more">
-                  最挤：{{ lights.rules.cannibalTop.map(t => t.district + ' ' + t.count + ' 家').join('、') }}
+                <span class="ck-rule-sub">
+                  最近同品牌 ≤{{ lights.thresholds.closeM }}m 记 +3、≤{{ lights.thresholds.overlapM }}m 记 +2；
+                  同址双店型不计分
+                </span>
+                <span class="ck-rule-n">{{ lights.rules.cannibal }} 家</span>
+                <span class="ck-rule-more">
+                  同址 {{ lights.rules.selfDetail.same }} · 贴身 {{ lights.rules.selfDetail.close }} ·
+                  部分重叠 {{ lights.rules.selfDetail.overlap }}；另有 {{ lights.rules.selfDetail.sameDual }} 家为同址双店型（不计分）
                 </span>
               </li>
               <li>
-                <span class="ck-rule-name">客群偏离</span>
-                <span class="ck-rule-sub">所在商圈客群占本品牌门店客群构成不足 {{ Math.round(lights.thresholds.crowdShareMin * 100) }}%</span>
-                <span class="ck-rule-n">{{ lights.rules.crowd }} 家</span>
-                <span v-if="!lights.rules.crowd && crowdBaselineText" class="ck-rule-more">
-                  本品牌客群构成{{ crowdBaselineText }}，属全客群覆盖 ⇒ 不硬找茬
+                <span class="ck-rule-name">竞争密度</span>
+                <span class="ck-rule-sub">
+                  门店 {{ lights.thresholds.compRadiusM }}m 内同业态竞品 ≥{{ lights.thresholds.compHigh }} 家记 +3、≥{{ lights.thresholds.compMid }} 家记 +2
+                </span>
+                <span class="ck-rule-n">{{ lights.rules.competition }} 家</span>
+                <span class="ck-rule-more">
+                  已评 {{ lights.rules.competitionEvaluated }} 家 ·
+                  未评 {{ lights.rules.competitionNoData + lights.rules.competitionNoCity }} 家（该城市无竞品点位，⛔ 不等于竞争宽松）
+                </span>
+              </li>
+              <li v-if="lights.rules.cannibalDistricts">
+                <span class="ck-rule-name">扎堆组</span>
+                <span class="ck-rule-sub">同品牌两两 ≤{{ lights.thresholds.overlapM }}m 连通成一团</span>
+                <span class="ck-rule-n">{{ lights.rules.cannibalDistricts }} 组</span>
+                <span class="ck-rule-more">
+                  最挤：{{ lights.rules.clusters.map(c => c.names[0] + '一带 ' + c.count + ' 家').join('、') }}
                 </span>
               </li>
             </ul>
 
-            <p v-if="lights.blind" class="ck-hint-warn">
-              {{ lights.blind }} 家不在任何已覆盖商圈面内 —— 这是<b>「无法评估」，不是「没问题」</b>。
-              商圈面只覆盖建成区，园区、街边店常落在面外。
+            <p v-if="lights.noCoord" class="ck-hint-warn">
+              {{ lights.noCoord }} 家门店缺经纬度 —— 这是<b>「没评估」，不是「没问题」</b>，先做地址解析补坐标。
             </p>
-            <p v-if="lights.noCityData" class="ck-hint-warn">
-              另有 {{ lights.noCityData }} 家所在城市还没有商圈面数据{{ lights.cityCoverage.uncovered.length ? '（' + lights.cityCoverage.uncovered.join('、') + '）' : '' }}
-              —— 这是<b>我们的数据覆盖问题</b>，不参与评估，也不计入盲区。
+            <p v-if="lights.rules.competitionNoData" class="ck-hint-warn">
+              {{ lights.rules.competitionNoData }} 家门店所在城市还没有竞品点位 —— 竞争密度这几个字<b>没算过</b>，
+              在「竞品管理」里导入竞品后重跑即可。当前账号竞品点位共 {{ lights.competitorPoints }} 个。
             </p>
 
             <div v-if="topLights.length" class="ck-lights-table">
@@ -160,7 +169,7 @@
                   按风险排序 · 可评估 <b>{{ lights.evaluated }}</b> 家{{ lights.evaluated > topLights.length ? `，下表先列 ${topLights.length} 家` : '' }}
                 </span>
                 <div class="ck-lights-switch">
-                  <el-checkbox v-model="showBlind" size="small">含无法评估（{{ lights.blind }} 家）</el-checkbox>
+                  <el-checkbox v-model="showBlind" size="small">含未评估（{{ lights.noCoord }} 家）</el-checkbox>
                   <el-checkbox v-model="onlyLit" size="small">只看红黄灯</el-checkbox>
                 </div>
               </div>
@@ -181,30 +190,39 @@
                     <div class="ck-store-meta">{{ row.riskScore == null ? '未评分' : row.riskScore + ' 分' }} · {{ flagsText(row.flags) }}</div>
                   </template>
                 </el-table-column>
-                <el-table-column label="商圈" min-width="140">
+                <el-table-column label="最近同品牌" width="150">
                   <template #default="{ row }">
                     <template v-if="row.status === 'evaluated'">
-                      <div>{{ row.district }}</div>
-                      <div class="ck-store-meta">{{ row.crowd || '客群未知' }}</div>
+                      <span :class="{ 'ck-bad-num': row.nearestM != null && row.nearestM <= lights.thresholds.overlapM }">
+                        {{ fmtDist(row.nearestM) }}
+                      </span>
+                      <div class="ck-store-meta">{{ row.nearestName || (row.nearestM == null ? '20km 内无同品牌' : '') }}</div>
                     </template>
                     <span v-else class="ck-store-meta">{{ statusText(row.status) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="竞争宽松度" width="110">
+                <el-table-column label="同品牌 800m 内" width="126">
                   <template #default="{ row }">
-                    <span :class="{ 'ck-bad-num': row.competitionScore <= lights.thresholds.competitionMax }">
-                      {{ row.competitionScore ?? '—' }}
-                    </span>
+                    <span :class="{ 'ck-bad-num': row.peers800 >= 2 }">{{ row.status === 'evaluated' ? row.peers800 + ' 家' : '—' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="同商圈自有" width="105">
+                <el-table-column label="竞品 800m 内" width="116">
                   <template #default="{ row }">
-                    <span :class="{ 'ck-bad-num': row.ownInDistrict >= 2 }">{{ row.ownInDistrict == null ? '—' : row.ownInDistrict + ' 家' }}</span>
+                    <template v-if="row.compStatus === 'evaluated'">
+                      <span :class="{ 'ck-bad-num': row.compRing >= lights.thresholds.compMid }">{{ row.compRing }} 家</span>
+                    </template>
+                    <span v-else class="ck-store-meta" :title="compStatusText(row.compStatus)">未评</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="所在商圈（仅展示）" min-width="150">
+                  <template #default="{ row }">
+                    <div>{{ row.district || '—' }}</div>
+                    <div class="ck-store-meta">{{ row.district ? (row.crowd || '客群未知') : '不在已导入商圈面内' }}</div>
                   </template>
                 </el-table-column>
               </el-table>
               <div v-if="!visibleLights.length" class="ck-empty-row">
-                没有符合条件的门店 —— 这批门店在已覆盖商圈里没有明显的竞争/蚕食问题。
+                没有符合条件的门店 —— 这批门店既没有同品牌贴身，半径内也没有竞品密集。
               </div>
               <!-- 🔴 必须分页：196 行全铺开会把整页拉到 1.4 万像素高，
                    下面的「需复核清单」要滚很久才看得到（v1.13.297 真机实测） -->
@@ -525,13 +543,13 @@ function fmtDist(m) {
 }
 
 
-// ===== 商圈信号灯（v1.13.297）=====
+// ===== 门店信号灯（v1.13.299 半径骨架）=====
 const lights = ref(null)
 const lightsLoading = ref(false)
 const lightsErrorMsg = ref('')
 const onlyLit = ref(false)
-// 默认只列已评估的；勾「含无法评估」才把盲区/缺城市数据/缺坐标的店列出来
-// —— 客户最想知道「哪些店我看不见」，只给个数字不给出名单等于没回答。
+// 默认只列已评估的；勾「含未评估」才把缺坐标的店列出来
+// —— 客户最想知道「哪些店看不出问题」，只给个数字不给出名单等于没回答。
 const showBlind = ref(false)
 
 const topLights = computed(() => (lights.value?.lights || []).filter(l => l.status === 'evaluated'))
@@ -552,21 +570,22 @@ const pagedLights = computed(() => {
 // 换筛选条件后回到第 1 页，否则会停在一个不存在的页码上显示空表
 watch([showBlind, onlyLit], () => { lightsPage.value = 1 })
 
-const crowdBaselineText = computed(() => {
-  const list = lights.value?.crowdBaseline || []
-  if (!list.length) return ''
-  return '（' + list.map(b => `${b.crowd} ${Math.round(b.share * 100)}%`).join(' / ') + '）'
-})
-
 function statusText(s) {
-  return { blind: '不在已覆盖商圈面内', no_city_data: '该城市暂无商圈面数据', no_coord: '缺经纬度' }[s] || '未评估'
+  return { no_coord: '缺经纬度', evaluated: '已评估' }[s] || '未评估'
+}
+/** 竞争维度为什么没评 —— 鼠标悬停看原因，⛔ 别让「未评」被读成「很宽松」 */
+function compStatusText(s) {
+  return {
+    no_data: '该城市没有竞品点位：本维度未评（⛔ 不等于竞争宽松）',
+    no_city: '门店城市为空，无法判断竞品覆盖'
+  }[s] || '未评'
 }
 function levelText(l) {
   return { high: '红', mid: '黄', low: '绿', none: '绿' }[l] || '灰'
 }
 /** 命中规则 → 人话（⛔ 别把 competition/cannibal 这种字段名直接摆给客户） */
 function flagsText(flags) {
-  const map = { competition: '竞争密集', cannibal: '自我蚕食', crowd: '客群偏离' }
+  const map = { competition: '竞争密集', cannibal: '自我蚕食' }
   return (flags || []).map(f => map[f] || f).join(' / ') || '未命中'
 }
 

@@ -12,7 +12,7 @@
  */
 
 const LEVEL_TEXT = { high: '红灯·高风险', mid: '黄灯·中风险', low: '绿灯·低风险', none: '绿灯·未发现' }
-const FLAG_TEXT = { competition: '竞争密集', cannibal: '自我蚕食', crowd: '客群偏离' }
+const FLAG_TEXT = { competition: '竞争密集', cannibal: '自我蚕食' }
 
 function esc(v) {
   return String(v == null ? '' : v)
@@ -57,9 +57,10 @@ export function buildCheckupPrintHtml({ data, lights, owner = '', maxLights = 60
         <tr>
           <td><span class="dot ${l.riskLevel}"></span>${esc(LEVEL_TEXT[l.riskLevel] || '')}</td>
           <td>${esc(l.name || '（未命名）')}<div class="sub">${esc(l.riskScore)} 分 · ${esc(flagsText(l.flags))}</div></td>
-          <td>${esc(l.district)}<div class="sub">${esc(l.crowd || '客群未知')}</div></td>
-          <td class="num">${esc(l.competitionScore)}</td>
-          <td class="num">${esc(l.ownInDistrict)} 家</td>
+          <td class="num">${esc(dist(l.nearestM))}<div class="sub">${esc(l.nearestName || '')}</div></td>
+          <td class="num">${l.peers800 == null ? '—' : esc(l.peers800) + ' 家'}</td>
+          <td class="num">${l.compRing == null ? '未评' : esc(l.compRing) + ' 家'}</td>
+          <td>${esc(l.district || '—')}<div class="sub">${esc(l.district ? (l.crowd || '客群未知') : '不在已导入商圈面内')}</div></td>
         </tr>`).join('')
 
   const pairTr = pairRows.map(p => `
@@ -117,25 +118,30 @@ export function buildCheckupPrintHtml({ data, lights, owner = '', maxLights = 60
 
   <h2>一、结论速览</h2>
   <div class="kpis">
-    ${kpi(b.high, '红灯 · 高风险', '竞争密集 + 自我蚕食', 'red')}
+    ${kpi(b.high, '红灯 · 高风险', '贴身 + 半径内竞品密集', 'red')}
     ${kpi(b.mid, '黄灯 · 中风险', '命中其中一条', 'yellow')}
-    ${kpi(b.low + b.none, '绿灯 · 低风险', `其中 ${b.none} 家未发现问题`, 'green')}
-    ${kpi(lights?.blind ?? 0, '灰 · 无法评估', '不在已覆盖商圈面内', 'gray')}
+    ${kpi(b.low + b.none, '绿灯 · 低风险', `其中 ${b.none} 家未发现问题${lights?.rules?.competitionPartial ? `；${lights.rules.competitionPartial} 家竞争未评` : ''}`, 'green')}
+    ${kpi(lights?.noCoord ?? 0, '未评估 · 缺经纬度', '没坐标就算不了距离', 'gray')}
   </div>
   <ul class="rules">
-    <li><b>竞争密集</b>：所在商圈竞争宽松度 ≤${esc(lights?.thresholds?.competitionMax ?? 35)}（同类竞品约 16 家以上）—— ${esc(lights?.rules?.competition ?? 0)} 家</li>
-    <li><b>自我蚕食</b>：同一商圈内自有门店 ≥2 家 —— ${esc(lights?.rules?.cannibal ?? 0)} 家，涉及 ${esc(lights?.rules?.cannibalDistricts ?? 0)} 个商圈${
-      lights?.rules?.cannibalTop?.length
-        ? `（最挤：${esc(lights.rules.cannibalTop.map(t => `${t.district} ${t.count} 家`).join('、'))}）`
+    <li><b>自我蚕食</b>：最近同品牌 ≤${esc(lights?.thresholds?.closeM ?? 300)}m 记 +3、≤${esc(lights?.thresholds?.overlapM ?? 800)}m 记 +2；
+      同址双店型不计分（大店+小店是有意为之）—— ${esc(lights?.rules?.cannibal ?? 0)} 家
+      <span class="sub">（同址 ${esc(lights?.rules?.selfDetail?.same ?? 0)} · 贴身 ${esc(lights?.rules?.selfDetail?.close ?? 0)} ·
+      部分重叠 ${esc(lights?.rules?.selfDetail?.overlap ?? 0)}；同址双店型 ${esc(lights?.rules?.selfDetail?.sameDual ?? 0)} 家不计分）</span>
+    </li>
+    <li><b>竞争密度</b>：门店 ${esc(lights?.thresholds?.compRadiusM ?? 800)}m 内同业态竞品
+      ≥${esc(lights?.thresholds?.compHigh ?? 6)} 家 +3、≥${esc(lights?.thresholds?.compMid ?? 3)} 家 +2 —— ${esc(lights?.rules?.competition ?? 0)} 家
+      <span class="sub">（已评 ${esc(lights?.rules?.competitionEvaluated ?? 0)} 家，未评 ${esc((lights?.rules?.competitionNoData ?? 0) + (lights?.rules?.competitionNoCity ?? 0))} 家）</span>
+    </li>
+    <li><b>扎堆组</b>：同品牌两两 ≤${esc(lights?.thresholds?.overlapM ?? 800)}m 连通成一团 —— ${esc(lights?.rules?.cannibalDistricts ?? 0)} 组${
+      lights?.rules?.clusters?.length
+        ? `（最挤：${esc(lights.rules.clusters.map(c => `${c.names[0]}一带 ${c.count} 家`).join('、'))}）`
         : ''
-    }</li>
-    <li><b>客群偏离</b>：所在商圈客群占本品牌客群构成不足 ${esc(Math.round((lights?.thresholds?.crowdShareMin ?? 0.2) * 100))}% —— ${esc(lights?.rules?.crowd ?? 0)} 家${
-      lights?.rules?.crowd === 0 ? '（本品牌为全客群覆盖，不硬找茬）' : ''
     }</li>
   </ul>
 
-  ${lights?.blind ? `<div class="warn">${esc(lights.blind)} 家门店不在任何已覆盖商圈面内 —— 这是<b>「无法评估」，不是「没问题」</b>。商圈面只覆盖建成区，园区、街边店常落在面外。</div>` : ''}
-  ${lights?.noCityData ? `<div class="warn">另有 ${esc(lights.noCityData)} 家门店所在城市暂无商圈面数据 —— 属平台数据覆盖问题，不参与评估，也不计入上表灰灯。</div>` : ''}
+  ${lights?.noCoord ? `<div class="warn">${esc(lights.noCoord)} 家门店缺经纬度 —— 这是<b>「没评估」，不是「没问题」</b>，先做地址解析补坐标。</div>` : ''}
+  ${lights?.rules?.competitionNoData ? `<div class="warn">${esc(lights.rules.competitionNoData)} 家门店所在城市没有竞品点位 —— 竞争密度<b>没算过</b>（⛔ 不等于竞争宽松），在「竞品管理」导入竞品后重跑即可。</div>` : ''}
 
   <h2>二、门店结构</h2>
   <table>
@@ -150,10 +156,10 @@ export function buildCheckupPrintHtml({ data, lights, owner = '', maxLights = 60
 
   ${litRows.length ? `<h2>三、优先复核门店（红黄灯，前 ${litRows.length} 家）</h2>
   <table>
-    <tr><th style="width:20%">灯</th><th>门店</th><th>所在商圈</th><th class="num">竞争宽松度</th><th class="num">同商圈自有</th></tr>
+    <tr><th style="width:18%">灯</th><th>门店</th><th class="num">最近同品牌</th><th class="num">同品牌800m</th><th class="num">竞品800m</th><th>所在商圈（仅展示）</th></tr>
     ${litTr}
   </table>
-  <div class="note">按风险分排序；完整名单与全部字段见导出的 Excel。</div>` : ''}
+  <div class="note">按风险分排序；「竞品800m」显示「未评」表示该城市没有竞品点位，<b>不是</b>竞争宽松。完整名单与全部字段见导出的 Excel。</div>` : ''}
 
   ${pairRows.length ? `<h2>四、需复核清单（前 ${pairRows.length} 对）</h2>
   <table>
@@ -163,9 +169,10 @@ export function buildCheckupPrintHtml({ data, lights, owner = '', maxLights = 60
   <div class="note">双店型＝编码不同且面积差 2 倍以上，通常是同一商场旗下不同品牌门店，<b>不建议合并</b>；疑似＝面积缺失或面积接近，需人工看一眼。</div>` : ''}
 
   <div class="foot">
-    <b>口径</b>：仅统计本人门店；跨品牌同址不参与判定；商圈竞争宽松度与「商圈洞察」同一份评分（分越高＝周边竞争越少，自家门店按 2 家计）。
-    「灰·无法评估」不等于低风险。<br>
-    本次体检全部为本地几何 + 存量商圈面计算，<b>未消耗任何第三方数据配额</b>。
+    <b>口径</b>：仅统计本人门店；跨品牌不参与判定；信号灯以<b>门店坐标为圆心按半径</b>判定
+    （贴身 ≤${esc(lights?.thresholds?.closeM ?? 300)}m、部分重叠 ≤${esc(lights?.thresholds?.overlapM ?? 800)}m、竞品半径 ${esc(lights?.thresholds?.compRadiusM ?? 800)}m），
+    商圈名只作定位参考、不参与打分。同址双店型不计分；「未评」不等于低风险。<br>
+    本次体检全部为本地几何计算 + 存量竞品点位，<b>未消耗任何第三方数据配额</b>。
   </div>
 </body>
 </html>`

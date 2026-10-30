@@ -143,31 +143,47 @@ describe('可见域的来源与传参', () => {
   })
 })
 
-describe('门店体检信号灯：必须复用同一份计数（v1.13.297）', () => {
-  it('markers.js 从 utils/districtCount.js 引入计数，而不是自己写 SQL', () => {
+describe('门店体检信号灯：v1.13.299 起改用「门店半径」口径', () => {
+  // 老口径（商圈面竞争宽松度）已被实测推翻：与门店 500m 内竞品数相关系数 −0.26、
+  // 且与「自我蚕食」100% 重叠。解耦之后，⛔ 不许再把它悄悄接回来。
+  it('信号灯不再引用商圈面评分（否则又变成「用商圈面判门店」）', () => {
+    const lightsSrc = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/utils/storeLights.js'), 'utf8')
     expect(
-      markersSrc.includes("from '../utils/districtCount.js'"),
-      '门店体检路由未复用 districtCount —— 会与商圈洞察算出两个不同的竞争宽松度'
+      lightsSrc.includes("from './districtScore.js'"),
+      '信号灯又引用了 districtScore —— 体检判定单位是门店，不是商圈面'
+    ).toBe(false)
+    expect(/COMPETITION_DENSE_MAX/.test(lightsSrc)).toBe(false)
+  })
+
+  it('半径阈值只在 storeLights.js 定义一次', () => {
+    const lightsSrc = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/utils/storeLights.js'), 'utf8')
+    for (const name of ['COMP_RADIUS_M', 'CLOSE_M', 'OVERLAP_M', 'COMP_MID', 'COMP_HIGH']) {
+      expect(lightsSrc, `${name} 未在 storeLights.js 定义`).toContain(`export const ${name}`)
+    }
+    // 报告与路由必须从接口/常量取值，⛔ 不许各自再写一份判定阈值
+    const others = ['backend/src/utils/checkupReport.js', 'backend/src/routes/markers.js']
+    for (const rel of others) {
+      const s = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8')
+      expect(s.includes('COMPETITION_DENSE_MAX'), `${rel} 仍在用旧的竞争分阈值`).toBe(false)
+    }
+  })
+
+  it('🔴 竞品点位必须按可见域加载（⛔ 不许裸查全表：那是跨账号聚合）', () => {
+    expect(
+      /readableUserIds\(db, userId\)/.test(markersSrc),
+      '门店体检路由未走 readableUserIds —— 竞品点位会混入其他账号数据'
     ).toBe(true)
     expect(
-      /FROM\s+competitors/i.test(markersSrc),
-      'markers.js 里出现 competitors 查询 —— 「竞品数」必须走同一份计数，否则两页数字会打架'
-    ).toBe(false)
+      /FROM\s+competitors[\s\S]{0,240}?user_id IN/.test(markersSrc),
+      '竞品点位查询缺少 user_id 限定'
+    ).toBe(true)
   })
 
   it('districts.js 不再自带计数实现（避免又长回两份）', () => {
     expect(
       /function countCompetitorsInDistrict/.test(src),
-      'districts.js 又出现本地计数函数 —— 请改回 import，否则门店体检那侧会悄悄漂移'
+      'districts.js 又出现本地计数函数 —— 请改回 import，否则商圈洞察会悄悄漂移'
     ).toBe(false)
-  })
-
-  it('信号灯判定用的竞争阈值来自 districtScore（单一来源）', () => {
-    const lightsSrc = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/utils/storeLights.js'), 'utf8')
-    expect(
-      lightsSrc.includes("from './districtScore.js'") && /COMPETITION_DENSE_MAX/.test(lightsSrc),
-      '信号灯未引用 COMPETITION_DENSE_MAX —— 阈值若各写一份，改口径必然漏改'
-    ).toBe(true)
   })
 })
 
