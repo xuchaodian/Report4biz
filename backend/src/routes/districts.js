@@ -7,8 +7,11 @@ import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
 import { readableUserIds } from '../utils/visibleScope.js'
+// v1.13.297：几何判定抽到 utils/geoPoint.js（门店体检落圈要同一套算法，⛔ 不许复制第二份射线法）
+import { pointInFeature, geometryBBox } from '../utils/geoPoint.js'
+import { countCompetitorsInDistrict, countMyStoresInDistrict } from '../utils/districtCount.js'
+import { computeScore } from '../utils/districtScore.js'
 import crypto from 'crypto'
-import NodeCache from 'node-cache'
 
 const router = express.Router()
 
@@ -24,52 +27,8 @@ const BASE_DATA_MONTH = ''
 // geojsonCache（1 小时 TTL、与 shapefiles.js 的 1 分钟缓存各自为政）已删除，
 // 缓存统一归 geoStore 管，避免同一个 geojson 在内存里存两份 V8 对象。
 
-// H4（v1.13.106）：商圈内门店/竞品计数缓存——bbox 预筛后仅对少量候选跑射线，结果按
-// (bbox + 数据版本) 缓存 60s。数据版本取 competitors/markers 的 MAX(updated_at)，
-// 导入/更新/删除后自动失效，无需在写路径手动清缓存。
-const districtCountCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
-
-// 数据版本指纹：两表最新 updated_at（秒级）+ **已合并行数**
-// 🔴 为什么要加已合并行数：合并只改 merged_into 与 updated_at，**行数不变**；
-//    而 updated_at 是 `datetime('now')` 秒级精度 ⇒ 同一秒内「撤销再合并」（或两次合并）
-//    指纹完全相同 ⇒ 命中旧缓存，竞争宽松度仍是合并前的值（实测踩到过）。
-//    已合并行数随每次合并/撤销确定性变化，补掉这个盲点。
-function storeDataVersion(db) {
-  const r = db.prepare(`
-    SELECT COALESCE((SELECT MAX(updated_at) FROM competitors), '') || '|' ||
-           COALESCE((SELECT MAX(updated_at) FROM markers), '') || '|' ||
-           (SELECT COUNT(*) FROM markers WHERE merged_into IS NOT NULL) AS v
-  `).get()
-  return r?.v || ''
-}
-
-/**
- * 几何 bbox [minLng, minLat, maxLng, maxLat]（Polygon/MultiPolygon），
- * 不支持的类型返回 null（调用方回退全表扫描）。
- */
-function geometryBBox(geometry) {
-  if (!geometry) return null
-  const polys = geometry.type === 'Polygon'
-    ? [geometry.coordinates]
-    : geometry.type === 'MultiPolygon'
-      ? geometry.coordinates
-      : null
-  if (!polys) return null
-  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity
-  for (const rings of polys) {
-    for (const ring of rings) {
-      for (const pt of ring) {
-        const lng = pt[0], lat = pt[1]
-        if (lng < minLng) minLng = lng
-        if (lat < minLat) minLat = lat
-        if (lng > maxLng) maxLng = lng
-        if (lat > maxLat) maxLat = lat
-      }
-    }
-  }
-  if (!isFinite(minLng)) return null
-  return [minLng, minLat, maxLng, maxLat]
-}
+// H4 缓存 / 数据版本指纹 / 商圈内竞品与门店计数已迁到 utils/districtCount.js（v1.13.297）
+// —— 门店体检的红黄绿灯要判断「竞争密集」，必须与本文件共用同一份计数与缓存。
 
 // 智慧足迹上游配置
 const SMARTSTEPS_BASE_URL = 'https://jm-odp.smartsteps.com/febs'
@@ -349,162 +308,9 @@ function parseCityName(filename) {
   return (filename || '').replace(/商圈/g, '').replace(/区域/g, '').replace(/\.zip/g, '').trim() || filename
 }
 
-// Point-in-Polygon（射线法，GCJ-02 平面坐标，商圈尺度足够精确）
-function pointInPolygon(pt, ring) {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1]
-    const xj = ring[j][0], yj = ring[j][1]
-    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) {
-      inside = !inside
-    }
-  }
-  return inside
-}
-
-function pointInFeature(pt, geometry) {
-  if (!geometry) return false
-  if (geometry.type === 'Polygon') {
-    const outer = geometry.coordinates[0]
-    if (!pointInPolygon(pt, outer)) return false
-    for (let k = 1; k < geometry.coordinates.length; k++) {
-      if (pointInPolygon(pt, geometry.coordinates[k])) return false
-    }
-    return true
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return geometry.coordinates.some(poly => {
-      const outer = poly[0]
-      if (!pointInPolygon(pt, outer)) return false
-      for (let k = 1; k < poly.length; k++) {
-        if (pointInPolygon(pt, poly[k])) return false
-      }
-      return true
-    })
-  }
-  return false
-}
-
-// ============================================================================
-// 商圈内门店计数（竞品 / 自家门店）—— 决定「竞争宽松度」分
-//
-// 🔴🔴 v1.13.277 修跨账号聚合：原实现是 `SELECT ... FROM competitors` / `FROM markers`
-//    **完全没有 user_id 条件**，缓存 key 里也没有用户 ⇒ 每个账号看到的「竞品 N 家 /
-//    我的门店 M 家」都是**全平台**的。生产实测门店分属 20+ 个账号、竞品集中在 3 个账号，
-//    结果只有那 3 个账号的分是"对的"，其他账号全被别人数据算出的竞争分覆盖，
-//    而综合分里竞争占 25%（90 分与 20 分相差 17.5 分）⇒ 静默失真、且属跨用户数据聚合。
-//
-// 口径：走 `visibleScope.readableUserIds()` 这个**唯一**读时可见域入口
-//   （自己 + 本集团允许被拉取的子公司；平台 admin 刻意不放大，与 /api/markers 一致），
-//   ⛔ 不要在这里手写 `user_id = req.user.id` 或 `1=1`。
-// ⚠️ 传空数组时必须返回 0（判无权），⛔ 绝不退化成「不过滤」。
-// ⚠️ 缓存 key 必须含用户集合：否则甲用户的结果会被乙用户直接命中（同一 bug 的镜像）。
-// ============================================================================
-
-/** 可见域 id 列表 → 稳定的缓存 key 片段（排序去重，避免顺序不同导致缓存不命中） */
-function scopeKeyOf(ids) {
-  return Array.from(new Set(ids.map(Number).filter(Boolean))).sort((a, b) => a - b).join('.')
-}
-
-// 计算商圈内竞品数量（bbox SQL 预筛替代全表拉取 + 60s 缓存，射线仅在 bbox 内少量候选上跑）
-function countCompetitorsInDistrict(geometry, ids) {
-  if (!Array.isArray(ids) || ids.length === 0) return 0
-  const bbox = geometryBBox(geometry)
-  const db = getDb()
-  const ver = storeDataVersion(db)
-  const cacheKey = 'comp|' + scopeKeyOf(ids) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
-  const cached = districtCountCache.get(cacheKey)
-  if (cached !== undefined) return cached
-
-  const ph = ids.map(() => '?').join(',')
-  const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(...ids)
-  let count = 0
-  for (const c of rows) {
-    if (c.longitude && c.latitude && pointInFeature([c.longitude, c.latitude], geometry)) {
-      count++
-    }
-  }
-  districtCountCache.set(cacheKey, count)
-  return count
-}
-
-
-// 计算商圈内我的门店数量（自家门店相互蚕食：竞争宽松度计分时权重 ×2；同 bbox 预筛 + 缓存）
-function countMyStoresInDistrict(geometry, ids) {
-  if (!Array.isArray(ids) || ids.length === 0) return 0
-  const bbox = geometryBBox(geometry)
-  const db = getDb()
-  const ver = storeDataVersion(db)
-  const cacheKey = 'store|' + scopeKeyOf(ids) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
-  const cached = districtCountCache.get(cacheKey)
-  if (cached !== undefined) return cached
-
-  const ph = ids.map(() => '?').join(',')
-  // v1.13.283：排除已合并的重复门店行 —— 否则去重后竞争分不会变（"我的门店数"仍按重复行计）
-  const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND merged_into IS NULL AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM markers WHERE user_id IN (${ph}) AND merged_into IS NULL`).all(...ids)
-  let count = 0
-  for (const s of rows) {
-    if (s.longitude && s.latitude && pointInFeature([s.longitude, s.latitude], geometry)) {
-      count++
-    }
-  }
-  districtCountCache.set(cacheKey, count)
-  return count
-}
-
-// 收入分层加权（用于消费能力分：富人/富裕/中产/小康/中等收入/低收入）
-function incomeScore(props) {
-  const weights = [
-    ['富人人数', 100], ['富裕人数', 85], ['中产人数', 70],
-    ['小康人数', 55], ['中等收入人', 40], ['低收入人数', 25]
-  ]
-  let total = 0, sum = 0
-  for (const [key, w] of weights) {
-    const v = Number(props[key]) || 0
-    total += v * w
-    sum += v
-  }
-  if (sum === 0) return 50
-  return Math.round(total / sum)
-}
-
-// 人口规模分（居住+工作，分档）
-function populationScore(props) {
-  const pop = (Number(props['居住人数']) || 0) + (Number(props['工作人数']) || 0)
-  if (pop > 500000) return 95
-  if (pop > 300000) return 85
-  if (pop > 150000) return 72
-  if (pop > 80000) return 58
-  if (pop > 30000) return 40
-  return 22
-}
-
-// 竞争宽松度分（v1.13.277 更名：原名「竞争强度」但分越高＝竞争越少，人人看反）
-// 口径：n = 竞品数 + 我的门店数 × 2（自家门店之间互相蚕食，比竞品更该避），n 越小分越高
-// 我的门店（自家蚕食）权重 ×2：自家门店相互蚕食比竞品更应避免
-function competitionScore(compCount, myStoreCount = 0) {
-  const count = (compCount || 0) + (myStoreCount || 0) * 2
-  if (count <= 3) return 90
-  if (count <= 8) return 75
-  if (count <= 15) return 55
-  if (count <= 30) return 35
-  return 20
-}
-
-// 商圈综合评分：人口 40% + 消费 25% + 竞品 25% + 到访活跃 10%
-function computeScore(props, compCount, myStoreCount = 0) {
-  const p = populationScore(props)
-  const c = competitionScore(compCount, myStoreCount)
-  const i = incomeScore(props)
-  const visit = Number(props['到访人次']) || 0
-  const v = visit > 3000000 ? 95 : visit > 1500000 ? 80 : visit > 500000 ? 60 : visit > 100000 ? 40 : 20
-  const total = Math.round(p * 0.40 + i * 0.25 + c * 0.25 + v * 0.10)
-  return { score: total, scorePopulation: p, scoreConsumption: i, scoreCompetition: c, scoreActivity: v }
-}
+// 几何判定 / 商圈内计数 / 评分 = utils/{geoPoint,districtCount,districtScore}.js（v1.13.297）
+// ⚠️ 门店体检的「落圈判定」与「竞争密集」用的就是这三份，与本文件**同源**；
+//    ⛔ 别在这里或体检里再写一套射线法/阈值。
 
 /**
  * 城市列表（含商圈数，按分级分组）

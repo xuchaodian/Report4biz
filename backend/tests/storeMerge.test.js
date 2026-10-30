@@ -15,7 +15,8 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const read = (p) => fs.readFileSync(path.join(REPO_ROOT, p), 'utf8')
 
 const markersSrc = read('backend/src/routes/markers.js')
-const districtsSrc = read('backend/src/routes/districts.js')
+// v1.13.297：商圈内计数从 routes/districts.js 迁到 utils/districtCount.js（体检要复用同一份）
+const districtsSrc = read('backend/src/utils/districtCount.js')
 const forecastSrc = read('backend/src/routes/sales-forecast.js')
 const dbSrc = read('backend/src/models/database.js')
 

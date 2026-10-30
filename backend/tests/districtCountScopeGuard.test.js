@@ -13,6 +13,10 @@
  *
  * 本文件是**回归钉子**：谁把 user_id 条件删了、把缓存 key 里的可见域去掉、
  * 或者让空数组退化成「不过滤」，测试立刻红。
+ *
+ * v1.13.297：这两个函数从 routes/districts.js 迁到 utils/districtCount.js
+ *   （门店体检的红黄绿灯要判断「竞争密集」，必须和商圈洞察共用同一份计数）。
+ *   ⇒ 断言目标改为新文件；口径要求一字未松。
  */
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
@@ -26,6 +30,12 @@ import { fileURLToPath } from 'url'
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const ROUTE_FILE = path.join(REPO_ROOT, 'backend/src/routes/districts.js')
 const src = fs.readFileSync(ROUTE_FILE, 'utf8')
+// 计数函数本体（v1.13.297 起在这里）
+const COUNT_FILE = path.join(REPO_ROOT, 'backend/src/utils/districtCount.js')
+const countSrc = fs.readFileSync(COUNT_FILE, 'utf8')
+// 门店体检的红黄绿灯路由
+const MARKERS_FILE = path.join(REPO_ROOT, 'backend/src/routes/markers.js')
+const markersSrc = fs.readFileSync(MARKERS_FILE, 'utf8')
 
 /** 按大括号配平截出函数体 */
 function extractFnBody(source, signature) {
@@ -46,12 +56,12 @@ function extractFnBody(source, signature) {
 }
 
 describe('商圈内竞品计数：必须按可见域过滤', () => {
-  const body = extractFnBody(src, 'function countCompetitorsInDistrict(')
+  const body = extractFnBody(countSrc, 'export function countCompetitorsInDistrict(')
 
   it('函数存在且接收 ids（可见域）参数', () => {
     expect(body, '未找到 countCompetitorsInDistrict —— 断言失效，请更新守卫').toBeTruthy()
     expect(
-      src.includes('function countCompetitorsInDistrict(geometry, ids)'),
+      countSrc.includes('export function countCompetitorsInDistrict(geometry, ids)'),
       '函数签名缺少 ids 参数 —— 计数无法按可见域收敛'
     ).toBe(true)
   })
@@ -81,12 +91,12 @@ describe('商圈内竞品计数：必须按可见域过滤', () => {
 })
 
 describe('商圈内自家门店计数：必须按可见域过滤', () => {
-  const body = extractFnBody(src, 'function countMyStoresInDistrict(')
+  const body = extractFnBody(countSrc, 'export function countMyStoresInDistrict(')
 
   it('函数存在且接收 ids 参数', () => {
     expect(body, '未找到 countMyStoresInDistrict —— 断言失效，请更新守卫').toBeTruthy()
     expect(
-      src.includes('function countMyStoresInDistrict(geometry, ids)'),
+      countSrc.includes('export function countMyStoresInDistrict(geometry, ids)'),
       '函数签名缺少 ids 参数'
     ).toBe(true)
   })
@@ -130,5 +140,33 @@ describe('可见域的来源与传参', () => {
       src.includes('countCompetitorsInDistrict(feature.geometry)'),
       '仍有调用点漏传 scopeIds'
     ).toBe(false)
+  })
+})
+
+describe('门店体检信号灯：必须复用同一份计数（v1.13.297）', () => {
+  it('markers.js 从 utils/districtCount.js 引入计数，而不是自己写 SQL', () => {
+    expect(
+      markersSrc.includes("from '../utils/districtCount.js'"),
+      '门店体检路由未复用 districtCount —— 会与商圈洞察算出两个不同的竞争宽松度'
+    ).toBe(true)
+    expect(
+      /FROM\s+competitors/i.test(markersSrc),
+      'markers.js 里出现 competitors 查询 —— 「竞品数」必须走同一份计数，否则两页数字会打架'
+    ).toBe(false)
+  })
+
+  it('districts.js 不再自带计数实现（避免又长回两份）', () => {
+    expect(
+      /function countCompetitorsInDistrict/.test(src),
+      'districts.js 又出现本地计数函数 —— 请改回 import，否则门店体检那侧会悄悄漂移'
+    ).toBe(false)
+  })
+
+  it('信号灯判定用的竞争阈值来自 districtScore（单一来源）', () => {
+    const lightsSrc = fs.readFileSync(path.join(REPO_ROOT, 'backend/src/utils/storeLights.js'), 'utf8')
+    expect(
+      lightsSrc.includes("from './districtScore.js'") && /COMPETITION_DENSE_MAX/.test(lightsSrc),
+      '信号灯未引用 COMPETITION_DENSE_MAX —— 阈值若各写一份，改口径必然漏改'
+    ).toBe(true)
   })
 })

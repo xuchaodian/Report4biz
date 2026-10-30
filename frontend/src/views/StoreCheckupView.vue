@@ -5,8 +5,9 @@
         <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon>返回门店管理</el-button>
         <h2>门店体检</h2>
         <p class="ck-sub">
-          只看<b>几何结构</b>（坐标、间距、店型），<b>不评价好坏</b>——
-          结构能看出「密不密、有没有贴在一起」，看不出「赚不赚钱」。
+          两块内容：<b>几何结构</b>（坐标、间距、店型 —— 只看「密不密、有没有贴在一起」）
+          与 <b>商圈信号灯</b>（用存量商圈面判竞争 / 蚕食 / 客群 —— 给「先看哪几家」）。
+          两者都<b>看不出「赚不赚钱」</b>，那要客户录销售数据。
         </p>
       </div>
       <div class="ck-head-r">
@@ -69,6 +70,142 @@
             <div class="ck-kpi-h">{{ salesHint }}</div>
           </div>
         </div>
+
+
+        <!-- 商圈信号灯（v1.13.297）：先看哪几家，不消耗任何配额 -->
+        <section class="ck-card">
+          <h3>
+            商圈信号灯
+            <span class="ck-count">先看哪几家 · 本次未消耗配额</span>
+          </h3>
+          <p class="ck-card-sub">
+            用已落库的商圈面判断，<b>不调用任何实时人口接口</b>。
+            红 = 竞争密集<b>且</b>自己有 4 家以上挤在同一商圈；
+            黄 = 命中一条（竞争密集 / 同商圈自有 2~3 家 / 客群偏离）；绿 = 未命中。
+          </p>
+
+          <div v-if="lightsLoading" class="ck-lights-loading">正在匹配商圈…</div>
+          <div v-else-if="lightsErrorMsg" class="ck-hint-warn">{{ lightsErrorMsg }}</div>
+          <template v-else-if="lights">
+            <div class="ck-lights">
+              <div class="ck-light l-red">
+                <div class="ck-light-n">{{ lights.byLevel.high }}</div>
+                <div class="ck-light-l">红灯 · 高风险</div>
+                <div class="ck-light-h">竞争密集 + 自我蚕食</div>
+              </div>
+              <div class="ck-light l-yellow">
+                <div class="ck-light-n">{{ lights.byLevel.mid }}</div>
+                <div class="ck-light-l">黄灯 · 中风险</div>
+                <div class="ck-light-h">命中其中一条</div>
+              </div>
+              <div class="ck-light l-green">
+                <div class="ck-light-n">{{ lights.byLevel.low + lights.byLevel.none }}</div>
+                <div class="ck-light-l">绿灯 · 低风险</div>
+                <div class="ck-light-h">其中 {{ lights.byLevel.none }} 家未发现问题</div>
+              </div>
+              <div class="ck-light l-gray" :class="{ 'is-warn': lights.blind > 0 }">
+                <div class="ck-light-n">{{ lights.blind }}</div>
+                <div class="ck-light-l">灰 · 无法评估</div>
+                <div class="ck-light-h">不在任何已覆盖商圈面内</div>
+              </div>
+            </div>
+
+            <ul class="ck-rule-list">
+              <li>
+                <span class="ck-rule-name">竞争密集</span>
+                <span class="ck-rule-sub">所在商圈竞争宽松度 ≤{{ lights.thresholds.competitionMax }}（同类竞品约 16 家以上）</span>
+                <span class="ck-rule-n">{{ lights.rules.competition }} 家</span>
+              </li>
+              <li>
+                <span class="ck-rule-name">自我蚕食</span>
+                <span class="ck-rule-sub">同一商圈内自有门店 ≥2 家（自有之间互相蚕食，比竞品更该避）</span>
+                <span class="ck-rule-n">{{ lights.rules.cannibal }} 家 / {{ lights.rules.cannibalDistricts }} 个商圈</span>
+                <span v-if="lights.rules.cannibalTop.length" class="ck-rule-more">
+                  最挤：{{ lights.rules.cannibalTop.map(t => t.district + ' ' + t.count + ' 家').join('、') }}
+                </span>
+              </li>
+              <li>
+                <span class="ck-rule-name">客群偏离</span>
+                <span class="ck-rule-sub">所在商圈客群占本品牌门店客群构成不足 {{ Math.round(lights.thresholds.crowdShareMin * 100) }}%</span>
+                <span class="ck-rule-n">{{ lights.rules.crowd }} 家</span>
+                <span v-if="!lights.rules.crowd && crowdBaselineText" class="ck-rule-more">
+                  本品牌客群构成{{ crowdBaselineText }}，属全客群覆盖 ⇒ 不硬找茬
+                </span>
+              </li>
+            </ul>
+
+            <p v-if="lights.blind" class="ck-hint-warn">
+              {{ lights.blind }} 家不在任何已覆盖商圈面内 —— 这是<b>「无法评估」，不是「没问题」</b>。
+              商圈面只覆盖建成区，园区、街边店常落在面外。
+            </p>
+            <p v-if="lights.noCityData" class="ck-hint-warn">
+              另有 {{ lights.noCityData }} 家所在城市还没有商圈面数据{{ lights.cityCoverage.uncovered.length ? '（' + lights.cityCoverage.uncovered.join('、') + '）' : '' }}
+              —— 这是<b>我们的数据覆盖问题</b>，不参与评估，也不计入盲区。
+            </p>
+
+            <div v-if="topLights.length" class="ck-lights-table">
+              <div class="ck-lights-bar">
+                <span class="ck-lights-bar-t">
+                  按风险排序 · 可评估 <b>{{ lights.evaluated }}</b> 家{{ lights.evaluated > topLights.length ? `，下表先列 ${topLights.length} 家` : '' }}
+                </span>
+                <div class="ck-lights-switch">
+                  <el-checkbox v-model="showBlind" size="small">含无法评估（{{ lights.blind }} 家）</el-checkbox>
+                  <el-checkbox v-model="onlyLit" size="small">只看红黄灯</el-checkbox>
+                </div>
+              </div>
+              <el-table :data="pagedLights" size="small" class="ck-table">
+                <el-table-column label="灯" width="72">
+                  <template #default="{ row }">
+                    <span class="ck-dot" :class="'d-' + row.riskLevel"></span>{{ levelText(row.riskLevel) }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="门店" min-width="160">
+                  <template #default="{ row }">
+                    <button
+                      type="button"
+                      class="ck-store-link"
+                      :title="'在地图上定位「' + (row.name || '未命名') + '」'"
+                      @click="locate(row.lat, row.lng)"
+                    >{{ row.name || '（未命名）' }}</button>
+                    <div class="ck-store-meta">{{ row.riskScore == null ? '未评分' : row.riskScore + ' 分' }} · {{ flagsText(row.flags) }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商圈" min-width="140">
+                  <template #default="{ row }">
+                    <template v-if="row.status === 'evaluated'">
+                      <div>{{ row.district }}</div>
+                      <div class="ck-store-meta">{{ row.crowd || '客群未知' }}</div>
+                    </template>
+                    <span v-else class="ck-store-meta">{{ statusText(row.status) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="竞争宽松度" width="110">
+                  <template #default="{ row }">
+                    <span :class="{ 'ck-bad-num': row.competitionScore <= lights.thresholds.competitionMax }">
+                      {{ row.competitionScore ?? '—' }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="同商圈自有" width="105">
+                  <template #default="{ row }">
+                    <span :class="{ 'ck-bad-num': row.ownInDistrict >= 2 }">{{ row.ownInDistrict == null ? '—' : row.ownInDistrict + ' 家' }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div v-if="!visibleLights.length" class="ck-empty-row">
+                没有符合条件的门店 —— 这批门店在已覆盖商圈里没有明显的竞争/蚕食问题。
+              </div>
+              <!-- 🔴 必须分页：196 行全铺开会把整页拉到 1.4 万像素高，
+                   下面的「需复核清单」要滚很久才看得到（v1.13.297 真机实测） -->
+              <div v-else-if="visibleLights.length > lightsPageSize" class="ck-pager">
+                <el-button size="small" :disabled="lightsPage === 1" @click="lightsPage--">上一页</el-button>
+                <span class="ck-pager-t">第 {{ lightsPage }} / {{ lightsPageCount }} 页（共 {{ visibleLights.length }} 家）</span>
+                <el-button size="small" :disabled="lightsPage >= lightsPageCount" @click="lightsPage++">下一页</el-button>
+              </div>
+              <p v-else class="ck-foot-note">共 {{ visibleLights.length }} 家，已全部列出。</p>
+            </div>
+          </template>
+        </section>
 
         <!-- 分布 -->
         <div class="ck-grid">
@@ -277,7 +414,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
@@ -375,6 +512,66 @@ function fmtDist(m) {
   return Math.round(m) + 'm'
 }
 
+
+// ===== 商圈信号灯（v1.13.297）=====
+const lights = ref(null)
+const lightsLoading = ref(false)
+const lightsErrorMsg = ref('')
+const onlyLit = ref(false)
+// 默认只列已评估的；勾「含无法评估」才把盲区/缺城市数据/缺坐标的店列出来
+// —— 客户最想知道「哪些店我看不见」，只给个数字不给出名单等于没回答。
+const showBlind = ref(false)
+
+const topLights = computed(() => (lights.value?.lights || []).filter(l => l.status === 'evaluated'))
+const visibleLights = computed(() => {
+  let list = lights.value?.lights || []
+  if (!showBlind.value) list = list.filter(l => l.status === 'evaluated')
+  if (onlyLit.value) list = list.filter(l => l.riskLevel === 'high' || l.riskLevel === 'mid')
+  return list
+})
+// 分页（页大小 20）：一屏看完前 20 家高风险，比滚 196 行有用
+const lightsPageSize = 20
+const lightsPage = ref(1)
+const lightsPageCount = computed(() => Math.max(1, Math.ceil(visibleLights.value.length / lightsPageSize)))
+const pagedLights = computed(() => {
+  const start = (lightsPage.value - 1) * lightsPageSize
+  return visibleLights.value.slice(start, start + lightsPageSize)
+})
+// 换筛选条件后回到第 1 页，否则会停在一个不存在的页码上显示空表
+watch([showBlind, onlyLit], () => { lightsPage.value = 1 })
+
+const crowdBaselineText = computed(() => {
+  const list = lights.value?.crowdBaseline || []
+  if (!list.length) return ''
+  return '（' + list.map(b => `${b.crowd} ${Math.round(b.share * 100)}%`).join(' / ') + '）'
+})
+
+function statusText(s) {
+  return { blind: '不在已覆盖商圈面内', no_city_data: '该城市暂无商圈面数据', no_coord: '缺经纬度' }[s] || '未评估'
+}
+function levelText(l) {
+  return { high: '红', mid: '黄', low: '绿', none: '绿' }[l] || '灰'
+}
+/** 命中规则 → 人话（⛔ 别把 competition/cannibal 这种字段名直接摆给客户） */
+function flagsText(flags) {
+  const map = { competition: '竞争密集', cannibal: '自我蚕食', crowd: '客群偏离' }
+  return (flags || []).map(f => map[f] || f).join(' / ') || '未命中'
+}
+
+async function loadLights() {
+  lightsLoading.value = true
+  lightsErrorMsg.value = ''
+  try {
+    const { data: res } = await axios.get('/api/markers/checkup/lights', { params: { top: 200 } })
+    lights.value = res
+  } catch (e) {
+    // 信号灯失败不该拖垮整页几何体检 —— 单独降级
+    lightsErrorMsg.value = e?.response?.data?.message || '商圈信号灯计算失败（几何部分不受影响）'
+  } finally {
+    lightsLoading.value = false
+  }
+}
+
 async function load(page = 1) {
   loading.value = true
   errorMsg.value = ''
@@ -390,11 +587,15 @@ async function load(page = 1) {
   }
 }
 
-function reload() { load(1) }
+function reload() { load(1); loadLights() }
 function turnPage(p) { load(p) }
 function goBack() { router.push('/data') }
 
-onMounted(() => load(1))
+onMounted(() => {
+  load(1)
+  // 信号灯单独请求：要跑商圈匹配，比几何慢，⛔ 不要阻塞首屏
+  loadLights()
+})
 </script>
 
 <style scoped>
@@ -439,6 +640,39 @@ onMounted(() => load(1))
 .ck-bar-fill.k-area { background: #7dd3fc; }
 .ck-bar-num { width: 44px; flex: none; text-align: right; color: #111827; font-variant-numeric: tabular-nums; }
 
+.ck-lights { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.ck-light { border-radius: 10px; padding: 12px 14px; border: 1px solid #e5e7eb; background: #fafafa; }
+.ck-light-n { font-size: 24px; font-weight: 700; line-height: 1.2; }
+.ck-light-l { font-size: 13px; color: #374151; margin-top: 2px; }
+.ck-light-h { font-size: 11px; color: #6b7280; margin-top: 3px; }
+.ck-light.l-red { background: #fef2f2; border-color: #fecaca; }
+.ck-light.l-red .ck-light-n { color: #b91c1c; }
+.ck-light.l-yellow { background: #fffbeb; border-color: #fcd34d; }
+.ck-light.l-yellow .ck-light-n { color: #b45309; }
+.ck-light.l-green { background: #f0fdf4; border-color: #bbf7d0; }
+.ck-light.l-green .ck-light-n { color: #15803d; }
+.ck-light.l-gray.is-warn { background: #f3f4f6; border-style: dashed; border-color: #d1d5db; }
+
+.ck-rule-list { list-style: none; margin: 0 0 4px; padding: 0; }
+.ck-rule-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+.ck-rule-list li:last-child { border-bottom: 0; }
+.ck-rule-name { font-weight: 600; color: #111827; min-width: 72px; }
+.ck-rule-sub { color: #6b7280; font-size: 12px; flex: 1; min-width: 220px; }
+.ck-rule-n { font-variant-numeric: tabular-nums; color: #111827; font-weight: 600; }
+.ck-rule-more { flex-basis: 100%; font-size: 11px; color: #9ca3af; padding-left: 80px; }
+
+.ck-lights-table { margin-top: 10px; }
+.ck-lights-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ck-lights-bar-t { font-size: 12px; color: #6b7280; }
+.ck-lights-switch { display: flex; align-items: center; gap: 14px; }
+.ck-pager-t { font-size: 12px; color: #6b7280; }
+.ck-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; background: #d1d5db; }
+.ck-dot.d-high { background: #dc2626; }
+.ck-dot.d-mid { background: #f59e0b; }
+.ck-dot.d-low, .ck-dot.d-none { background: #22c55e; }
+.ck-bad-num { color: #b91c1c; font-weight: 600; }
+.ck-lights-loading { padding: 24px; text-align: center; color: #6b7280; font-size: 13px; }
+
 .ck-hint-warn { margin: 10px 0 0; font-size: 12px; color: #b45309; }
 .ck-empty-row { padding: 18px 0; font-size: 13px; color: #6b7280; }
 .ck-dist { font-variant-numeric: tabular-nums; color: #374151; }
@@ -453,7 +687,7 @@ onMounted(() => load(1))
 .ck-tip { font-size: 12px; color: #b45309; }
 .ck-store-meta { font-size: 11px; color: #6b7280; margin-top: 1px; }
 .ck-addr { font-size: 12px; color: #4b5563; }
-.ck-pager { margin-top: 12px; display: flex; justify-content: flex-end; }
+.ck-pager { margin-top: 12px; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .ck-foot-note { margin: 12px 0 0; font-size: 12px; color: #6b7280; }
 .ck-link { background: none; border: 0; padding: 0; font: inherit; color: #2563eb; cursor: pointer; }
 .ck-link:hover { text-decoration: underline; }

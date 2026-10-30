@@ -7,6 +7,13 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
 import { buildStoreCheckup } from '../utils/storeCheckup.js'
+// v1.13.297 红黄绿灯：几何/计数/评分一律复用商圈洞察那三份 util（⛔ 不许自写第二套）
+import { buildStoreLights } from '../utils/storeLights.js'
+import { getGeoObject } from '../models/geoStore.js'
+import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
+import { readableUserIds } from '../utils/visibleScope.js'
+import { computeScore } from '../utils/districtScore.js'
+import { countCompetitorsInDistrict, countMyStoresInDistrict } from '../utils/districtCount.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -161,6 +168,119 @@ router.get('/checkup', authenticate, (req, res) => {
   } catch (error) {
     console.error('[Markers] 门店体检失败:', error)
     res.status(500).json({ message: '门店体检计算失败，请稍后重试' })
+  }
+})
+
+// ============================================================================
+// 门店体检 · 商圈信号灯（v1.13.297）
+// GET /api/markers/checkup/lights?top=200
+//
+// 四条规则（阈值与实测见 `Report4biz_免费门店体检_规则与实测_20261028.md`）：
+//   ① 竞争密集 = 所在商圈竞争宽松度 ≤35                +3
+//   ② 自我蚕食 = 同一商圈内**本人**门店 2~3 家 +2 / ≥4 家 +3
+//   ③ 客群偏离 = 所在商圈客群占本品牌门店客群构成 <20%  +2
+//   ④ 覆盖盲区 = 城市有商圈面但门店不在面内 ⇒ **无法评估**（不评分、不算低风险）
+//
+// 🔴 口径同源（⛔ 不许在本文件重写一份）：
+//   · 落圈判定 = utils/geoPoint.js（与商圈洞察同一套射线法）
+//   · 竞争宽松度 = utils/districtScore.js::computeScore（同一份评分）
+//   · 竞品/自有计数 = utils/districtCount.js（同一份 SQL + 同一个 60s 缓存）
+//   ⇒ 否则会出现「商圈洞察显示 55 分、体检说竞争密集」，客户第一反应就是系统乱算。
+//
+// 🔴 城市没有商圈面数据 ⇒ 归 noCityData，**不算盲区** ——
+//   那是我们的数据覆盖问题，不是客户的选址问题（混进去就等于自证平台没用）。
+//
+// ⚠️ 只算本人门店（WHERE user_id），与 /checkup、门店清洗同口径。
+// ============================================================================
+router.get('/checkup/lights', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const userId = req.user.id
+    const top = Math.min(Math.max(parseInt(req.query.top, 10) || 200, 10), 1000)
+
+    const stores = db.prepare(
+      `SELECT id, name, brand, city, store_type, store_category,
+              latitude, longitude
+         FROM markers
+        WHERE user_id = ? AND merged_into IS NULL`
+    ).all(userId)
+
+    // 有商圈面的城市（shapefiles 文件名形如「上海商圈」）
+    const cityOf = (v) => String(v || '').replace(/市$/, '').replace(/商圈|区域|\.zip/g, '').trim()
+    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other'`).all()
+    const fileByCity = new Map()
+    for (const f of files) {
+      const c = cityOf(f.name)
+      if (!c) continue
+      if (!fileByCity.has(c)) fileByCity.set(c, [])
+      fileByCity.get(c).push(f.id)
+    }
+
+    // 只加载「我有门店的城市」的商圈面（⛔ 不要全量加载 20 城 2394 个面）
+    const myCities = Array.from(new Set(stores.map(s => cityOf(s.city)).filter(Boolean)))
+    const coveredCities = myCities.filter(c => fileByCity.has(c))
+    const uncoveredCities = myCities.filter(c => !fileByCity.has(c))
+
+    const districts = []
+    if (coveredCities.length) {
+      const scopeIds = readableUserIds(db, userId)
+      for (const city of coveredCities) {
+        for (const fileId of fileByCity.get(city)) {
+          const geojson = getGeoObject(fileId)
+          if (!geojson || !Array.isArray(geojson.features)) continue
+          for (const feature of geojson.features) {
+            if (!feature.geometry) continue
+            // 276 起字段名整代更换：必须先归一再取数，否则评分静默归零
+            const props = normalizeDistrictProps(feature.properties || {})
+            const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+            const myCount = countMyStoresInDistrict(feature.geometry, scopeIds)
+            const scores = computeScore(props, compCount, myCount)
+            districts.push({
+              name: props['名称'] || '未命名商圈',
+              city,
+              level: dstr(props, '能级'),
+              crowd: dstr(props, '客群'),
+              geometry: feature.geometry,
+              scoreCompetition: scores.scoreCompetition
+            })
+          }
+        }
+      }
+    }
+
+    const result = buildStoreLights({
+      stores,
+      districts,
+      opts: { coveredCities: new Set(coveredCities) }
+    })
+
+    res.json({
+      success: true,
+      total: result.total,
+      evaluated: result.evaluated,
+      blind: result.blind,
+      noCityData: result.noCityData,
+      noCoord: result.noCoord,
+      byLevel: result.byLevel,
+      rules: result.rules,
+      crowdBaseline: result.crowdBaseline,
+      thresholds: result.thresholds,
+      districtCount: result.districtCount,
+      cityCoverage: { covered: coveredCities, uncovered: uncoveredCities },
+      // 🔴 两类**分别**截断：已评估的按风险排、未评估的也各自占 top 额度。
+      //   若统一 slice(0, top)，233 家店里前 200 全是已评估 ⇒ 界面上勾了「含无法评估（37 家）」
+      //   却只冒出 4 家，等于说了个数却拿不出名单（v1.13.297 真机发现）。
+      lightsTotal: result.lights.length,
+      top,
+      lights: [
+        ...result.lights.filter(l => l.status === 'evaluated').slice(0, top),
+        ...result.lights.filter(l => l.status !== 'evaluated').slice(0, top)
+      ],
+      note: '仅本人门店；盲区＝无法评估（⛔ 不等于低风险）；城市无商圈面数据的不计入盲区；本次未消耗任何配额'
+    })
+  } catch (error) {
+    console.error('[Markers] 门店体检信号灯失败:', error)
+    res.status(500).json({ message: '门店体检信号灯计算失败，请稍后重试' })
   }
 })
 

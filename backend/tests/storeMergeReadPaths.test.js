@@ -115,7 +115,7 @@ const ALLOW = [
 
   // ---- 只做版本签名 / 启动日志，不对外展示业务数字 ----
   { file: 'routes/dashboard.js', snippet: '(SELECT COUNT(*) FROM markers) ||', reason: '仪表盘缓存版本签名：MAX(updated_at) 已随合并变化，COUNT 只作附加扰动' },
-  { file: 'routes/districts.js', snippet: 'MAX(updated_at) FROM markers', reason: '商圈计数缓存的版本号，不参与业务统计' },
+  { file: 'utils/districtCount.js', snippet: 'MAX(updated_at) FROM markers', reason: '商圈计数缓存的版本号，不参与业务统计（v1.13.297 随计数函数一起迁来）' },
   { file: 'models/database.js', snippet: 'COUNT(*) as count FROM markers', reason: '启动时打印门店总数日志' },
 ]
 
@@ -176,7 +176,7 @@ describe('门店合并：读路径必须排除已合并行', () => {
 describe('缓存指纹：必须包含已合并行数', () => {
   const cases = [
     { file: 'routes/dashboard.js', fn: 'dashboardDataVersion' },
-    { file: 'routes/districts.js', fn: 'storeDataVersion' }
+    { file: 'utils/districtCount.js', fn: 'storeDataVersion' }
   ]
   for (const c of cases) {
     it(`${c.fn} 的指纹含 merged_into IS NOT NULL 计数`, () => {
