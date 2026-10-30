@@ -141,8 +141,9 @@
                 </span>
                 <span class="ck-rule-n">{{ lights.rules.competition }} 家</span>
                 <span class="ck-rule-more">
-                  已评 {{ lights.rules.competitionEvaluated }} 家 ·
-                  未评 {{ lights.rules.competitionNoData + lights.rules.competitionNoCity }} 家（该城市无竞品点位，⛔ 不等于竞争宽松）
+                  已评 {{ lights.rules.competitionEvaluated }} 家<template v-if="lights.rules.competitionNoData + lights.rules.competitionNoCity > 0"> ·
+                    未评 {{ lights.rules.competitionNoData + lights.rules.competitionNoCity }} 家（该城市无竞品点位，<b>不等于竞争宽松</b>）
+                  </template>
                 </span>
               </li>
               <li v-if="lights.rules.cannibalDistricts">
@@ -576,7 +577,7 @@ function statusText(s) {
 /** 竞争维度为什么没评 —— 鼠标悬停看原因，⛔ 别让「未评」被读成「很宽松」 */
 function compStatusText(s) {
   return {
-    no_data: '该城市没有竞品点位：本维度未评（⛔ 不等于竞争宽松）',
+    no_data: '该城市没有竞品点位：本维度未评，不等于竞争宽松',
     no_city: '门店城市为空，无法判断竞品覆盖'
   }[s] || '未评'
 }
