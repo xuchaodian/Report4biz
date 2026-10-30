@@ -18,6 +18,17 @@
           <el-option :value="1000" label="1km" />
         </el-select>
         <el-button :loading="loading" @click="reload">重新计算</el-button>
+        <el-dropdown trigger="click" @command="onExport">
+          <el-button :loading="exporting">
+            <el-icon><Download /></el-icon>导出报告
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="xlsx">Excel · 全量明细</el-dropdown-item>
+              <el-dropdown-item command="print">打印版 · 可另存为 PDF</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -417,10 +428,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, WarningFilled, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import ImportGuideDialog from '@/components/ImportGuideDialog.vue'
 import { downloadSalesTemplate } from '@/utils/importTemplates.js'
+import { buildCheckupPrintHtml } from '@/utils/checkupPrintReport.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -570,6 +582,66 @@ async function loadLights() {
   } finally {
     lightsLoading.value = false
   }
+}
+
+// ===== 报告导出（v1.13.298）=====
+const exporting = ref(false)
+
+/** 从 Content-Disposition 取中文文件名（后端给了 filename*=UTF-8''…） */
+function filenameFromDisposition(cd) {
+  if (!cd) return ''
+  const m = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+  if (m) { try { return decodeURIComponent(m[1]) } catch (e) { /* 落回下一分支 */ } }
+  const m2 = /filename="([^"]+)"/i.exec(cd)
+  return m2 ? m2[1] : ''
+}
+
+async function onExport(kind) {
+  if (kind === 'print') return openPrintReport()
+  exporting.value = true
+  try {
+    const res = await axios.get('/api/markers/checkup/report', {
+      params: { nearM: nearM.value },
+      responseType: 'blob'
+    })
+    const name = filenameFromDisposition(res.headers['content-disposition']) || '门店体检报告.xlsx'
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    // 🔴 responseType=blob 时错误体也是 Blob，必须读出来才能显示后端的中文提示
+    let msg = '报告导出失败，请稍后重试'
+    const d = e?.response?.data
+    if (d instanceof Blob) {
+      try { const j = JSON.parse(await d.text()); if (j?.message) msg = j.message } catch (_) { /* 用默认文案 */ }
+    } else if (d?.message) {
+      msg = d.message
+    }
+    ElMessage.error(msg)
+  } finally {
+    exporting.value = false
+  }
+}
+
+/**
+ * 打印版：客户端生成 HTML（无脚本，合规 CSP）→ 新窗口 → 唤起系统打印（可另存为 PDF）。
+ * ⛔ 不让服务器生成 PDF：本机只装了 LibreOffice，中文分页难看且要起一个几百 MB 的进程。
+ */
+function openPrintReport() {
+  if (!data.value) return ElMessage.warning('体检数据还在加载，请稍候再导出')
+  const html = buildCheckupPrintHtml({ data: data.value, lights: lights.value })
+  const w = window.open('', '_blank')
+  if (!w) return ElMessage.warning('浏览器拦截了新窗口，请允许弹窗后重试')
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+  // 等排版完成再唤起打印；报告页本身没有脚本，只能由打开方调用
+  setTimeout(() => {
+    try { w.focus(); w.print() } catch (e) { /* 用户也可手动 Cmd/Ctrl+P */ }
+  }, 400)
 }
 
 async function load(page = 1) {

@@ -170,3 +170,25 @@ describe('门店体检信号灯：必须复用同一份计数（v1.13.297）', (
     ).toBe(true)
   })
 })
+
+describe('体检三处（页面/信号灯/导出）必须共用同一份取数与计算（v1.13.298）', () => {
+  it('门店字段 SELECT 只出现一次（⛔ 导出不许自己再查一遍库）', () => {
+    const n = (markersSrc.match(/store_type, store_category, sync_readonly/g) || []).length
+    expect(n, '门店字段 SELECT 出现多次 ⇒ 页面与导出的数字会漂移').toBe(1)
+  })
+
+  it('销售记录统计只出现一次', () => {
+    const n = (markersSrc.match(/FROM store_sales s/g) || []).length
+    expect(n, '销售记录统计重复 ⇒ 完备度可能出现两个口径').toBe(1)
+  })
+
+  it('三个 checkup 路由都定义在 GET /:id 之前', () => {
+    const idIdx = markersSrc.indexOf("router.get('/:id'")
+    expect(idIdx).toBeGreaterThan(-1)
+    for (const p of ["router.get('/checkup',", "router.get('/checkup/lights'", "router.get('/checkup/report'"]) {
+      const i = markersSrc.indexOf(p)
+      expect(i, `未找到 ${p}`).toBeGreaterThan(-1)
+      expect(i, `${p} 定义在 GET /:id 之后 ⇒ 会被当成 id 命中`).toBeLessThan(idIdx)
+    }
+  })
+})

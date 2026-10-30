@@ -6,9 +6,11 @@ import { readCsvText } from '../utils/csvEncoding.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
+import * as XLSX from 'xlsx'
 import { buildStoreCheckup } from '../utils/storeCheckup.js'
 // v1.13.297 红黄绿灯：几何/计数/评分一律复用商圈洞察那三份 util（⛔ 不许自写第二套）
 import { buildStoreLights } from '../utils/storeLights.js'
+import { buildReportSheets } from '../utils/checkupReport.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
 import { readableUserIds } from '../utils/visibleScope.js'
@@ -109,6 +111,95 @@ router.get('/duplicates', authenticate, (req, res) => {
 // 🔴 路由**必须定义在 `GET /:id` 之前**，否则 '/checkup' 会被当成 id 命中。
 // ⭐ 纯本地几何计算 + 一次聚合查询，**不消耗联通/高德任何配额** ⇒ 可全免费。
 // ============================================================================
+/**
+ * 体检的三块数据装配（v1.13.298 抽出，/checkup、/checkup/lights、/checkup/report 共用）
+ *
+ * 🔴 为什么必须共用：导出的 Excel 若自己再查一遍库、再算一遍，
+ *    一定会和页面上的数字对不上（口径漂移的经典来源）。三处只允许「取数 + 切片」不同。
+ */
+const CITY_KEY = (v) => String(v || '').replace(/市$/, '').replace(/商圈|区域|\.zip/g, '').trim()
+
+function loadCheckupStores(db, userId) {
+  // ⚠️ `sync_readonly` 必须一起取：完备度里要把「集团下发只读、本账号改不了」的家数单独数出来
+  return db.prepare(
+    `SELECT id, name, brand, store_code, store_area, latitude, longitude,
+            city, address, store_type, store_category, sync_readonly
+       FROM markers
+      WHERE user_id = ? AND merged_into IS NULL`
+  ).all(userId)
+}
+
+/** 数据完备度：决定「上面这些结论能推多远」 */
+function computeCheckupCompletion(db, userId, stores, geo) {
+  // 销售记录数
+  const salesRows = db.prepare(
+    `SELECT COUNT(*) c FROM store_sales s
+       JOIN markers m ON s.store_id = m.id AND m.merged_into IS NULL
+      WHERE m.user_id = ?`
+  ).get(userId).c
+  const categoryEmpty = stores.filter((s) => !String(s.store_category || '').trim()).length
+  // 🔴 品类为空的店里，集团下发的只读镜像行**本账号改不了**（要在集团侧补）。
+  //   不单独计数的话，体检页说「11 家为空」、批量补品类弹窗说「待补 10 家」——
+  //   客户会以为少了 1 家、反复找（v1.13.294 真机对出来的口径差）。
+  const categoryEmptyReadonly = stores.filter(
+    (s) => !String(s.store_category || '').trim() && Number(s.sync_readonly) === 1
+  ).length
+  return {
+    salesRows,
+    categoryEmpty,
+    categoryEmptyReadonly,
+    areaMissing: geo ? geo.counts.noArea : 0,
+    coordMissing: geo ? geo.counts.noCoord : 0
+  }
+}
+
+/** 商圈信号灯：落圈 + 四条规则打分（商圈面按「我有门店的城市」加载） */
+function computeStoreLights(db, userId, stores) {
+  const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other'`).all()
+  const fileByCity = new Map()
+  for (const f of files) {
+    const c = CITY_KEY(f.name)
+    if (!c) continue
+    if (!fileByCity.has(c)) fileByCity.set(c, [])
+    fileByCity.get(c).push(f.id)
+  }
+
+  // 只加载「我有门店的城市」的商圈面（⛔ 不要全量加载 20 城 2394 个面）
+  const myCities = Array.from(new Set(stores.map(s => CITY_KEY(s.city)).filter(Boolean)))
+  const coveredCities = myCities.filter(c => fileByCity.has(c))
+  const uncoveredCities = myCities.filter(c => !fileByCity.has(c))
+
+  const districts = []
+  if (coveredCities.length) {
+    const scopeIds = readableUserIds(db, userId)
+    for (const city of coveredCities) {
+      for (const fileId of fileByCity.get(city)) {
+        const geojson = getGeoObject(fileId)
+        if (!geojson || !Array.isArray(geojson.features)) continue
+        for (const feature of geojson.features) {
+          if (!feature.geometry) continue
+          // 276 起字段名整代更换：必须先归一再取数，否则评分静默归零
+          const props = normalizeDistrictProps(feature.properties || {})
+          const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+          const myCount = countMyStoresInDistrict(feature.geometry, scopeIds)
+          const scores = computeScore(props, compCount, myCount)
+          districts.push({
+            name: props['名称'] || '未命名商圈',
+            city,
+            level: dstr(props, '能级'),
+            crowd: dstr(props, '客群'),
+            geometry: feature.geometry,
+            scoreCompetition: scores.scoreCompetition
+          })
+        }
+      }
+    }
+  }
+
+  const result = buildStoreLights({ stores, districts, opts: { coveredCities: new Set(coveredCities) } })
+  return { result, coveredCities, uncoveredCities }
+}
+
 router.get('/checkup', authenticate, (req, res) => {
   try {
     const db = getDb()
@@ -117,30 +208,10 @@ router.get('/checkup', authenticate, (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1)
     const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 50, 10), 200)
 
-    // ⚠️ `sync_readonly` 必须一起取：完备度里要把「集团下发只读、本账号改不了」的家数单独数出来
-    const stores = db.prepare(
-      `SELECT id, name, brand, store_code, store_area, latitude, longitude,
-              city, address, store_type, store_category, sync_readonly
-         FROM markers
-        WHERE user_id = ? AND merged_into IS NULL`
-    ).all(userId)
-
+    const stores = loadCheckupStores(db, userId)
     const result = buildStoreCheckup(stores, { nearM })
-
-    // 完备度：销售记录数决定「上面这些结构结论能推多远」
-    const salesRows = db.prepare(
-      `SELECT COUNT(*) c FROM store_sales s
-         JOIN markers m ON s.store_id = m.id AND m.merged_into IS NULL
-        WHERE m.user_id = ?`
-    ).get(userId).c
-
-    const categoryEmpty = stores.filter((s) => !String(s.store_category || '').trim()).length
-    // 🔴 品类为空的店里，集团下发的只读镜像行**本账号改不了**（要在集团侧补）。
-    //   不单独计数的话，体检页说「11 家为空」、批量补品类弹窗说「待补 10 家」——
-    //   客户会以为少了 1 家、反复找（v1.13.294 真机对出来的口径差）。
-    const categoryEmptyReadonly = stores.filter(
-      (s) => !String(s.store_category || '').trim() && Number(s.sync_readonly) === 1
-    ).length
+    // 完备度：决定「上面这些结构结论能推多远」（与导出报告同一份计算）
+    const completeness = computeCheckupCompletion(db, userId, stores, result)
 
     const start = (page - 1) * pageSize
     res.json({
@@ -152,13 +223,7 @@ router.get('/checkup', authenticate, (req, res) => {
       medianBasis: result.medianBasis,
       noNeighbor: result.noNeighbor,
       areaBuckets: result.areaBuckets,
-      completeness: {
-        salesRows,
-        categoryEmpty,
-        categoryEmptyReadonly,
-        areaMissing: result.counts.noArea,
-        coordMissing: result.counts.noCoord
-      },
+      completeness,
       pairsTotal: result.pairs.length,
       page,
       pageSize,
@@ -198,61 +263,8 @@ router.get('/checkup/lights', authenticate, (req, res) => {
     const userId = req.user.id
     const top = Math.min(Math.max(parseInt(req.query.top, 10) || 200, 10), 1000)
 
-    const stores = db.prepare(
-      `SELECT id, name, brand, city, store_type, store_category,
-              latitude, longitude
-         FROM markers
-        WHERE user_id = ? AND merged_into IS NULL`
-    ).all(userId)
-
-    // 有商圈面的城市（shapefiles 文件名形如「上海商圈」）
-    const cityOf = (v) => String(v || '').replace(/市$/, '').replace(/商圈|区域|\.zip/g, '').trim()
-    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other'`).all()
-    const fileByCity = new Map()
-    for (const f of files) {
-      const c = cityOf(f.name)
-      if (!c) continue
-      if (!fileByCity.has(c)) fileByCity.set(c, [])
-      fileByCity.get(c).push(f.id)
-    }
-
-    // 只加载「我有门店的城市」的商圈面（⛔ 不要全量加载 20 城 2394 个面）
-    const myCities = Array.from(new Set(stores.map(s => cityOf(s.city)).filter(Boolean)))
-    const coveredCities = myCities.filter(c => fileByCity.has(c))
-    const uncoveredCities = myCities.filter(c => !fileByCity.has(c))
-
-    const districts = []
-    if (coveredCities.length) {
-      const scopeIds = readableUserIds(db, userId)
-      for (const city of coveredCities) {
-        for (const fileId of fileByCity.get(city)) {
-          const geojson = getGeoObject(fileId)
-          if (!geojson || !Array.isArray(geojson.features)) continue
-          for (const feature of geojson.features) {
-            if (!feature.geometry) continue
-            // 276 起字段名整代更换：必须先归一再取数，否则评分静默归零
-            const props = normalizeDistrictProps(feature.properties || {})
-            const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
-            const myCount = countMyStoresInDistrict(feature.geometry, scopeIds)
-            const scores = computeScore(props, compCount, myCount)
-            districts.push({
-              name: props['名称'] || '未命名商圈',
-              city,
-              level: dstr(props, '能级'),
-              crowd: dstr(props, '客群'),
-              geometry: feature.geometry,
-              scoreCompetition: scores.scoreCompetition
-            })
-          }
-        }
-      }
-    }
-
-    const result = buildStoreLights({
-      stores,
-      districts,
-      opts: { coveredCities: new Set(coveredCities) }
-    })
+    const stores = loadCheckupStores(db, userId)
+    const { result, coveredCities, uncoveredCities } = computeStoreLights(db, userId, stores)
 
     res.json({
       success: true,
@@ -281,6 +293,56 @@ router.get('/checkup/lights', authenticate, (req, res) => {
   } catch (error) {
     console.error('[Markers] 门店体检信号灯失败:', error)
     res.status(500).json({ message: '门店体检信号灯计算失败，请稍后重试' })
+  }
+})
+
+// ============================================================================
+// 门店体检 · 报告导出（v1.13.298）
+// GET /api/markers/checkup/report?format=xlsx&nearM=300
+//
+// 🔴 与页面**同一份计算**：loadCheckupStores / computeCheckupCompletion /
+//    computeStoreLights 三处共用，⛔ 不许在导出里另查一遍库 ——
+//    否则客户会发现 Excel 的数字和页面不一样，而且没人知道哪个是对的。
+//
+// ⚠️ 导出**不截断**：页面分页是为了好看，报告要的是全量（信号灯每店一行、复核清单每对一行）。
+// ⚠️ 导出仍是「本人门店」口径（同 /checkup），不走集团可见域放大。
+// ============================================================================
+router.get('/checkup/report', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const userId = req.user.id
+    const nearM = Math.min(Math.max(Number(req.query.nearM) || 300, 10), 5000)
+
+    const stores = loadCheckupStores(db, userId)
+    if (!stores.length) return res.status(400).json({ message: '还没有门店，先导入门店再导出报告' })
+
+    const geo = buildStoreCheckup(stores, { nearM })
+    const completeness = computeCheckupCompletion(db, userId, stores, geo)
+    const { result: lights } = computeStoreLights(db, userId, stores)
+
+    const generatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
+    const sheets = buildReportSheets({ geo, lights, completeness, nearM, generatedAt })
+
+    const wb = XLSX.utils.book_new()
+    for (const s of sheets) {
+      const ws = XLSX.utils.aoa_to_sheet(s.aoa)
+      if (s.cols) ws['!cols'] = s.cols.map(w => ({ wch: w }))
+      XLSX.utils.book_append_sheet(wb, ws, s.name)
+    }
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const fname = `门店体检报告_${stamp}.xlsx`
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    // 中文文件名：ASCII 兜底 + RFC 5987 的 filename*（只给 filename= 会被浏览器吞成乱码）
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="store-checkup-${stamp}.xlsx"; filename*=UTF-8''${encodeURIComponent(fname)}`
+    )
+    res.send(buf)
+  } catch (error) {
+    console.error('[Markers] 门店体检报告导出失败:', error)
+    res.status(500).json({ message: '报告导出失败，请稍后重试' })
   }
 })
 
