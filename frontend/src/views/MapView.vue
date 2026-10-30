@@ -1486,6 +1486,21 @@
             </el-option>
           </el-select>
         </el-form-item>
+        <!-- 网格数字标签（v1.13.300）：色块看分布、读数再开标签；关闭即时生效，不重跑分析 -->
+        <el-form-item v-if="isPopulationMode" label="网格标签">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <el-switch
+              v-model="popLabelVisible"
+              active-text="显示"
+              inactive-text="隐藏"
+              inline-prompt
+              aria-label="在地图上显示网格数字标签"
+            />
+            <span style="font-size:12px;color:#909399;">
+              关掉只留色块（放大到 12 级以上才显示，本来就挤）
+            </span>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeCircleDialog">取消</el-button>
@@ -2511,6 +2526,18 @@ let currentStatsPanelMarker = null  // 当前统计面板标记
 const populationFieldOptions = ref([])  // 可选的统计字段列表
 const selectedPopulationField = ref('')  // 用户选择的统计字段
 const populationAnalysisCompleted = ref(false)  // 标记分析是否已完成
+// v1.13.300：网格数字标签显隐（弹窗里的开关）。与「zoom < 12 自动隐藏」正交，
+// 各用一个容器类，互不覆盖（见 main.scss 的 .pop-labels-off）。
+const popLabelVisible = ref(true)
+
+/** 把「显示网格数字标签」落到地图容器的类上：O(1)，不重建图层、不重跑分析 */
+function applyPopLabelVisibility() {
+  if (!map || typeof map.getContainer !== 'function') return
+  const el = map.getContainer()
+  if (!el) return
+  el.classList.toggle('pop-labels-off', !popLabelVisible.value)
+}
+watch(popLabelVisible, applyPopLabelVisibility)
 const populationFieldLoading = ref(false)  // 是否正在加载字段
 const loadingElapsedSeconds = ref(0)      // 加载已用时间（秒）
 // 商圈人口加载定时器：提升为模块级，便于组件卸载时清理（原为 openPopulationDistribution 内局部变量，加载中切走路由会泄漏）
@@ -4853,7 +4880,16 @@ const analyzePopulationDistribution = async () => {
     if (radiiLabels) {
       statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">半径: ${radiiLabels}</div>`
     }
+    // v1.13.300：面板里的「数字标签」开关 ——
+    // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
+    // 所以「看着图太挤想关掉」这个最常发生的场景，必须有一个不用重跑分析的入口。
+    // ⚠️ 不能塞进标题栏：面板宽 220px，标题「人口分布分析」会被挤成两行（实测）。
     statsHtml += `<button id="close-stats-panel-${panelId}" style="background:none;border:none;cursor:pointer;font-size:14px;color:#999;padding:0;width:16px;height:16px;display:flex;align-items:center;justify-content:center;" title="关闭">×</button>`
+    statsHtml += `</div>`
+
+    // v1.13.300：数字标签开关（单独一行，标题栏放不下见上）
+    statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:#909399;margin:0 0 4px;">数字标签`
+    statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
     statsHtml += `</div>`
 
     // 表头
@@ -4921,6 +4957,15 @@ const analyzePopulationDistribution = async () => {
 
     // 绑定关闭按钮事件
     setTimeout(() => {
+      // v1.13.300：数字标签即时显隐（只切容器类，不重跑分析、不重建图层）
+      const labelBtn = document.getElementById(`toggle-pop-labels-${panelId}`)
+      if (labelBtn) {
+        labelBtn.onclick = (event) => {
+          event.stopPropagation()
+          popLabelVisible.value = !popLabelVisible.value
+          labelBtn.textContent = popLabelVisible.value ? '隐藏' : '显示'
+        }
+      }
       const closeBtn = document.getElementById(`close-stats-panel-${panelId}`)
       if (closeBtn) {
         closeBtn.onclick = (event) => {
@@ -5526,6 +5571,8 @@ const initMap = async () => {
   }
   map.on('zoomend', updatePopLabelVisibility)
   updatePopLabelVisibility()
+  // v1.13.300：组件重挂载后恢复「用户手动隐藏标签」的状态（容器类会被复用，需重新落一次）
+  applyPopLabelVisibility()
 
       // 地图点击事件（在map创建完成后立即绑定，避免async竞态问题）
   map.on('click', handleMapClick)
