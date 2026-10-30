@@ -1486,6 +1486,16 @@
             </el-option>
           </el-select>
         </el-form-item>
+        <!-- 数值分级方式（v1.13.301）：决定图例上写的区间宽窄 -->
+        <el-form-item v-if="isPopulationMode" label="数值分级">
+          <el-select v-model="popColorMode" style="width: 100%;">
+            <el-option value="equal" label="等值均分（每档跨度相等，图例可直接读区间）" />
+            <el-option value="quantile" label="等频分档（每档格数相等，长尾数据层次更分明）" />
+          </el-select>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+            等值均分下每档宽度 = （最大值 − 最小值）÷ 5；等频分档按格数均分，档与档的数值跨度不等
+          </div>
+        </el-form-item>
         <!-- 网格数字标签（v1.13.300）：色块看分布、读数再开标签；关闭即时生效，不重跑分析 -->
         <el-form-item v-if="isPopulationMode" label="网格标签">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -2497,6 +2507,10 @@ const POPULATION_COLOR_SCHEMES = {
   }
 }
 const populationColorScheme = ref('blue-green-yellow-orange-red')
+// v1.13.301：数值分级方式
+//   equal    = 等值均分（每档数值跨度相等）—— 图例能直接写「0 ~ 4,800」这种区间，客户最认
+//   quantile = 等频分档（每档格数相等）—— 原来的做法，数据长尾时层次更分明，但区间不等宽
+const popColorMode = ref('equal')
 
 // 多半径时自动加宽对话框
 const circleDialogWidth = computed(() => {
@@ -4630,17 +4644,44 @@ const analyzePopulationDistribution = async () => {
       return sorted[base]
     }
 
-    const thresholds = [
-      getQuantile(allValues, 0), getQuantile(allValues, 0.2), getQuantile(allValues, 0.4),
-      getQuantile(allValues, 0.6), getQuantile(allValues, 0.8), getQuantile(allValues, 1)
-    ]
+    // v1.13.301：分级（等值均分 / 等频分档）
+    // 🔴 图例与色块**必须同源**：图例上写「0 ~ 4,800」，色块就得按 4,800 分档；
+    //    否则图例只是装饰，客户照着念会得出相反的结论。
+    const binCount = colors.length
+    const vmin = allValues.length ? Math.min(...allValues) : 0
+    const vmax = allValues.length ? Math.max(...allValues) : 0
+    let breakpoints
+    if (popColorMode.value === 'equal') {
+      const span = vmax - vmin
+      const step = span > 0 ? span / binCount : 0
+      breakpoints = Array.from({ length: binCount + 1 }, (_, i) => vmin + step * i)
+      breakpoints[binCount] = vmax   // 消掉浮点误差，最后一档上界就是真实最大值
+    } else {
+      breakpoints = [0, 0.2, 0.4, 0.6, 0.8, 1].map(q => getQuantile(allValues, q))
+    }
 
-    const getColorByValue = (value) => {
-      if (value <= thresholds[1]) return colors[0]
-      if (value <= thresholds[2]) return colors[1]
-      if (value <= thresholds[3]) return colors[2]
-      if (value <= thresholds[4]) return colors[3]
-      return colors[4]
+    /** 值 → 档位下标（右闭合，与改版前 `value <= thresholds[i]` 口径一致） */
+    const binIndexOf = (value) => {
+      const last = binCount - 1
+      if (!Number.isFinite(value)) return 0
+      for (let i = 0; i < last; i++) {
+        if (value <= breakpoints[i + 1]) return i
+      }
+      return last
+    }
+    const getColorByValue = (value) => colors[binIndexOf(value)]
+
+    // 每档格数：等值均分时一眼能看出数据偏斜（低档塞满、高档个位数）
+    const binCounts = new Array(binCount).fill(0)
+    allValues.forEach(v => { binCounts[binIndexOf(v)] += 1 })
+    /** 刻度文案：过万折成「1.2万」，否则千分位 */
+    const fmtTick = (v) => {
+      if (!Number.isFinite(v)) return '—'
+      if (Math.abs(v) >= 10000) {
+        const w = v / 10000
+        return (Math.abs(w) >= 100 ? String(Math.round(w)) : w.toFixed(1).replace(/\.0$/, '')) + '万'
+      }
+      return Math.round(v).toLocaleString()
     }
 
     // 使用API返回的总计（与常住人口对比一致），回退到前端总计
@@ -4892,7 +4933,32 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
     statsHtml += `</div>`
 
-    // 表头
+    // v1.13.301：色阶图例 —— 关掉网格数字后，客户靠它读「这个颜色大概是多少」
+    // 🔴 刻度与色块同源（上面的 breakpoints / getColorByValue），⛔ 不许另算一套
+    // ⚠️ 必须放在表格**上方**：字段一多表格就有 400+ px，图例放底部会被挤出屏幕（实测 220×464 面板）
+    statsHtml += `<div style="border:1px solid #ebeef5;border-radius:4px;padding:4px 5px;margin-bottom:5px;background:#fafbfc;">`
+    statsHtml += `<div style="font-size:10px;color:#606266;font-weight:bold;margin-bottom:3px;">色阶 · ${fieldName}（${popColorMode.value === 'equal' ? '等值均分' : '等频分档'}）</div>`
+    statsHtml += `<div style="display:flex;height:11px;border-radius:2px;overflow:hidden;border:1px solid #dcdfe6;">`
+    colors.forEach((c, i) => {
+      const lo = breakpoints[i]
+      const hi = breakpoints[i + 1]
+      statsHtml += `<div style="flex:1;background:${c};" title="${fmtTick(lo)} ~ ${fmtTick(hi)}（${binCounts[i]} 格）"></div>`
+    })
+    statsHtml += `</div>`
+    // 每档格数（等值均分下能一眼看出数据偏斜：低档塞满、高档个位数）
+    statsHtml += `<div style="display:flex;font-size:8px;color:#909399;margin-top:1px;">`
+    binCounts.forEach(n => { statsHtml += `<div style="flex:1;text-align:center;">${n}</div>` })
+    statsHtml += `</div>`
+    // 6 个边界刻度
+    statsHtml += `<div style="display:flex;justify-content:space-between;font-size:8px;color:#606266;margin-top:1px;">`
+    breakpoints.forEach(b => { statsHtml += `<span>${fmtTick(b)}</span>` })
+    statsHtml += `</div>`
+    statsHtml += `<div style="font-size:8px;color:#909399;margin-top:1px;">${allValues.length} 格参与分级 · 色块下方数字为该档格数</div>`
+    statsHtml += `</div>`
+
+    // 表头（表格可滚动：字段多时不让整个面板长出屏幕）
+    const tableMaxH = Math.max(160, window.innerHeight - 330)
+    statsHtml += `<div style="max-height:${tableMaxH}px;overflow-y:auto;">`
     statsHtml += `<table style="width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;">`
     statsHtml += `<tr style="background:#f5f7fa;">`
     statsHtml += `<th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">字段</th>`
@@ -4932,6 +4998,8 @@ const analyzePopulationDistribution = async () => {
     })
 
     statsHtml += `</table>`
+    statsHtml += `</div>`
+
     statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
     statsHtml += `</div>`
 
