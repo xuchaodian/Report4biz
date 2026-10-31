@@ -832,15 +832,18 @@ router.get('/:id/fields', authenticate, (req, res) => {
 })
 
 // ============================================================================
-// 驾车可达范围（等时圈 · 径向探测）v1.13.302
-// POST /api/shapefiles/drive-isochrone
-// Body: { lng, lat, minutes:[5,10,15], bearings?, stepM?, maxKm? }
+// 可达范围（等时圈 · 径向探测）v1.13.302 驾车 / v1.13.304 加步行
+// POST /api/shapefiles/isochrone（旧路径 /drive-isochrone 保留为别名）
+// Body: { lng, lat, minutes:[5,10,15], mode:'drive'|'walk', bearings?, maxKm? }
 //
 // 为什么要自己探：高德**没有**驾车等时圈接口（`AMap.ArrivalRange` 是公交到达圈，≤60 分钟）。
 // 做法（径向采样，也是业界的常规近似）：
-//   以中心为圆点，bearings 个方向 × 每 stepM 米取一个探测点 → 一次查出各点到中心的驾车耗时
+//   以中心为圆点，bearings 个方向 × 阶梯半径取探测点 → 一次查出各点到中心的耗时
 //   → 每个时间档取「该方向上最远的可达半径」→ 按方向顺序连成多边形。
-//   24 方向 × 500m × 10km = 480 点 ⇒ 5 次上游调用，**三档时间共用同一批探测数据**（不多花钱）。
+//   24 方向 × 12 级阶梯 = 288 点 ⇒ 3 次上游调用，**三档时间共用同一批探测数据**（不多花钱）。
+//
+// 🔴 驾车/步行只差两处：高德 `type`（1=驾车 / 3=步行）与阶梯（步行 3.5~4km/h，远场用不到）。
+//   其余逻辑（分片、节流、多边形拼装）**共用一份**，⛔ 不要再复制一条链路。
 //
 // 🔴 三条红线：
 //   1. 仅管理员（能力试运行，先把配额和体验控住）；⛔ 不能只靠前端隐藏入口。
@@ -850,18 +853,25 @@ router.get('/:id/fields', authenticate, (req, res) => {
 const ISO_MAX_PROBES = 1200
 
 // 探测半径阶梯（米）：近场密、远场疏。
-// 🔴 为什么不用等步长：驾车耗时不与直线距离成正比 —— 市中心 500m 可能就要 4~5 分钟
-//   （单行道 + 红绿灯），等步长会让 5 分钟档在多数方向上「一格都没有」，画出来全是尖刺。
-const ISO_RADII_M = [150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000, 5000, 6500, 8000]
+// 🔴 为什么不用等步长：耗时与直线距离不成正比 —— 市中心 500m 直线可能要绕 1.4km
+//   （单行道 + 红绿灯），等步长会让短时间档在多数方向上「一格都没有」，画出来全是尖刺。
+const ISO_RADII_DRIVE = [150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000, 5000, 6500, 8000]
+// v1.13.304：步行阶梯更短（实测约 3.5~4km/h，且路网绕行更明显：3km 直线≈3.4km/57 分钟）
+const ISO_RADII_WALK = [100, 200, 300, 450, 600, 800, 1000, 1300, 1600, 2000, 2500, 3000]
 
-router.post('/drive-isochrone', authenticate, async (req, res) => {
+router.post(['/drive-isochrone', '/isochrone'], authenticate, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, code: 'admin_only', error: '驾车可达范围试运行中，仅管理员可用' })
+      return res.status(403).json({ success: false, code: 'admin_only', error: '可达范围试运行中，仅管理员可用' })
     }
     if (overLimit(`isochrone:${req.user.id}`, 20, 10 * 60 * 1000)) {
       return res.status(429).json({ success: false, error: '操作太频繁，请 10 分钟后再试' })
     }
+
+    // v1.13.304：步行可达复用同一条链路，只换高德的出行方式与阶梯
+    const mode = req.body.mode === 'walk' ? 'walk' : 'drive'
+    const AMAP_TRAVEL_TYPE = mode === 'walk' ? 3 : 1
+    const ladder = mode === 'walk' ? ISO_RADII_WALK : ISO_RADII_DRIVE
 
     const lng = Number(req.body.lng)
     const lat = Number(req.body.lat)
@@ -877,9 +887,9 @@ router.post('/drive-isochrone', authenticate, async (req, res) => {
     // ⚠️ 默认 24 方向 × 12 级阶梯 = 288 点 ⇒ 3 次上游。
     //    实测这个 key 的 QPS 很紧，方向数放大会同时压 QPS 和等待时长，改前先算。
     const bearings = Math.min(Math.max(Number(req.body.bearings) || 24, 12), 72)
-    // maxKm 只用来截断阶梯上限（默认 8km ≈ 15 分钟车程的郊区上限）
-    const maxKm = Math.min(Math.max(Number(req.body.maxKm) || 8, 1), 15)
-    const radii = ISO_RADII_M.filter(r => r <= maxKm * 1000)
+    // maxKm 只用来截断阶梯上限（驾车默认 8km≈15 分钟；步行默认 3km≈50 分钟）
+    const maxKm = Math.min(Math.max(Number(req.body.maxKm) || (mode === 'walk' ? 3 : 8), 1), 15)
+    const radii = ladder.filter(r => r <= maxKm * 1000)
     if (!radii.length) return res.status(400).json({ success: false, error: '探测半径为空' })
     if (bearings * radii.length > ISO_MAX_PROBES) {
       return res.status(400).json({
@@ -900,7 +910,11 @@ router.post('/drive-isochrone', authenticate, async (req, res) => {
     }
 
     const t0 = Date.now()
-    const { durations, calls, failed } = await probeDriveDuration({ origin: { lng, lat }, points: probes })
+    const { durations, calls, failed } = await probeDriveDuration({
+      origin: { lng, lat },
+      points: probes,
+      type: AMAP_TRAVEL_TYPE
+    })
 
     const out = bands.map((min) => {
       const limitS = min * 60
@@ -933,13 +947,15 @@ router.post('/drive-isochrone', authenticate, async (req, res) => {
       }
     })
 
-    console.log(`[drive-isochrone] 中心(${lat},${lng}) 档=${bands.join('/')}分 探测点=${probes.length} 上游调用=${calls} 耗时=${Date.now() - t0}ms`)
+    console.log(`[isochrone] ${mode} 中心(${lat},${lng}) 档=${bands.join('/')}分 探测点=${probes.length} 上游调用=${calls} 耗时=${Date.now() - t0}ms`)
 
     res.json({
       success: true,
+      mode,
       center: { lng, lat },
       bands: out,
       meta: {
+        mode,
         probes: probes.length,
         calls,
         failed,
@@ -947,16 +963,18 @@ router.post('/drive-isochrone', authenticate, async (req, res) => {
         radii,
         maxKm,
         elapsedMs: Date.now() - t0,
-        note: '按常规路况估算（不含实时拥堵）；高德单次只能指定一个终点，故按「各方向点位 → 中心」的耗时近似，与反向行驶略有差异'
+        note: mode === 'walk'
+          ? '按常规步行路线估算（不含实时人流/封路）；高德单次只能指定一个终点，故按「各方向点位 → 中心」的步行耗时近似'
+          : '按常规路况估算（不含实时拥堵）；高德单次只能指定一个终点，故按「各方向点位 → 中心」的耗时近似，与反向行驶略有差异'
       }
     })
   } catch (error) {
     if (error instanceof DriveProbeError) {
       const status = error.code === 'OVER_QUOTA' ? 503 : 502
-      console.error('[drive-isochrone] 上游失败:', error.code, error.message)
+      console.error('[isochrone] 上游失败:', error.code, error.message)
       return res.status(status).json({ success: false, code: error.code, error: error.message })
     }
-    console.error('[drive-isochrone] 失败:', error)
+    console.error('[isochrone] 失败:', error)
     res.status(500).json({ success: false, error: '驾车可达范围计算失败' })
   }
 })

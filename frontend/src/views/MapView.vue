@@ -1394,19 +1394,21 @@
           <el-radio-group v-model="popScopeMode">
             <el-radio value="circle">半径圆</el-radio>
             <el-radio value="drive" :disabled="!userStore.isAdmin">驾车可达（分钟）</el-radio>
+            <el-radio value="walk" :disabled="!userStore.isAdmin">步行可达（分钟）</el-radio>
           </el-radio-group>
-          <div v-if="popScopeMode === 'drive'" style="font-size: 12px; color: #909399; margin-top: 4px;">
-            按真实路网探测驾车耗时（36 个方向），连成可达范围；<b>按常规路况估算，不等于导航 App 的实时时长</b>
+          <div v-if="popScopeMode === 'drive' || popScopeMode === 'walk'" style="font-size: 12px; color: #909399; margin-top: 4px;">
+            按真实路网探测{{ popScopeMode === 'walk' ? '步行' : '驾车' }}耗时（24 个方向），连成可达范围；
+            <b>{{ popScopeMode === 'walk' ? '按常规步行路线估算' : '按常规路况估算' }}，不等于导航 App 的实时时长</b>
           </div>
         </el-form-item>
-        <el-form-item v-if="isPopulationMode && popScopeMode === 'drive'" label="时间档(分钟)">
+        <el-form-item v-if="isPopulationMode && (popScopeMode === 'drive' || popScopeMode === 'walk')" label="时间档(分钟)">
           <div style="display:flex;gap:8px;width:100%;">
             <el-input-number v-model="driveMinutes.m1" :min="1" :max="30" :step="1" style="flex:1" placeholder="第一档" />
             <el-input-number v-model="driveMinutes.m2" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
             <el-input-number v-model="driveMinutes.m3" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
           </div>
           <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-            三档共用同一批探测（不多花配额）；建议按 5 / 10 / 15 分钟填
+            三档共用同一批探测（不多花配额）；{{ popScopeMode === 'walk' ? '步行建议 10 / 20 / 30 分钟（10 分钟约 600m）' : '驾车建议 5 / 10 / 15 分钟' }}
           </div>
         </el-form-item>
         <el-form-item v-if="popScopeMode === 'circle'" label="半径1">
@@ -2544,6 +2546,7 @@ const popEditMode = ref(false)
 let popBandPolygons = {}
 let popBandsEdited = false
 let popBandsCenter = null      // 手调范围对应的圆心，换点即作废
+let popBandsMode = 'drive'     // 手调范围对应的出行方式（步行/驾车形状完全不同，⛔ 不能混用）
 const bandLayerRefs = {}
 // 顶点手柄与编辑动作句柄：面板按钮在 setTimeout 里绑定，拿不到 analyze 的闭包，故挂到组件级
 let isoVertexMarkers = []
@@ -2553,6 +2556,14 @@ let isoEditApplying = false    // 重算进行中，防止连续拖点把请求�
 // ⛔ 否则「驾车可达」会把半径输入 v-if 掉，弹窗只剩圆心坐标 + 单位
 watch(circleDialogMode, (m) => {
   if (m !== 'population' && m !== 'population_hd') popScopeMode.value = 'circle'
+})
+// v1.13.304：切到步行时给一组合理默认（10/20/30 分钟）——步行 10 分钟≈600m，用驾车的 5/10/15 太小；
+// 用户已经填过第二三档就不动，⛔ 不要把人家输的数字冲掉
+watch(popScopeMode, (m) => {
+  if (m === 'walk' && !driveMinutes.m2 && !driveMinutes.m3) {
+    driveMinutes.m2 = 20
+    driveMinutes.m3 = 30
+  }
 })
 
 // 多半径时自动加宽对话框
@@ -4417,14 +4428,16 @@ const analyzePopulationDistribution = async () => {
   // v1.13.302：范围口径 —— 半径圆 / 驾车可达
   // 驾车模式下 allRadiiMeters 里装的是**分钟数**（不是米），下游只当「档位键」用，
   // 展示文案一律走 bandLabel()，⛔ 不要在别处写死 (k/1000)km。
-  const isDrive = popScopeMode.value === 'drive'
+  // v1.13.304：驾车 / 步行共用同一条「可达范围」链路，只换高德出行方式与半径阶梯
+  const travelMode = popScopeMode.value === 'walk' ? 'walk' : 'drive'
+  const isReach = popScopeMode.value === 'drive' || popScopeMode.value === 'walk'
   const bandPolygons = {}   // drive 模式：分钟 → GeoJSON Polygon
   // v1.13.303：上一轮被人手调过 ⇒ 这一轮直接沿用它，⛔ 不再探测（否则会把客户改的形状冲掉）。
   // 🔴 必须同时校验「圆心没变」：换了位置还沿用旧形状，等于把 A 地的范围画到 B 地上。
   const c0 = circleForm.center
   const sameCenter = !!(popBandsCenter && c0 &&
     Math.abs(popBandsCenter.lat - c0.lat) < 1e-7 && Math.abs(popBandsCenter.lng - c0.lng) < 1e-7)
-  const reuseEdited = isDrive && popBandsEdited && sameCenter
+  const reuseEdited = isReach && popBandsEdited && sameCenter && popBandsMode === travelMode
   if (reuseEdited) Object.assign(bandPolygons, popBandPolygons)
 
   try {
@@ -4432,7 +4445,7 @@ const analyzePopulationDistribution = async () => {
 
     // 添加超时控制（总超时30秒）
     // hd 单文件 95MB 且串行执行，给足 3 分钟；常规仍 30s；驾车多一段路网探测，再放宽到 4 分钟
-    const globalTimeout = isDrive ? 240000 : (isHd ? 180000 : 30000)
+    const globalTimeout = isReach ? 240000 : (isHd ? 180000 : 30000)
     const startGlobalTime = Date.now()
     const checkTimeout = () => {
       if (Date.now() - startGlobalTime > globalTimeout) {
@@ -4442,7 +4455,7 @@ const analyzePopulationDistribution = async () => {
 
     // 收集档位：圆模式是半径（米），驾车模式是时间档（分钟）
     const allRadiiMeters = []
-    if (isDrive) {
+    if (isReach) {
       const mins = [driveMinutes.m1, driveMinutes.m2, driveMinutes.m3]
         .map(Number)
         .filter(m => Number.isFinite(m) && m > 0)
@@ -4470,12 +4483,12 @@ const analyzePopulationDistribution = async () => {
 
     const maxRadiusMeters = Math.max(...allRadiiMeters)
     /** 档位文案：驾车模式是「10 分钟」，圆模式是「2.0km」 */
-    const bandLabel = (k) => (isDrive ? `${k} 分钟` : `${(k / 1000).toFixed(1)}km`)
+    const bandLabel = (k) => (isReach ? `${k} 分钟` : `${(k / 1000).toFixed(1)}km`)
     const centerLat = circleForm.center.lat
     const centerLng = circleForm.center.lng
     const fieldName = selectedPopulationField.value
 
-    ElMessage.info(isDrive ? '正在探测驾车可达范围...' : '正在计算人口分布...')
+    ElMessage.info(isReach ? `正在探测${travelMode === 'walk' ? '步行' : '驾车'}可达范围...` : '正在计算人口分布...')
 
     // 获取所有shapefile
     const listRes = await fetch(`/api/shapefiles?category=${calcCategory}`, {
@@ -4494,7 +4507,7 @@ const analyzePopulationDistribution = async () => {
     // 🔴 这一步在「取网格数据」之前做：探测失败就没必要再去解析 95MB 的 hd 文件
     // v1.13.303：如果这批范围已经被手工微调过（popBandsEdited），就跳过探测直接重算 ——
     //   否则每拖一次顶点都会把客户改的形状冲掉、还白花 3 次高德调用。
-    if (isDrive) {
+    if (isReach) {
       const missing = allRadiiMeters.filter(m => !bandPolygons[m])
       if (reuseEdited && !missing.length) {
         ElMessage.info('按你手调过的范围重算…')
@@ -4503,10 +4516,10 @@ const analyzePopulationDistribution = async () => {
       const tid = setTimeout(() => ctrl.abort(), 60000)
       let bandRes
       try {
-        const resp = await fetch('/api/shapefiles/drive-isochrone', {
+        const resp = await fetch('/api/shapefiles/isochrone', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userStore.token}` },
-          body: JSON.stringify({ lng: centerLng, lat: centerLat, minutes: allRadiiMeters }),
+          body: JSON.stringify({ lng: centerLng, lat: centerLat, minutes: allRadiiMeters, mode: travelMode }),
           signal: ctrl.signal
         })
         bandRes = await resp.json()
@@ -4523,6 +4536,7 @@ const analyzePopulationDistribution = async () => {
       popBandPolygons = { ...bandPolygons }
       popBandsEdited = false
       popBandsCenter = { lat: centerLat, lng: centerLng }
+      popBandsMode = travelMode
       ElMessage.success(
         `路网探测完成：${bandRes.meta.probes} 个探测点 / ${bandRes.meta.calls} 次调用，${(bandRes.meta.elapsedMs / 1000).toFixed(1)}s`
       )
@@ -4557,7 +4571,7 @@ const analyzePopulationDistribution = async () => {
             lat: centerLat,
             lng: centerLng,
             // 驾车模式传多边形（后端用它代替圆做网格求交）；圆模式仍传半径
-            ...(isDrive ? { polygon: bandPolygons[r] } : { radius: r }),
+            ...(isReach ? { polygon: bandPolygons[r] } : { radius: r }),
             fieldName: fieldName,
             category: calcCategory,
             // 🔴 hd 必传 shapefileId（后端护栏①）：既命中 hd 文件，也保证只解析 1 个文件
@@ -4841,7 +4855,7 @@ const analyzePopulationDistribution = async () => {
 
     const buildIsoVertices = () => {
       clearIsoVertices()
-      if (!isDrive) return
+      if (!isReach) return
       sortedRadii.forEach((k) => {
         const poly = bandPolygons[k]
         const ring = poly?.coordinates?.[0]
@@ -4882,6 +4896,7 @@ const analyzePopulationDistribution = async () => {
         popBandPolygons = JSON.parse(JSON.stringify(bandPolygons))
         popBandsEdited = true
         popBandsCenter = { lat: circleForm.center.lat, lng: circleForm.center.lng }
+        popBandsMode = travelMode
         await analyzePopulationDistribution()
       } catch (e) {
         console.error('[iso-edit] 重算失败', e)
@@ -4896,7 +4911,7 @@ const analyzePopulationDistribution = async () => {
     const drawRadiusRings = () => {
       if (popRenderToken !== populationRenderToken) return
       console.log(`多边形绘制完成: ${polygonCount}个多边形, ${labelCount}个标签`)
-      if (isDrive) {
+      if (isReach) {
         // 驾车可达：画每档的时间多边形（外档虚线，避免几条实线叠成一团）
         sortedRadii.forEach((k, i) => {
           const poly = bandPolygons[k]
@@ -5111,14 +5126,14 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `<div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;display:flex;justify-content:space-between;align-items:center;">`
     statsHtml += `<span>📊 人口分布分析</span>`
     // 在标题下方显示设置的半径
-    const radiiLabels = isDrive
+    const radiiLabels = isReach
       ? [...sortedRadii].sort((a, b) => a - b).map(m => `${m} 分钟`).join(' / ')
       : [circleForm.radius, circleForm.radius2, circleForm.radius3]
         .filter(r => r && r > 0)
         .map(r => r + circleForm.unit)
         .join(' / ')
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isDrive ? '时间档' : '半径'}: ${radiiLabels}${isDrive && popBandsEdited ? '<span style="color:#e6a23c;">（范围已手调）</span>' : ''}</div>`
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? '<span style="color:#e6a23c;">（范围已手调）</span>' : ''}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
@@ -5130,7 +5145,7 @@ const analyzePopulationDistribution = async () => {
     // v1.13.300：数字标签开关（单独一行，标题栏放不下见上）
     // v1.13.303：驾车模式再加一个「编辑范围」——拖顶点微调后松手即重算
     statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10px;color:#909399;margin:0 0 4px;">`
-    if (isDrive) {
+    if (isReach) {
       statsHtml += `<button id="toggle-iso-edit-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#1f6fd0;padding:0 6px;line-height:15px;" title="拖动蓝色顶点微调可达范围，松手自动重算">${popEditMode.value ? '完成编辑' : '编辑范围'}</button>`
     }
     statsHtml += `数字标签`
