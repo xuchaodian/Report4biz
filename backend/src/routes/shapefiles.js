@@ -11,6 +11,9 @@ import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
+// v1.13.302：驾车可达范围（等时圈）—— 高德没有驾车等时圈接口，走「径向探测」
+import { probeDriveDuration, DriveProbeError } from '../utils/amapDrive.js'
+import { overLimit } from '../utils/rateLimit.js'
 // ⚠️ 本文件**不再使用 writeGeoText**：上传改由 Python 流式直写 + adoptGeoFile 转正
 //    （见 upload 路由与 geoStore::adoptGeoFile 的注释）。writeGeoText 仍供其他模块使用。
 import {
@@ -828,15 +831,159 @@ router.get('/:id/fields', authenticate, (req, res) => {
   }
 })
 
+// ============================================================================
+// 驾车可达范围（等时圈 · 径向探测）v1.13.302
+// POST /api/shapefiles/drive-isochrone
+// Body: { lng, lat, minutes:[5,10,15], bearings?, stepM?, maxKm? }
+//
+// 为什么要自己探：高德**没有**驾车等时圈接口（`AMap.ArrivalRange` 是公交到达圈，≤60 分钟）。
+// 做法（径向采样，也是业界的常规近似）：
+//   以中心为圆点，bearings 个方向 × 每 stepM 米取一个探测点 → 一次查出各点到中心的驾车耗时
+//   → 每个时间档取「该方向上最远的可达半径」→ 按方向顺序连成多边形。
+//   24 方向 × 500m × 10km = 480 点 ⇒ 5 次上游调用，**三档时间共用同一批探测数据**（不多花钱）。
+//
+// 🔴 三条红线：
+//   1. 仅管理员（能力试运行，先把配额和体验控住）；⛔ 不能只靠前端隐藏入口。
+//   2. 高德给的是**常规路况估算**，⛔ 不能对外说成导航 App 的实时时长。
+//   3. 探测点上限 1200（≈12 次上游）；要放大参数先算配额，别把 key 打爆。
+// ============================================================================
+const ISO_MAX_PROBES = 1200
+
+// 探测半径阶梯（米）：近场密、远场疏。
+// 🔴 为什么不用等步长：驾车耗时不与直线距离成正比 —— 市中心 500m 可能就要 4~5 分钟
+//   （单行道 + 红绿灯），等步长会让 5 分钟档在多数方向上「一格都没有」，画出来全是尖刺。
+const ISO_RADII_M = [150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000, 5000, 6500, 8000]
+
+router.post('/drive-isochrone', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, code: 'admin_only', error: '驾车可达范围试运行中，仅管理员可用' })
+    }
+    if (overLimit(`isochrone:${req.user.id}`, 20, 10 * 60 * 1000)) {
+      return res.status(429).json({ success: false, error: '操作太频繁，请 10 分钟后再试' })
+    }
+
+    const lng = Number(req.body.lng)
+    const lat = Number(req.body.lat)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return res.status(400).json({ success: false, error: '中心坐标无效' })
+    }
+
+    const minutesRaw = Array.isArray(req.body.minutes) ? req.body.minutes : [req.body.minutes]
+    const minutes = minutesRaw.map(Number).filter((m) => Number.isFinite(m) && m > 0 && m <= 30)
+    if (!minutes.length) return res.status(400).json({ success: false, error: '请至少给一个时间档（分钟，1~30）' })
+    const bands = [...new Set(minutes)].sort((a, b) => a - b).slice(0, 3)
+
+    // ⚠️ 默认 24 方向 × 12 级阶梯 = 288 点 ⇒ 3 次上游。
+    //    实测这个 key 的 QPS 很紧，方向数放大会同时压 QPS 和等待时长，改前先算。
+    const bearings = Math.min(Math.max(Number(req.body.bearings) || 24, 12), 72)
+    // maxKm 只用来截断阶梯上限（默认 8km ≈ 15 分钟车程的郊区上限）
+    const maxKm = Math.min(Math.max(Number(req.body.maxKm) || 8, 1), 15)
+    const radii = ISO_RADII_M.filter(r => r <= maxKm * 1000)
+    if (!radii.length) return res.status(400).json({ success: false, error: '探测半径为空' })
+    if (bearings * radii.length > ISO_MAX_PROBES) {
+      return res.status(400).json({
+        success: false,
+        error: `探测点过多（${bearings * radii.length} > ${ISO_MAX_PROBES}），请减少方向数`
+      })
+    }
+
+    // 探测点：外层是方向，内层是由近到远 —— 后续按方向取「最远可达」即可
+    const center = turf.point([lng, lat])
+    const probes = []
+    for (let bi = 0; bi < bearings; bi++) {
+      const bearing = (bi * 360) / bearings
+      for (const rM of radii) {
+        const p = turf.destination(center, rM / 1000, bearing, { units: 'kilometers' })
+        probes.push({ bearing, bearingIndex: bi, rM, lng: p.geometry.coordinates[0], lat: p.geometry.coordinates[1] })
+      }
+    }
+
+    const t0 = Date.now()
+    const { durations, calls, failed } = await probeDriveDuration({ origin: { lng, lat }, points: probes })
+
+    const out = bands.map((min) => {
+      const limitS = min * 60
+      const reach = new Map()   // bearingIndex → 该方向最远可达米数
+      probes.forEach((p, i) => {
+        const d = durations[i]
+        if (d == null || d > limitS) return
+        if ((reach.get(p.bearingIndex) || 0) < p.rM) reach.set(p.bearingIndex, p.rM)
+      })
+
+      const ring = []
+      let reachedBearings = 0
+      for (let bi = 0; bi < bearings; bi++) {
+        const r = reach.get(bi) || 0
+        if (r > 0) reachedBearings++
+        // 一个方向连最近的探测点都超时 ⇒ 给 80m 兜底，避免出现零面积/自交的退化多边形
+        const rEff = Math.max(r, 80)
+        const pt = turf.destination(center, rEff / 1000, (bi * 360) / bearings, { units: 'kilometers' })
+        ring.push(pt.geometry.coordinates)
+      }
+      ring.push(ring[0])
+
+      const polygon = { type: 'Polygon', coordinates: [ring] }
+      return {
+        minutes: min,
+        polygon,
+        vertices: ring.length - 1,
+        reachedBearings,
+        areaKm2: Number((turf.area(turf.feature(polygon)) / 1e6).toFixed(2))
+      }
+    })
+
+    console.log(`[drive-isochrone] 中心(${lat},${lng}) 档=${bands.join('/')}分 探测点=${probes.length} 上游调用=${calls} 耗时=${Date.now() - t0}ms`)
+
+    res.json({
+      success: true,
+      center: { lng, lat },
+      bands: out,
+      meta: {
+        probes: probes.length,
+        calls,
+        failed,
+        bearings,
+        radii,
+        maxKm,
+        elapsedMs: Date.now() - t0,
+        note: '按常规路况估算（不含实时拥堵）；高德单次只能指定一个终点，故按「各方向点位 → 中心」的耗时近似，与反向行驶略有差异'
+      }
+    })
+  } catch (error) {
+    if (error instanceof DriveProbeError) {
+      const status = error.code === 'OVER_QUOTA' ? 503 : 502
+      console.error('[drive-isochrone] 上游失败:', error.code, error.message)
+      return res.status(status).json({ success: false, code: error.code, error: error.message })
+    }
+    console.error('[drive-isochrone] 失败:', error)
+    res.status(500).json({ success: false, error: '驾车可达范围计算失败' })
+  }
+})
+
 // 计算人口分布 - 根据圆心+半径计算各shapefile内人口统计
 router.post('/calculate-population', authenticate, (req, res) => {
   try {
     const vis = visibilityClause(req.user)
-    const { lat, lng, radius, fieldName, shapefileId } = req.body
+    const { lat, lng, radius, fieldName, shapefileId, polygon } = req.body
     // v1.13.227：category 参数化（白名单，默认 'population' ⇒ 对「常住人口分布」逐字兼容）
     const category = ALLOWED_CATEGORIES.has(req.body.category) ? req.body.category : 'population'
 
-    if (!lat || !lng || !radius) {
+    // 🔴 v1.13.302：允许直接传多边形（驾车可达范围用它），此时不要求 radius。
+    //   顶点数上限 720（36 方向探测）+ 余量：顶点越多 turf.intersect 越慢，
+    //   而这里是「每个网格要素 × 一个多边形」，放大顶点数会直接把单请求内存顶上去。
+    const usePolygon = !!polygon && polygon.type === 'Polygon' && Array.isArray(polygon.coordinates?.[0])
+    if (usePolygon) {
+      const ring = polygon.coordinates[0]
+      if (ring.length < 4 || ring.length > 1000) {
+        return res.status(400).json({ success: false, error: `多边形顶点数不合法（${ring.length}）` })
+      }
+      const bad = ring.some(c => !Array.isArray(c) || c.length < 2 ||
+        !Number.isFinite(Number(c[0])) || !Number.isFinite(Number(c[1])))
+      if (bad) return res.status(400).json({ success: false, error: '多边形坐标含非法值' })
+    }
+
+    if (!usePolygon && (!lat || !lng || !radius)) {
       return res.status(400).json({ success: false, error: '缺少必要参数' })
     }
 
@@ -910,15 +1057,19 @@ router.post('/calculate-population', authenticate, (req, res) => {
 
     // 创建圆心点
     const center = turf.point([parseFloat(lng), parseFloat(lat)])
-    // 创建圆（使用turf的circle，steps=64保证精度）
-    const circle = turf.circle([parseFloat(lng), parseFloat(lat)], radius / 1000, { steps: 64, units: 'kilometers' })
+    // 统计范围：默认是圆，v1.13.302 起也可以直接给多边形（驾车可达范围）
+    // 🔴 后续一律用 areaFeature / areaBbox，⛔ 不要再出现「只有圆」的写法 ——
+    //    否则驾车模式会静默退回成圆，客户看到的是圆的数据、却以为是车的范围。
+    const areaFeature = usePolygon
+      ? turf.polygon([polygon.coordinates[0].map(c => [Number(c[0]), Number(c[1])])])
+      : turf.circle([parseFloat(lng), parseFloat(lat)], radius / 1000, { steps: 64, units: 'kilometers' })
 
     let totalPop = 0
     const allFields = {}
     const matchedFeatures = []
 
-    // 预计算圆的包围盒，用于快速过滤不相关的要素
-    const circleBbox = turf.bbox(circle)
+    // 预计算范围的包围盒，用于快速过滤不相关的要素
+    const areaBbox = turf.bbox(areaFeature)
 
     for (const row of rows) {
       // 缓存统一由 geoStore 管理：文本 LRU + 仅小文件缓存解析对象。
@@ -935,8 +1086,8 @@ router.post('/calculate-population', authenticate, (req, res) => {
         // 快速 AABB 包围盒碰撞检测：过滤掉明显不在圆内的要素（跳过 turf 重计算）
         try {
           const fBbox = turf.bbox(feature)
-          if (fBbox[0] > circleBbox[2] || fBbox[2] < circleBbox[0] ||
-              fBbox[1] > circleBbox[3] || fBbox[3] < circleBbox[1]) {
+          if (fBbox[0] > areaBbox[2] || fBbox[2] < areaBbox[0] ||
+              fBbox[1] > areaBbox[3] || fBbox[3] < areaBbox[1]) {
             continue
           }
         } catch (e) { /* 包围盒计算失败，回退到完整计算 */ }
@@ -955,7 +1106,7 @@ router.post('/calculate-population', authenticate, (req, res) => {
             for (const coords of geom.coordinates) {
               try {
                 const subPoly = turf.polygon(coords)
-                const subIntersect = turf.intersect(turf.featureCollection([subPoly, circle]))
+                const subIntersect = turf.intersect(turf.featureCollection([subPoly, areaFeature]))
                 if (!subIntersect) continue
                 const subArea = turf.area(subPoly)
                 const subIntersectArea = turf.area(subIntersect)
@@ -974,7 +1125,7 @@ router.post('/calculate-population', authenticate, (req, res) => {
             continue
           }
 
-          const intersect = turf.intersect(turf.featureCollection([fPoly, circle]))
+          const intersect = turf.intersect(turf.featureCollection([fPoly, areaFeature]))
           if (!intersect) continue
 
           // 计算相交面积比例 = 交集面积 / 多边形面积（与前端客户端计算一致）

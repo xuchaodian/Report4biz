@@ -1390,7 +1390,26 @@
         <el-form-item label="圆心坐标">
           <el-input v-model="circleForm.centerText" disabled />
         </el-form-item>
-        <el-form-item label="半径1">
+        <el-form-item v-if="isPopulationMode" label="范围口径">
+          <el-radio-group v-model="popScopeMode">
+            <el-radio value="circle">半径圆</el-radio>
+            <el-radio value="drive" :disabled="!userStore.isAdmin">驾车可达（分钟）</el-radio>
+          </el-radio-group>
+          <div v-if="popScopeMode === 'drive'" style="font-size: 12px; color: #909399; margin-top: 4px;">
+            按真实路网探测驾车耗时（36 个方向），连成可达范围；<b>按常规路况估算，不等于导航 App 的实时时长</b>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="isPopulationMode && popScopeMode === 'drive'" label="时间档(分钟)">
+          <div style="display:flex;gap:8px;width:100%;">
+            <el-input-number v-model="driveMinutes.m1" :min="1" :max="30" :step="1" style="flex:1" placeholder="第一档" />
+            <el-input-number v-model="driveMinutes.m2" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
+            <el-input-number v-model="driveMinutes.m3" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
+          </div>
+          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+            三档共用同一批探测（不多花配额）；建议按 5 / 10 / 15 分钟填
+          </div>
+        </el-form-item>
+        <el-form-item v-if="popScopeMode === 'circle'" label="半径1">
           <el-input-number
             v-model="circleForm.radius"
             :min="1"
@@ -1399,7 +1418,7 @@
             placeholder="第一圈半径"
           />
         </el-form-item>
-        <el-form-item label="半径2">
+        <el-form-item v-if="popScopeMode === 'circle'" label="半径2">
           <el-input-number
             v-model="circleForm.radius2"
             :min="1"
@@ -1409,7 +1428,7 @@
             clearable
           />
         </el-form-item>
-        <el-form-item label="半径3">
+        <el-form-item v-if="popScopeMode === 'circle'" label="半径3">
           <el-input-number
             v-model="circleForm.radius3"
             :min="1"
@@ -1419,7 +1438,7 @@
             clearable
           />
         </el-form-item>
-        <el-form-item label="单位">
+        <el-form-item v-if="popScopeMode === 'circle'" label="单位">
           <el-radio-group v-model="circleForm.unit">
             <el-radio value="km" checked>公里</el-radio>
             <el-radio value="m">米</el-radio>
@@ -2511,10 +2530,22 @@ const populationColorScheme = ref('blue-green-yellow-orange-red')
 //   equal    = 等值均分（每档数值跨度相等）—— 图例能直接写「0 ~ 4,800」这种区间，客户最认
 //   quantile = 等频分档（每档格数相等）—— 原来的做法，数据长尾时层次更分明，但区间不等宽
 const popColorMode = ref('equal')
+// v1.13.302：范围口径
+//   circle = 半径圆（原有，按公里）
+//   drive  = 驾车可达（径向探测真实路网耗时后连成多边形；仅管理员试运行）
+const popScopeMode = ref('circle')
+const driveMinutes = reactive({ m1: 10, m2: null, m3: null })
+// 非人口模式（圆形内门店分析等）仍只认半径圆 ⇒ 进来就切回去，
+// ⛔ 否则「驾车可达」会把半径输入 v-if 掉，弹窗只剩圆心坐标 + 单位
+watch(circleDialogMode, (m) => {
+  if (m !== 'population' && m !== 'population_hd') popScopeMode.value = 'circle'
+})
 
 // 多半径时自动加宽对话框
 const circleDialogWidth = computed(() => {
   if (!isPopulationMode.value) return '420px'
+  // 驾车模式一行放三个时间档输入框，窄了会挤成两行
+  if (popScopeMode.value === 'drive') return '560px'
   const count = [circleForm.radius, circleForm.radius2, circleForm.radius3].filter(r => r != null).length
   return count >= 2 ? '580px' : '420px'
 })
@@ -3989,6 +4020,9 @@ const openStoreCompetitors = (lat, lng) => {
   if (!map) return
   businessCircleExpanded.value = false
   circleDialogMode.value = 'stores'
+  // 🔴 v1.13.302：这是「半径圆」路径，必须把口径切回 circle ——
+  //   否则上一轮选了「驾车可达」，这里的半径输入会被 v-if 藏掉，弹窗变成空白表单。
+  popScopeMode.value = 'circle'
   circleForm.center = { lat, lng }
   circleForm.centerText = `${lng.toFixed(6)}, ${lat.toFixed(6)}`
   circleForm.radius = 2
@@ -4366,12 +4400,18 @@ const analyzePopulationDistribution = async () => {
     return
   }
 
+  // v1.13.302：范围口径 —— 半径圆 / 驾车可达
+  // 驾车模式下 allRadiiMeters 里装的是**分钟数**（不是米），下游只当「档位键」用，
+  // 展示文案一律走 bandLabel()，⛔ 不要在别处写死 (k/1000)km。
+  const isDrive = popScopeMode.value === 'drive'
+  const bandPolygons = {}   // drive 模式：分钟 → GeoJSON Polygon
+
   try {
     const panelId = 'panel-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) // 唯一ID用于关闭按钮
-    
+
     // 添加超时控制（总超时30秒）
-    // hd 单文件 95MB 且串行执行，给足 3 分钟；常规仍 30s
-    const globalTimeout = isHd ? 180000 : 30000
+    // hd 单文件 95MB 且串行执行，给足 3 分钟；常规仍 30s；驾车多一段路网探测，再放宽到 4 分钟
+    const globalTimeout = isDrive ? 240000 : (isHd ? 180000 : 30000)
     const startGlobalTime = Date.now()
     const checkTimeout = () => {
       if (Date.now() - startGlobalTime > globalTimeout) {
@@ -4379,29 +4419,42 @@ const analyzePopulationDistribution = async () => {
       }
     }
 
-    // 收集所有有效半径（米）
+    // 收集档位：圆模式是半径（米），驾车模式是时间档（分钟）
     const allRadiiMeters = []
-    if (circleForm.radius) {
-      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius * 1000 : circleForm.radius)
-    }
-    if (circleForm.radius2) {
-      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius2 * 1000 : circleForm.radius2)
-    }
-    if (circleForm.radius3) {
-      allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius3 * 1000 : circleForm.radius3)
-    }
-
-    if (allRadiiMeters.length === 0) {
-      ElMessage.warning('请至少设置一个半径')
-      return
+    if (isDrive) {
+      const mins = [driveMinutes.m1, driveMinutes.m2, driveMinutes.m3]
+        .map(Number)
+        .filter(m => Number.isFinite(m) && m > 0)
+      const uniq = [...new Set(mins)].sort((a, b) => a - b)
+      if (!uniq.length) {
+        ElMessage.warning('请至少设置一个时间档（分钟）')
+        return
+      }
+      allRadiiMeters.push(...uniq)
+    } else {
+      if (circleForm.radius) {
+        allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius * 1000 : circleForm.radius)
+      }
+      if (circleForm.radius2) {
+        allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius2 * 1000 : circleForm.radius2)
+      }
+      if (circleForm.radius3) {
+        allRadiiMeters.push(circleForm.unit === 'km' ? circleForm.radius3 * 1000 : circleForm.radius3)
+      }
+      if (allRadiiMeters.length === 0) {
+        ElMessage.warning('请至少设置一个半径')
+        return
+      }
     }
 
     const maxRadiusMeters = Math.max(...allRadiiMeters)
+    /** 档位文案：驾车模式是「10 分钟」，圆模式是「2.0km」 */
+    const bandLabel = (k) => (isDrive ? `${k} 分钟` : `${(k / 1000).toFixed(1)}km`)
     const centerLat = circleForm.center.lat
     const centerLng = circleForm.center.lng
     const fieldName = selectedPopulationField.value
 
-    ElMessage.info('正在计算人口分布...')
+    ElMessage.info(isDrive ? '正在探测驾车可达范围...' : '正在计算人口分布...')
 
     // 获取所有shapefile
     const listRes = await fetch(`/api/shapefiles?category=${calcCategory}`, {
@@ -4414,6 +4467,34 @@ const analyzePopulationDistribution = async () => {
     if (shapefiles.length === 0) {
       ElMessage.warning('没有找到上传的数据文件')
       return
+    }
+
+    // v1.13.302：驾车可达 —— 先探路网耗时，拿到每档的多边形
+    // 🔴 这一步在「取网格数据」之前做：探测失败就没必要再去解析 95MB 的 hd 文件
+    if (isDrive) {
+      const ctrl = new AbortController()
+      const tid = setTimeout(() => ctrl.abort(), 60000)
+      let bandRes
+      try {
+        const resp = await fetch('/api/shapefiles/drive-isochrone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userStore.token}` },
+          body: JSON.stringify({ lng: centerLng, lat: centerLat, minutes: allRadiiMeters }),
+          signal: ctrl.signal
+        })
+        bandRes = await resp.json()
+      } finally {
+        clearTimeout(tid)
+      }
+      if (!bandRes?.success) {
+        throw new Error(bandRes?.error || '驾车可达范围计算失败')
+      }
+      for (const b of bandRes.bands || []) bandPolygons[b.minutes] = b.polygon
+      const miss = allRadiiMeters.filter(m => !bandPolygons[m])
+      if (miss.length) throw new Error(`未能生成 ${miss.join('/')} 分钟的可达范围，请稍后重试`)
+      ElMessage.success(
+        `路网探测完成：${bandRes.meta.probes} 个探测点 / ${bandRes.meta.calls} 次调用，${(bandRes.meta.elapsedMs / 1000).toFixed(1)}s`
+      )
     }
 
     // 每个半径的匹配结果
@@ -4443,7 +4524,8 @@ const analyzePopulationDistribution = async () => {
           body: JSON.stringify({
             lat: centerLat,
             lng: centerLng,
-            radius: r,
+            // 驾车模式传多边形（后端用它代替圆做网格求交）；圆模式仍传半径
+            ...(isDrive ? { polygon: bandPolygons[r] } : { radius: r }),
             fieldName: fieldName,
             category: calcCategory,
             // 🔴 hd 必传 shapefileId（后端护栏①）：既命中 hd 文件，也保证只解析 1 个文件
@@ -4718,6 +4800,22 @@ const analyzePopulationDistribution = async () => {
     const drawRadiusRings = () => {
       if (popRenderToken !== populationRenderToken) return
       console.log(`多边形绘制完成: ${polygonCount}个多边形, ${labelCount}个标签`)
+      if (isDrive) {
+        // 驾车可达：画每档的时间多边形（外档虚线，避免几条实线叠成一团）
+        sortedRadii.forEach((k, i) => {
+          const poly = bandPolygons[k]
+          if (!poly || !Array.isArray(poly.coordinates?.[0])) return
+          const latlngs = poly.coordinates[0].map(c => [c[1], c[0]])
+          populationLayerGroup.addLayer(L.polygon(latlngs, {
+            color: '#333333',
+            fill: false,
+            weight: i === 0 ? 4 : 3,
+            opacity: 0.9,
+            dashArray: i === 0 ? null : '8 6'
+          }))
+        })
+        return
+      }
       sortedRadii.forEach((r) => {
         const circle = L.circle([centerLat, centerLng], {
           radius: r,
@@ -4914,12 +5012,14 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `<div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:6px;border-bottom:1px solid #eee;padding-bottom:4px;display:flex;justify-content:space-between;align-items:center;">`
     statsHtml += `<span>📊 人口分布分析</span>`
     // 在标题下方显示设置的半径
-    const radiiLabels = [circleForm.radius, circleForm.radius2, circleForm.radius3]
-      .filter(r => r && r > 0)
-      .map(r => r + circleForm.unit)
-      .join(' / ')
+    const radiiLabels = isDrive
+      ? [...sortedRadii].sort((a, b) => a - b).map(m => `${m} 分钟`).join(' / ')
+      : [circleForm.radius, circleForm.radius2, circleForm.radius3]
+        .filter(r => r && r > 0)
+        .map(r => r + circleForm.unit)
+        .join(' / ')
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">半径: ${radiiLabels}</div>`
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isDrive ? '时间档' : '半径'}: ${radiiLabels}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
@@ -4963,7 +5063,7 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `<tr style="background:#f5f7fa;">`
     statsHtml += `<th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">字段</th>`
     sortedRadii.forEach(r => {
-      statsHtml += `<th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;color:#666;">${(r / 1000).toFixed(1)}km</th>`
+      statsHtml += `<th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;color:#666;">${bandLabel(r)}</th>`
     })
     statsHtml += `</tr>`
 
