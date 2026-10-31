@@ -423,6 +423,23 @@ body {
   display: none !important;
 }
 
+/* ===== v1.13.303：驾车可达范围的顶点手柄 =====
+   编辑模式下每个顶点一个小圆点，拖动即改形状。
+   白描边 + 深色填充：底图再花也能看见，且能盖住网格色块。 */
+.iso-vertex-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1f6fd0;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  cursor: grab;
+  box-sizing: border-box;
+}
+.iso-vertex-dot:active {
+  cursor: grabbing;
+}
+
 /* ===== 个人下拉：管理员专属入口（用户管理 / API开放）置顶区分 =====
    放置在下拉菜单最上方，用浅蓝底 + 主题蓝字与下方常规项（个人中心/设置图标/
    购买履历…）拉开层次，其后由 el-dropdown-item 的 divided 分隔线分组。

@@ -2535,6 +2535,20 @@ const popColorMode = ref('equal')
 //   drive  = 驾车可达（径向探测真实路网耗时后连成多边形；仅管理员试运行）
 const popScopeMode = ref('circle')
 const driveMinutes = reactive({ m1: 10, m2: null, m3: null })
+// v1.13.303：可达范围的手工微调
+//   popEditMode      编辑模式开关（面板上的「编辑范围」）
+//   popBandPolygons  当前这一轮的范围多边形（分钟 → GeoJSON），编辑后原地改写
+//   popBandsEdited   这批范围是否被人改过；true 时重新分析**不再探测**，直接用手调结果
+//   bandLayerRefs    分钟 → Leaflet polygon 图层，拖动顶点时实时改形状用
+const popEditMode = ref(false)
+let popBandPolygons = {}
+let popBandsEdited = false
+let popBandsCenter = null      // 手调范围对应的圆心，换点即作废
+const bandLayerRefs = {}
+// 顶点手柄与编辑动作句柄：面板按钮在 setTimeout 里绑定，拿不到 analyze 的闭包，故挂到组件级
+let isoVertexMarkers = []
+let isoEditActions = null      // { build, clear } —— 每轮分析重新赋值
+let isoEditApplying = false    // 重算进行中，防止连续拖点把请求叠起来
 // 非人口模式（圆形内门店分析等）仍只认半径圆 ⇒ 进来就切回去，
 // ⛔ 否则「驾车可达」会把半径输入 v-if 掉，弹窗只剩圆心坐标 + 单位
 watch(circleDialogMode, (m) => {
@@ -4405,6 +4419,13 @@ const analyzePopulationDistribution = async () => {
   // 展示文案一律走 bandLabel()，⛔ 不要在别处写死 (k/1000)km。
   const isDrive = popScopeMode.value === 'drive'
   const bandPolygons = {}   // drive 模式：分钟 → GeoJSON Polygon
+  // v1.13.303：上一轮被人手调过 ⇒ 这一轮直接沿用它，⛔ 不再探测（否则会把客户改的形状冲掉）。
+  // 🔴 必须同时校验「圆心没变」：换了位置还沿用旧形状，等于把 A 地的范围画到 B 地上。
+  const c0 = circleForm.center
+  const sameCenter = !!(popBandsCenter && c0 &&
+    Math.abs(popBandsCenter.lat - c0.lat) < 1e-7 && Math.abs(popBandsCenter.lng - c0.lng) < 1e-7)
+  const reuseEdited = isDrive && popBandsEdited && sameCenter
+  if (reuseEdited) Object.assign(bandPolygons, popBandPolygons)
 
   try {
     const panelId = 'panel-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) // 唯一ID用于关闭按钮
@@ -4471,7 +4492,13 @@ const analyzePopulationDistribution = async () => {
 
     // v1.13.302：驾车可达 —— 先探路网耗时，拿到每档的多边形
     // 🔴 这一步在「取网格数据」之前做：探测失败就没必要再去解析 95MB 的 hd 文件
+    // v1.13.303：如果这批范围已经被手工微调过（popBandsEdited），就跳过探测直接重算 ——
+    //   否则每拖一次顶点都会把客户改的形状冲掉、还白花 3 次高德调用。
     if (isDrive) {
+      const missing = allRadiiMeters.filter(m => !bandPolygons[m])
+      if (reuseEdited && !missing.length) {
+        ElMessage.info('按你手调过的范围重算…')
+      } else {
       const ctrl = new AbortController()
       const tid = setTimeout(() => ctrl.abort(), 60000)
       let bandRes
@@ -4492,9 +4519,14 @@ const analyzePopulationDistribution = async () => {
       for (const b of bandRes.bands || []) bandPolygons[b.minutes] = b.polygon
       const miss = allRadiiMeters.filter(m => !bandPolygons[m])
       if (miss.length) throw new Error(`未能生成 ${miss.join('/')} 分钟的可达范围，请稍后重试`)
+      // 探测出来的这版是「机器算的」，回到未手调状态
+      popBandPolygons = { ...bandPolygons }
+      popBandsEdited = false
+      popBandsCenter = { lat: centerLat, lng: centerLng }
       ElMessage.success(
         `路网探测完成：${bandRes.meta.probes} 个探测点 / ${bandRes.meta.calls} 次调用，${(bandRes.meta.elapsedMs / 1000).toFixed(1)}s`
       )
+      }
     }
 
     // 每个半径的匹配结果
@@ -4797,6 +4829,70 @@ const analyzePopulationDistribution = async () => {
 
     // 半径圆与多边形同处 overlay pane（SVG），需「后加」才能绘制在多边形之上，
     // 故放入分帧渲染的收尾回调，保持与原同步实现一致的视觉层级。
+    // ===== v1.13.303：可达范围的顶点编辑 =====
+    // 只做「拖顶点」：客户的实际诉求是「这条边弯得不对」，不是要一个 GIS 编辑器，
+    // 所以插点/删点先不做。拖动时实时改多边形，松手后按新形状重算。
+    const clearIsoVertices = () => {
+      isoVertexMarkers.forEach((m) => {
+        if (populationLayerGroup && populationLayerGroup.hasLayer(m)) populationLayerGroup.removeLayer(m)
+      })
+      isoVertexMarkers = []
+    }
+
+    const buildIsoVertices = () => {
+      clearIsoVertices()
+      if (!isDrive) return
+      sortedRadii.forEach((k) => {
+        const poly = bandPolygons[k]
+        const ring = poly?.coordinates?.[0]
+        if (!Array.isArray(ring) || ring.length < 4) return
+        const verts = ring.slice(0, ring.length - 1).map(c => [Number(c[0]), Number(c[1])])
+        verts.forEach((v, vi) => {
+          const marker = L.marker([v[1], v[0]], {
+            draggable: true,
+            keyboard: false,   // 🔴 铁律：L.marker 必 keyboard:false，否则方向键会误拖
+            zIndexOffset: 6000,
+            icon: L.divIcon({
+              className: 'iso-vertex',
+              html: '<div class="iso-vertex-dot"></div>',
+              iconSize: [10, 10],
+              iconAnchor: [5, 5]
+            })
+          })
+          marker.on('drag', () => {
+            const cur = marker.getLatLng()
+            verts[vi] = [cur.lng, cur.lat]
+            poly.coordinates[0] = [...verts, verts[0]]
+            const layer = bandLayerRefs[k]
+            if (layer) layer.setLatLngs([...verts, verts[0]].map(p => [p[1], p[0]]))
+          })
+          marker.on('dragend', () => { applyEditedBands() })
+          populationLayerGroup.addLayer(marker)
+          isoVertexMarkers.push(marker)
+        })
+      })
+      ElMessage.info('拖动蓝点微调范围，松手后按新形状重算')
+    }
+
+    /** 松手后：把当前形状存成「手调版」，再复用整条重算链路（取数 → 重绘 → 面板） */
+    const applyEditedBands = async () => {
+      if (isoEditApplying) return
+      isoEditApplying = true
+      try {
+        popBandPolygons = JSON.parse(JSON.stringify(bandPolygons))
+        popBandsEdited = true
+        popBandsCenter = { lat: circleForm.center.lat, lng: circleForm.center.lng }
+        await analyzePopulationDistribution()
+      } catch (e) {
+        console.error('[iso-edit] 重算失败', e)
+        ElMessage.error(e?.message || '按手调范围重算失败，请重试')
+      } finally {
+        isoEditApplying = false
+      }
+    }
+
+    isoEditActions = { build: buildIsoVertices, clear: clearIsoVertices }
+
     const drawRadiusRings = () => {
       if (popRenderToken !== populationRenderToken) return
       console.log(`多边形绘制完成: ${polygonCount}个多边形, ${labelCount}个标签`)
@@ -4806,14 +4902,17 @@ const analyzePopulationDistribution = async () => {
           const poly = bandPolygons[k]
           if (!poly || !Array.isArray(poly.coordinates?.[0])) return
           const latlngs = poly.coordinates[0].map(c => [c[1], c[0]])
-          populationLayerGroup.addLayer(L.polygon(latlngs, {
+          const layer = L.polygon(latlngs, {
             color: '#333333',
             fill: false,
             weight: i === 0 ? 4 : 3,
             opacity: 0.9,
             dashArray: i === 0 ? null : '8 6'
-          }))
+          })
+          populationLayerGroup.addLayer(layer)
+          bandLayerRefs[k] = layer
         })
+        if (popEditMode.value) buildIsoVertices()
         return
       }
       sortedRadii.forEach((r) => {
@@ -5019,7 +5118,7 @@ const analyzePopulationDistribution = async () => {
         .map(r => r + circleForm.unit)
         .join(' / ')
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isDrive ? '时间档' : '半径'}: ${radiiLabels}</div>`
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isDrive ? '时间档' : '半径'}: ${radiiLabels}${isDrive && popBandsEdited ? '<span style="color:#e6a23c;">（范围已手调）</span>' : ''}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
@@ -5029,7 +5128,12 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `</div>`
 
     // v1.13.300：数字标签开关（单独一行，标题栏放不下见上）
-    statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:10px;color:#909399;margin:0 0 4px;">数字标签`
+    // v1.13.303：驾车模式再加一个「编辑范围」——拖顶点微调后松手即重算
+    statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10px;color:#909399;margin:0 0 4px;">`
+    if (isDrive) {
+      statsHtml += `<button id="toggle-iso-edit-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#1f6fd0;padding:0 6px;line-height:15px;" title="拖动蓝色顶点微调可达范围，松手自动重算">${popEditMode.value ? '完成编辑' : '编辑范围'}</button>`
+    }
+    statsHtml += `数字标签`
     statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
     statsHtml += `</div>`
 
@@ -5132,6 +5236,17 @@ const analyzePopulationDistribution = async () => {
           event.stopPropagation()
           popLabelVisible.value = !popLabelVisible.value
           labelBtn.textContent = popLabelVisible.value ? '隐藏' : '显示'
+        }
+      }
+      // v1.13.303：编辑范围开关（只有驾车模式渲染了这个按钮）
+      const editBtn = document.getElementById(`toggle-iso-edit-${panelId}`)
+      if (editBtn) {
+        editBtn.onclick = (event) => {
+          event.stopPropagation()
+          popEditMode.value = !popEditMode.value
+          editBtn.textContent = popEditMode.value ? '完成编辑' : '编辑范围'
+          if (popEditMode.value) isoEditActions?.build()
+          else isoEditActions?.clear()
         }
       }
       const closeBtn = document.getElementById(`close-stats-panel-${panelId}`)
