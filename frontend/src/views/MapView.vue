@@ -1386,7 +1386,9 @@
       draggable
       @close="closeCircleDialog"
     >
-      <el-form :model="circleForm" label-width="80px">
+      <!-- label-width 92：'时间档(分钟)' 实测文字宽 77px，标签列还需留 12px 内边距，
+           80px 会让它折成「时间档(分 / 钟)」两行（v1.13.305 实测） -->
+      <el-form :model="circleForm" label-width="92px">
         <el-form-item label="圆心坐标">
           <el-input v-model="circleForm.centerText" disabled />
         </el-form-item>
@@ -2566,13 +2568,17 @@ watch(popScopeMode, (m) => {
   }
 })
 
-// 多半径时自动加宽对话框
+// 弹窗宽度
+// 🔴 人口模式**不再按口径分别给宽度**：曾经是「驾车 560 / 步行落回 420（按半径个数算）」，
+//   结果点「步行可达」弹窗当场缩窄 140px，范围口径那三个选项立刻折成两行 —— 视觉上像弹窗在抖。
+//   现在给一个统一宽度，「半径圆 / 驾车可达（分钟）/ 步行可达（分钟）」一行摆得下：
+//   3 个 el-radio 实测约 94 + 164 + 164 = 422px，加 label(80) 与弹窗内边距(40) ⇒ 至少需 542px。
+//   640px 留出余量；窄屏（分屏 / 小笔记本）按 92vw 收，⛔ 不要让固定像素把弹窗顶到屏幕外。
+const POP_DIALOG_WIDTH = 640
 const circleDialogWidth = computed(() => {
   if (!isPopulationMode.value) return '420px'
-  // 驾车模式一行放三个时间档输入框，窄了会挤成两行
-  if (popScopeMode.value === 'drive') return '560px'
-  const count = [circleForm.radius, circleForm.radius2, circleForm.radius3].filter(r => r != null).length
-  return count >= 2 ? '580px' : '420px'
+  const vwLimit = Math.round(window.innerWidth * 0.92)
+  return Math.min(POP_DIALOG_WIDTH, vwLimit) + 'px'
 })
 
 // 圆形内门店分析相关
