@@ -245,6 +245,22 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_api_usage_key ON api_usage(api_key_id, created_at)`)
 
+  // v1.13.307：可达范围（驾车/步行）每日探测次数
+  // 🔴 为什么不复用 utils/rateLimit.js 的内存窗口：内存清零＝重启即免费用光，
+  //   且后台看不到用量。这里是**计费口径**（每探测一次烧 3 次高德调用），必须落库。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS isochrone_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, day),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_isochrone_usage_day ON isochrone_usage(day)`)
+
   // 创建配额分配历史表（记录管理员每次设定/追加配额的变更）
   db.run(`
     CREATE TABLE IF NOT EXISTS quota_history (

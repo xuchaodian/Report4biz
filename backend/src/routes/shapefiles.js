@@ -14,6 +14,11 @@ import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 // v1.13.302：驾车可达范围（等时圈）—— 高德没有驾车等时圈接口，走「径向探测」
 import { probeDriveDuration, DriveProbeError } from '../utils/amapDrive.js'
 import { overLimit } from '../utils/rateLimit.js'
+// v1.13.307：可达范围按「免费给图、付费给数」开放 ⇒ 每日次数 + 单账号/全局串行
+import {
+  tierOf, limitFor, remainingFor, consume, tryLockUser, unlockUser, runSerial,
+  issueScope, verifyScope
+} from '../utils/isochroneQuota.js'
 // ⚠️ 本文件**不再使用 writeGeoText**：上传改由 Python 流式直写 + adoptGeoFile 转正
 //    （见 upload 路由与 geoStore::adoptGeoFile 的注释）。writeGeoText 仍供其他模块使用。
 import {
@@ -846,7 +851,9 @@ router.get('/:id/fields', authenticate, (req, res) => {
 //   其余逻辑（分片、节流、多边形拼装）**共用一份**，⛔ 不要再复制一条链路。
 //
 // 🔴 三条红线：
-//   1. 仅管理员（能力试运行，先把配额和体验控住）；⛔ 不能只靠前端隐藏入口。
+//   1. 按档位限次 + 串行（v1.13.307 起对全体登录用户开放，不再仅管理员）：
+//      免费/试用 5 次/日、VIP 30 次/日、admin 不限；同账号并发直接 429，全局只跑 1 个探测。
+//      ⛔ 不能只靠前端隐藏入口 —— 额度与并发必须在后端拦。
 //   2. 高德给的是**常规路况估算**，⛔ 不能对外说成导航 App 的实时时长。
 //   3. 探测点上限 1200（≈12 次上游）；要放大参数先算配额，别把 key 打爆。
 // ============================================================================
@@ -860,12 +867,29 @@ const ISO_RADII_DRIVE = [150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000, 5000,
 const ISO_RADII_WALK = [100, 200, 300, 450, 600, 800, 1000, 1300, 1600, 2000, 2500, 3000]
 
 router.post(['/drive-isochrone', '/isochrone'], authenticate, async (req, res) => {
+  let locked = false
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, code: 'admin_only', error: '可达范围试运行中，仅管理员可用' })
+    // v1.13.307：业主 2026-11-01 定「免费给图、付费给数」，可达范围对全体登录用户开放，
+    //   但每次探测烧 3 次高德调用、且这个 key 的 QPS 极紧 ⇒ 三层闸门（额度/单账号/全局）。
+    // 🔴 早退顺序：先查额度、再抢锁。反过来会出现「锁被占住、额度却早已用完」的无谓拒绝。
+    const quotaNow = remainingFor(req.user)
+    if (quotaNow.remaining <= 0) {
+      return res.status(429).json({
+        success: false, code: 'daily_limit',
+        error: `今日可达范围已达上限（${quotaNow.limit} 次），明天再来`,
+        usage: quotaNow
+      })
     }
+    if (!tryLockUser(req.user.id)) {
+      return res.status(429).json({
+        success: false, code: 'busy',
+        error: '上一次探测还没算完，请等几秒再试',
+        usage: quotaNow
+      })
+    }
+    locked = true
     if (overLimit(`isochrone:${req.user.id}`, 20, 10 * 60 * 1000)) {
-      return res.status(429).json({ success: false, error: '操作太频繁，请 10 分钟后再试' })
+      return res.status(429).json({ success: false, code: 'rate', error: '操作太频繁，请 10 分钟后再试', usage: quotaNow })
     }
 
     // v1.13.304：步行可达复用同一条链路，只换高德的出行方式与阶梯
@@ -910,11 +934,13 @@ router.post(['/drive-isochrone', '/isochrone'], authenticate, async (req, res) =
     }
 
     const t0 = Date.now()
-    const { durations, calls, failed } = await probeDriveDuration({
+    // 🔴 v1.13.307 全局串行：这个 key 并发 2 就 10021 CUQPS ——所有探测排一条队。
+    //   排队对用户是可感知的（前端要显示「排队中」），但比集体失败好。
+    const { durations, calls, failed } = await runSerial(() => probeDriveDuration({
       origin: { lng, lat },
       points: probes,
       type: AMAP_TRAVEL_TYPE
-    })
+    }))
 
     const out = bands.map((min) => {
       const limitS = min * 60
@@ -949,11 +975,18 @@ router.post(['/drive-isochrone', '/isochrone'], authenticate, async (req, res) =
 
     console.log(`[isochrone] ${mode} 中心(${lat},${lng}) 档=${bands.join('/')}分 探测点=${probes.length} 上游调用=${calls} 耗时=${Date.now() - t0}ms`)
 
+    // 🔴 成功才扣次数：探测失败/上游超配额不该计费（公平，也避免客户为失败买单）。
+    const usage = consume(req.user) || quotaNow
+    // 免费档拿人口总数必须出示这张凭证（见 isochroneQuota::issueScope 的说明）
+    const scopeId = issueScope(req.user.id, out)
+
     res.json({
       success: true,
       mode,
       center: { lng, lat },
       bands: out,
+      usage,
+      scopeId,
       meta: {
         mode,
         probes: probes.length,
@@ -976,6 +1009,19 @@ router.post(['/drive-isochrone', '/isochrone'], authenticate, async (req, res) =
     }
     console.error('[isochrone] 失败:', error)
     res.status(500).json({ success: false, error: '驾车可达范围计算失败' })
+  } finally {
+    // 🔴 锁必须无条件释放：任何一条 return/throw 漏掉释放，该账号今天再也探测不了。
+    if (locked) unlockUser(req.user.id)
+  }
+})
+
+// 今日剩余次数（前端弹窗里常显「消耗 1 次 · 剩余 X/Y」）
+router.get('/isochrone/usage', authenticate, (req, res) => {
+  try {
+    res.json({ success: true, ...remainingFor(req.user), tier: tierOf(req.user), limit: limitFor(req.user) })
+  } catch (error) {
+    console.error('[isochrone/usage] 失败:', error)
+    res.status(500).json({ success: false, error: '查询用量失败' })
   }
 })
 
@@ -999,6 +1045,19 @@ router.post('/calculate-population', authenticate, (req, res) => {
       const bad = ring.some(c => !Array.isArray(c) || c.length < 2 ||
         !Number.isFinite(Number(c[0])) || !Number.isFinite(Number(c[1])))
       if (bad) return res.status(400).json({ success: false, error: '多边形坐标含非法值' })
+    }
+
+    // 🔴 v1.13.307「免费给图、付费给数」的三条门禁（都在后端，⛔ 不靠前端藏按钮）：
+    //   ① 免费/试用档用 polygon 查人口，必须出示**本次探测签发的范围凭证**；
+    //      否则自造多边形就能无限取样，5 次/日的额度等于没有。
+    //   ② 免费档只回人口总数，⛔ 不给 allFields / matchedFeatures（给了等于把数全送出去）。
+    //   ③ 半径圆（radius）维持原样免费 —— 那是老能力，⛔ 不能改成收费。
+    const reachFree = usePolygon && tierOf(req.user) === 'free'
+    if (reachFree && !verifyScope(req.user.id, req.body.scopeId, polygon)) {
+      return res.status(403).json({
+        success: false, code: 'need_scope',
+        error: '请先跑一次可达范围探测，再查看该范围内的人口'
+      })
     }
 
     if (!usePolygon && (!lat || !lng || !radius)) {
@@ -1177,11 +1236,10 @@ router.post('/calculate-population', authenticate, (req, res) => {
     console.log(`[calculate-population] 总人口: ${totalPop}, 匹配要素: ${matchedFeatures.length}`)
     res.json({
       success: true,
-      data: {
-        total: Math.round(totalPop),
-        allFields,
-        matchedFeatures
-      }
+      data: reachFree
+        // 免费档：只给总数（前端据此显示「15 分钟约 64.8 万人」，但拿不到分年龄段与逐格数据）
+        ? { total: Math.round(totalPop), reachFree: true }
+        : { total: Math.round(totalPop), allFields, matchedFeatures }
     })
   } catch (error) {
     console.error('计算人口分布错误:', error)

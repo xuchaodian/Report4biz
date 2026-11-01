@@ -68,22 +68,30 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
     ).toMatch(/ALLOWED_CATEGORIES\s*=\s*new Set\(\[[^\]]*'population_hd'[^\]]*\]\)/)
   })
 
-  it('② hd 分支必须串行；常规分支保持并行（切片断言 + 双向对照）', () => {
+  it('② 串行分支必须覆盖 hd 与可达范围；常规（半径圆）分支保持并行', () => {
+    // v1.13.307：串行条件从 `isHd` 扩到 `isHd || isReach` ——
+    //   hd 是「95MB × 并发 = OOM」，可达是「每档扫 26 个城市文件、并发抢 CPU 撞超时」，
+    //   两者都必须逐档 await。⛔ 不要为了让正则好写而拆成两个分支（重复的 await 循环）。
+    expect(
+      mapSrc,
+      '串行分支的条件里丢了 isReach —— 可达范围会退回 Promise.all，最大档会被 15s 超时掐成 0'
+    ).toMatch(/if\s*\(\s*isHd\s*\|\|\s*isReach\s*\)/)
+
     const m = mapSrc.match(
-      /if\s*\(isHd\)\s*\{([\s\S]*?)\}\s*else\s*\{([\s\S]*?)\}\s*console\.log\('所有API调用完成/
+      /if\s*\(\s*isHd\s*\|\|\s*isReach\s*\)\s*\{([\s\S]*?)\}\s*else\s*\{([\s\S]*?)\}\s*console\.log\('所有API调用完成/
     )
     expect(
       m,
-      '未找到 `if (isHd) { ... } else { ... }` 执行分支 —— 结构被改写了，本守卫已失锚，请同步更新'
+      '未找到 `if (isHd || isReach) { ... } else { ... }` 执行分支 —— 结构被改写了，本守卫已失锚，请同步更新'
     ).toBeTruthy()
 
     const [, hdBranch, normalBranch] = m
     expect(
       hdBranch,
-      'hd 分支出现了 Promise.all —— 95MB × 并发会直接 OOM，必须逐半径串行 await'
+      '串行分支出现了 Promise.all —— 95MB × 并发会直接 OOM，必须逐半径串行 await'
     ).not.toContain('Promise.all')
-    expect(hdBranch, 'hd 分支应逐个半径 await').toMatch(/for\s*\(const r of allRadiiMeters\)/)
-    expect(hdBranch, 'hd 分支每个半径前应做超时自检').toContain('checkTimeout()')
+    expect(hdBranch, '串行分支应逐个半径 await').toMatch(/for\s*\(const r of allRadiiMeters\)/)
+    expect(hdBranch, '串行分支每个半径前应做超时自检').toContain('checkTimeout()')
 
     // 反向对照：常规（1km 网格，多文件但体积小）必须**仍然并行**，
     // 否则说明切片锚点写错（例如把两个分支都吞了），守卫在骗人。

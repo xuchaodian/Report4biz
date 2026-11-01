@@ -1395,9 +1395,16 @@
         <el-form-item v-if="isPopulationMode" label="范围口径">
           <el-radio-group v-model="popScopeMode">
             <el-radio value="circle">半径圆</el-radio>
-            <el-radio value="drive" :disabled="!userStore.isAdmin">驾车可达（分钟）</el-radio>
-            <el-radio value="walk" :disabled="!userStore.isAdmin">步行可达（分钟）</el-radio>
+            <el-radio value="drive">驾车可达（分钟）</el-radio>
+            <el-radio value="walk">步行可达（分钟）</el-radio>
           </el-radio-group>
+          <!-- v1.13.307：每日配额（免费/试用 5 次、VIP 30 次、admin 不限）——付费前必明「消耗/剩余」 -->
+          <div v-if="(popScopeMode === 'drive' || popScopeMode === 'walk') && isoUsage" style="font-size: 12px; color: #606266; margin-top: 4px;">
+            今日剩余
+            <b>{{ isoUsage.limit == null ? '不限' : isoUsage.remaining }}</b>
+            <template v-if="isoUsage.limit != null"> / {{ isoUsage.limit }} 次</template>
+            <span style="color: #909399;">（每分析一次消耗 1 次）</span>
+          </div>
           <div v-if="popScopeMode === 'drive' || popScopeMode === 'walk'" style="font-size: 12px; color: #909399; margin-top: 4px;">
             按真实路网探测{{ popScopeMode === 'walk' ? '步行' : '驾车' }}耗时（24 个方向），连成可达范围；
             <b>{{ popScopeMode === 'walk' ? '按常规步行路线估算' : '按常规路况估算' }}，不等于导航 App 的实时时长</b>
@@ -2539,6 +2546,13 @@ const popColorMode = ref('equal')
 //   drive  = 驾车可达（径向探测真实路网耗时后连成多边形；仅管理员试运行）
 const popScopeMode = ref('circle')
 const driveMinutes = reactive({ m1: 10, m2: null, m3: null })
+// v1.13.307：可达范围的每日配额与范围凭证（业主 2026-11-01 定「免费给图、付费给数」）
+//   isoUsage    今日已用/上限/余量（后台按天落库，重启不清零）
+//   popScopeId  本次探测签发的凭证 —— 免费档查人口总数必须回传，否则后端 403 need_scope
+//   popBandAreas 档位 → 面积 km²（免费面板要显示面积，它不属于「数」）
+const isoUsage = ref(null)
+let popScopeId = ''
+let popBandAreas = {}
 // v1.13.303：可达范围的手工微调
 //   popEditMode      编辑模式开关（面板上的「编辑范围」）
 //   popBandPolygons  当前这一轮的范围多边形（分钟 → GeoJSON），编辑后原地改写
@@ -2566,6 +2580,31 @@ watch(popScopeMode, (m) => {
     driveMinutes.m2 = 20
     driveMinutes.m3 = 30
   }
+  // 切到可达口径时刷新一次余量（让「今日剩余 X/Y」在点分析之前就是准的）
+  if (m === 'drive' || m === 'walk') loadIsoUsage()
+})
+
+/**
+ * 拉今日可达范围余量（v1.13.307）
+ * ⚠️ 失败只吞掉：它是提示信息，⛔ 不能因为它挂了就让人没法分析。
+ */
+async function loadIsoUsage() {
+  try {
+    const r = await fetch('/api/shapefiles/isochrone/usage', {
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const d = await r.json()
+    if (d?.success) {
+      isoUsage.value = { tier: d.tier, limit: d.limit, used: d.used, remaining: d.remaining }
+    }
+  } catch (e) {
+    console.warn('读取可达范围余量失败（忽略）:', e?.message)
+  }
+}
+
+// 打开人口弹窗时也刷一次（用户可能一进来就直接是「驾车」口径，不触发 popScopeMode 的 watch）
+watch(circleDialogVisible, (v) => {
+  if (v && isPopulationMode.value) loadIsoUsage()
 })
 
 // 弹窗宽度
@@ -4437,14 +4476,21 @@ const analyzePopulationDistribution = async () => {
   // v1.13.304：驾车 / 步行共用同一条「可达范围」链路，只换高德出行方式与半径阶梯
   const travelMode = popScopeMode.value === 'walk' ? 'walk' : 'drive'
   const isReach = popScopeMode.value === 'drive' || popScopeMode.value === 'walk'
+  // v1.13.307：可达口径必须有「档位/余额」才知道该走免费面板还是付费面板，
+  //   没拉到就先拉一次（失败也只是退回付费面板，不会崩）
+  if (isReach && !isoUsage.value) await loadIsoUsage()
   const bandPolygons = {}   // drive 模式：分钟 → GeoJSON Polygon
+  const bandAreas = {}      // v1.13.307：分钟 → 面积 km²（免费档面板只给面积与人口总数）
   // v1.13.303：上一轮被人手调过 ⇒ 这一轮直接沿用它，⛔ 不再探测（否则会把客户改的形状冲掉）。
   // 🔴 必须同时校验「圆心没变」：换了位置还沿用旧形状，等于把 A 地的范围画到 B 地上。
   const c0 = circleForm.center
   const sameCenter = !!(popBandsCenter && c0 &&
     Math.abs(popBandsCenter.lat - c0.lat) < 1e-7 && Math.abs(popBandsCenter.lng - c0.lng) < 1e-7)
   const reuseEdited = isReach && popBandsEdited && sameCenter && popBandsMode === travelMode
-  if (reuseEdited) Object.assign(bandPolygons, popBandPolygons)
+  if (reuseEdited) {
+    Object.assign(bandPolygons, popBandPolygons)
+    Object.assign(bandAreas, popBandAreas)
+  }
 
   try {
     const panelId = 'panel-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9) // 唯一ID用于关闭按钮
@@ -4535,7 +4581,14 @@ const analyzePopulationDistribution = async () => {
       if (!bandRes?.success) {
         throw new Error(bandRes?.error || '驾车可达范围计算失败')
       }
-      for (const b of bandRes.bands || []) bandPolygons[b.minutes] = b.polygon
+      for (const b of bandRes.bands || []) {
+        bandPolygons[b.minutes] = b.polygon
+        bandAreas[b.minutes] = b.areaKm2
+      }
+      // v1.13.307：凭证与余量随响应回来 —— 凭证要在后面查人口时回传（免费档硬门禁）
+      popScopeId = bandRes.scopeId || ''
+      popBandAreas = { ...bandAreas }
+      if (bandRes.usage) isoUsage.value = bandRes.usage
       const miss = allRadiiMeters.filter(m => !bandPolygons[m])
       if (miss.length) throw new Error(`未能生成 ${miss.join('/')} 分钟的可达范围，请稍后重试`)
       // 探测出来的这版是「机器算的」，回到未手调状态
@@ -4581,6 +4634,8 @@ const analyzePopulationDistribution = async () => {
             lng: centerLng,
             // 驾车模式传多边形（后端用它代替圆做网格求交）；圆模式仍传半径
             ...(isReach ? { polygon: bandPolygons[r] } : { radius: r }),
+            // 🔴 v1.13.307：免费档靠这张凭证才能拿到人口总数（后端校验多边形逐点一致）
+            ...(isReach && popScopeId ? { scopeId: popScopeId } : {}),
             fieldName: fieldName,
             category: calcCategory,
             // 🔴 hd 必传 shapefileId（后端护栏①）：既命中 hd 文件，也保证只解析 1 个文件
@@ -4776,6 +4831,74 @@ const analyzePopulationDistribution = async () => {
     populationLayerGroup = L.featureGroup().addTo(map)
     console.log('图层组创建成功:', !!populationLayerGroup)
     console.log('图层组已添加到地图:', map.hasLayer(populationLayerGroup))
+
+    // ========================================================================
+    // v1.13.307「免费给图、付费给数」：免费 / 试用档到此收尾
+    //   · 只画可达范围**轮廓线**（⛔ 不上色 —— 色块就是人口分布，等于把数送出去）
+    //   · 只给「面积 + 人口总数」（业主 2026-11-01 定，分年龄段/逐格/竞品都不给）
+    //   · 面板给升级说明与今日剩余次数
+    // 🔴 必须在这里 return：下面「加载 shapefile 几何用于绘制」会把整份 geojson
+    //    下发到浏览器，客户拿它自己能算出任意统计 ⇒ 门禁等于没有。
+    // ========================================================================
+    if (isoUsage.value?.tier === 'free') {
+      const freeRadii = [...allRadiiMeters].sort((a, b) => a - b)
+      const freePanelId = 'panel-free-' + Date.now()
+      const fmtN = (n) => Number(n || 0).toLocaleString('zh-CN')
+
+      freeRadii.forEach((k, i) => {
+        const poly = bandPolygons[k]
+        if (!poly || !Array.isArray(poly.coordinates?.[0])) return
+        const latlngs = poly.coordinates[0].map(c => [c[1], c[0]])
+        populationLayerGroup.addLayer(L.polygon(latlngs, {
+          color: '#333333', fill: false, weight: i === 0 ? 4 : 3, opacity: 0.9,
+          dashArray: i === 0 ? null : '8 6'
+        }))
+      })
+
+      const u = isoUsage.value
+      let h = `<div style="background:rgba(255,255,255,0.95);border:2px solid #333;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:grab;user-select:none;position:relative;">`
+      h += `<div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:4px;display:flex;justify-content:space-between;align-items:center;">`
+      h += `<span>📊 人口分布分析</span>`
+      h += `<button id="${freePanelId}-close" type="button" style="background:none;border:none;cursor:pointer;font-size:14px;color:#999;padding:0;width:16px;height:16px;" title="关闭">×</button>`
+      h += `</div>`
+      h += `<div style="font-size:10px;color:#909399;margin-bottom:4px;">时间档（${travelMode === 'walk' ? '步行' : '驾车'}）: ${freeRadii.map(k => k + ' 分钟').join(' / ')}</div>`
+      h += `<table style="width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;">`
+      h += `<tr style="background:#f5f7fa;"><th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">档位</th><th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">面积</th><th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">${fieldName}</th></tr>`
+      freeRadii.forEach(k => {
+        const area = popBandAreas[k]
+        const total = radiusResults[k]?.apiTotal
+        h += `<tr><td style="padding:4px 6px;border:1px solid #dcdfe6;">${k} 分钟</td>`
+        h += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">${area == null ? '—' : area + ' km²'}</td>`
+        h += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;${total == null ? 'color:#f56c6c;' : ''}">${total == null ? '失败' : fmtN(total)}</td></tr>`
+      })
+      h += `</table>`
+      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">网格着色、分年龄段人口、门店与竞品对比、手动微调范围 —— <b>升级后可见</b></div>`
+      h += `<div style="margin-top:3px;font-size:9px;color:#909399;">今日剩余 ${u.limit == null ? '不限' : u.remaining + ' / ' + u.limit} 次 · 本次已消耗 1 次</div>`
+      h += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
+      h += `</div>`
+
+      const freePanel = L.marker([centerLat, centerLng + 0.003], {
+        icon: L.divIcon({ className: 'draggable-panel', html: h, iconSize: [260, 'auto'], iconAnchor: [0, 0] }),
+        draggable: true
+      })
+      freePanel.setZIndexOffset(10000)
+      populationLayerGroup.addLayer(freePanel)
+      currentStatsPanelMarker = freePanel
+      setTimeout(() => {
+        const btn = document.getElementById(`${freePanelId}-close`)
+        if (btn) {
+          btn.onclick = (ev) => {
+            ev.stopPropagation()
+            if (populationLayerGroup && populationLayerGroup.hasLayer(freePanel)) {
+              populationLayerGroup.removeLayer(freePanel)
+            }
+          }
+        }
+      }, 0)
+
+      ElMessage.success(`已画出 ${travelMode === 'walk' ? '步行' : '驾车'}可达范围（免费版：面积 + 人口总数）`)
+      return
+    }
 
     // 绘制多边形（基于最大半径数据做颜色分级）
     const maxRadiusData = radiusResults[maxRadiusMeters] || { matchingData: [], allFields: {} }
