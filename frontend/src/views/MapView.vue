@@ -4872,7 +4872,7 @@ const analyzePopulationDistribution = async () => {
         h += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;${total == null ? 'color:#f56c6c;' : ''}">${total == null ? '失败' : fmtN(total)}</td></tr>`
       })
       h += `</table>`
-      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">网格着色、分年龄段人口、门店与竞品对比、手动微调范围 —— <b>升级后可见</b></div>`
+      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">网格着色与色阶图例、分年龄段人口、网格数字标签、手动微调范围 —— <b>升级后可见</b></div>`
       h += `<div style="margin-top:3px;font-size:9px;color:#909399;">今日剩余 ${u.limit == null ? '不限' : u.remaining + ' / ' + u.limit} 次 · 本次已消耗 1 次</div>`
       h += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
       h += `</div>`
