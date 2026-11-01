@@ -1380,7 +1380,7 @@
     <!-- 绘制圆形对话框 -->
     <el-dialog
       v-model="circleDialogVisible"
-      :title="isPopulationMode ? (circleDialogMode === 'population_hd' ? '高精人口分布' : '商圈人口分布') : '设置圆形半径'"
+      :title="isPopulationMode ? (circleDialogMode === 'population_hd' ? '高精人口分布' : '常住人口分布') : '设置圆形半径'"
       :width="circleDialogWidth"
       :show-close="true"
       draggable
@@ -4563,9 +4563,12 @@ const analyzePopulationDistribution = async () => {
       const startTime = Date.now()
       
       try {
-        // 使用AbortController添加超时控制（hd 单文件 95MB，给足 60s；常规 15s）
+        // 使用AbortController添加超时控制
+        // 🔴 v1.13.306：可达范围必须给足 —— 常住模式没有 shapefileId，后端每档都要扫全部城市文件
+        //   （实测单档 4s）；15s 的超时在 3 档并发时会掐掉最大的那一档，
+        //   而掐掉的结果会被显示成「0 人」（实测 15 分钟档就是这么变成 0 的）。
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), isHd ? 60000 : 15000)
+        const timeoutId = setTimeout(() => controller.abort(), isHd ? 60000 : (isReach ? 120000 : 15000))
         
         const response = await fetch('/api/shapefiles/calculate-population', {
           method: 'POST',
@@ -4617,8 +4620,11 @@ const analyzePopulationDistribution = async () => {
     
     // 🔴🔴 v1.13.227：hd 模式**必须串行** —— 并发会让 95MB 的解析内存叠加（实测 372MB/次），
     //   2 个并发即 ~1.4GB ⇒ OOM。⛔ 不要把这里改回 Promise.all。
+    // 🔴 v1.13.306：**可达范围同样串行** —— 常住模式每档都要把 20 个城市文件走一遍（实测 4s/档），
+    //   3 档并发会在单核上互相抢 CPU，最慢的一档被判超时 ⇒ 页面显示「0 人」（实测踩到）。
+    //   串行后 3 档约 12s，每档都拿满 CPU，结果稳定。
     const apiResults = []
-    if (isHd) {
+    if (isHd || isReach) {
       for (const r of allRadiiMeters) {
         checkTimeout()
         apiResults.push(await doCalc(r))
@@ -4628,6 +4634,15 @@ const analyzePopulationDistribution = async () => {
       apiResults.push(...(await Promise.all(apiPromises)))
     }
     console.log('所有API调用完成:', apiResults)
+
+    // 🔴 v1.13.306：失败的档位必须留痕。以前某档失败时 `radiusResults[r]` 根本不存在，
+    //   表格按 0 渲染 ⇒ 客户看到「15 分钟 0 人」，会当成「那个方向真的没人」。
+    //   ⛔ 宁可显示「失败」，也不能把失败画成 0。
+    const failedBands = allRadiiMeters.filter(m => !apiResults.some(x => x.radius === m && x.success))
+    const failedBandsText = failedBands.map(b => bandLabel(b)).join('、')
+    if (failedBands.length) {
+      ElMessage.warning(`${failedBandsText} 计算失败（多为超时），该档留空，可重试或减少档位`)
+    }
     
     // 处理API结果
     apiResults.forEach(result => {
@@ -5197,6 +5212,11 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;font-weight:bold;">${fieldName}</td>`
     sortedRadii.forEach(r => {
       const data = radiusResults[r]
+      // 🔴 v1.13.306：该档没结果＝那一次调用失败了 ⇒ 写「失败」，⛔ 不写 0
+      if (!data) {
+        statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;color:#f56c6c;" title="该档计算失败，多为超时">失败</td>`
+        return
+      }
       // 优先使用API返回的总计，回退到前端计算的总计
       const apiTotal = data?.apiTotal || 0
       const frontendTotal = data ? data.matchingData.map(d => d.value).reduce((s, v) => s + v, 0) : 0
@@ -5212,6 +5232,10 @@ const analyzePopulationDistribution = async () => {
       statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;color:#606266;">${field}</td>`
       sortedRadii.forEach(r => {
         const data = radiusResults[r]
+        if (!data) {
+          statsHtml += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;color:#f56c6c;">失败</td>`
+          return
+        }
         // 优先使用API返回的字段值，回退到前端计算的字段值
         const apiVal = data?.apiAllFields?.[field] || 0
         const frontendVal = data?.allFields?.[field]?.total || 0
