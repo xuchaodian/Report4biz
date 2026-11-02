@@ -59,7 +59,7 @@ function overviewSheet({ geo, lights, completeness, nearM, generatedAt }) {
     ['黄灯·中风险', lights.byLevel.mid, `风险分 ${t.riskMid ?? 3}~${(t.riskHigh ?? 5) - 1}`],
     ['绿灯', lights.byLevel.low + lights.byLevel.none,
       `其中 ${lights.byLevel.none} 家未发现问题${lights.rules.competitionPartial ? `；另有 ${lights.rules.competitionPartial} 家竞争维度未评（绿灯只代表几何没问题）` : ''}`],
-    ['未评估·缺经纬度', lights.noCoord, '没有坐标就没法算距离，⛔ 不是「低风险」'],
+    ['未评估·缺经纬度', lights.noCoord, '没有坐标就没法算距离，不等于「低风险」'],
     ['', ''],
     ['规则①自我蚕食', lights.rules.cannibal,
       `同址 ${d.same || 0} · 贴身 ${d.close || 0} · 部分重叠 ${d.overlap || 0}；同址双店型 ${d.sameDual || 0} 家不计分`],
@@ -130,7 +130,7 @@ function pairsSheet({ geo, nearM }) {
     p.city || '', p.address || '',
     p.dualFormat ? '双店型（编码不同且面积差 2 倍以上）' : '疑似（面积缺失或面积接近）',
     p.dualFormat
-      ? '通常是同一商场旗下不同品牌门店，⛔ 不建议合并；确认是两家即可'
+      ? '通常是同一商场旗下不同品牌门店，不建议合并；确认是两家即可'
       : '请人工看一眼（同一道门 or 隔壁门），确认后再决定是否合并'
   ]))
   return {
@@ -146,7 +146,7 @@ function notesSheet({ lights }) {
   const rows = [
     ['这份报告怎么读'],
     [''],
-    ['1. 判定单位是门店，不是商圈', `信号灯以门店坐标为圆心、按半径判：贴身 ≤${t.closeM ?? 300}m、部分重叠 ≤${t.overlapM ?? 800}m。⛔ 不用「在不在商圈面里」当判据 —— 单个商圈面 1~48 km²，会把整片区的拥挤程度当成某一家店的问题。`],
+    ['1. 判定单位是门店，不是商圈', `信号灯以门店坐标为圆心、按半径判：贴身 ≤${t.closeM ?? 300}m、部分重叠 ≤${t.overlapM ?? 800}m。这里不用「在不在商圈面里」当判据 —— 单个商圈面 1~48 km²，会把整片区的拥挤程度当成某一家店的问题。`],
     ['2. 商圈只用于展示', '「所在商圈 / 能级 / 客群」三列只是让人认得这家店在哪，不参与打分，也不影响是否评估。门店落在面外时这三列为空，不影响结论。'],
     ['3. 门店结构（几何）', '只回答「密不密、有没有贴在一起」，不评价好坏。最近距离取「同品牌最近一家」，跨品牌不参与。'],
     ['4. 同址双店型不计分', '编码不同且面积差 2 倍以上的同址门店，通常是同一商场旗下的大店 + 小店组合，是客户的经营策略，硬判蚕食等于让客户去关真店。'],

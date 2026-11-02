@@ -604,7 +604,7 @@
           <div class="district-info-header">
             <el-icon><Flag /></el-icon>
             <strong>{{ districtResult.cityName ? districtResult.cityName + districtResult.name : districtResult.name }}</strong>
-            <span v-if="!districtResult.cityName" class="district-level-tag">{{ districtResult.level === 'city' ? '市' : districtResult.level === 'district' ? '区' : '省' }}</span>
+            <span v-if="!districtResult.cityName" class="district-level-tag">{{ levelTagOf(districtResult) }}</span>
           </div>
           <div class="district-info-meta">
             行政面积: {{ districtResult.area || '-' }} 平方公里
@@ -1846,7 +1846,7 @@
 
 <script setup>
 import { ref, shallowRef, reactive, computed, onMounted, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 // 按需导入：ElMessage/ElMessageBox 通过JS调用，需显式加载CSS
 import 'element-plus/es/components/message/style/css'
@@ -1918,6 +1918,7 @@ const brandStoreStore = useBrandStoreStore()
 const shoppingCenterStore = useShoppingCenterStore()
 const userStore = useUserStore()
 const route = useRoute()
+const router = useRouter()
 
 // 鉴权请求头（登录后带 JWT；本页均在 MainLayout 登录守卫内，token 存在）
 function authHeader() {
@@ -2410,6 +2411,18 @@ const districtVisible = ref(false)
 const districtKeyword = ref('')
 const districtLoading = ref(false)
 const districtResult = ref(null)
+/**
+ * 能级标签文案（v1.13.309）
+ * 原来只判 city / district，其余一律写「省」—— 上海、北京、天津、重庆的 level
+ * 也是 'province'，于是面板上出现「上海市 [省]」，客户第一眼就觉得系统不懂地理。
+ */
+function levelTagOf(d) {
+  if (!d) return ''
+  if (d.level === 'city') return '市'
+  if (d.level === 'district') return '区'
+  if (/^(北京|上海|天津|重庆)/.test(String(d.name || ''))) return '直辖市'
+  return '省'
+}
 const districtError = ref('')
 const districtStoreCounts = ref(null)
 let districtLayer = null  // Leaflet polygon layer
@@ -2649,6 +2662,44 @@ watch(circleDialogVisible, (v) => {
 })
 
 // ===== v1.13.308：常用范围（保存 / 载入）=====
+
+/**
+ * 免费档面板的「申请开通 VIP」入口（v1.13.309）
+ *
+ * 背景：307 上线后免费档只有一句不可点的「升级后可见」—— 拦住了，但没有出口，
+ *   等于「只拦不卖」。这里把出口接上，复用已有的 /api/vip-applications 链路，
+ *   ⛔ 不另做一套申请表单（字段校验、审核流都在 MyAccountView 那边，抄一份必然漂移）。
+ *
+ * 🔴 trial 用户不显示这个按钮：VIP 申请页对 role !== 'user' 是不渲染表单的，
+ *   给试用用户一个点进去没东西的按钮，比不给更糟。
+ */
+async function openVipApply() {
+  let rec = null
+  try {
+    const r = await fetch('/api/vip-applications/mine', {
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const d = await r.json()
+    rec = d?.application || null
+  } catch (e) {
+    // 状态查不到就照常引导过去，⛔ 不要因为一个附带信息把主路径堵死
+  }
+
+  if (rec?.status === 'pending') {
+    ElMessage.info('你的 VIP 申请正在审核中，通过后即可查看完整数据')
+    return
+  }
+  if (rec?.status === 'approved') {
+    ElMessage.success('你的 VIP 申请已通过 —— 刷新页面即可看到完整数据')
+    return
+  }
+
+  router.push('/account')
+  // 表单是 el-dialog 触发的，等个人中心渲染完再滚过去（直接给锚点会因为异步渲染落空）
+  setTimeout(() => {
+    document.getElementById('vip-apply')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, 600)
+}
 
 /** 拉列表（不含多边形本体） */
 async function loadCustomRangeList() {
@@ -5099,7 +5150,15 @@ const analyzePopulationDistribution = async (opts = {}) => {
         h += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;${total == null ? 'color:#f56c6c;' : ''}">${total == null ? '失败' : fmtN(total)}</td></tr>`
       })
       h += `</table>`
-      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">网格着色与色阶图例、分年龄段人口、网格数字标签、手动微调范围 —— <b>升级后可见</b></div>`
+      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">`
+      h += `网格着色与色阶图例、分年龄段人口、网格数字标签、手动微调范围 —— <b>升级后可见</b>`
+      // v1.13.309：原来这里只有一句不可点的文字，等于「只拦不卖」——
+      // 免费用户看到限制却没有任何动作可做，转化链路是断的。
+      // ⚠️ trial 不给按钮：VIP 申请页对 role !== 'user' 不渲染表单，点进去是空的。
+      if (userStore.user?.role !== 'trial') {
+        h += `<div style="margin-top:5px;"><button id="${freePanelId}-vip" type="button" style="width:100%;background:#1f6fd0;border:none;border-radius:4px;color:#fff;font-size:11px;padding:5px 0;cursor:pointer;line-height:1.5;" title="提交 VIP 试用申请：管理员审核通过后 30 天内可用全部功能">申请开通 VIP（30 天试用）</button></div>`
+      }
+      h += `</div>`
       h += `<div style="margin-top:3px;font-size:9px;color:#909399;">今日剩余 ${u.limit == null ? '不限' : u.remaining + ' / ' + u.limit} 次 · 本次已消耗 1 次</div>`
       h += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
       h += `</div>`
@@ -5119,6 +5178,14 @@ const analyzePopulationDistribution = async (opts = {}) => {
             if (populationLayerGroup && populationLayerGroup.hasLayer(freePanel)) {
               populationLayerGroup.removeLayer(freePanel)
             }
+          }
+        }
+        // v1.13.309：升级入口 —— 已提交过就先说状态，别让客户重复填表
+        const vipBtn = document.getElementById(`${freePanelId}-vip`)
+        if (vipBtn) {
+          vipBtn.onclick = (ev) => {
+            ev.stopPropagation()
+            openVipApply()
           }
         }
       }, 0)
@@ -12755,9 +12822,8 @@ function getHeatmapCellStyle(nums, idx) {
   color: #f56c6c;
 }
 
-</style>
-
-// POI位置选择提示
+/* v1.13.309：以下样式原先写在样式块**结束标签之后**，从未被 SCSS 编译 ⇒ 查询行政界信息面板、POI 选点提示、商圈竞品清单一律裸样式渲染。此处移回生效位置。 */
+/* POI位置选择提示 */
 .poi-pick-location-overlay {
   position: absolute;
   top: 50%;
@@ -12937,3 +13003,4 @@ function getHeatmapCellStyle(nums, idx) {
   line-height: 1.6;
 }
 
+</style>

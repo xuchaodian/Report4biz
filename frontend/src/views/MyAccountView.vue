@@ -2,7 +2,8 @@
   <div class="account-container">
     <el-card class="account-card" :class="{ 'card-vip': showVipSkin }">
       <template #header>
-        <div class="card-header">
+        <!-- id 供地图页「申请开通 VIP」按钮跳转后滚动定位（v1.13.309） -->
+        <div class="card-header" id="vip-apply">
           <span v-if="isVip" class="vip-badge" :class="{ 'vip-expired': vipExpired, 'vip-expiring': vipExpiring }">
             <template v-if="isTrial"><AppIcon class="icon-text"><Present /></AppIcon>VIP 试用</template><template v-else><AppIcon class="icon-text"><GoldMedal /></AppIcon>VIP 用户</template> · <template v-if="userStore.user?.vip_until">有效期至 {{ vipUntilText }}<span v-if="!vipExpired">（剩余 {{ vipDaysLeft }} 天）</span><span v-if="vipExpired">（已过期）</span></template><template v-else>长期有效</template>
           </span>

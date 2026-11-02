@@ -141,7 +141,7 @@ export function buildCheckupPrintHtml({ data, lights, owner = '', maxLights = 60
   </ul>
 
   ${lights?.noCoord ? `<div class="warn">${esc(lights.noCoord)} 家门店缺经纬度 —— 这是<b>「没评估」，不是「没问题」</b>，先做地址解析补坐标。</div>` : ''}
-  ${lights?.rules?.competitionNoData ? `<div class="warn">${esc(lights.rules.competitionNoData)} 家门店所在城市没有竞品点位 —— 竞争密度<b>没算过</b>（⛔ 不等于竞争宽松），在「竞品管理」导入竞品后重跑即可。</div>` : ''}
+  ${lights?.rules?.competitionNoData ? `<div class="warn">${esc(lights.rules.competitionNoData)} 家门店所在城市没有竞品点位 —— 竞争密度<b>没算过</b>（<b>不等于竞争宽松</b>），在「竞品管理」导入竞品后重跑即可。</div>` : ''}
 
   <h2>二、门店结构</h2>
   <table>
