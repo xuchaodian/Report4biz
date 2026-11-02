@@ -170,13 +170,27 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
   it('⑦ hd 不得在扫描字段阶段调 /:id/fields（该接口会 JSON.parse 整个 95MB）', () => {
     const m = mapSrc.match(/const openHdPopulationDistribution[\s\S]*?\n\}\n/)
     expect(m, '未找到 openHdPopulationDistribution 函数（守卫已失锚，请同步更新）').toBeTruthy()
-    const body = m[0]
+    const body = stripComments(m[0])
     expect(
       body,
       'openHdPopulationDistribution 里出现了 /fields —— 该接口内部会 JSON.parse 整个 geojson，' +
         '对 95MB 的 hd 文件会在「扫描字段」阶段再吃 ~372MB 内存；应改用列表接口已返回的 field_names'
     ).not.toMatch(/\/fields/)
-    expect(body, 'hd 应直接使用列表接口返回的 field_names').toContain('sf.fieldNames')
+    // v1.13.311：字段加载抽成共用实现 loadPopulationFields（原来 population / hd / 门店 popup 三份拷贝）
+    //   ⇒ 「hd 用 field_names」这条约束落到共用函数上，hd 入口只需断言它走了共用实现、没自己再写一份
+    expect(
+      body,
+      'hd 入口应调用共用的 loadPopulationFields(true)，而不是自己再写一份字段扫描'
+    ).toContain('loadPopulationFields(true')
+
+    const shared = mapSrc.match(/const loadPopulationFields = async[\s\S]*?\n\}\n/)
+    expect(shared, '未找到 loadPopulationFields（守卫已失锚，请同步更新）').toBeTruthy()
+    const sb = stripComments(shared[0])
+    expect(sb, 'hd 应直接使用列表接口返回的 field_names').toContain('sf.fieldNames')
+    expect(
+      (sb.match(/\/fields/g) || []).length,
+      '共用函数里只允许 1km 分支调 /fields 一次；hd 分支必须用 field_names'
+    ).toBe(1)
   })
 
   it('⑧ 「人口分布分析」面板不展示分年龄字段（判据来自 utils/ageField.js，行为断言）', async () => {

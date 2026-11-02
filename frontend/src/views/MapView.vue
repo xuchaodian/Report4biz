@@ -1391,6 +1391,12 @@
       <el-form :model="circleForm" label-width="92px">
         <el-form-item label="圆心坐标">
           <el-input v-model="circleForm.centerText" disabled />
+          <!-- v1.13.311（方案 A）：沿用上次圆心时必须**明说**，并给一个「重新选点」出口。
+               客户得知道自己改的是哪个点 —— 否则改完档位数字变了，会被当成系统乱算。 -->
+          <div v-if="isPopulationMode" style="width:100%;display:flex;align-items:center;gap:8px;margin-top:2px;font-size:12px;">
+            <span v-if="popCenterReused" style="color:#e6a23c;">沿用上次分析的圆心（可直接改档位后重算）</span>
+            <el-button link type="primary" size="small" style="padding:0;" @click="repickPopCenter">重新选点</el-button>
+          </div>
         </el-form-item>
         <el-form-item v-if="isPopulationMode" label="范围口径">
           <el-radio-group v-model="popScopeMode">
@@ -3231,20 +3237,143 @@ const choosePopMap = () => {
   openCirclePopulationDistribution()
 }
 
+// ═══ v1.13.311（方案 A）：让「只改参数」不必重新选点 ═══
+// 🔴 310 的真机结论（附录 §6.84.9）：客户手调了 10 分钟那档、想把 15 改成 20 再看，
+//   旧入口必须先「点地图选点」才出表单；而分析之后地图会移动（缩放/平移），
+//   同一个屏幕像素落在不同经纬度 ⇒ sameCenter（1e-7 度 ≈ 1cm）恒 false ⇒ 手调形状必然作废。
+//   ⇒ 根因不在「改档位」，而在**入口强制重新选点**。现改为：手上有上次圆心就直接用它开弹窗，
+//     另给「重新选点」按钮；客户什么都不点也能改时间档 / 换字段 / 换口径后重算。
+const popCenterReused = ref(false)   // 本次弹窗的圆心是「沿用上次」而非刚点选的
+
+/** 有可沿用的上次圆心？（成功分析过一次就会记 popBandsCenter，圆 / 驾车 / 步行都记） */
+const canReusePopCenter = () => !!(map && popBandsCenter &&
+  Number.isFinite(Number(popBandsCenter.lat)) && Number.isFinite(Number(popBandsCenter.lng)))
+
+/**
+ * 圆心已定 —— 写坐标、打图钉、开弹窗（「点地图选点」与「沿用上次」两条路共用）
+ * ⚠️ 抽成单一实现：这两条路以前各写一遍，图钉 / 坐标格式稍一漂移就会出现
+ *   「沿用圆心打开的那种没有图钉」这类不对称。
+ */
+const openCircleDialogAt = (latlng, reused = false) => {
+  if (!map || !latlng) return
+  circleForm.center = { lat: Number(latlng.lat), lng: Number(latlng.lng) }
+  circleForm.centerText = `${circleForm.center.lng.toFixed(6)}, ${circleForm.center.lat.toFixed(6)}`
+  if (tempPopulationMarker) {
+    map.removeLayer(tempPopulationMarker)
+    tempPopulationMarker = null
+  }
+  tempPopulationMarker = showTempCenterMarker(circleForm.center)
+  popCenterReused.value = !!reused
+  circleDialogVisible.value = true
+}
+
+/** 弹窗里的「重新选点」：关弹窗回到选点模式（重新走一遍入口，⛔ 不拿弹窗里改过的值凑） */
+const repickPopCenter = () => {
+  if (!map) return
+  popCenterReused.value = false
+  circleDialogVisible.value = false
+  if (circleDialogMode.value === 'population_hd') openHdPopulationDistribution({ forcePick: true })
+  else openCirclePopulationDistribution({ forcePick: true })
+}
+
+/**
+ * 加载统计字段（人口类两条入口共用）
+ * 🔴 hd **不得**调 `/:id/fields` —— 该接口内部会 JSON.parse 整个 geojson，
+ *   对 95MB 的 hd 文件等于在「扫字段」阶段就再吃 ~372MB 内存（实测）。
+ *   列表接口已返回解析好的 field_names，直接用。
+ */
+const loadPopulationFields = async (isHd, opts = {}) => {
+  // 「沿用上次圆心」重开弹窗时，要尽量保住客户上次选的统计字段 / 数据文件，
+  // 否则他每改一次时间档就得重新挑一遍字段（挑错了也不报错，只会给出别的口径的数字）。
+  const preferField = opts.preferField || ''
+  if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null }
+  populationFieldLoading.value = true
+  loadingElapsedSeconds.value = 0
+  loadingTimer = setInterval(() => { loadingElapsedSeconds.value++ }, 1000)
+  try {
+    const listRes = await fetch(`/api/shapefiles?category=${isHd ? 'population_hd' : 'population'}`, {
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const listData = await listRes.json()
+    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+
+    const allFields = new Set()
+    if (isHd) {
+      hdShapefileOptions.value = shapefiles.map(sf => ({
+        id: sf.id,
+        name: sf.name,
+        featureCount: sf.feature_count,
+        fieldNames: Array.isArray(sf.field_names) ? sf.field_names : []
+      }))
+      if (hdShapefileOptions.value.length > 0 && !selectedHdShapefileId.value) {
+        selectedHdShapefileId.value = hdShapefileOptions.value[0].id
+      }
+      hdShapefileOptions.value.forEach(sf => (sf.fieldNames || []).forEach(f => allFields.add(f)))
+    } else {
+      // 只探前 5 个文件的字段（各城市字段同构），每个 2s 超时 —— 别为了列字段把整库拖慢
+      const filePromises = shapefiles.slice(0, 5).map(async (sf) => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 2000)
+        try {
+          const sfRes = await fetch(`/api/shapefiles/${sf.id}/fields`, {
+            headers: { Authorization: `Bearer ${userStore.token}` },
+            signal: controller.signal
+          })
+          clearTimeout(timeoutId)
+          const sfData = await sfRes.json()
+          return (sfData.success && sfData.data && sfData.data.numericFields) || []
+        } catch (e) {
+          clearTimeout(timeoutId)
+          console.warn(`获取 ${sf.name} 字段列表失败:`, e)
+          return []
+        }
+      })
+      const results = await Promise.allSettled(filePromises)
+      results.forEach(r => { if (r.status === 'fulfilled') r.value.forEach(f => allFields.add(f)) })
+    }
+
+    // 过滤 RecID；hd 无「常住人口」，等价语义是「居住人数」⇒ 两类各用各的优先级
+    // ⚠️ ⛔ 不要合并成同一个优先级表：population 若也含「居住人数」，合并会把默认字段改掉
+    const priority = isHd ? ['居住人数', '常住人口'] : ['常住人口']
+    const filteredFields = Array.from(allFields)
+      .filter(f => f !== 'RecID')
+      .sort((a, b) => {
+        const ia = priority.indexOf(a), ib = priority.indexOf(b)
+        if (ia === -1 && ib === -1) return 0
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+      })
+
+    populationFieldOptions.value = filteredFields
+    if (filteredFields.length > 0) {
+      selectedPopulationField.value =
+        (preferField && filteredFields.includes(preferField) ? preferField : '') ||
+        filteredFields.find(f => priority.includes(f)) || filteredFields[0]
+    }
+    console.log(`人口字段加载完成（${isHd ? 'hd' : '1km'}），共 ${filteredFields.length} 个，默认: ${selectedPopulationField.value}`)
+  } catch (e) {
+    console.error('加载统计字段失败:', e)
+  } finally {
+    populationFieldLoading.value = false
+    if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null }
+  }
+}
+
 // 地图选点（原流程，逻辑一行未改，仅改名）
-const openCirclePopulationDistribution = async () => {
-  console.log('openCirclePopulationDistribution开始执行')
+const openCirclePopulationDistribution = async (opts = {}) => {
   if (!map) {
     console.error('地图对象未初始化')
     return
   }
-  
+
+  // 重开弹窗前记下上次选的统计字段，加载完再尽量还原（见 loadPopulationFields 的 preferField）
+  const prevField = selectedPopulationField.value
+
   // 关闭商圈工具面板
   businessCircleExpanded.value = false
-  
+
   // 设置为人口分布模式
   circleDialogMode.value = 'population'
-  
+
   // 重置表单
   circleForm.center = null
   circleForm.centerText = ''
@@ -3252,141 +3381,53 @@ const openCirclePopulationDistribution = async () => {
   circleForm.radius2 = null
   circleForm.radius3 = null
   circleForm.unit = 'km'
-  
+
   // 重置字段选项
   populationFieldOptions.value = []
   selectedPopulationField.value = ''
-  
+
   // 清除之前的人口分布图层
   if (populationLayerGroup) {
     map.removeLayer(populationLayerGroup)
     populationLayerGroup = null
   }
-  
+
+  // 🔴 v1.13.311（方案 A）：手上有上次圆心 ⇒ 不再逼客户重选点，直接开弹窗。
+  //   重选点必然伴随地图位移（分析会缩放/平移），坐标一变 sameCenter 就不成立、手调形状作废。
+  //   ⚠️ 表单仍要先重置：否则上一轮的时间档 / 半径会串到这一次。
+  //   opts.forcePick = 客户点了「重新选点」，此时必须回到选点模式（⛔ 不能又沿用）。
+  if (!opts.forcePick && canReusePopCenter()) {
+    openCircleDialogAt(popBandsCenter, true)
+    // 视野回到圆心：上次看的位置可能已经不在屏幕内
+    map.setView([Number(popBandsCenter.lat), Number(popBandsCenter.lng)], map.getZoom(), { animate: false })
+    ElMessage.info('已沿用上次分析的圆心，可直接改档位后重算；要换位置点「重新选点」')
+    loadPopulationFields(false, { preferField: prevField })
+    return
+  }
+
   // 立即显示提示和设置光标，不等待字段加载
-  console.log('立即显示用户提示')
   ElMessage.info('请在地图上点击选择圆心位置')
-  
+
   // 设置鼠标为十字光标
   const originalCursor = map.getContainer().style.cursor
   map.getContainer().style.cursor = 'crosshair'
-  
-  // 开始加载字段，显示加载进度
-  // 清除之前的定时器（如果有）
-  if (loadingTimer) {
-    clearInterval(loadingTimer)
-    loadingTimer = null
-  }
-  populationFieldLoading.value = true
-  loadingElapsedSeconds.value = 0
-  loadingTimer = setInterval(() => {
-    loadingElapsedSeconds.value++
-  }, 1000)
 
-  // 异步加载统计字段选项（不阻塞用户界面）
-  console.log('开始异步加载字段选项')
-  setTimeout(async () => {
-    try {
-      const listRes = await fetch(`/api/shapefiles?category=population`, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
-      })
-      const listData = await listRes.json()
-      const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
+  // 异步加载统计字段选项（不阻塞用户选点）
+  // 点选新位置时也尽量还原上次的统计字段：换位置通常是想看同一口径，不该让人重挑一遍
+  loadPopulationFields(false, { preferField: prevField })
 
-      const allFields = new Set()
-
-      // 并行加载最多5个shapefile的字段（使用轻量级字段端点），每个请求2秒超时
-      const maxFiles = Math.min(shapefiles.length, 5)
-      const filePromises = shapefiles.slice(0, maxFiles).map(async (sf) => {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 2000)
-        
-        try {
-          // 使用字段端点，只获取字段列表，不获取完整GeoJSON
-          const sfRes = await fetch(`/api/shapefiles/${sf.id}/fields`, {
-            headers: { Authorization: `Bearer ${userStore.token}` },
-            signal: controller.signal
-          })
-          clearTimeout(timeoutId)
-          const sfData = await sfRes.json()
-          if (sfData.success && sfData.data) {
-            // 使用numericFields（数值字段），这些字段包含整数和浮点数
-            const numericFields = sfData.data.numericFields || []
-            return numericFields
-          }
-          return []
-        } catch (e) {
-          clearTimeout(timeoutId)
-          console.warn(`获取 ${sf.name} 字段列表失败:`, e)
-          return []
-        }
-      })
-      
-      // 等待所有请求完成
-      const results = await Promise.allSettled(filePromises)
-      results.forEach(result => {
-        if (result.status === 'fulfilled') {
-          result.value.forEach(f => allFields.add(f))
-        }
-      })
-      
-      // 过滤掉 RecID，并按优先级排序
-      const filteredFields = Array.from(allFields)
-        .filter(f => f !== 'RecID')
-        .sort((a, b) => {
-          // 优先选择 常住人口
-          if (a === '常住人口') return -1
-          if (b === '常住人口') return 1
-          return 0
-        })
-      
-      populationFieldOptions.value = filteredFields
-      if (populationFieldOptions.value.length > 0) {
-        // 默认选择 常住人口，如果不存在则选择第一个
-        const defaultField = populationFieldOptions.value.find(f => f === '常住人口') 
-          || populationFieldOptions.value[0]
-        selectedPopulationField.value = defaultField
-        console.log('字段加载完成，共', filteredFields.length, '个字段，默认选择:', defaultField)
-      } else {
-        console.log('字段加载完成，未找到可用字段')
-      }
-      // 加载完成，清除定时器
-      populationFieldLoading.value = false
-      if (loadingTimer) {
-        clearInterval(loadingTimer)
-        loadingTimer = null
-      }
-    } catch (e) {
-      console.error('加载统计字段失败:', e)
-      // 加载失败，清除定时器
-      populationFieldLoading.value = false
-      if (loadingTimer) {
-        clearInterval(loadingTimer)
-        loadingTimer = null
-      }
-    }
-  }, 0)
-  
   // 清除之前的临时标记
   if (tempPopulationMarker) {
     map.removeLayer(tempPopulationMarker)
     tempPopulationMarker = null
   }
-  
+
   // 添加一次性地图点击监听
   map.once('click', (e) => {
     // 恢复原始光标
     map.getContainer().style.cursor = originalCursor
-    
-    circleForm.center = e.latlng
-    circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
+    openCircleDialogAt(e.latlng, false)
     ElMessage.success(`已选择位置：${circleForm.centerText}`)
-    
-    // 在点击位置显示小图钉标记（v1.13.227 抽为共用函数 showTempCenterMarker）
-    tempPopulationMarker = showTempCenterMarker(e.latlng)
-    
-    // 用户点击地图后，才打开对话框
-    circleDialogVisible.value = true
   })
 }
 
@@ -3935,13 +3976,17 @@ const gridLegendRanges = computed(() => {
 // v1.13.227：高精人口分布（250m 网格）—— 仅管理员。
 // 与 openPopulationDistribution 同构，差异三点：① category='population_hd'；
 // ② 必须选单个数据文件（hd 文件 city 为 NULL，无法自动匹配）；③ 计算串行（见 analyzePopulationDistribution）。
-const openHdPopulationDistribution = async () => {
+const openHdPopulationDistribution = async (opts = {}) => {
   if (!map) return
 
   // 关闭商圈工具面板
   businessCircleExpanded.value = false
 
   circleDialogMode.value = 'population_hd'
+
+  // 沿用时要保住上次选的字段与数据文件（hd 有多个城市文件，选错文件 = 换了一座城）
+  const prevField = selectedPopulationField.value
+  const prevHdId = selectedHdShapefileId.value
 
   // 重置表单
   circleForm.center = null
@@ -3967,81 +4012,34 @@ const openHdPopulationDistribution = async () => {
     tempPopulationMarker = null
   }
 
+  // 🔴 v1.13.311（方案 A）：与常住人口同一套 —— 有上次圆心就直接开弹窗，不再逼客户重选点
+  //   （原因见 openCirclePopulationDistribution 上方注释与附录 §6.84.9）
+  if (!opts.forcePick && canReusePopCenter()) {
+    openCircleDialogAt(popBandsCenter, true)
+    map.setView([Number(popBandsCenter.lat), Number(popBandsCenter.lng)], map.getZoom(), { animate: false })
+    ElMessage.info('已沿用上次分析的圆心，可直接改档位后重算；要换位置点「重新选点」')
+    loadPopulationFields(true, { preferField: prevField }).then(() => {
+      // 文件列表回来后还原上次选的那个（只在这个 id 仍然存在时）
+      if (prevHdId && hdShapefileOptions.value.some(o => o.id === prevHdId)) {
+        selectedHdShapefileId.value = prevHdId
+      }
+    })
+    return
+  }
+
   ElMessage.info('请在地图上点击选择圆心位置')
 
   const originalCursor = map.getContainer().style.cursor
   map.getContainer().style.cursor = 'crosshair'
 
-  if (loadingTimer) {
-    clearInterval(loadingTimer)
-    loadingTimer = null
-  }
-  populationFieldLoading.value = true
-  loadingElapsedSeconds.value = 0
-  loadingTimer = setInterval(() => {
-    loadingElapsedSeconds.value++
-  }, 1000)
-
   // 异步加载 hd 文件列表 + 字段（不阻塞用户点地图）
-  setTimeout(async () => {
-    try {
-      const listRes = await fetch(`/api/shapefiles?category=population_hd`, {
-        headers: { Authorization: `Bearer ${userStore.token}` }
-      })
-      const listData = await listRes.json()
-      const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
-      hdShapefileOptions.value = shapefiles.map(sf => ({
-        id: sf.id,
-        name: sf.name,
-        featureCount: sf.feature_count,
-        fieldNames: Array.isArray(sf.field_names) ? sf.field_names : []
-      }))
-      if (hdShapefileOptions.value.length > 0) {
-        selectedHdShapefileId.value = hdShapefileOptions.value[0].id
-      }
-
-      // 🔴🔴 v1.13.227：**不得**调 `/:id/fields` —— 该接口内部会 `JSON.parse(row.geojson)`，
-      //   对 95MB 的 hd 文件意味着在「扫描字段」阶段就再吃一次 ~372MB 内存（实测）。
-      //   列表接口已返回解析好的 field_names，直接用即可（hd 各字段本身都是数值）。
-      const allFields = new Set()
-      hdShapefileOptions.value.forEach(sf => {
-        (sf.fieldNames || []).forEach(f => allFields.add(f))
-      })
-
-      // 过滤 RecID；hd 数据无「常住人口」字段，等价语义是「居住人数」⇒ 两者都优先
-      const PRIORITY = ['居住人数', '常住人口']
-      const filteredFields = Array.from(allFields)
-        .filter(f => f !== 'RecID')
-        .sort((a, b) => {
-          const ia = PRIORITY.indexOf(a), ib = PRIORITY.indexOf(b)
-          if (ia === -1 && ib === -1) return 0
-          return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
-        })
-
-      populationFieldOptions.value = filteredFields
-      if (filteredFields.length > 0) {
-        selectedPopulationField.value = filteredFields.find(f => PRIORITY.includes(f)) || filteredFields[0]
-      }
-      console.log('高精人口字段加载完成，共', filteredFields.length, '个，默认选择:', selectedPopulationField.value)
-    } catch (e) {
-      console.error('加载高精度人口字段失败:', e)
-    } finally {
-      populationFieldLoading.value = false
-      if (loadingTimer) {
-        clearInterval(loadingTimer)
-        loadingTimer = null
-      }
-    }
-  }, 0)
+  loadPopulationFields(true, { preferField: prevField })
 
   // 添加一次性地图点击监听
   map.once('click', (e) => {
     map.getContainer().style.cursor = originalCursor
-    circleForm.center = e.latlng
-    circleForm.centerText = `${e.latlng.lng.toFixed(6)}, ${e.latlng.lat.toFixed(6)}`
+    openCircleDialogAt(e.latlng, false)
     ElMessage.success(`已选择位置：${circleForm.centerText}`)
-    tempPopulationMarker = showTempCenterMarker(e.latlng)
-    circleDialogVisible.value = true
   })
 }
 
@@ -4081,61 +4079,14 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
     tempPopulationMarker = null
   }
 
-  // 加载统计字段选项（使用轻量级字段端点）
-  try {
-    const listRes = await fetch(`/api/shapefiles?category=population`, {
-      headers: { Authorization: `Bearer ${userStore.token}` }
-    })
-    const listData = await listRes.json()
-    const shapefiles = Array.isArray(listData) ? listData : (listData.data || [])
-
-    const allFields = new Set()
-    // 并行加载最多5个shapefile的字段（使用轻量级字段端点）
-    const maxFiles = Math.min(shapefiles.length, 5)
-    const filePromises = shapefiles.slice(0, maxFiles).map(async (sf) => {
-      try {
-        const sfRes = await fetch(`/api/shapefiles/${sf.id}/fields`, {
-          headers: { Authorization: `Bearer ${userStore.token}` }
-        })
-        const sfData = await sfRes.json()
-        if (sfData.success && sfData.data) {
-          // 使用numericFields（数值字段）
-          const numericFields = sfData.data.numericFields || []
-          return numericFields
-        }
-        return []
-      } catch (e) {
-        console.warn(`获取 ${sf.name} 字段列表失败:`, e)
-        return []
-      }
-    })
-    
-    // 等待所有请求完成
-    const results = await Promise.allSettled(filePromises)
-    results.forEach(result => {
-      if (result.status === 'fulfilled') {
-        result.value.forEach(f => allFields.add(f))
-      }
-    })
-
-    const filteredFields = Array.from(allFields)
-      .filter(f => f !== 'RecID')
-      .sort((a, b) => {
-        if (a === '常住人口') return -1
-        if (b === '常住人口') return 1
-        return 0
-      })
-
-    populationFieldOptions.value = filteredFields
-    if (filteredFields.length > 0) {
-      selectedPopulationField.value =
-        filteredFields.find(f => f === '常住人口') || filteredFields[0]
-    }
-  } catch (e) {
-    console.error('加载统计字段失败:', e)
-  }
+  // 加载统计字段选项（与「常住人口分布」入口共用同一实现，⛔ 别再各写一份：
+  //   三份拷贝各自漂移过一次，表现是「同样点人口分布，这个入口能选到字段、那个不能」）
+  loadPopulationFields(false)
 
   // 直接打开对话框（无需点击地图）
+  // ⚠️ 这条入口的圆心来自门店坐标，不是「沿用上次」⇒ 必须清掉沿用标记，
+  //   否则弹窗会写着「沿用上次分析的圆心」，而实际用的是这家店的坐标。
+  popCenterReused.value = false
   circleDialogVisible.value = true
 }
 
@@ -5054,6 +5005,15 @@ const analyzePopulationDistribution = async (opts = {}) => {
         category: calcCategory,
         mode: isReach ? travelMode : 'circle'
       }
+    }
+
+    // 🔴 v1.13.311（方案 A）：本轮圆心必须记下来，**圆模式也记**。
+    //   原来只有可达范围分支写 popBandsCenter ⇒ 只做过半径圆分析的客户，
+    //   下次想「同一位置换个半径再看」仍被逼着重选点，而重选点会让地图位置漂移，
+    //   结果就是「明明没换地方，两次数字却不一样」。
+    //   ⚠️ 只在至少一档成功时写：全失败时记下这个点反而会让下次静默沿用一堆空结果。
+    if (apiResults.some(x => x.success)) {
+      popBandsCenter = { lat: centerLat, lng: centerLng }
     }
 
     // 对于最大半径，如果需要绘制多边形，则加载shapefile数据
