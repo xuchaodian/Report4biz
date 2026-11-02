@@ -2601,12 +2601,16 @@ let popBandAreas = {}
 //   bandLayerRefs    分钟 → Leaflet polygon 图层，拖动顶点时实时改形状用
 const popEditMode = ref(false)
 let popBandPolygons = {}
-let popBandsEdited = false
-let popBandsCenter = null      // 手调范围对应的圆心，换点即作废
-let popBandsMode = 'drive'     // 手调范围对应的出行方式（步行/驾车形状完全不同，⛔ 不能混用）
-// v1.13.308：这批形状的来源 —— 'edited' 是刚拖过顶点，'loaded' 是从「常用范围」载入的。
+// v1.13.310：手调**不再是整批概念** —— 客户可以只调 10 分钟那一档，然后去改 20 分钟。
+//   popEditedBands 记录「哪几档被手调过」，popBandsEdited 只是它非空的派生值（保留旧名兼容）。
+//   🔴 没有这个列表就只能整批判断，结果是「新增一档 ⇒ 全量重探 ⇒ 手调被静默覆盖」（310 修的就是这个）。
+let popEditedBands = []
+let popBandsEdited = false        // 派生值：popEditedBands 非空
+// 这批形状的来源 —— 'edited' 是刚拖过顶点，'loaded' 是从「常用范围」载入的。
 // 面板要分开说：客户载入后看到「范围已手调」会以为是自己这轮拖出来的。
 let popBandsSource = ''
+let popBandsCenter = null      // 手调范围对应的圆心，换点即作废
+let popBandsMode = 'drive'     // 手调范围对应的出行方式（步行/驾车形状完全不同，⛔ 不能混用）
 // v1.13.308：上一轮各档的完整结果（radiusResults 快照）。
 // 手调顶点时只有被拖的那一档需要重算，其余档直接从这里复用 ——
 // 否则 hd 模式每档都要 parse 100MB，拖一次等 20~30 秒。
@@ -2827,6 +2831,8 @@ async function applyCustomRange(id) {
       if (poly) popBandPolygons[k] = poly
     }
     popBandsEdited = true
+    // 载入的范围视为「全部档位已固定」：客户选的就是这套形状，改档位时同样不该被重探覆盖
+    popEditedBands = mins.slice()
     popBandsSource = 'loaded'
     popBandsCenter = { lat: Number(item.centerLat), lng: Number(item.centerLng) }
     popBandsMode = item.mode === 'walk' ? 'walk' : 'drive'
@@ -4770,6 +4776,28 @@ const analyzePopulationDistribution = async (opts = {}) => {
     /** 档位文案：驾车模式是「10 分钟」，圆模式是「2.0km」 */
     const bandLabel = (k) => (isReach ? `${k} 分钟` : `${(k / 1000).toFixed(1)}km`)
 
+    // 🔴🔴 v1.13.310：裁掉这一轮不再需要的档位。
+    //   bandPolygons 是从上一轮快照 Object.assign 来的；客户把「15 分钟」改成「20 分钟」后，
+    //   旧的 15 仍留在对象里 ⇒ 重绘时会画出一条**多余的可达范围轮廓**（数字表里却没有它），
+    //   客户会以为是系统算错了。手调档列表同步裁剪：被删掉的档位不该再算「已手调」。
+    for (const k of Object.keys(bandPolygons)) {
+      if (!allRadiiMeters.includes(Number(k))) delete bandPolygons[k]
+    }
+    for (const k of Object.keys(bandAreas)) {
+      if (!allRadiiMeters.includes(Number(k))) delete bandAreas[k]
+    }
+    /**
+     * 本轮仍然有效的手调档位（客户可能把手调过的那个档位删掉了）
+     * 🔴 v1.13.310：圆心或出行方式变了（reuseEdited=false）⇒ 上一轮的手调记录**全部作废**，
+     *   否则 A 点手调的那一档标记会被带到 B 点，面板写着「10 分钟已手调」而形状其实是机器算的。
+     */
+    if (!reuseEdited && popBandsEdited) {
+      popEditedBands = []
+      popBandsEdited = false
+      popBandsSource = ''
+    }
+    const editedBandsInScope = popEditedBands.filter(m => allRadiiMeters.includes(m))
+
     // 🔴🔴 v1.13.308：手调顶点后**只重算被拖的那一档**。
     //   hd 模式每档都要 parse 100MB 的 geojson（约 7~10s），三档串行就是 20~30 秒，
     //   拖一次顶点等半分钟，客户会以为页面卡死（303 上线后实测）。
@@ -4813,9 +4841,15 @@ const analyzePopulationDistribution = async (opts = {}) => {
     // v1.13.303：如果这批范围已经被手工微调过（popBandsEdited），就跳过探测直接重算 ——
     //   否则每拖一次顶点都会把客户改的形状冲掉、还白花 3 次高德调用。
     if (isReach) {
-      const missing = allRadiiMeters.filter(m => !bandPolygons[m])
-      if (reuseEdited && !missing.length) {
-        ElMessage.info('按你手调过的范围重算…')
+      // 🔴🔴 v1.13.310：只探「手上还没有形状」的档位。
+      //   原来这里请求的是 allRadiiMeters（全部档），而 bandPolygons 里已经有手调结果 ⇒
+      //   返回的多边形会把手调档**逐档覆盖**，并且把 popBandsEdited 清零、全程无提示：
+      //   客户只是想把 15 分钟改成 20 分钟，结果手调好的 10 分钟轮廓变回去了。
+      //   现在 toProbe 只含缺的档，已有形状（手调 / 载入 / 刚探过）一律不动。
+      const toProbe = allRadiiMeters.filter(m => !bandPolygons[m])
+      if (!toProbe.length) {
+        // 全部档都有形状：手调的直接沿用，不必花高德调用
+        if (editedBandsInScope.length) ElMessage.info('按你手调过的范围重算…')
       } else {
       const ctrl = new AbortController()
       const tid = setTimeout(() => ctrl.abort(), 60000)
@@ -4824,7 +4858,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
         const resp = await fetch('/api/shapefiles/isochrone', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userStore.token}` },
-          body: JSON.stringify({ lng: centerLng, lat: centerLat, minutes: allRadiiMeters, mode: travelMode }),
+          body: JSON.stringify({ lng: centerLng, lat: centerLat, minutes: toProbe, mode: travelMode }),
           signal: ctrl.signal
         })
         bandRes = await resp.json()
@@ -4844,14 +4878,20 @@ const analyzePopulationDistribution = async (opts = {}) => {
       if (bandRes.usage) isoUsage.value = bandRes.usage
       const miss = allRadiiMeters.filter(m => !bandPolygons[m])
       if (miss.length) throw new Error(`未能生成 ${miss.join('/')} 分钟的可达范围，请稍后重试`)
-      // 探测出来的这版是「机器算的」，回到未手调状态
-      popBandPolygons = { ...bandPolygons }
-      popBandsEdited = false
-      popBandsSource = ''
+      // 快照只保留本轮实际档位；手调档仍然有效时**绝不能清掉标记**（310 之前就是在这里清掉的）
+      popBandPolygons = {}
+      for (const m of allRadiiMeters) {
+        if (bandPolygons[m]) popBandPolygons[m] = bandPolygons[m]
+      }
+      popEditedBands = editedBandsInScope
+      popBandsEdited = popEditedBands.length > 0
+      if (!popBandsEdited) popBandsSource = ''
       popBandsCenter = { lat: centerLat, lng: centerLng }
       popBandsMode = travelMode
+      const fullSpan = toProbe.length === allRadiiMeters.length
       ElMessage.success(
-        `路网探测完成：${bandRes.meta.probes} 个探测点 / ${bandRes.meta.calls} 次调用，${(bandRes.meta.elapsedMs / 1000).toFixed(1)}s`
+        `${fullSpan ? '路网探测完成' : '补齐 ' + toProbe.map(bandLabel).join(' / ')}：` +
+        `${bandRes.meta.probes} 个探测点 / ${bandRes.meta.calls} 次调用，${(bandRes.meta.elapsedMs / 1000).toFixed(1)}s`
       )
       }
     }
@@ -5332,7 +5372,11 @@ const analyzePopulationDistribution = async (opts = {}) => {
       isoEditApplying = true
       try {
         popBandPolygons = JSON.parse(JSON.stringify(bandPolygons))
-        popBandsEdited = true
+        // 记下「这一档」被手调了（v1.13.310：可以只调其中一档，其余档改档位时不该被牵连）
+        if (Number.isFinite(Number(editedBand)) && !popEditedBands.includes(Number(editedBand))) {
+          popEditedBands.push(Number(editedBand))
+        }
+        popBandsEdited = popEditedBands.length > 0
         popBandsSource = 'edited'
         popBandsCenter = { lat: circleForm.center.lat, lng: circleForm.center.lng }
         popBandsMode = travelMode
@@ -5574,8 +5618,20 @@ const analyzePopulationDistribution = async (opts = {}) => {
         .filter(r => r && r > 0)
         .map(r => r + circleForm.unit)
         .join(' / ')
+    /**
+     * 范围来源标记（v1.13.310）
+     * 之前只有「（范围已手调）」一种说法，部分手调时客户会以为全部档都改过。
+     * 现在分三态：载入 / 全部手调 / 部分手调（点名是哪几档）。
+     */
+    const bandSourceText = () => {
+      if (popBandsSource === 'loaded') return '（自定义范围）'
+      const edited = popEditedBands.filter(m => allRadiiMeters.includes(m))
+      if (!edited.length) return ''
+      if (edited.length === allRadiiMeters.length) return '（范围已手调）'
+      return `（${edited.map(bandLabel).join(' / ')}已手调）`
+    }
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? `<span style="color:#e6a23c;">${popBandsSource === 'loaded' ? '（自定义范围）' : '（范围已手调）'}</span>` : ''}</div>`
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? `<span style="color:#e6a23c;">${bandSourceText()}</span>` : ''}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
