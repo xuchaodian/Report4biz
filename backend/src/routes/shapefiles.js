@@ -13,6 +13,7 @@ import iconv from 'iconv-lite'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 // v1.13.302：驾车可达范围（等时圈）—— 高德没有驾车等时圈接口，走「径向探测」
 import { probeDriveDuration, DriveProbeError } from '../utils/amapDrive.js'
+import { BBOX_INTERSECT_SQL, bboxParams } from '../utils/shapefileBbox.js'
 import { overLimit } from '../utils/rateLimit.js'
 // v1.13.307：可达范围按「免费给图、付费给数」开放 ⇒ 每日次数 + 单账号/全局串行
 import {
@@ -224,10 +225,19 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
     let insertId = null
     db.beginTx()
     try {
+      // v1.13.308：把文件 bbox 落库（解析脚本顺手算的，零额外解析）。
+      // 用途见 calculate-population 的预筛 —— 没有它就要把 26 个城市文件全解析一遍。
+      // ⚠️ 算不出（空文件/异常）时写 NULL，预筛会把它当「可能相交」保留，⛔ 不能当成「不相交」丢掉。
+      const bbox = Array.isArray(meta.bbox) && meta.bbox.length === 4 && meta.bbox.every(v => typeof v === 'number')
+        ? meta.bbox
+        : [null, null, null, null]
       const insertResult = db.prepare(
-        `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at)
-         VALUES (?, '', ?, ?, ?, ?, datetime('now', 'localtime'))`
-      ).run(originalName, JSON.stringify(meta.fields || []), meta.featureCount || 0, userId, category)
+        `INSERT INTO shapefiles (name, geojson, field_names, feature_count, user_id, category, created_at, minx, miny, maxx, maxy)
+         VALUES (?, '', ?, ?, ?, ?, datetime('now', 'localtime'), ?, ?, ?, ?)`
+      ).run(
+        originalName, JSON.stringify(meta.fields || []), meta.featureCount || 0, userId, category,
+        bbox[0], bbox[1], bbox[2], bbox[3]
+      )
 
       insertId = insertResult.lastInsertRowid
       adoptGeoFile(insertId, tmpGeoPath)   // 一次 rename 转正，零解析零拷贝
@@ -399,6 +409,169 @@ function gridBinOf(v, min, width, mode, breaks) {
 }
 
 // 可选城市列表（不解析文件 ⇒ 秒回）
+// 🔴🔴 这四个端点**必须定义在 `GET /:id` 之前**（项目铁律：路由顺序即优先级）。
+//   否则 /custom-ranges 会被 `/:id` 当成 shapefileId 吃掉，列表接口直接查不到东西、
+//   DELETE /custom-ranges/12 会把 "custom-ranges" 当作 id 去删 shapefile。
+// ============================================================================
+// 自定义可达范围（v1.13.308）—— 把手调过的轮廓存下来，下次直接载入
+//   POST   /api/shapefiles/custom-ranges        保存
+//   GET    /api/shapefiles/custom-ranges        列表（不含多边形，避免列表几百 KB）
+//   GET    /api/shapefiles/custom-ranges/:id    详情（含多边形）
+//   DELETE /api/shapefiles/custom-ranges/:id    删除
+//
+// 🔴 为什么限 VIP 及以上（免费/trial 一律 403）：
+//   保存与载入这条路径**不经过探测**，而探测才是签发 scopeId 的地方。
+//   若免费档能载入，就等于「探一次 → 拿着轮廓无限次查人口」，5 次/日当场作废。
+//   结论：与「免费给图、付费给数」必须同一道闸门，⛔ 不能因为「只是个保存按钮」就放开。
+//
+// 🔴 只存多边形、不存人口数字：载入后一律按当前数据重算。
+//   否则换了年份/城市，客户看到的是旧数——这比不给他保存更糟。
+// ============================================================================
+const CUSTOM_RANGE_MAX = 20
+
+/** 免费/试用档拦下（返回 false 表示已写响应，调用方直接 return） */
+function customRangeGate(req, res) {
+  if (tierOf(req.user) === 'free') {
+    res.status(403).json({ success: false, code: 'need_vip', error: '常用范围仅 VIP 可用' })
+    return false
+  }
+  return true
+}
+
+/** 校验并规整 bands：{ "5": Polygon, "10": ... } —— 任一档不合法就丢掉那一档 */
+function normalizeBandsInput(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const out = {}
+  for (const [k, poly] of Object.entries(raw)) {
+    const minutes = Number(k)
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 180) continue
+    if (!poly || poly.type !== 'Polygon' || !Array.isArray(poly.coordinates?.[0])) continue
+    const ring = poly.coordinates[0]
+    // 顶点数上限与 calculate-population 的护栏一致（720 探测方向 + 人工拖动余量）
+    if (ring.length < 4 || ring.length > 1000) continue
+    const bad = ring.some(c => !Array.isArray(c) || c.length < 2 ||
+      !Number.isFinite(Number(c[0])) || !Number.isFinite(Number(c[1])))
+    if (bad) continue
+    out[minutes] = { type: 'Polygon', coordinates: poly.coordinates }
+  }
+  return Object.keys(out).length ? out : null
+}
+
+router.post('/custom-ranges', authenticate, (req, res) => {
+  try {
+    if (!customRangeGate(req, res)) return
+    const db = getDb()
+    const uid = req.user.id
+    const name = String(req.body.name || '').trim()
+    const mode = req.body.mode === 'walk' ? 'walk' : 'drive'
+    const centerLat = Number(req.body.centerLat)
+    const centerLng = Number(req.body.centerLng)
+
+    if (!name) return res.status(400).json({ success: false, error: '请填写范围名称' })
+    if (name.length > 40) return res.status(400).json({ success: false, error: '名称最多 40 个字' })
+    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
+      return res.status(400).json({ success: false, error: '缺少圆心坐标' })
+    }
+    const bands = normalizeBandsInput(req.body.bands)
+    if (!bands) return res.status(400).json({ success: false, error: '范围数据不合法（至少一档多边形）' })
+
+    const { n } = db.prepare(`SELECT COUNT(*) AS n FROM custom_ranges WHERE user_id = ?`).get(uid)
+    if (n >= CUSTOM_RANGE_MAX) {
+      return res.status(400).json({
+        success: false,
+        error: `最多保存 ${CUSTOM_RANGE_MAX} 个常用范围，请先删掉不用的`
+      })
+    }
+
+    // ⚠️ 显式写 datetime('now','localtime')：建表时用的 DEFAULT CURRENT_TIMESTAMP 是 **UTC**，
+    //    客户会看到「早上 8 点保存的、显示 0 点」。表已建好改默认值要重建表，所以在 INSERT 这层写死。
+    const r = db.prepare(
+      `INSERT INTO custom_ranges (user_id, name, mode, center_lat, center_lng, field_name, bands, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))`
+    ).run(uid, name, mode, centerLat, centerLng, String(req.body.fieldName || ''), JSON.stringify(bands))
+
+    res.json({ success: true, id: r.lastInsertRowid, message: '已保存' })
+  } catch (error) {
+    console.error('[custom-ranges] 保存失败:', error)
+    res.status(500).json({ success: false, error: '保存失败' })
+  }
+})
+
+router.get('/custom-ranges', authenticate, (req, res) => {
+  try {
+    if (!customRangeGate(req, res)) return
+    // ⚠️ 不用 json_extract：sql.js 的编译选项不一定带 JSON1 扩展，
+    //   这里直接取文本在 JS 里 parse —— 20 个范围 × 每档 720 顶点约 1MB 瞬时开销，可接受。
+    const rows = getDb().prepare(
+      `SELECT id, name, mode, center_lat, center_lng, field_name, created_at, bands
+         FROM custom_ranges WHERE user_id = ? ORDER BY id DESC`
+    ).all(req.user.id)
+    // 列表只回档位（分钟数），不回多边形本体
+    const list = rows.map(r => {
+      let keys = []
+      try { keys = Object.keys(JSON.parse(r.bands || '{}')) } catch (e) { keys = [] }
+      return {
+        id: r.id,
+        name: r.name,
+        mode: r.mode,
+        centerLat: r.center_lat,
+        centerLng: r.center_lng,
+        fieldName: r.field_name,
+        minutes: keys.map(Number).sort((a, b) => a - b),
+        createdAt: r.created_at
+      }
+    })
+    res.json({ success: true, limit: CUSTOM_RANGE_MAX, data: list })
+  } catch (error) {
+    console.error('[custom-ranges] 列表失败:', error)
+    res.status(500).json({ success: false, error: '读取失败' })
+  }
+})
+
+router.get('/custom-ranges/:id', authenticate, (req, res) => {
+  try {
+    if (!customRangeGate(req, res)) return
+    // 🔴 WHERE 必须带 user_id：⛔ 不能只按 id 查（那样换个 id 就能读别人的范围）
+    const row = getDb().prepare(
+      `SELECT * FROM custom_ranges WHERE id = ? AND user_id = ?`
+    ).get(Number(req.params.id), req.user.id)
+    if (!row) return res.status(404).json({ success: false, error: '范围不存在' })
+    let bands = {}
+    try { bands = JSON.parse(row.bands) } catch (e) { bands = {} }
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        name: row.name,
+        mode: row.mode,
+        centerLat: row.center_lat,
+        centerLng: row.center_lng,
+        fieldName: row.field_name,
+        bands,
+        createdAt: row.created_at
+      }
+    })
+  } catch (error) {
+    console.error('[custom-ranges] 详情失败:', error)
+    res.status(500).json({ success: false, error: '读取失败' })
+  }
+})
+
+router.delete('/custom-ranges/:id', authenticate, (req, res) => {
+  try {
+    if (!customRangeGate(req, res)) return
+    const r = getDb().prepare(
+      `DELETE FROM custom_ranges WHERE id = ? AND user_id = ?`
+    ).run(Number(req.params.id), req.user.id)
+    if (!r.changes) return res.status(404).json({ success: false, error: '范围不存在' })
+    res.json({ success: true, message: '已删除' })
+  } catch (error) {
+    console.error('[custom-ranges] 删除失败:', error)
+    res.status(500).json({ success: false, error: '删除失败' })
+  }
+})
+
+
 router.get('/population-grid/cities', authenticate, (req, res) => {
   try {
     const db = getDb()
@@ -1109,6 +1282,17 @@ router.post('/calculate-population', authenticate, (req, res) => {
     res.on('close', () => popCalcInFlight.delete(lockKey))
 
     const db = getDb()
+
+    // 统计范围先算出来 —— 文件级 bbox 预筛与要素级 AABB 过滤都用它。
+    // v1.13.308：原先这段在查询之后才算，导致「先解析完 26 个文件才知道范围」，本末倒置。
+    //
+    // 🔴 后续一律用 areaFeature / areaBbox，⛔ 不要再出现「只有圆」的写法 ——
+    //    否则驾车模式会静默退回成圆，客户看到的是圆的数据、却以为是车的范围。
+    const areaFeature = usePolygon
+      ? turf.polygon([polygon.coordinates[0].map(c => [Number(c[0]), Number(c[1])])])
+      : turf.circle([parseFloat(lng), parseFloat(lat)], radius / 1000, { steps: 64, units: 'kilometers' })
+    const areaBbox = turf.bbox(areaFeature)   // [minLng, minLat, maxLng, maxLat]
+
     // 获取shapefile（如果前端传了shapefileId则只处理该文件，否则全部可加载的）
     let rows
     if (shapefileId) {
@@ -1123,30 +1307,26 @@ router.post('/calculate-population', authenticate, (req, res) => {
       // 若不限制，v1.13.194 新增的 population_hd（单城 95MB / 10.8 万格 / 35 字段）
       // 会被全量 getGeoObject + 逐要素 turf.intersect ⇒ 单次请求数百 MB 内存，服务器必 OOM。
       // （hd 走这条已被上方护栏① 拦下。）
+      //
+      // 🔴🔴 v1.13.308：按文件 bbox 预筛。26 个人口文件共 313MB / 32.8 万要素，
+      //   逐个 getGeoObject 解析 ⇒ 单档 4 秒，而一次分析通常只跟 1~2 个城市相交。
+      //   ⚠️ bbox 为 NULL 的行**必须保留**（历史数据没算过 / 空文件），
+      //   所以写成 `minx IS NULL OR ... OR 相交`。⛔ 不能只写 BETWEEN ——
+      //   那会把没 bbox 的文件静默跳过，算出来的总人口凭空少一块，而且没有任何报错。
       rows = db.prepare(
-        `SELECT id, name, field_names FROM shapefiles WHERE category = ? AND ${vis.clause}`
-      ).all(category, ...vis.params)
+        `SELECT id, name, field_names FROM shapefiles
+          WHERE category = ? AND ${vis.clause}
+            AND ${BBOX_INTERSECT_SQL}`
+      ).all(category, ...vis.params, ...bboxParams(areaBbox))
     }
 
     if (!rows || rows.length === 0) {
       return res.json({ success: true, data: { total: 0, allFields: {}, matchedFeatures: [] } })
     }
 
-    // 创建圆心点
-    const center = turf.point([parseFloat(lng), parseFloat(lat)])
-    // 统计范围：默认是圆，v1.13.302 起也可以直接给多边形（驾车可达范围）
-    // 🔴 后续一律用 areaFeature / areaBbox，⛔ 不要再出现「只有圆」的写法 ——
-    //    否则驾车模式会静默退回成圆，客户看到的是圆的数据、却以为是车的范围。
-    const areaFeature = usePolygon
-      ? turf.polygon([polygon.coordinates[0].map(c => [Number(c[0]), Number(c[1])])])
-      : turf.circle([parseFloat(lng), parseFloat(lat)], radius / 1000, { steps: 64, units: 'kilometers' })
-
     let totalPop = 0
     const allFields = {}
     const matchedFeatures = []
-
-    // 预计算范围的包围盒，用于快速过滤不相关的要素
-    const areaBbox = turf.bbox(areaFeature)
 
     for (const row of rows) {
       // 缓存统一由 geoStore 管理：文本 LRU + 仅小文件缓存解析对象。

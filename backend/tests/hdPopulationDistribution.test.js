@@ -90,7 +90,17 @@ describe('高精人口分布（population_hd）：内存护栏与入口可见性
       hdBranch,
       '串行分支出现了 Promise.all —— 95MB × 并发会直接 OOM，必须逐半径串行 await'
     ).not.toContain('Promise.all')
-    expect(hdBranch, '串行分支应逐个半径 await').toMatch(/for\s*\(const r of allRadiiMeters\)/)
+    // v1.13.308：循环体改成 bandsToCalc（手调顶点时只重算被拖的那一档，其余复用上一轮结果），
+    // 但「串行、不许 Promise.all」这条不变式没变 —— 所以这里认 bandsToCalc，
+    // 且额外断言它确实是从 allRadiiMeters 派生出来的，⛔ 不能凭空变成一个常量数组。
+    expect(
+      hdBranch,
+      '串行分支应逐个档位 await（v1.13.308 起变量名是 bandsToCalc）'
+    ).toMatch(/for\s*\(const r of bandsToCalc\)/)
+    expect(
+      mapSrc,
+      'bandsToCalc 必须由 allRadiiMeters 派生 —— 否则档位列表与弹窗/表格不一致'
+    ).toMatch(/const bandsToCalc = reuseBands \|\| allRadiiMeters/)
     expect(hdBranch, '串行分支每个半径前应做超时自检').toContain('checkTimeout()')
 
     // 反向对照：常规（1km 网格，多文件但体积小）必须**仍然并行**，

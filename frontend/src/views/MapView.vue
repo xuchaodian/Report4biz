@@ -1550,6 +1550,34 @@
       </template>
     </el-dialog>
 
+    <!-- v1.13.308：常用范围（把手调过的可达范围存下来，下次直接载入）
+         🔴 只对 VIP 及以上开放：保存/载入不经探测，而探测才是签发 scopeId 的地方，
+            免费档一旦能载入就等于「探一次、无限次查人口」，每日 5 次的闸门当场作废。
+            后端同样有 403 need_vip 兜底，⛔ 不能只靠这里隐藏。 -->
+    <el-dialog v-model="customRangeDialogVisible" title="载入常用范围" width="480px" append-to-body>
+      <div v-if="customRangeLoading" class="cr-empty">加载中…</div>
+      <div v-else-if="!customRangeList.length" class="cr-empty">
+        还没有保存过范围。<br>
+        先分析出可达范围，点统计面板上的「保存」即可。
+      </div>
+      <div v-else class="cr-list">
+        <div v-for="r in customRangeList" :key="r.id" class="cr-item">
+          <div class="cr-main" @click="applyCustomRange(r.id)">
+            <div class="cr-name">{{ r.name }}</div>
+            <div class="cr-meta">
+              {{ r.mode === 'walk' ? '步行' : '驾车' }} · {{ r.minutes.join(' / ') }} 分钟
+              <span v-if="r.fieldName"> · {{ r.fieldName }}</span>
+            </div>
+            <div class="cr-time">{{ r.createdAt }}</div>
+          </div>
+          <button type="button" class="cr-del" title="删除这个范围" @click.stop="deleteCustomRange(r.id)">删除</button>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="customRangeDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 圆形内门店分析结果对话框 -->
     <el-dialog
       v-model="circleAnalysisVisible"
@@ -2563,6 +2591,19 @@ let popBandPolygons = {}
 let popBandsEdited = false
 let popBandsCenter = null      // 手调范围对应的圆心，换点即作废
 let popBandsMode = 'drive'     // 手调范围对应的出行方式（步行/驾车形状完全不同，⛔ 不能混用）
+// v1.13.308：这批形状的来源 —— 'edited' 是刚拖过顶点，'loaded' 是从「常用范围」载入的。
+// 面板要分开说：客户载入后看到「范围已手调」会以为是自己这轮拖出来的。
+let popBandsSource = ''
+// v1.13.308：上一轮各档的完整结果（radiusResults 快照）。
+// 手调顶点时只有被拖的那一档需要重算，其余档直接从这里复用 ——
+// 否则 hd 模式每档都要 parse 100MB，拖一次等 20~30 秒。
+// 🔴 只在「同一圆心 + 同一出行方式 + 同字段」时才可复用，见 analyzePopulationDistribution 的校验。
+let popLastResults = null
+// v1.13.308：常用范围（把含手调的范围存下来，下次直接载入）
+// 🔴 仅 VIP 及以上：保存/载入不经探测 ⇒ 免费档能载入就等于绕过 scopeId 与每日次数
+const customRangeDialogVisible = ref(false)
+const customRangeList = ref([])
+const customRangeLoading = ref(false)
 const bandLayerRefs = {}
 // 顶点手柄与编辑动作句柄：面板按钮在 setTimeout 里绑定，拿不到 analyze 的闭包，故挂到组件级
 let isoVertexMarkers = []
@@ -2606,6 +2647,147 @@ async function loadIsoUsage() {
 watch(circleDialogVisible, (v) => {
   if (v && isPopulationMode.value) loadIsoUsage()
 })
+
+// ===== v1.13.308：常用范围（保存 / 载入）=====
+
+/** 拉列表（不含多边形本体） */
+async function loadCustomRangeList() {
+  customRangeLoading.value = true
+  try {
+    const r = await fetch('/api/shapefiles/custom-ranges', {
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const d = await r.json()
+    if (r.status === 403) {
+      ElMessage.warning('常用范围仅 VIP 可用')
+      customRangeList.value = []
+      return
+    }
+    customRangeList.value = d?.data || []
+  } catch (e) {
+    console.warn('读取常用范围失败:', e?.message)
+    customRangeList.value = []
+  } finally {
+    customRangeLoading.value = false
+  }
+}
+
+/** 打开载入对话框 */
+async function openCustomRanges() {
+  customRangeDialogVisible.value = true
+  await loadCustomRangeList()
+}
+
+/**
+ * 保存当前范围（含手调结果）。
+ * @param {{ bands: object, mode: string, lat: number, lng: number, fieldName: string }} payload
+ *        —— 由统计面板构建处传入（那里能拿到本轮真正的 bandPolygons，⛔ 不要在这里读组件状态，
+ *           否则「改了还没重算」的中间态会被存成另一个形状）
+ */
+async function saveCustomRange(payload) {
+  if (!payload || !Object.keys(payload.bands || {}).length) {
+    ElMessage.warning('当前没有可保存的范围')
+    return
+  }
+  let name
+  try {
+    const res = await ElMessageBox.prompt('给这个范围起个名字（下次从「载入」里选）', '保存常用范围', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: `${payload.mode === 'walk' ? '步行' : '驾车'} · ${Object.keys(payload.bands).join('/')} 分钟`,
+      inputValidator: (v) => (String(v || '').trim() ? true : '名称不能为空'),
+      inputErrorMessage: '名称不能为空'
+    })
+    name = res.value
+  } catch (e) {
+    return   // 用户取消
+  }
+  try {
+    const r = await fetch('/api/shapefiles/custom-ranges', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userStore.token}` },
+      body: JSON.stringify({
+        name: String(name).trim(),
+        mode: payload.mode,
+        centerLat: payload.lat,
+        centerLng: payload.lng,
+        fieldName: payload.fieldName,
+        bands: payload.bands
+      })
+    })
+    const d = await r.json()
+    if (!r.ok || !d.success) throw new Error(d.error || '保存失败')
+    ElMessage.success('已保存，下次可从「载入」里直接调出')
+  } catch (e) {
+    ElMessage.error(e?.message || '保存失败')
+  }
+}
+
+/** 删除一个常用范围 */
+async function deleteCustomRange(id) {
+  try {
+    await ElMessageBox.confirm('删除后不可恢复，确定删除这个范围？', '删除常用范围', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning'
+    })
+  } catch (e) {
+    return
+  }
+  try {
+    const r = await fetch(`/api/shapefiles/custom-ranges/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const d = await r.json()
+    if (!r.ok || !d.success) throw new Error(d.error || '删除失败')
+    ElMessage.success('已删除')
+    await loadCustomRangeList()
+  } catch (e) {
+    ElMessage.error(e?.message || '删除失败')
+  }
+}
+
+/**
+ * 载入：把圆心/口径/时间档/多边形整套换掉，然后走正常分析链路。
+ * 🔴 关键一步是 popBandsEdited = true —— 让 analyze 跳过路网探测直接用这套形状，
+ *   否则会重新探测、把客户存下来的形状冲掉（还白花高德调用）。
+ * 🔴 必须清掉 popLastResults：换点换形状后，上一轮的人口数字不能再复用。
+ */
+async function applyCustomRange(id) {
+  try {
+    const r = await fetch(`/api/shapefiles/custom-ranges/${id}`, {
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const d = await r.json()
+    if (!r.ok || !d.success) throw new Error(d.error || '载入失败')
+    const item = d.data
+    const mins = Object.keys(item.bands || {}).map(Number).filter(n => n > 0).sort((a, b) => a - b)
+    if (!mins.length) throw new Error('这个范围没有可用的档位')
+
+    circleForm.center = { lat: Number(item.centerLat), lng: Number(item.centerLng) }
+    if (item.fieldName) selectedPopulationField.value = item.fieldName
+    popScopeMode.value = item.mode === 'walk' ? 'walk' : 'drive'
+    driveMinutes.m1 = mins[0] ?? null
+    driveMinutes.m2 = mins[1] ?? null
+    driveMinutes.m3 = mins[2] ?? null
+
+    popBandPolygons = {}
+    for (const k of mins) {
+      const poly = item.bands[String(k)]
+      if (poly) popBandPolygons[k] = poly
+    }
+    popBandsEdited = true
+    popBandsSource = 'loaded'
+    popBandsCenter = { lat: Number(item.centerLat), lng: Number(item.centerLng) }
+    popBandsMode = item.mode === 'walk' ? 'walk' : 'drive'
+    popLastResults = null      // 换了点与形状，旧结果一律作废
+
+    customRangeDialogVisible.value = false
+    ElMessage.info(`已载入「${item.name}」，按当前数据重算…`)
+    await analyzePopulationDistribution()
+  } catch (e) {
+    ElMessage.error(e?.message || '载入失败')
+  }
+}
 
 // 弹窗宽度
 // 🔴 人口模式**不再按口径分别给宽度**：曾经是「驾车 560 / 步行落回 420（按半径个数算）」，
@@ -4436,7 +4618,7 @@ const transformCoords = (coords) => {
 }
 
 // 分析人口分布 - 调用后端API（统一使用按面积比例计算）
-const analyzePopulationDistribution = async () => {
+const analyzePopulationDistribution = async (opts = {}) => {
   console.log('analyzePopulationDistribution开始执行')
   console.log('地图对象:', !!map, '地图ID:', map?._leaflet_id)
   console.log('圆心位置:', circleForm.center)
@@ -4536,6 +4718,26 @@ const analyzePopulationDistribution = async () => {
     const maxRadiusMeters = Math.max(...allRadiiMeters)
     /** 档位文案：驾车模式是「10 分钟」，圆模式是「2.0km」 */
     const bandLabel = (k) => (isReach ? `${k} 分钟` : `${(k / 1000).toFixed(1)}km`)
+
+    // 🔴🔴 v1.13.308：手调顶点后**只重算被拖的那一档**。
+    //   hd 模式每档都要 parse 100MB 的 geojson（约 7~10s），三档串行就是 20~30 秒，
+    //   拖一次顶点等半分钟，客户会以为页面卡死（303 上线后实测）。
+    //   其余档的形状与数字都没变，直接沿用上一轮结果（popLastResults）。
+    //   ⚠️ 只在「手调触发」时才允许复用：重新选点 / 换出行方式 / 换字段必须全量，
+    //     否则会把 A 点的数套到 B 点上（这类错不会报错，只会给出一个错的结论）。
+    const onlyBands = Array.isArray(opts.onlyBands)
+      ? opts.onlyBands.map(Number).filter(m => allRadiiMeters.includes(m))
+      : []
+    // 🔴 复用前必须确认「同一批结果」：口径（圆/驾车/步行）与统计字段任一不同都不能搬，
+    //   否则会把上次「驾车 + 常住人口」的数字塞进这次「步行 + 0-14 岁」的档位里。
+    //   圆心由 popBandsCenter 管（不在本次 opts 里），它是探测层就已经校验过的前提。
+    const sameCtx = popLastResults &&
+      popLastResults.mode === (isReach ? travelMode : 'circle') &&
+      popLastResults.fieldName === selectedPopulationField.value &&
+      popLastResults.category === calcCategory
+    const reuseBands = onlyBands.length && sameCtx ? onlyBands : null
+    // 实际要发请求的档位（复用档不请求，省掉那几次 100MB 解析）
+    const bandsToCalc = reuseBands || allRadiiMeters
     const centerLat = circleForm.center.lat
     const centerLng = circleForm.center.lng
     const fieldName = selectedPopulationField.value
@@ -4594,6 +4796,7 @@ const analyzePopulationDistribution = async () => {
       // 探测出来的这版是「机器算的」，回到未手调状态
       popBandPolygons = { ...bandPolygons }
       popBandsEdited = false
+      popBandsSource = ''
       popBandsCenter = { lat: centerLat, lng: centerLng }
       popBandsMode = travelMode
       ElMessage.success(
@@ -4680,12 +4883,13 @@ const analyzePopulationDistribution = async () => {
     //   串行后 3 档约 12s，每档都拿满 CPU，结果稳定。
     const apiResults = []
     if (isHd || isReach) {
-      for (const r of allRadiiMeters) {
+      // v1.13.308：这里用 bandsToCalc（手调时只有被拖的那一档），不是 allRadiiMeters
+      for (const r of bandsToCalc) {
         checkTimeout()
         apiResults.push(await doCalc(r))
       }
     } else {
-      const apiPromises = allRadiiMeters.map(r => doCalc(r))
+      const apiPromises = bandsToCalc.map(r => doCalc(r))
       apiResults.push(...(await Promise.all(apiPromises)))
     }
     console.log('所有API调用完成:', apiResults)
@@ -4693,7 +4897,7 @@ const analyzePopulationDistribution = async () => {
     // 🔴 v1.13.306：失败的档位必须留痕。以前某档失败时 `radiusResults[r]` 根本不存在，
     //   表格按 0 渲染 ⇒ 客户看到「15 分钟 0 人」，会当成「那个方向真的没人」。
     //   ⛔ 宁可显示「失败」，也不能把失败画成 0。
-    const failedBands = allRadiiMeters.filter(m => !apiResults.some(x => x.radius === m && x.success))
+    const failedBands = bandsToCalc.filter(m => !apiResults.some(x => x.radius === m && x.success))
     const failedBandsText = failedBands.map(b => bandLabel(b)).join('、')
     if (failedBands.length) {
       ElMessage.warning(`${failedBandsText} 计算失败（多为超时），该档留空，可重试或减少档位`)
@@ -4738,6 +4942,29 @@ const analyzePopulationDistribution = async () => {
       }
     })
     
+    // v1.13.308：手调时没重新请求的档位，把上一轮结果原样搬回来。
+    // 🔴 必须整块复用（含 matchingData / apiAllFields）：下游的着色分级、图例刻度、
+    //   面板每一列都读这些字段，少搬一个就会出现「某档有数字但图例没它」这类半截状态。
+    if (reuseBands) {
+      for (const m of allRadiiMeters) {
+        if (reuseBands.includes(m)) continue
+        const prev = popLastResults.radiusResults?.[m]
+        if (prev) radiusResults[m] = prev
+      }
+    }
+
+    // 记录本轮完整结果，供下一次「手调只重算一档」复用。
+    // ⚠️ 有失败档时不记：否则下次复用会把「缺一档」的半截结果搬回来，
+    //    而 failedBands 只在当轮提示过一次，后面就再没人知道那档是空的。
+    if (!failedBands.length) {
+      popLastResults = {
+        radiusResults,
+        fieldName,
+        category: calcCategory,
+        mode: isReach ? travelMode : 'circle'
+      }
+    }
+
     // 对于最大半径，如果需要绘制多边形，则加载shapefile数据
     if (maxRadiusMeters > 0 && radiusResults[maxRadiusMeters]?.apiTotal > 0 && 
         (!radiusResults[maxRadiusMeters].matchingData || radiusResults[maxRadiusMeters].matchingData.length === 0)) {
@@ -5024,7 +5251,7 @@ const analyzePopulationDistribution = async () => {
             const layer = bandLayerRefs[k]
             if (layer) layer.setLatLngs([...verts, verts[0]].map(p => [p[1], p[0]]))
           })
-          marker.on('dragend', () => { applyEditedBands() })
+          marker.on('dragend', () => { applyEditedBands(k) })
           populationLayerGroup.addLayer(marker)
           isoVertexMarkers.push(marker)
         })
@@ -5033,15 +5260,19 @@ const analyzePopulationDistribution = async () => {
     }
 
     /** 松手后：把当前形状存成「手调版」，再复用整条重算链路（取数 → 重绘 → 面板） */
-    const applyEditedBands = async () => {
+    const applyEditedBands = async (editedBand = null) => {
       if (isoEditApplying) return
       isoEditApplying = true
       try {
         popBandPolygons = JSON.parse(JSON.stringify(bandPolygons))
         popBandsEdited = true
+        popBandsSource = 'edited'
         popBandsCenter = { lat: circleForm.center.lat, lng: circleForm.center.lng }
         popBandsMode = travelMode
-        await analyzePopulationDistribution()
+        // v1.13.308：只重算被拖的那一档（hd 每档要 parse 100MB，三档串行 20~30 秒）。
+        // 其余档的形状与数字都没变，analyzePopulationDistribution 会从 popLastResults 里复用。
+        const onlyBands = Number.isFinite(Number(editedBand)) ? [Number(editedBand)] : []
+        await analyzePopulationDistribution(onlyBands.length ? { onlyBands } : {})
       } catch (e) {
         console.error('[iso-edit] 重算失败', e)
         ElMessage.error(e?.message || '按手调范围重算失败，请重试')
@@ -5277,7 +5508,7 @@ const analyzePopulationDistribution = async () => {
         .map(r => r + circleForm.unit)
         .join(' / ')
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? '<span style="color:#e6a23c;">（范围已手调）</span>' : ''}</div>`
+      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? `<span style="color:#e6a23c;">${popBandsSource === 'loaded' ? '（自定义范围）' : '（范围已手调）'}</span>` : ''}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
@@ -5295,6 +5526,18 @@ const analyzePopulationDistribution = async () => {
     statsHtml += `数字标签`
     statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
     statsHtml += `</div>`
+
+    // v1.13.308：常用范围（保存 / 载入）
+    // 🔴 只给 VIP 及以上：保存和载入都不经过探测，而探测才是签发 scopeId 的地方。
+    //   免费档若能载入历史范围，就等于拿着一条存下来的轮廓反复查人口，每日 5 次当场失效。
+    //   后端 403 need_vip 是兜底，这里只是不给按钮。
+    const canUseRanges = isReach && isoUsage.value && isoUsage.value.tier !== 'free'
+    if (canUseRanges) {
+      statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10px;color:#909399;margin:0 0 4px;">常用范围`
+      statsHtml += `<button id="save-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="把当前范围（含手调结果）存下来，下次直接载入">保存</button>`
+      statsHtml += `<button id="load-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="载入之前保存过的范围（会按当前数据重算）">载入</button>`
+      statsHtml += `</div>`
+    }
 
     // v1.13.301：色阶图例 —— 关掉网格数字后，客户靠它读「这个颜色大概是多少」
     // 🔴 刻度与色块同源（上面的 breakpoints / getColorByValue），⛔ 不许另算一套
@@ -5415,6 +5658,27 @@ const analyzePopulationDistribution = async () => {
           editBtn.textContent = popEditMode.value ? '完成编辑' : '编辑范围'
           if (popEditMode.value) isoEditActions?.build()
           else isoEditActions?.clear()
+        }
+      }
+      // v1.13.308：常用范围 —— 保存/载入（仅 VIP 及以上才渲染了这两个按钮）
+      const saveRangeBtn = document.getElementById(`save-range-${panelId}`)
+      if (saveRangeBtn) {
+        saveRangeBtn.onclick = (event) => {
+          event.stopPropagation()
+          // 🔴 传本轮真正的形状：bandPolygons 已被手调结果覆盖（applyEditedBands 同步过），
+          //    ⛔ 不要在这里重新探测或回读 popBandPolygons（那是上次分析的快照）
+          const bands = {}
+          for (const m of allRadiiMeters) {
+            if (bandPolygons[m]) bands[m] = bandPolygons[m]
+          }
+          saveCustomRange({ bands, mode: travelMode, lat: centerLat, lng: centerLng, fieldName })
+        }
+      }
+      const loadRangeBtn = document.getElementById(`load-range-${panelId}`)
+      if (loadRangeBtn) {
+        loadRangeBtn.onclick = (event) => {
+          event.stopPropagation()
+          openCustomRanges()
         }
       }
       const closeBtn = document.getElementById(`close-stats-panel-${panelId}`)
@@ -12425,6 +12689,70 @@ function getHeatmapCellStyle(nums, idx) {
   color: #909399;
   margin-top: 3px;
   line-height: 1.5;
+}
+
+/* v1.13.308：常用范围列表（载入对话框） */
+.cr-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: #909399;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.cr-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cr-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  transition: border-color .15s, background .15s;
+}
+.cr-item:hover {
+  border-color: #c6e2ff;
+  background: #f5faff;
+}
+.cr-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.cr-name {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cr-meta {
+  font-size: 12px;
+  color: #606266;
+  margin-top: 2px;
+}
+.cr-time {
+  font-size: 11px;
+  color: #a8abb2;
+  margin-top: 1px;
+}
+.cr-del {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid #dcdfe6;
+  border-radius: 3px;
+  color: #909399;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.cr-del:hover {
+  border-color: #f56c6c;
+  color: #f56c6c;
 }
 
 </style>

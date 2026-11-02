@@ -261,6 +261,26 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_isochrone_usage_day ON isochrone_usage(day)`)
 
+  // v1.13.308：自定义可达范围（把手工微调过的轮廓存下来，下次直接载入）
+  // bands 存 JSON：{"5": <GeoJSON Polygon>, "10": ..., "15": ...}
+  // ⚠️ 只存多边形，不存人口数字 —— 载入后必须按当前数据重算，
+  //    否则数据换了（换年/换城市）客户还在看一年前的数。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS custom_ranges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'drive',
+      center_lat REAL NOT NULL,
+      center_lng REAL NOT NULL,
+      field_name TEXT,
+      bands TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_custom_ranges_user ON custom_ranges(user_id)`)
+
   // 创建配额分配历史表（记录管理员每次设定/追加配额的变更）
   db.run(`
     CREATE TABLE IF NOT EXISTS quota_history (
@@ -791,6 +811,19 @@ export async function initDatabase() {
     console.log('[数据库] shapefiles 表已添加 category 列')
   } catch (e) {
     // 列已存在则忽略
+  }
+
+  // 兼容迁移：文件级 bbox（v1.13.308）—— calculate-population 用它筛掉不相交的城市文件。
+  // ⚠️ 现网这四列是历史遗留的（建表语句里从来没有过），
+  //   所以新库/灾备重建的库必须靠这里补上，否则上传写 bbox 与预筛 SQL 都会直接报「no such column」。
+  //   空值语义是「拿不准就算相交」，见 utils/shapefileBbox.js。
+  for (const col of ['minx', 'miny', 'maxx', 'maxy']) {
+    try {
+      db.run(`ALTER TABLE shapefiles ADD COLUMN ${col} REAL`)
+      console.log(`[数据库] shapefiles 表已添加 ${col} 列`)
+    } catch (e) {
+      // 列已存在则忽略
+    }
   }
 
   // 创建智慧足迹购买记录表

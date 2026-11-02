@@ -279,6 +279,23 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
                 逐要素写入而非「先堆 features 再整体 dumps」，是为了不把 10 万条
                 feature 同时留在内存里（那正是 Python 侧 734MB 峰值的主要来源）。
                 """
+                # v1.13.308：顺带累积整份文件的 bbox（minLng, minLat, maxLng, maxLat）。
+                # 用途：calculate-population 不传 shapefileId 时按 category 取全部文件，
+                # 26 个人口文件 313MB / 32.8 万要素，逐个 getGeoObject 解析单档就要 4 秒。
+                # 有了 bbox 就能在 SQL 里先筛掉「不相交的城市」，只解析真正用得到的那 1~2 个。
+                # 🔴 必须用**转换后**的坐标（GCJ-02）：落库几何是 GCJ-02，用 WGS84 会偏 300~500m。
+                bbox = [None, None, None, None]
+
+                def grow(x, y):
+                    if bbox[0] is None or x < bbox[0]:
+                        bbox[0] = x
+                    if bbox[1] is None or y < bbox[1]:
+                        bbox[1] = y
+                    if bbox[2] is None or x > bbox[2]:
+                        bbox[2] = x
+                    if bbox[3] is None or y > bbox[3]:
+                        bbox[3] = y
+
                 write('{"type": "FeatureCollection", "features": [')
                 for i, shape in enumerate(sf.iterShapes()):
                     # 获取属性数据
@@ -309,6 +326,7 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
                                 else:
                                     gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
                                     part_coords.append([round(gcj_lng, COORD_DECIMALS), round(gcj_lat, COORD_DECIMALS)])
+                                grow(part_coords[-1][0], part_coords[-1][1])
                             rings.append(part_coords)
                         geom_type, coordinates = assemble_polygon(rings)
                     elif shape.shapeType == 1:  # Point
@@ -318,6 +336,7 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
                         else:
                             gcj_lng, gcj_lat = wgs84_to_gcj02(lng, lat)
                             coordinates = [[round(gcj_lng, COORD_DECIMALS), round(gcj_lat, COORD_DECIMALS)]]
+                        grow(coordinates[0][0], coordinates[0][1])
                         geom_type = 'Point'
                     else:
                         geom_type = 'Polygon'
@@ -346,7 +365,8 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
                     'success': True,
                     'featureCount': total,
                     'fields': fields,
-                    'outPath': out_path
+                    'outPath': out_path,
+                    'bbox': bbox
                 }
 
             buf = io.StringIO()
