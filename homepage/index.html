@@ -270,6 +270,9 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft-col a,.ft-col span{display:block;font-size:13px;color:var(--ink2);margin-bottom:9px;transition:color .2s}
 .ft-col a:hover{color:var(--brand)}
 .ft-copy{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+/* ICP 备案号：工信部要求「网站主页底部展示 + 可点进 beian.miit.gov.cn」 */
+.ft-legal{display:flex;gap:16px;flex-wrap:wrap}
+.ft-legal a:hover{color:var(--brand)}
 
 /* ---------------- 进场动画 ---------------- */
 .js .rv{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s cubic-bezier(.22,1,.36,1)}
@@ -656,7 +659,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
     </div>
     <div class="ft-copy">
       <span>© 2026 选址赢家Online · 位置智能分析平台</span>
-      <span>人口数据来自运营商授权数据源</span>
+      <span class="ft-legal">
+        <span>人口数据来自运营商授权数据源</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">沪ICP备2026010607号-1</a>
+      </span>
     </div>
   </div>
 </footer>

@@ -14,6 +14,15 @@
     <div v-if="$slots.footer" class="auth-card__footer">
       <slot name="footer" />
     </div>
+
+    <!-- ICP 备案号：四张认证页（登录/注册/忘记密码/重置密码）共用的公开展示位，
+         工信部要求「可见 + 可点进 beian.miit.gov.cn」⇒ 常显下划线只在 hover 出现，靠链接语义兜底 -->
+    <a
+      class="auth-card__icp"
+      href="https://beian.miit.gov.cn/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >沪ICP备2026010607号-1</a>
   </div>
 </template>
 
@@ -95,6 +104,23 @@ defineProps({
     &:hover {
       text-decoration-thickness: 2px;
     }
+  }
+}
+
+/* ICP 备案号：12px 小字，色值沿用页脚 #6b7280（4.83:1，过 WCAG AA），不用 #999 那类浅灰 */
+.auth-card__icp {
+  display: block;
+  margin-top: 18px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+
+  &:hover {
+    text-decoration-thickness: 2px;
   }
 }
 </style>
