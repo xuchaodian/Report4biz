@@ -3,31 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- build: v1.13.275 | 2026-10-27 | 修正「开店余地评估」描述（已弃用 POI 检索） -->
-<meta name="build-version" content="v1.13.275">
-<title>选址赢家Online - WebGIS 商业智能分析平台</title>
-<meta name="description" content="选址赢家Online 是基于位置大数据的 WebGIS 商业智能分析平台：商圈与整城的人口分析、驾车/步行可达范围、门店体检、门店竞争洞察、开店余地评估、数据大屏驾驶舱与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变为「看数据」。">
+<!-- build: v1.13.314 | 2026-11-03 | 首页改版：一屏叙事 + 真实界面操作演示（聚光灯引导），文案压缩约 78% -->
+<meta name="build-version" content="v1.13.314">
+<title>选址赢家Online - 用数据看清每一平方公里</title>
+<meta name="description" content="选址赢家Online 是 WebGIS 商业智能分析平台：1km 网格商圈人口分析、驾车/步行可达范围、竞品追踪与门店体检、销售预测与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变成「看数据」。">
 <link rel="canonical" href="https://mka-online.cn/home/">
 <link rel="icon" type="image/png" href="/favicon.png" sizes="190x176" />
 <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="选址赢家Online">
-<meta property="og:title" content="选址赢家Online - WebGIS 商业智能分析平台">
-<meta property="og:description" content="商圈与整城人口分析 · 驾车/步行可达范围 · 门店体检 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
+<meta property="og:title" content="选址赢家Online - 用数据看清每一平方公里">
+<meta property="og:description" content="商圈人口 · 竞品格局 · 门店体检 · AI 选址建议。一个平台，把开店决策从经验变成依据。">
 <meta property="og:url" content="https://mka-online.cn/home/">
 <meta property="og:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:type" content="image/jpeg">
-<meta property="og:image:alt" content="选址赢家Online · 数据大屏驾驶舱">
+<meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="选址赢家Online - WebGIS 商业智能分析平台">
-<meta name="twitter:description" content="商圈与整城人口分析 · 驾车/步行可达范围 · 门店体检 · 门店竞争洞察 · 开店余地评估 · 数据大屏 · AI 选址建议">
+<meta name="twitter:title" content="选址赢家Online - 用数据看清每一平方公里">
+<meta name="twitter:description" content="商圈人口 · 竞品格局 · 门店体检 · AI 选址建议，一个平台全看清。">
 <meta name="twitter:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
-<meta name="twitter:image:alt" content="选址赢家Online · 数据大屏驾驶舱">
-<!-- ============ 结构化数据 JSON-LD（v1.13.220） ============
-     ⚠️ 本块为硬编码。若页面下方 FAQ 的问答有增删改，请同步维护 FAQPage.mainEntity。
-     ✅ 已实测：CSP `script-src 'self'` **不拦** application/ld+json（只拦可执行内联 JS）。 -->
+<meta name="theme-color" content="#1e6fff">
+<meta name="robots" content="index,follow,max-image-preview:large">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -65,7 +60,7 @@
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web Browser (Windows / macOS / 移动端)",
       "inLanguage": "zh-CN",
-      "description": "商圈与整城的人口分析、门店竞争洞察、开店余地评估、数据大屏驾驶舱与 AI 选址建议，把开店决策从凭经验变为看数据。",
+      "description": "商圈与整城的人口分析、竞品追踪、门店体检、驾车与步行可达范围、销售预测、AI 选址建议与数据大屏，把开店决策从凭经验变为看数据。",
       "publisher": { "@id": "https://mka-online.cn/#organization" }
     },
     {
@@ -75,22 +70,22 @@
         {
           "@type": "Question",
           "name": "需要安装软件吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "不需要。选址赢家Online 是 Web 应用，使用浏览器访问即可，支持 Windows / macOS / 移动端，无需安装任何客户端。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "不需要。浏览器打开就能用，Windows、macOS 与移动端都支持，无需安装任何客户端。" }
         },
         {
           "@type": "Question",
           "name": "人口数据来自哪里，准确吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "平台接入运营商级人口大数据，数据经匿名化处理，按网格粒度统计商圈人口与人群结构，能够反映区域人口的量级与分布趋势。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。" }
         },
         {
           "@type": "Question",
           "name": "我的门店数据是私有的吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "是。门店与竞品数据按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。" }
         },
         {
           "@type": "Question",
-          "name": "分析报表可以直接用于汇报吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "可以。系统按统一模板输出 Excel / PDF 报表，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。" }
+          "name": "分析报表能直接用于汇报吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。" }
         }
       ]
     }
@@ -98,968 +93,450 @@
 }
 </script>
 <style>
-:root {
-  --primary: #1e6fff;
-  --primary-dark: #0b4fd0;
-  --primary-light: #e8f0ff;
-  --accent: #ff8a00;
-  --text: #1f2733;
-  --text-2: #5a6472;
-  --text-3: #8a93a3;
-  --bg: #ffffff;
-  --bg-soft: #f6f8fc;
-  --line: #e6eaf2;
-  --radius: 14px;
-  --shadow: 0 6px 24px rgba(30, 111, 255, 0.08);
-  --shadow-hover: 0 12px 32px rgba(30, 111, 255, 0.16);
+:root{
+  --brand:#1e6fff; --brand-d:#0b4fd0; --mint:#00b3a4;
+  --ink:#0b1220; --ink2:#5a6577; --ink3:#8b95a7;
+  --line:#e9edf4; --line2:#dbe3ef; --soft:#f7f9fc;
+  --r:16px;
+  --shadow-s:0 8px 30px rgba(16,32,64,.08);
+  --shadow-m:0 20px 50px -20px rgba(16,32,64,.30);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-/* v1.13.247：锚点跳转给 sticky 导航让位（实测导航 65px，留 80px 呼吸位） */
-html { scroll-padding-top: 80px; }
-/* v1.13.220：<picture> 默认 display:inline，父宽会塌陷 ⇒ 子 img 的 width:100% 失效。
-   令 picture 从布局中「消失」，img 直接参与既有父容器（.banner-slide / .ui-card / .dashboard-frame）布局。 */
-picture { display: contents; }
-html { scroll-behavior: smooth; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  color: var(--text);
-  background: var(--bg);
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:88px;-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:#fff;color:var(--ink);line-height:1.6;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
 }
-.container { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
-a { text-decoration: none; color: inherit; }
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+h1,h2,h3{margin:0;letter-spacing:-.02em}
+p{margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
 
-/* ============ 顶部导航 ============ */
-.header {
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(255,255,255,0.92);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
-}
-.header-inner {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 64px;
-}
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand-logo {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: linear-gradient(135deg, #1e6fff, #4a9fff);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 700; font-size: 17px;
-  box-shadow: 0 4px 10px rgba(30,111,255,0.3);
-}
-.brand-name { font-weight: 700; font-size: 17px; letter-spacing: .5px; }
-.brand-name em { font-style: normal; color: var(--primary); }
-.brand-sub { font-size: 11px; color: var(--text-3); margin-top: -2px; }
-.brand-logo-img {
-  width: 36px; height: 36px; border-radius: 10px;
-  object-fit: cover; flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(30,111,255,0.3);
-}
-.nav { display: flex; align-items: center; gap: 28px; }
-.nav a { font-size: 14px; color: var(--text-2); transition: color .2s; }
-.nav a:hover { color: var(--primary); }
-.nav-actions { display: flex; align-items: center; gap: 12px; }
-.btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 20px; border-radius: 8px; font-size: 14px; font-weight: 600;
-  cursor: pointer; transition: all .2s; border: 1px solid transparent;
-}
-.btn-primary { background: var(--primary); color: #fff; }
-.btn-primary:hover { background: var(--primary-dark); box-shadow: 0 6px 16px rgba(30,111,255,0.35); transform: translateY(-1px); }
-.btn-outline { border-color: var(--line); color: var(--text); background: #fff; }
-.btn-outline:hover { border-color: var(--primary); color: var(--primary); }
-.btn-white { background: #fff; color: var(--primary); }
-.btn-white:hover { box-shadow: 0 6px 16px rgba(255,255,255,0.35); transform: translateY(-1px); }
-.btn-lg { padding: 13px 30px; font-size: 15px; border-radius: 10px; }
-/* v1.13.247：原触控区仅 19×27px，低于移动端 44×44 建议值 */
-.menu-toggle {
-  display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text);
-  min-width: 44px; min-height: 44px; align-items: center; justify-content: center;
-  margin-right: -10px; padding: 0;
-}
+/* ---------------- 导航 ---------------- */
+.hd{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);transition:box-shadow .3s,border-color .3s}
+.hd{box-shadow:0 1px 0 rgba(16,32,64,.06)}
+.hd.is-stuck{box-shadow:0 1px 0 rgba(16,32,64,.08),0 8px 24px -16px rgba(16,32,64,.28)}
+.hd-in{display:flex;align-items:center;justify-content:space-between;height:66px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand img{width:32px;height:32px;object-fit:contain}
+.brand-txt{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand-txt em{font-style:normal;font-weight:400;color:var(--ink3);font-size:12px;margin-left:1px}
+.nav{display:flex;gap:30px;font-size:14.5px;color:#39424f}
+.nav a{padding:6px 0;transition:color .2s}
+.nav a:hover{color:var(--brand)}
+.hd-act{display:flex;align-items:center;gap:10px}
 
-/* ============ Hero ============ */
-.hero {
-  background:
-    radial-gradient(1200px 500px at 80% -10%, rgba(74,159,255,0.18), transparent 60%),
-    radial-gradient(900px 400px at 10% 10%, rgba(30,111,255,0.08), transparent 60%),
-    linear-gradient(180deg, #f4f8ff 0%, #ffffff 100%);
-  padding: 76px 0 0;
-  overflow: hidden;
-}
-.hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
-.hero-kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--primary-light); color: var(--primary);
-  padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
-  margin-bottom: 20px;
-}
-.hero-kicker::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
-.hero h1 { font-size: 44px; line-height: 1.25; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 20px; }
-.hero h1 .grad { background: linear-gradient(90deg, #1e6fff, #4a9fff); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero-desc { font-size: 16px; color: var(--text-2); max-width: 520px; margin-bottom: 32px; line-height: 1.8; }
-.hero-cta { display: flex; gap: 14px; align-items: center; margin-bottom: 40px; flex-wrap: wrap; }
-.hero-note { font-size: 13px; color: var(--text-3); }
+/* ---------------- 按钮 ---------------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;font-weight:600;white-space:nowrap;transition:transform .22s,background .22s,box-shadow .22s,color .22s,border-color .22s;border:1px solid transparent}
+.btn-sm{padding:8px 18px;font-size:14px}
+.btn-xl{padding:15px 34px;font-size:16.5px}
+.btn-dark{background:#0d1526;color:#fff;box-shadow:0 12px 30px -12px rgba(13,21,38,.55)}
+.btn-dark:hover{background:var(--brand);transform:translateY(-2px);box-shadow:0 16px 34px -12px rgba(30,111,255,.6)}
+.btn-ghost{background:#fff;color:var(--ink);border-color:var(--line2);box-shadow:0 2px 8px rgba(16,32,64,.04)}
+.btn-ghost:hover{border-color:#b9c7dd;transform:translateY(-2px)}
+.btn-line{background:transparent;color:var(--ink);border-color:var(--line2)}
+.btn-line:hover{border-color:#b9c7dd;background:#fff}
+.btn svg{flex:0 0 auto}
 
-/* Hero 右侧真实大屏截图 */
-.dashboard-frame {
-  position: relative;
-  background: #0a1628;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  box-shadow: 0 24px 70px rgba(30, 111, 255, 0.18);
-  overflow: hidden;
-  transition: transform 0.4s ease;
-}
-.dashboard-frame:hover {
-  transform: translateY(-4px);
-}
-.dashboard-screenshot {
-  display: block;
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  object-position: center top;
-}
-.hero-visual { position: relative; }
-.mock {
-  background: #fff; border-radius: 16px;
-  border: 1px solid var(--line);
-  box-shadow: 0 20px 60px rgba(30,111,255,0.14);
-  overflow: hidden;
-}
-.mock-bar {
-  display: flex; align-items: center; gap: 6px;
-  padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fafbfe;
-}
-.mock-dot { width: 10px; height: 10px; border-radius: 50%; }
-.mock-url { flex: 1; background: #f0f2f7; border-radius: 6px; padding: 4px 12px; font-size: 12px; color: var(--text-3); }
-.mock-body { padding: 0; }
-.mock-map { height: 320px; position: relative; background: #eaf3ff; }
-.mock-map svg { width: 100%; height: 100%; display: block; }
-.mock-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  border-top: 1px solid var(--line);
-}
-.mock-stat { padding: 14px 12px; text-align: center; border-right: 1px solid var(--line); }
-.mock-stat:last-child { border-right: none; }
-.mock-stat .n { font-size: 20px; font-weight: 700; color: var(--primary); }
-.mock-stat .l { font-size: 11px; color: var(--text-3); margin-top: 2px; }
-.float-card {
-  position: absolute; background: #fff; border-radius: 12px;
-  border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,0.12);
-  padding: 12px 14px; font-size: 12px; display: flex; align-items: center; gap: 10px;
-}
-.float-card .fc-icon { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-.float-card b { font-size: 13px; display: block; }
-.float-card span { color: var(--text-3); }
-.fc-1 { top: -18px; left: -24px; animation: float 4s ease-in-out infinite; }
-.fc-2 { bottom: -18px; right: -20px; animation: float 4s ease-in-out 1.5s infinite; }
-@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+/* ---------------- Hero ---------------- */
+.hero{position:relative;overflow:hidden;padding:74px 0 0;text-align:center}
+.hero-glow{position:absolute;left:50%;top:-330px;transform:translateX(-50%);width:1180px;height:760px;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(30,111,255,.16),rgba(0,179,164,.10) 46%,rgba(255,255,255,0) 74%);}
+.hero-arc{position:absolute;left:50%;bottom:-420px;transform:translateX(-50%);width:1680px;height:800px;border-radius:50%;pointer-events:none;
+  background:linear-gradient(180deg,rgba(30,111,255,.13),rgba(30,111,255,.02) 55%,rgba(255,255,255,0));}
+.hero .wrap{position:relative;z-index:1}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;padding:6px 15px 6px 12px;border-radius:999px;background:rgba(30,111,255,.07);border:1px solid rgba(30,111,255,.14);color:#1d4ed8;font-size:13px;font-weight:600}
+.eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 3px rgba(0,179,164,.18)}
+h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-height:1.1;font-weight:700}
+.grad{background:linear-gradient(96deg,#1e6fff 8%,#00b3a4 92%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.lede{margin:22px auto 0;max-width:660px;font-size:17px;color:var(--ink2);line-height:1.75}
+.feats{display:grid;grid-template-columns:1fr 1fr;gap:13px 44px;max-width:700px;margin:32px auto 0;text-align:left}
+.ft{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.ft svg{flex:0 0 auto;color:var(--brand)}
+.ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
+.cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
+.hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
+.hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#0b1220;
+  border:1px solid rgba(16,32,64,.10);
+  box-shadow:0 50px 90px -40px rgba(11,18,32,.55),0 16px 40px -24px rgba(11,18,32,.35)}
+.shot-bar{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;background:#111a2b;border-bottom:1px solid rgba(255,255,255,.06)}
+.shot-bar i{width:9px;height:9px;border-radius:50%;background:#3b475c}
+.shot-bar i:nth-child(1){background:#ff5f57}.shot-bar i:nth-child(2){background:#febc2e}.shot-bar i:nth-child(3){background:#28c840}
+.shot-bar span{margin:0 auto;font-size:11.5px;color:#8d9bb2;letter-spacing:.02em}
+.hero-shot img{width:100%;height:auto}
 
-/* ============ 通用 section ============ */
-.section { padding: 88px 0; }
-.section-soft { background: var(--bg-soft); }
-.section-head { text-align: center; max-width: 720px; margin: 0 auto 56px; }
-.section-tag {
-  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 1px;
-  color: var(--primary); background: var(--primary-light);
-  padding: 5px 14px; border-radius: 999px; margin-bottom: 16px;
-}
-.section-head h2 { font-size: 32px; font-weight: 800; letter-spacing: -0.3px; margin-bottom: 14px; }
-.section-head p { font-size: 15px; color: var(--text-2); line-height: 1.8; }
-.section-head .sub-en { font-size: 12px; color: var(--text-3); letter-spacing: 2px; margin-bottom: 8px; text-transform: uppercase; }
+/* ---------------- 通用区块头 ---------------- */
+.sec{padding:118px 0}
+.sec-soft{background:#f6f8fc;border-top:1px solid #eef2f8;border-bottom:1px solid #eef2f8}
+.sec-hd{text-align:center;max-width:640px;margin:0 auto}
+.kicker{display:inline-block;font-size:12.5px;font-weight:700;letter-spacing:.14em;color:var(--brand);text-transform:uppercase}
+.sec-hd h2{margin-top:12px;font-size:clamp(26px,3.1vw,38px);line-height:1.25}
+.sec-hd p{margin-top:14px;font-size:15.5px;color:var(--ink2)}
+/* 标题较长时放宽一行宽度，避免尾字单独成行 */
+.sec-hd.wide{max-width:720px}
 
-/* ============ 真实产品界面 ============ */
-.ui-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-.ui-card {
-  background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
-  box-shadow: var(--shadow); transition: box-shadow .3s, transform .3s;
-  display: flex; flex-direction: column;
-}
-.ui-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
-.ui-shot {
-  display: block; width: 100%; height: 190px;
-  object-fit: cover; object-position: center top;
-  border-bottom: 1px solid var(--line); background: var(--bg-soft);
-}
-.ui-body { padding: 18px 20px 22px; flex: 1; }
-.ui-body h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
-.ui-body p { font-size: 13px; color: var(--text-2); line-height: 1.75; }
-.ui-tag {
-  display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .5px;
-  color: var(--primary); background: var(--primary-light);
-  padding: 3px 10px; border-radius: 999px; margin-bottom: 10px;
-}
+/* ---------------- 操作演示 ---------------- */
+.demo{display:flex;flex-direction:column;gap:26px;margin-top:46px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.step{position:relative;display:flex;flex-direction:column;gap:7px;width:100%;padding:16px 18px 22px;border:0;border-radius:14px;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background .25s,box-shadow .25s;-webkit-tap-highlight-color:transparent}
+.step:hover{background:rgba(255,255,255,.72)}
+.step .n{font-size:12px;font-weight:700;color:#b3bdcc;letter-spacing:.08em;font-variant-numeric:tabular-nums}
+.step b{display:block;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.step em{display:block;margin-top:5px;font-style:normal;font-size:13px;line-height:1.55;color:var(--ink2);min-height:2.9em}
+.step.is-on{background:#fff;box-shadow:0 12px 34px -16px rgba(16,32,64,.30),0 0 0 1px var(--line)}
+.step.is-on .n{color:var(--brand)}
+.step.is-on b{color:var(--ink)}
+.prog{position:absolute;left:18px;right:18px;bottom:10px;height:2px;border-radius:2px;background:#edf1f7;overflow:hidden;opacity:0;transition:opacity .3s}
+.step.is-on .prog{opacity:1}
+.prog i{display:block;height:100%;width:100%;background:var(--brand);transform:scaleX(0);transform-origin:left center}
+.step.is-on .prog i{animation:grow 7s linear forwards}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 
-/* ============ 社会证明 ============ */
-.proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 900px; margin: 0 auto; }
-.proof-item {
-  text-align: center; padding: 36px 20px 32px; background: #fff;
-  border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
-}
-.proof-num { font-size: 48px; font-weight: 800; color: var(--primary); line-height: 1; letter-spacing: -1.5px; }
-.proof-num span { font-size: 26px; font-weight: 700; margin-left: 1px; }
-.proof-label { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 12px; }
-.proof-desc { font-size: 12.5px; color: var(--text-3); margin-top: 6px; line-height: 1.6; }
+.frame{position:relative;aspect-ratio:1200/750;border-radius:16px;overflow:hidden;background:#e9eef6;border:1px solid var(--line);box-shadow:0 40px 70px -34px rgba(16,32,64,.42)}
+.shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.035);transition:opacity .5s ease,transform 1.1s cubic-bezier(.22,1,.36,1)}
+.shot.is-on{opacity:1;transform:scale(1)}
+.spot{position:absolute;border-radius:10px;opacity:0;pointer-events:none;
+  box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 0 9999px rgba(7,13,26,.40);
+  transition:left .65s cubic-bezier(.33,0,.16,1),top .65s cubic-bezier(.33,0,.16,1),width .65s cubic-bezier(.33,0,.16,1),height .65s cubic-bezier(.33,0,.16,1),opacity .35s}
+.spot.is-on{opacity:1}
+.spot-tip{position:absolute;left:-2px;bottom:calc(100% + 11px);padding:7px 12px;border-radius:9px;background:#fff;color:var(--ink);
+  font-size:13px;font-weight:600;white-space:nowrap;box-shadow:0 10px 26px rgba(7,13,26,.28)}
+.spot-tip::after{content:"";position:absolute;left:16px;top:100%;border:6px solid transparent;border-top-color:#fff}
+.spot.tip-below .spot-tip{bottom:auto;top:calc(100% + 11px)}
+.spot.tip-below .spot-tip::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#fff}
+.demo-hint{margin-top:14px;font-size:12.5px;color:var(--ink3);text-align:right}
 
-/* ============ 主视觉轮播 ============ */
-.banner-slider {
-  position: relative; overflow: hidden; border-radius: 16px;
-  box-shadow: 0 16px 48px rgba(30,111,255,0.12);
-  background: #0b4fd0;
-}
-.banner-track {
-  display: flex; width: 300%;
-  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
-}
-.banner-slide {
-  width: 33.3333%; flex-shrink: 0; position: relative;
-  height: 340px; overflow: hidden; cursor: pointer;
-  background: #0a1628;
-}
-.banner-slide svg { width: 100%; height: 100%; display: block; }
-.banner-img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; }
-.banner-text {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  padding: 40px 48px; z-index: 2;
-  display: flex; flex-direction: column; justify-content: center;
-  background: linear-gradient(90deg,
-    rgba(7,22,48,0.95) 0%,
-    rgba(7,22,48,0.90) 30%,
-    rgba(7,22,48,0.62) 50%,
-    rgba(7,22,48,0.10) 72%,
-    rgba(7,22,48,0) 88%);
-}
-.banner-text .bt-tag {
-  display: inline-flex; align-self: flex-start;
-  font-size: 12px; font-weight: 700; letter-spacing: 1px;
-  color: #fff; background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.35);
-  padding: 4px 12px; border-radius: 999px; margin-bottom: 12px;
-}
-.banner-text h2 { font-size: 26px; color: #fff; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.3px; }
-.banner-text p { font-size: 14px; color: rgba(255,255,255,0.85); max-width: 340px; line-height: 1.7; }
-.banner-text .bt-cta {
-  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
-  margin-top: 16px; font-size: 13px; font-weight: 600; color: #fff;
-  background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.4);
-  padding: 8px 18px; border-radius: 8px; transition: all .2s;
-}
-.banner-text .bt-cta:hover { background: #fff; color: var(--primary); }
-/* 轮播箭头 */
-.banner-arrow {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
-  background: rgba(255,255,255,0.25); color: #fff; font-size: 18px;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 5; transition: all .2s; backdrop-filter: blur(4px);
-}
-.banner-arrow:hover { background: rgba(255,255,255,0.45); }
-.banner-prev { left: 16px; }
-.banner-next { right: 16px; }
-/* 指示点 */
-.banner-dots {
-  position: absolute; bottom: 14px; left: 0; right: 0;
-  display: flex; justify-content: center; gap: 8px; z-index: 5;
-}
-.banner-dots button {
-  width: 9px; height: 9px; border-radius: 50%; border: none; cursor: pointer;
-  background: rgba(255,255,255,0.4); transition: all .3s; padding: 0;
-}
-.banner-dots button.active { background: #fff; width: 26px; border-radius: 6px; }
-@media (max-width: 600px) {
-  .banner-slide { height: 250px; }
-  .banner-text {
-    padding: 22px 22px;
-    justify-content: flex-end;
-    background: linear-gradient(180deg,
-      rgba(7,22,48,0.28) 0%,
-      rgba(7,22,48,0.82) 52%,
-      rgba(7,22,48,0.96) 100%);
-  }
-  .banner-text h2 { font-size: 19px; }
-  .banner-text p { font-size: 12.5px; line-height: 1.6; }
-  .banner-arrow { display: none; }
-}
+/* ---------------- 能力宫格 ---------------- */
+.caps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:52px}
+.card{padding:24px 20px;border:1px solid var(--line);border-radius:var(--r);background:#fff;transition:transform .28s,box-shadow .28s,border-color .28s}
+.card:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:0 18px 40px -22px rgba(16,32,64,.34)}
+.ci{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:12px;background:#eaf2ff;margin-bottom:15px}
+.ci img{width:23px;height:23px;display:block}
+.card h3{font-size:15.5px;font-weight:700}
+.card p{margin-top:7px;font-size:13px;line-height:1.6;color:var(--ink2)}
 
-/* ============ 能力（能看见什么） ============ */
-.cap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-.cap-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 30px 26px; position: relative; overflow: hidden;
-  transition: all .25s;
-}
-.cap-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-4px); border-color: transparent; }
-.cap-card::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, var(--primary), #4a9fff);
-  opacity: 0; transition: opacity .25s;
-}
-.cap-card:hover::before { opacity: 1; }
-.cap-no {
-  font-size: 13px; font-weight: 800; color: var(--primary);
-  background: var(--primary-light); width: 40px; height: 40px;
-  border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  margin-bottom: 18px;
-}
-.cap-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
-.cap-card p { font-size: 14px; color: var(--text-2); line-height: 1.8; }
-.cap-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
-.cap-tags span {
-  font-size: 12px; color: var(--text-2); background: var(--bg-soft);
-  padding: 4px 10px; border-radius: 6px;
-}
+/* ---------------- 选择理由（旧版 v1.13.244/246 内容，按 v2 版式重排） ---------------- */
+.reason-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:46px}
+.rc{padding:24px 22px;border:1px solid var(--line);border-radius:var(--r);background:#fff;transition:transform .28s,box-shadow .28s,border-color .28s}
+.rc:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:0 18px 40px -22px rgba(16,32,64,.34)}
+.rc-dim{font-size:12px;font-weight:700;color:var(--ink3);letter-spacing:.06em;margin-bottom:14px}
+.cmp{border-radius:10px;padding:12px 14px}
+.cmp+.cmp{margin-top:10px}
+.cmp.map{background:#f4f5f7}
+.cmp.us{background:#eaf2ff}
+.cmp-who{font-size:11.5px;font-weight:700;margin-bottom:4px}
+.cmp.map .cmp-who{color:var(--ink3)}
+.cmp.us .cmp-who{color:var(--brand-d)}
+.cmp-txt{font-size:13.5px;line-height:1.65}
+.cmp.map .cmp-txt{color:var(--ink2)}
+.cmp.us .cmp-txt{color:var(--ink)}
+.cmp-wrap{margin-top:22px;background:#fff;border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
+.cmp-table{width:100%;border-collapse:collapse;font-size:14px}
+.cmp-table th,.cmp-table td{padding:15px 20px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.cmp-table thead th{background:var(--soft);font-size:13px;font-weight:700;color:var(--ink2)}
+.cmp-table thead th.us{background:#eaf2ff;color:var(--brand-d)}
+.cmp-table tbody th{width:132px;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;background:#fff}
+.cmp-table tbody td{color:var(--ink2);line-height:1.7}
+.cmp-table tbody td.us{color:var(--ink);background:rgba(30,111,255,.04)}
+.cmp-table tbody tr:last-child th,.cmp-table tbody tr:last-child td{border-bottom:none}
+.reason-note{text-align:center;font-size:12px;color:var(--ink3);margin-top:14px}
 
-/* ============ 最新功能 · 紧凑时间线（v1.13.179 P2-2 由 4 张大卡降级） ============ */
-.func-timeline { list-style: none; position: relative; }
-/* 时间线主干：上下各内缩 16px。两端略微出头是刻意的「线在延续」观感。
-   ⚠️ 颜色不能用 var(--line)(#e6eaf2)：本区底是 --bg-soft(#f6f8fc)，压在上面对比仅 1.37 几乎看不见。
-   单独取 #b9c7e2（蓝灰系、对比约 1.7）——够辨识、又不抢节点。 */
-.func-timeline::before {
-  content: ''; position: absolute; left: 15px; top: 16px; bottom: 16px;
-  width: 2px; background: #b9c7e2;
-}
-.tl-item {
-  position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center; gap: 0 18px; padding: 14px 0;
-}
-.tl-node {
-  position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: #fff; border: 1px solid var(--line);
-}
-.tl-orange { background: #fff3e0; border-color: #ffe6c7; }
-.tl-green  { background: #e8f7ee; border-color: #cdeeda; }
-.tl-cyan   { background: #e0f7fa; border-color: #c3ecf2; }
-.tl-purple { background: #f2eaff; border-color: #e2d5ff; }
-/* v1.13.180：资讯区合并进来的 2 条（竞品追踪 / 报表增强）各配一色，凑满 6 条 6 色。 */
-.tl-red    { background: #ffecec; border-color: #ffd9d9; }
-.tl-blue   { background: var(--primary-light); border-color: #cfe0ff; }
-.tl-body h3 { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
-.tl-body p { font-size: 13.5px; color: var(--text-2); line-height: 1.7; margin: 0; }
-.func-more { display: inline-block; margin-top: 14px; font-size: 13px; color: var(--primary); font-weight: 600; cursor: pointer; }
-.func-more:hover { color: var(--primary-dark); text-decoration: underline; }
-.func-more::after { content: ' →'; }
-.tl-item .func-more { margin-top: 0; white-space: nowrap; }
+/* ---------------- FAQ ---------------- */
+.faq{margin-top:46px;max-width:780px;margin-left:auto;margin-right:auto;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 4px;cursor:pointer;list-style:none;font-size:16px;font-weight:600}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-size:22px;font-weight:400;color:var(--ink3);line-height:1;transition:transform .25s,color .25s}
+.faq details[open] summary::after{content:"−";color:var(--brand)}
+.faq p{padding:0 4px 24px;font-size:14.5px;line-height:1.75;color:var(--ink2);max-width:660px}
 
-/* ============ 理由 ============ */
-.reason-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-/* v1.13.244：选择理由改为「通用地图 App vs 选址赢家」逐项对照 */
-.reason-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 26px 24px; text-align: left; transition: all .25s; position: relative;
-}
-.reason-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-4px); }
-.cmp-dim { font-size: 12px; font-weight: 700; color: var(--text-3); letter-spacing: .06em; margin-bottom: 14px; }
-.cmp-row { border-radius: 10px; padding: 12px 14px; }
-.cmp-row + .cmp-row { margin-top: 10px; }
-.cmp-row.map { background: #f4f5f7; }
-.cmp-row.us { background: var(--primary-light); }
-.cmp-who { font-size: 11.5px; font-weight: 700; margin-bottom: 4px; }
-.cmp-row.map .cmp-who { color: var(--text-3); }
-.cmp-row.us .cmp-who { color: var(--primary-dark); }
-.cmp-txt { font-size: 13.5px; line-height: 1.65; }
-.cmp-row.map .cmp-txt { color: var(--text-2); }
-.cmp-row.us .cmp-txt { color: var(--text); }
-/* 6 行硬对比表（v1.13.246） */
-.cmp-table-wrap {
-  margin-top: 28px; background: #fff; border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
-}
-.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.cmp-table th, .cmp-table td { padding: 15px 20px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-.cmp-table thead th { background: var(--bg-soft); font-size: 13px; font-weight: 700; color: var(--text-2); }
-.cmp-table thead th.us { background: var(--primary-light); color: var(--primary-dark); }
-.cmp-table tbody th {
-  width: 132px; font-size: 13.5px; font-weight: 700; color: var(--text);
-  white-space: nowrap; background: #fff;
-}
-.cmp-table tbody td { color: var(--text-2); line-height: 1.7; }
-.cmp-table tbody td.us { color: var(--text); background: rgba(30, 111, 255, .04); }
-.cmp-table tbody tr:last-child th, .cmp-table tbody tr:last-child td { border-bottom: none; }
-.reason-note { text-align: center; font-size: 12px; color: var(--text-3); margin-top: 12px; }
-@media (max-width: 620px) {
-  .cmp-table thead { display: none; }
-  .cmp-table, .cmp-table tbody, .cmp-table tr, .cmp-table th, .cmp-table td { display: block; width: auto; }
-  .cmp-table tbody tr { padding: 4px 0 12px; border-bottom: 1px solid var(--line); }
-  .cmp-table tbody tr:last-child { border-bottom: none; }
-  .cmp-table tbody th { padding: 12px 14px 4px; border: none; background: transparent; color: var(--text-3); font-size: 12px; letter-spacing: .04em; }
-  .cmp-table tbody td { padding: 6px 14px; border: none; }
-  .cmp-table tbody td::before { content: attr(data-label); display: block; font-size: 11.5px; font-weight: 700; color: var(--text-3); margin-bottom: 3px; }
-  .cmp-table tbody td.us { background: var(--primary-light); border-radius: 8px; margin: 6px 10px; padding: 10px 12px; }
-  .cmp-table tbody td.us::before { color: var(--primary-dark); }
-}
-/* 2 列断点时第 3 张卡独占一行，避免右侧留空 */
-@media (max-width: 980px) and (min-width: 621px) {
-  .reason-grid > .reason-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
-}
+/* ---------------- 结尾 CTA ---------------- */
+.end{padding:112px 0 100px;text-align:center;background:linear-gradient(180deg,#f6f9ff,#eaf2ff)}
+.end h2{font-size:clamp(26px,3.2vw,38px);line-height:1.25;max-width:19em;margin:0 auto}
+.end p{margin-top:16px;font-size:15.5px;color:var(--ink2)}
+.end .cta-row{margin-top:34px}
 
-/* ============ CTA ============ */
-.cta {
-  background: linear-gradient(120deg, #1e6fff 0%, #2f7fff 55%, #4a9fff 100%);
-  border-radius: 20px; padding: 56px 48px;
-  display: flex; align-items: center; justify-content: space-between; gap: 32px;
-  position: relative; overflow: hidden;
-}
-.cta::before {
-  content: ''; position: absolute; width: 320px; height: 320px; border-radius: 50%;
-  background: rgba(255,255,255,0.08); top: -120px; right: -80px;
-}
-.cta::after {
-  content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%;
-  background: rgba(255,255,255,0.06); bottom: -80px; right: 160px;
-}
-.cta h2 { color: #fff; font-size: 26px; font-weight: 800; margin-bottom: 10px; }
-.cta p { color: rgba(255,255,255,0.85); font-size: 14px; }
-.cta-actions { display: flex; gap: 14px; flex-shrink: 0; position: relative; z-index: 1; }
+/* ---------------- 页脚 ---------------- */
+.ft-foot{border-top:1px solid var(--line);padding:44px 0 40px;background:#fff}
+.ft-in{display:flex;align-items:flex-start;justify-content:space-between;gap:40px;flex-wrap:wrap}
+.ft-brand{max-width:360px}
+.ft-brand .brand{margin-bottom:12px}
+.ft-brand p{font-size:13px;color:var(--ink2);line-height:1.7}
+.ft-links{display:flex;gap:56px;flex-wrap:wrap}
+.ft-col h4{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--ink)}
+.ft-col a,.ft-col span{display:block;font-size:13px;color:var(--ink2);margin-bottom:9px;transition:color .2s}
+.ft-col a:hover{color:var(--brand)}
+.ft-copy{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
 
-/* ============ 应用场景 ============ */
-.scene-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.scene-card {
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 26px 24px; transition: all .25s; cursor: pointer;
-}
-.scene-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-3px); }
-.scene-ico { font-size: 26px; margin-bottom: 14px; }
-.scene-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
-.scene-card p { font-size: 13px; color: var(--text-2); line-height: 1.75; }
+/* ---------------- 进场动画 ---------------- */
+.js .rv{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.js .rv.in{opacity:1;transform:none}
 
-/* ============ 流程 ============ */
-.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; position: relative; }
-.flow::before {
-  content: ''; position: absolute; top: 28px; left: 12%; right: 12%;
-  height: 2px; background: repeating-linear-gradient(90deg, #c9d8f7 0 8px, transparent 8px 16px);
-  z-index: 0;
+/* ---------------- 响应式 ---------------- */
+@media (max-width:1000px){
+  .nav{display:none}
+  .steps{grid-template-columns:1fr 1fr;gap:8px}
+  .caps{grid-template-columns:1fr 1fr}
+  .reason-grid{grid-template-columns:1fr 1fr}
+  /* 2 列断点时第 3 张卡独占一行，避免右侧留空 */
+  .reason-grid>.rc:last-child:nth-child(odd){grid-column:1 / -1}
+  .sec{padding:88px 0}
 }
-.flow-item { text-align: center; position: relative; z-index: 1; }
-.flow-num {
-  width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 16px;
-  background: #fff; border: 2px solid var(--primary); color: var(--primary);
-  font-size: 20px; font-weight: 800; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 0 6px #fff;
+@media (max-width:720px){
+  .hero{padding-top:52px}
+  .hero-glow{width:760px;height:560px;top:-260px}
+  .hero-arc{bottom:-380px;width:1100px}
+  .lede{font-size:15.5px}
+  .feats{grid-template-columns:1fr;gap:11px;max-width:330px;margin-top:26px}
+  .cta-row{flex-direction:column;align-items:stretch;gap:10px;max-width:330px;margin-left:auto;margin-right:auto}
+  .btn-xl{padding:14px 24px;font-size:15.5px}
+  .hero-shot{margin-top:40px;border-radius:12px}
+  .steps{grid-template-columns:1fr}
+  .step{padding:13px 14px 18px}
+  .step em{font-size:12.5px;min-height:0}
+  .prog{left:14px;right:14px;bottom:8px}
+  .demo-hint{text-align:center}
+  .caps{grid-template-columns:1fr;gap:12px}
+  .reason-grid{grid-template-columns:1fr;gap:12px}
+  /* 窄屏把对照表拆成卡片式（th 作小标题、td 用 data-label 回填列名） */
+  .cmp-table thead{display:none}
+  .cmp-table,.cmp-table tbody,.cmp-table tr,.cmp-table th,.cmp-table td{display:block;width:auto}
+  .cmp-table tbody tr{padding:4px 0 12px;border-bottom:1px solid var(--line)}
+  .cmp-table tbody tr:last-child{border-bottom:none}
+  .cmp-table tbody th{padding:12px 14px 4px;border:none;background:transparent;color:var(--ink3);font-size:12px;letter-spacing:.04em}
+  .cmp-table tbody td{padding:6px 14px;border:none}
+  .cmp-table tbody td::before{content:attr(data-label);display:block;font-size:11.5px;font-weight:700;color:var(--ink3);margin-bottom:3px}
+  .cmp-table tbody td.us{background:#eaf2ff;border-radius:8px;margin:6px 10px;padding:10px 12px}
+  .cmp-table tbody td.us::before{color:var(--brand-d)}
+  .ft-in{flex-direction:column;gap:30px}
+  .faq summary{font-size:15px;padding:18px 2px}
+  .end{padding:76px 0 68px}
 }
-.flow-item h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-.flow-item p { font-size: 12.5px; color: var(--text-3); line-height: 1.7; }
-
-/* ============ FAQ ============ */
-.faq-list { max-width: 800px; margin: 0 auto; }
-.faq-item {
-  background: #fff; border: 1px solid var(--line); border-radius: 12px;
-  padding: 20px 24px; margin-bottom: 14px;
-}
-.faq-item h3 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
-.faq-item h3::before { content: 'Q'; width: 24px; height: 24px; border-radius: 6px; background: var(--primary-light); color: var(--primary); font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.faq-item p { font-size: 13.5px; color: var(--text-2); margin-top: 10px; padding-left: 34px; line-height: 1.8; }
-
-/* ============ 页脚 ============ */
-.footer { background: #101828; color: #9aa4b5; padding: 56px 0 28px; }
-.footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 40px; }
-.footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.footer-brand .brand-logo { background: linear-gradient(135deg, #1e6fff, #4a9fff); }
-.footer-brand b { color: #fff; font-size: 16px; }
-.footer-about { font-size: 13px; line-height: 1.8; }
-.footer-col h4 { color: #fff; font-size: 14px; margin-bottom: 16px; }
-.footer-col a { display: block; font-size: 13px; color: #9aa4b5; margin-bottom: 10px; transition: color .2s; }
-.footer-col a:hover { color: #fff; }
-.footer-bottom {
-  border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px;
-  display: flex; justify-content: space-between; font-size: 12.5px; flex-wrap: wrap; gap: 8px;
-}
-
-/* ============ 响应式 ============ */
-@media (max-width: 960px) {
-  .ui-grid { grid-template-columns: 1fr 1fr; }
-  .proof-grid { grid-template-columns: 1fr; max-width: 460px; }
-}
-@media (max-width: 640px) {
-  .ui-grid { grid-template-columns: 1fr; }
-  .ui-shot { height: 200px; }
-  .proof-num { font-size: 40px; }
-}
-@media (max-width: 960px) {
-  .nav {
-    display: none; position: absolute; top: 64px; left: 0; right: 0;
-    flex-direction: column; align-items: stretch; gap: 0;
-    background: #fff; border-bottom: 1px solid var(--line);
-    box-shadow: 0 14px 28px rgba(16,24,40,0.10); padding: 6px 0;
-  }
-  .nav.open { display: flex; }
-  .nav a { padding: 13px 24px; font-size: 15px; color: var(--text); }
-  .nav a:hover { background: var(--primary-light); color: var(--primary); }
-  .menu-toggle { display: inline-flex; }
-  .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-  .hero h1 { font-size: 34px; }
-  .cap-grid, .reason-grid, .scene-grid { grid-template-columns: repeat(2, 1fr); }
-  .flow { grid-template-columns: repeat(2, 1fr); gap: 32px; }
-  .flow::before { display: none; }
-  .cta { flex-direction: column; text-align: center; padding: 44px 28px; }
-  .footer-grid { grid-template-columns: 1fr 1fr; }
-  .fc-1 { left: -6px; }
-  .fc-2 { right: -6px; }
-}
-@media (max-width: 600px) {
-  .cap-grid, .reason-grid, .scene-grid { grid-template-columns: 1fr; }
-  /* 时间线在窄屏改为两列：图标 + 正文，链接落到正文下方 */
-  .func-timeline::before { left: 13px; }
-  .tl-item { grid-template-columns: 28px minmax(0, 1fr); gap: 0 14px; padding: 12px 0; }
-  .tl-node { width: 28px; height: 28px; }
-  .tl-item .func-more { grid-column: 2; margin-top: 6px; }
-  .footer-grid { grid-template-columns: 1fr; }
-  .mock-stats { grid-template-columns: repeat(2, 1fr); }
-  .hero { padding-top: 48px; }
-  .section { padding: 60px 0; }
-  .section-head h2 { font-size: 26px; }
-  .nav-actions .btn-outline { display: none; }
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .step.is-on .prog i{animation:none;transform:scaleX(1)}
+  .js .rv{opacity:1;transform:none;transition:none}
+  .shot,.spot{transition:opacity .2s}
 }
 </style>
 </head>
 <body>
 
-<!-- ============ 顶部导航 ============ -->
-<header class="header">
-  <div class="container header-inner">
-    <div class="brand">
-      <img class="brand-logo-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANIAAACyCAYAAAA3bZEYAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAA0qADAAQAAAABAAAAsgAAAAANRIPfAABAAElEQVR4Aex9B6BdxXH23Neb3lPvXUJCBSR6R8LYiGKKDbYxxRDjuOHEJYnj/HFsXBKn2SaJgcSxDaYYMBiDCdUYRBUdCVDvvUtPr9d7/++b3dm79777CgI9SaB979yZnZ2dbTNn9uzZc05CDoW974Gv/b6vSMFMkdRYkQQOQTwPcYbkWNDGSCKhsR7/pORpx5uqhtz5Pt9cyK2W68+zeI/FHWLsnR54h6PcO5U6IEv52u/HSnv+bBjGTMmTmZLCkZAqGIurbmwwneHkjNOyG5pKZVJCHHRLSqUWgGmNN7K5Im3z5fqPwegOhf3ZA4cMqbPe//LvZ0o+DacdR8FssMFoEMwQAlRiR7oyR/wWfycwGJLPxLjRMiGMKzUXXDja5h4yLN9fvQgOGZJ1NqdpbTIb0YskkYfDexsaTDAa311GMzpldIYzjSFOd5Tcv2YgcWpMy8Y17j1WSEvCsBL3Yzp4/6HpYNyR+w7/YBsSjaeFhsMjcaEquxkJ+zwXbgaRDY0/hsQtGL/Fu4LBIDyTxQ2SbHgMicdxnQ+m1koSRpXXdgs81aFrrK76/V2kfTAN6Uv3XiR58DqSuCoYixmN9gh+NI6eTeQ5nJ1sxhBDw+P0cN1EIkLM4yhd/wZjMDYYCIPRDbd4LkiaHYG/fS0qc4vkJWlUa0g+FN6bHvjgGJJ6n7avSSrvasnzq2lmJKbohNkH+9loufDYaEyO8RFmh5gnTlNb8QaTQY9owWDI4A1F0Sw8ppkxhbyeN9X+AETcIj/7GKaAh8K77YH3vyF98c6xIoXXwRiuggE5o6DyEyc0I8kF2bsx3eKaz6eRZnFFKRchw2A8Tema2vEnshcmFvQrkQdnD5Uzpg5Wz/LYol3y+KoauXNLneZNgL+uuU2adzYgnmVIZjzkNDyGys+0JNPX4uc6yRdcTx1a/WOX7U2IRnhvsh/Aeb54z2zU7joo9KwMY4i9UDAScMZ0NiukmWFwiufplt4BgsF61AypMF+unTpQLp3WX+5atFtuWLCVuXIHNaY2+f5hKfnbS04KPBk2Zp4FqSngL62ukbMeWSMtO+tBYBZvVGY4SsqiWVom3IO810uBXE+D2rFjx9XJvLwVg/v3f44iDoWue8CGvWuugyn1c3fOloL86+ByZlUO6iPXHTdKZoyqlCPGVMlf/Hax3L1oS6Y3yvPXQKb4sQEpzRuH0dkXATfDMejTyAOLKm7fLCu/cqYM6VeuFP4s2dIopz66Vs6qLJLTh5XJzGEu7bQ7l0KPG+SeUyrlwtNnBH4aSxwyYj6NPH/90Bq54Q20jSFJrsh4WF/yJtUDOVy9EdkiPsWTez5S/8qfPnrcxMcu++QF/4r06l27dt3Xp0+f+4cPH/4MxR8KHXsAPfw+CZzCtedfj5ulF35hxmC59sMTZeKoAdo4NjIBZXp0/ja56K4304ZgBpEL0rXo9E8zp/OQ7gS6jmNeDYD9S13a7iYoba2cv+15mTpxvPzjX1yu3sMzdgBLtjbKETe/Jr8+qkA+PefEDumq7J4aGxbNRQMNAIHeadY9MEhM+TSYkTBSXIAf8LUgrbU9h2GlDaoktVPOqH67edzwqkV/9YUrBlf17TuC5TbUN7xWWlryucGDBx9a/dMOTv+YFqQpBxt29c19Jb/0Oij9V88eUy7/9okZMmH0QG2F03ffRCj8X92zWG54bSMMJPJC2UbUpQFBlhMK+UCK8uWKCVXylaMGyrHj+oaee3FNrZx630o5rG6ZXDkiX/7fNReHtGxkKa55pt35tnyvaqv8vz+7IDvZzdZiqjeanAYFvtrGNhl+8yJp5VSPwYyJENPMQhhUe3tSkjSo5hbnvWIexem5muTsuvlSnp+q/dJl51XPnDF1FMvk0drSckNZWdm3+/XrV+0KOfTrtewg7YjP/uZrcDXXSUGy6tZzx8glZx2jDXG67pvmPUYdFGzgvzyPMzLOxrHx0KgY9BqJEPlyHcrj02BEieR2efqiqXLy9LFM6RAKblgos7fMk59efY4cMWFEh3QSlm+tkyl3rZY5256Tm//6Chncr08GX2wsTHB+x7NQ4QMa4Z525b0r5Z4l29OGRDqnfPkJySstlHxvFG30Tk0wqDbvpSg3HG1ycutKqWrYKrOOnbb7M588p7ywoKCIolqam7fk5eV9etiwYXMZ/6AH+vuDL1x9x0wpyLseGj9rZFmDPHrtmTJ+9GB1FmwMp3FqDMR9655fthtTGpxpu/JGli+GlKBxFewkIn7ezrfklvtWy8LlU+SIiWOkorxU6hubZNH2ZvnzxWCr3yUn4frnyIkjfQ3SwAxkyu83wCtslaNG9O1gROTWdvhszGNtISnFOvlgWMxz2yUT5NTny+Src9eD2V8b8ZwBY0o2tkoKxlQAGYVFyA3P2srpoBmUCcbKwwuFk6Sysq+kXl3Yb8XG7fKXV17QMGzowLKi4uKhyWTyqY2bNt3RUlr6lXEfcO9kYxC67oBHPnvHdfAe36Vyf2FqufzwqtOkvKxYlSwoHtLihpH+L4+ukn94EYqL6Y2alxkUpjl6qufZWr0TchYn5LcfGSsfP3qo/Pe8LfKVucjHADl6KI587TtlWKpZk3blFUpzIaaUiRIyysUNr8rPvnJJTgNhhrvfqpbLntggp9TOl9MG5Mk/XnuZTptUWDc/ZohkQ63TgZ4EwdIZ++3rO+Qzf1rrro2Cp0EK8bIinI9QW7adkkBTg2pEm7RfPJ/ma5SzGhZKeUFSrrrorKZTjp/GhmL9Iiktra1bCj7g3inWN/bLgRvohfISt0CRZyRKEvL4ZdPklKMndjAgNsAaFRvWL57dIN94aSPO5HmS9PeQCPXMDgNRXcK075KyXfKra2ZLeWmx9kVtc7v0/ckbEAqpdnBRoR7ToVYoGmlWohackKLWDfKro6rksjknq4zsH8qs+vUKkYY2ObrubZncuFF+/u1rpaxEZ02B3QwiELKQ7HSagwYqPoKlL9ncIDPuWOIXIZBmq3dk4jQP/ZCnxoI0wBTS25pbnYciLztH09tkVstSKW3cKR8+9Xi56uIzKUGNiWUl29t/gJW97yjxA/bjLxAO8FZfffvXMJJzaURfnlIq275/dqYReQU3laYBqRFF9AuOHCxfnzJICkoKgzEFIyJffp5cmb9Wbv7cGcGI2Ct9iuHB6Kl4FLXIK58cK8k/nwK8wE8TmYb8xpOXlDm7FsqHjz+i00797J+wTN0E5czLl9fLR0tjU7N8+6Y7pYFTqyhYO8IJIUojmp2uduwS1MAt/XAssy+4corkDSxTeqgr241pXjsMJen7iieGBNpSCKPO64MTRlGha5+mF8jTRVNkW8UIeeK5l+Wm2x+ShsbmFK6VtC55+fn/sG7dunmrV69Or7xk1fn9Gg19f0A28PLbK6VQbsUoXTi0b77cd+VRMnPK6O69EAfdB8NiZXxuRTWmeVvkOSxTmzGd07harsay+XHTJ8mY4QNVMUxG3k8XyNeHNsr3LzpKjeyuN3fJZX/E6p8qF7lQCgtivHWLfDVvnfz0G1czQY3jzZUbZfXGrdJcXCWfXYcZUXWmwUjrZrlg2+uYNuXJZy88S848bqrm5Y95lUDohGbpxg8zdYGeBIH0uuakTPzNMtm9pdZ7GU5rPSeuk/IK89Qz6VSPdD2S0soFiQZM98KCRFJKU7tkVs1CGTVsqHwby/tl8OCc5rGctra2eiCnjhw5cr6rxPv/1/TswGvp5TcfgeeBHoSnGPPDU4fK5y88Bhf0JR2MyBoQDMUbUQd6VgsbMS2bdvsSWdeAKQzyfHr3q8oxZVCZfPuLn87g3ra7Dtc6FUrbXNMqI25d7qd1IGl5KM2XO6R5tZzfslZ+/vdflMcWrJNPPbdeatpxVseFu+RnrsplFCLtckztQhlZvVYGV5bLcdMmy5nwauOGuXth5DUjsXzZ8Vz0XAb19UfWy43z4RXNWDh9Y8A0Tx0r6OG6Sad1WC4HbG/ECYBe0xtYGYzp9MiYSuHFWCc76uvqvjBx4sSfO+Hv71/TtwOrlVfeejUs5vox/fOr7rzyGJk5dYzWj5VVg8llLFk0ZgjGpbndT0z77Rs75NMvbHJGgPyf3vmy/OPnLpSxw9x9qChbQMt/s1oatzcinjYeMyKFbdvl1Ib18lyfyc5wfL2CgO6QFFbPWrfJKQ0bZfCutTKwX1+ZfdwMueBU5w2ZPduAsuNWRExXg6IB+PyPL6mW8x9a7a6bbFWP6V0YE+W18f4TvRMXI2iAqUaZw/tNuD/1d9deIWNGDAqGRP7amppfTZo06Rqr0/sVHniG9JlfXy+J1Ff/46wxuMs/U70QOz+XEQWjyDKiQI9GLRdte12bDL0VF+EQfmYzFiOOGyrnQGE7Cze9ulOufX5bMDzlY9lmLIZjinTXqYNkTCW8EMIbWBL/0/YW+d0mGGAjpkldBa/sjqVNBjeslpO2L5IKyLz2U+fLidPGh9yxoZCYHTdGozszUkbl5Y6KGfDKutvBex7NU1LQqWdKgY+LEe00Ji5IsL7Y2jSnboGU0Zi+fIWMHZk2Jk73qnfv/r+pU6eeb/V5P8IDx5A+cUOFFJf9bFz//Kt+ct5hsn3HTlm9YbMccfhEOeu0o6SiDNcWUFSrcDCMiMYBCvRotLJpcfzku1bIS7tq5AdFq+T/fe6SKFdH9Acv7JDvvraza0Nq2Sgv4iRwwpQxHQWAcveSOrn0mR3ArCVUxJjVRxQY3iYf2vWSVFVvknNPO0GuOX9WnKGDAZnhxExG8xKdAYDhLnjlzzy62sVjYyrHYgM8FVfzsq+ZaEy8N9XWBEOiQalHo2daIKVYhPnqn10i0yaN0msm1oHGVLOnZj22F80YM2YMbui9/wJvquz/8Nlf4uKh6LniguY5BW11ctvC3fJ/axtk0e5m2TZ/nlTXNsqJR08NqqeG4M/+po6kxQbCRmXTsuPkGYEL/Lb5z8ux44fKjMljScoIloewCddVt6+scyt0OPv+ZGa53PyREfLd4/vL9RubpK12p/x90Tr5zNmnZMiII9MHFskQ3Mt6CPw8MXQ8sArIlmqa4Xmyumy0lBW0yo4lb8kWXLOdMG1iEGt1NEJ2nPSYpn1G+QjTsaL3g+c3K+46mHQYShsWDnjPzariOPBrJzMsmaPvkgXgAa+k8mVl4VAZ3r5L5s17GduQEjCm0SFXcVFxVW1t7RVf/vKXb7nxxhs5N35fhf1vSDSixsSzWFiY0S5FUidl0p4okiTwhkSZTOqTkAG4pTPrxJna8VQIVTLEnCowalh6bGJarERpDocNxy7s55dulMULXpNFqzfIa4tWyOYde2Ttlp1SVFQkfSuwZOxDG87ENyyqldGySV6/cIycO2UwlsfzpBjbbpJ1SUksfl6+hE2nIwf1syw54XFDiuXNmnZZUo3rDWuPtaGzOFq7uWSYlMKYqlcukkH9B2IhIvNaLrudcR9YRYymPebL+sHzWHjQ3mTfkhM/nLLR8+gNbF9NE2IQyXlY+k/AC6W4opdMyOr8AdJSVCy7Fs+Xp196CyLyZPSwAW0FhQV5JcUllU1NzZ+56qrP3PKLX/zifWVM2m3WL70OL4ARldOI8maoQoV7MagW7rEkKsvkwsQ6mX34YPnSlRc4g/EKZxU3xbC6x/EYt/RccPWuFrn8qc2yYedWOWMAZph1O6Ru+2YpxMV+WZ++cjWWpE+cNk6zDvnJY/LAnEkhbvKm3L9Opr54t9x23Vc73Fg1nmy4ZHeb1GBJ+rFNzfKdZdhk2ogzO4NdJ+n1B7TVgtJTcs6WP8kAeO7vffFyGTe0v6VmQJvKGbGzuO48/zWuk3ThAGXZwoNN83BtlsDSeAJl5yvN8wBPkZc0n7dNr5uwqqd8zTIau8gnN23G6yIaZcqYIWsLWne+cumll55YWlqev2HDuplz5szBBef7I5g+9n5rPvHLyVKQuhsGM8Nd2dJ4MJWhoeTnS35VuRTjTHcutqVcNGumfPK8010aamqVzjaUOB7jXTUuF18D9uSd8fAmeXl3rZy5/hWprNks404+S86bMUGe/OOj8sMvfLKDyDPvXyl9X/q9fO/zl8v0ccM6pPeE8LGnq+X+1dGJOpdBkZZslIvWPSLjBvaTH3/1yi5FxwYU48zE+An3rJbX1/CZvrRBZBgTjYSLDwXwPDAQtwMCNM9v10vOeLCqx+1FXCZnvmCc8LypFplT89L8bStemnf7HXdcguxtGzdueN8Y0/6Z2tETlbQ/LAkzIm9A3IGtRlSGaZW7oz65epFcfN6ZMnigu1lOI6LyZxtAHI/xrrSsM75CTNU+PKRU/mNlo6wuGClLKvrKvPpCSS6fL9+5bI6UZ23lYRl3r22RvG1r5ZmXX5O31mySp95YLKsxPcS1gQzu6+5BdVUXpl06tkR+vKlVWhqg1K6hoALxU7A0LJQ1paUyeNNSGdh/QIcpXlxO3MYYJw/jX3p0vZPvCHFWLVoJ/nopwR0cCHzM3Z3N0tdLmoBrqzxcM+kuCd7EdewwIiK4hioaMvTI8raS55544KnzL7johOLikqvOPnvO7XfddZd/5sNJORh/ram9V/crby2X1qbnM4wobLGBJ+oLT1SIOTe80+BEkxy//UW544YfhDHJpQxW+ew0o2fDnvLVtSTleSwK1GGZd2J5O560zT2NovxXtrbK8Y9iRQ9ToV/NLJFBhe3yq8eelvytq+Wqcz8sHz3piOxq5Izfu6pJPvECdh7wjM9AqGgMXdr56x7Ey/da5b//9s+x9Jy5T89lTv/G3ijGC37yNuSnPYziOjUzGssFjpAoK4QRZa3kweuovAwPBHfDG7ec6iV57UQZOMgjjfKR7U++MX5o2aJvffvbl+yprl4/c+bMw7SAg/iHy0K9F87/nzJpoRH5a6LsM21FCWYR+X7bjsikVI1MPmxCqF+2AcTxGA8ZshDy9ITPslUU5cmccWVy8eFVXRoR+Y8bUiibP95f6i/uJ382tVI+elg/ueK8c6Sx/0i576nnTGS38JLx2L3RDxMFeMX0Hj7iGCqecOi1/RT4wSFHYQtSkzz4/IJu2xW33fqAJwrn5SBTx4IwKiceHxhCCpt6uaUq3pfHOpFNf7R+rGNCCooxo8CufJWnDOTBkSqRNwaddNSSNZsG/dMPf3hvZVXVqBdeeOGZbjvmAGdAr/ViKEm8oEbEHmXnxgfuE3HKpDuzteMTUtlSLcfOcMveNvhW2zge45aeDXvCk53nncaH9imC7nA7kAsfH1csy4ZPx7mjSRav48pYz0LtnH4yA4apxsTJd7ZRUdl5lI6W9rIqmfvaWyq4J200nq01TTIL14HOODkWkGeGqvI9LYwR0jFdS8HBcNzUmFiqprtNq5lGA2Pixt5yGhNkBdkJ2ZHsK4tHnn3WMhjTjTfc8OCoUaNPe/Kpp27XRhykP+idXgqX3HQLOtO91SMMDgcL5RcWSh88G+OCoxViF3V+7WY546SZGAcypUMcj/E0Rxpjenc8ae73Hjtr5GC1g8wWdF1OOS7s55/ZV56dVYXt59470ZjMqMywoPAPwCvt2LNHnnx9qQrtSXvJM+KujbJgA17lxb6NPEkGzjQ9zMgQxwOAWOjH1NsdOoAgOz6Dlo/GhBMCjQl5JoxAe3D/jbzbUs6Y/vjEk8333nvP49iTd/nDDz/8fW3EQfjTO4Z08U3fwurcVa6z052sRoRpSlllKc5w/jkhDhwSpier5awzTu2wlBwbRYzn6vvu0nPleS9pO7Cc/WB9nj7v05j1iERPyjl1WKHUn91P/moCdnVkGBFyq2Ghr+CVkoXF8tALbtOtye2u7aX9vacw7xMbE8fATx87GAgL4BQPIGOKhzxaJvPqGIKBMhGGFLXJ9PIaefEvj5ftPzxTbsIj+pNH9JNt7TCsIz/xsVtuuW37Y48++vSkyZO/ec8995ylmQ6yn31vSB//z0vQsT9So2HnWEcbxI5uPljmAgeB1+spmYSH4z5x3mw3OJZqA6RiLI9PzALdKVIW+3sS3VlTL/98x4PynTufkAtve14GPVEt61pSeKQblwul5nHfWVFlyPzvx1bINaOg+B28EmSBtmTw4biBvE2278lc/OqqD1770BBsJoF16jhADTIgx8EfamBUEx8n5BSP6wbg0QW5OA3JIa+nT0rVyuTaFbJkxQYkilx8yih55msnyB8+d5y0DJ9SVnbER0/71re+tWjVypUrjzjiiLt/+9vfDlXGg+hn3xrS+f81DnOAX2jHWmeHjkYvFRRIJa+LcFa054I4YKe0bZazTjk64wG7WCliPFdfd5eeK897QRuAxx/ap39IftDnaHmo/xTsQsCXx2AI1H82+92Eb0zGQ3aQFzyReSgo+uLKw/Tk/+ALb3QoorO+OHxgsbxw3ojI85gxsbKGRwakBoU0g5jiYRde5JVQNNK0PDNC1ga01/IHod6F8ut7H8ZDjC3KQ77jDx8gT37tRPm7az4x+vIv/v05f/vNbz7dnkzmjR499pEODTnACRyOfRPO+c9iKUw9IfkFY7hLIUwVwpQBg4QnMIuwBYVGxOVudjq90bGNy+Vrn70El07UHBdMIQwaPYZM6yo95t1X+OlDsa0Ie/Lm1+FxcrRnEl5rNWTzQjlp5hEyoKpn95NYt5/c/nuZv2yNbNlZI8trkvLwzkJ5tp73ZqjMYCDUAzjeF3E4dhDU7twu553Ucfd6Z30ysrJQvrccewebuIKAAJGZARM4lsHAuRyDQS5pox4JPFnMoPeWiFg6cR/a4bbaS/pIn11r8DhTOzYij7MkhcMGlMopx03ve/Y55x1RWlJSUFVVOfLcc88ZeNtttx00BrXvDGnqWb+DEc3iDdawdKtGRIPBgWXuShgS36HgjIijkpDT8XbSi0+bjmeQJoTONkUwGBIipKu0iG2foEvXb5GBkZGcOBiPszemZG1TUgYl2qXfxrflyMMnyZD+uCboYZg5dbKsbOsjD21uktub+spzuEmbj/5JopvctQkEUcfNmOD5+m5ZLoePH5fzBnBn/TMEU7SHNthuCgqEJXjb6VjVrATeqMXKHE6DatuWl/EQ/P2wXVIsE/KbZd2KpXLY+DHYK+j6ItzTQpaSkuKC/Lz8Aiy0y4D+A44/5ZRT5uGaaWWQdQAjGJZ9ED7675fDC/nvDTkD8aPuBx4DorsD0OVQBDetw7VRIimDmzfLeWecECplCmAwJERIV2kR23uKNuIm7QsLV8u/PYYvT95ylyxYvi5D/sfHFMsAXhwVl6mSPfvK6zgb47GDHoZS7Ky+YuYwufZkTBGxqjkYsgbCQffHPLESR4LzRT0gEHBx+XAt55k3FnZaQq5+OmqQLTp4I+G0jpakBurHTnGjMdnjLIkP+iHulsMpwx8B9bzgeaL0MJxAC+WmX/8uvJ+CddJ6KRt/KM7RDps8+ZaD5XrpvfdIc37SH1fXj8MTlXSY0un0zQ1OAbwRTj+6jGrz7mxvFA98jHP84tBVWsz3XuA7sKBw54uYer5VJ//R0F9WSYVM2LFMtmzfIacdPT0UsRUe5KVdrVIGJR/Ub4BUr18pf5z7nCxcsUbaMNUZMwxfmehBGFGeL9XYWb4B3o2voCuEktE+CfGkAg5qHgRhejc+v0W2LVuoXmlQJ9uSsvtKp3ev7s6sCeXlDPQ0SAwOBzielO3glcilPBQERHE8qo521xXjHX4162Tlms2YzrndHvRK2zGFJaNO5zVLCufa4j5Nra2H33rLLXci8YAO770hTfnwPGy4GuOmdBDPM5y//gkQ072KCkzrcA2hUzvwFOG+0TFNK/BQ2MXh2sgG3WCunuwqLRf/3tIa4IF+9dIqOXtJQh5qq5LGojKpQvNKMUUdi0ct6lYvkhUbtshuGNry5hL53WZMd6BH5TCk9vK+khg9TcrGHyntu7fIW6+/JmUVffB4QUdjoteat2CJDBnQDycaNzw0xpd3tqGPnAEVQi5ugapDol630JiALC0dJDN3LpdFq9bI6UdNl0LULVfI7rPv4dEQWHeaNULTRoPkQDcEULf+YNmBu8TBEK6VVJrxpUXX4vGYYbhpXb95ldThlWbT/fUSm/CP/3E7njubhvFP1xvXS5NmzZq14u6773Z3ndOiDigsXeP3olrn/ssXMee4Ro0oAdH5mIvodRF6iQalZ09AzKuLsBycvj5KyGm4NvrGpR/GY8pDtCY22AZzVa+rtFz8e0t7esV2Oe2VRrm7sUK3MPWFYvfzRxVgQ3l/6TNyIuAgWZE/UJa2whmjyRVoO41gACxgbFmeNOLht8JBI6Uc39tc8MpLeLPQFsE7tOGx0tdONJ6qPhVyxwOPysr1m2XwsBFQzzx5ZVebGo6+HRWyKR8PNyiN/YBdbejffFnbb5SM2bRYnnjpDbwDfZRkeya+8mvp+m1Y58FakDe0f13VIG31mKJ1CB0NwVkTCo+T6JX8Q4AYXQSfSKCHxR1ck+gjYwvaZcOKxdK3qq+MxnseWJf5C1fJq28ulZOOwVuUwGrXT5V9Kj+EhwH/RUUfoD/okfcozL6uL7RitxoPlrXhlTINias7alSA2GDZp28ZLpzdQsM4qZevH1kqV18yRytjBmIwVw27SsvFv7e0mxbski+vxahCcytwbqDh9AXODQeVgGU4MPuSEsBSHHjODwdeEgnIKVjZjjXy5VlTcEM/T+qxmvc8Nrcu2QPv0rhHGtculOp1K/C204QcPeMImXrYBBk3wp1ImnEh/+O7H5H2icdLbUGp4LElPK6U0lc+NAHW48DCoNQA7mlPSTXSCXl/J9HSIBfsfFsqtq6SEtR35NAh0lxSKS/XpmQD7mtN275MKlC5b34Gj4SPGSzlv98sjXh/Q9hYao8/2IZTjUOwbUwNcfSL4RjfvBK80gtx92i649fHLCyfei/QUcniZJvMqX8Lr3uolis+cb6ccuzh8vgLy+T2O++WSz76YTnnjGOx1xUGivYRrlyx4o6PfOQjV+ztOO7rfFCB9yhMmoNVunzc0IBIPWhM0CR6ITMgm+bhrGseqRjL3ecl8L6Eay8PFTEjMRgSPNIZPZvv3cZ/t7JBrlqOBQK0w4zIXezj/hAUtA8OKiSnb/Q8hNzeQ6OiApdtWSYFmxfLyUe5a4Ei0CZU5ssoWN6m1iJ4p1FSNX6aVAwYItu2b5cX570gz738uuzEU8KvN1VK08CxsEa8VhhdSE+E7DhwIY6GabcC5hFhXH+cZ0olCmVp2XB5a8A0eaPfNHk6f7Q8lxqKR0KGyM6iwbKkaqyMqN8sz70wT3YNOVIe2IrH3nENlhH8apu6hoyErIgrHgYFI4ZX0rpZXnVA/FEkDRHl9dJavOJ5YmqPvLngTWnD078lZRXyysLlsnTxEpkxbRK8Vfq7Uv369T/y+OOPf+C+++7r+abFrKruy6h1w7sr46wffAg33P6k3ojTOT2wx4oGpAeKUeMiBA37r8pxMUyPNKd1lVz32XNkun++34zEYK6KdZWWi39vaG/vbJUjnsMFMLS3FOcGGhA9ESGNqgKwHHFnQM4j0RsVgYbLBV0MSKx9U0pqt8hnP3lhhyrwff4LUMaKPe4eDpyJqhv0EZcreAxBITYRgEBebtRuBb0BjNT5esAGpNWBEbeZpBpxeqRd9FKA+ugCRRM3CL7wsF17swyuXynbuJJmXkUh84Ix4MjMSsU8Id3zaTr4YEh5cMXuSVqm0UMaDyANLEtuGV4/dhJ2sSzOGyDr9oCntVlmp5ZLZaJVPnnhh+W0E6YFr7R927YVJ5xwAip84IV375FmX1cAT/QaDuz/hzheIAevBI3SU6eHep0EHOetImyxH5eol1kD0WEfna09ExtIjMfd1hk95nkv8AtfqpUNcEZ8Y3H6egjTOTUk543UAyGdkB6I725QCGNivsSerVK7bSPm/DM6VAmsMhye6fC+Bdi6RgNxXiftffByEeSiB6LX0Zkx+o35GAfQriXCC3z2C9RQ6bQb7B/AL0MWBK9aLMaivgjvfMjwHpoh/WNpmgEZQ9yzUJYGj+BaKYFNqelFB+59CEzp/JRDMmArONYmKqUBV3xJTH9TTW2yRvrKMOy1fOvNt6QVl25TJ40BawrbrMr6n3baqStwb+mAW3jgWL27UJj3OSwk4GqZI8pBs8OLNRqhJaFT6rFfa0rjWjn3zFM6lN+ZsXRG7yDgXRIe39AiL9ZCKdA7vA7qwwOGQZyeiFM6XhupVwLOayN6LXonXCbgbT/OUxUXFwseXJNtO3d3WiPojhyLG7ijyvkSFRquGaSTMxKLFIdhOsgyKFunjIAs2+rA6WUF5Oi1G/hYX3pHTknVGg1q/3Mc/MFaGW4wm2aDpukUiqC4hzbupCEkdUOrw8OAMxofZLTyQNd7iWAo4myF9xfxwpS5qcNkd/FQefiJZ7Gadxtem9yGxcmEjJ8w4d+Y/UALvmf2slqzr+Oel5syOjbqoI5SfW+Sp6leypP1cvyMScpmRmKwY97eozywCU93omeokNBveCFnRDqNA80UmMZTqooPCHoJeA3SIKqGjdaueXMRXi7STThyQIHzZshHg2H+ureflQ+PLJJThxZqOSxLy0NZLNuMifVh3TjlpMGz3jR6ngicIRlEv5PGYTADoPJqNBobR0nTNQk/Bl0Gn27MTETgbgfjU0iiIR5y/DsJJfjIgbpf8LzaNkzeLhovK1evkx/9+OcbYEzNVVVVwx544IHvd5J9v5F9L+5l+YnU9/yoQEDUSdpRiBMq2WC6nFHJnTJu/Ng0oRusNw1sBd6GyjM6jYjeh9dCNBBT2DIoKxWZiwrkC8YEXnoMLipwYzUvnvsPGix7anizsetAwxkLK6BXYv66lW/KkWOH43oL5cLjzDRDQ3k2fWQdOK1k3ayO6jV93Vn/4JXCWICmuB8fVovxbGg8SqcgRTLzaj4vhyIYx/SOl0xqTD6Pl66x8BPk816i5zAan6xlQHwLHrWgMa3bUj3+0T89hbt4CRk7dtxfOIYD59d66J3XiN4oL/GNjEHR/uBP3HWGe7p2lsj4tmrcPxim5ZqRGMyuTGf0bL73Kj4Tp3YqpjswxUIv0Xi4zF0KnIrLRQWdigHqKh1p3oB0embpmN6NGTWyR1UbDUOikRRg+XrX6sVy3IxpId/UfgUyDIU7I3LGpHXwdaNHoqGbUVn9QXYKzpHWAwTCMCxAdEw8gTiD0TLimqDJ4cfkBIFI4df/NFA2ED2IE/Fxh4XfYEyglPCeVHQzeSv2HDYVVsnvH3xqQH19fU1ZeVnfA80rsUv3LqTav+d6yLL7jmJf2SAwyfedcTkI5WupAVvOxEzW/RD7yuQyGY/9ODyjl6OOVE4evD9Eo6EC6/UKaRhz3jNSIyLUdLdIUZDEm1E3rpcjp7jpa3dNoZyBmB9uWvy6zDnzjAx2XkudgileH2xrUK+HOL0h6+Pq57wkZWi9A0QfA3fGA5xdrgdxHyG0g4lKj4oPcfIjGK/STUZE5w3aMPA+XfORx/NZnNBCSAMSvJJLfCE1TBIFZSOfeuaF1dSbMWPHHlBeiV38zgO9UUK+oRlzdapJtI5WHhDZUT4k+NWFHoT9YWyjcOXOx7x/OgUvPhlSJEOhnVRQXgNReYnTYLjMrTdfcdrXJW9Pc8aUkPqtG2T8uLFY7ce8v4ehPNkkfVHIxLGjOuQoxRTvZLzLwZXvyma5LI/1KEY/06iCcWlcV/Bd34M3KLIpbTQmWqCOGfmQYAcTFCdkhCEgEeppmNq141pJ8zjmjjxajpWRXnAw9mKu/vKdDwzkTRZJa0G5PDPvLb1jXV5WfkB5JXbtOw/J5r/VTNYZ1qnsR+vwzqRmpZuhGOwsW2/TedY/Y3iRfAlfCPzJMeUyvaJAlZXXLFRk7nczY4J+67WMGhby8fqIuxV2bFiVoUs9acPAimI558zZnbIOxvRuPK+lIN+MSMtFnXjNREPnUYo66TTUwzAuiDtjsiJA0DHxkGQdVw8tLWQy/iidaXEeyuArjBmQ5NIUUZIjerQzQHb9/Gg635q8gXg/RcPQ2tp6vGxCZMyYA8crocvfYZh9HV4gIN8OHcfsGZ2VQ16O9MaSAdi0iG0pB0HgNc+nxhdLFayHSktjctAZjOE0LBoVjYi0tpZmacYbhN5JiB9m7CzfUQMLpS+mnlYPNWyUWQRlpldS74R4KXB6KNLTdpADZ0HkCZA8Pu6oPg0gBznQ4jTcG3MLDpSVO1uoE5BwjRSVy3bgJYcuM+hb4ZUYtm3bpTfSsE+x71333JPeEqOp++fnnRtSS8PnXc/43tGGAw+BONPi9JDoEcc/dFB/jXfmjTqjZ0vrjTivXc4fiY2eqLoaDtpHRQ6GAzqvY2hEzkOJDB0+SrZs2SK19ZnvUni39WU5p+JJXK0Ly0VdrEx6I6PzsQse+Ei73sjVMeGIIx7Gx8aKldKxzAHjNJfZ54cgyoppjDJg6a6N0zsLGWVmEC2ShnE99PVmmlnLHNCvnwwfPgTnCC1Yhg0e/NfpjPsPY7e+g3AdPzL6/XQG1xgXB87GxaTASGKUjgf4Jg+ukDmnHx04DgZkEr5jeyle4MjVMxoTHJUzHOBmQM6YnHKPmeDepfDGgvf+RnwfWAiNKZTLuuDgc0ppD+mMiIZEr2X63gF21fk6phDAYOPro57ogP0aP3m4PalDMFkdEpx8T6YYhmJu6fDXSofl18lIbOotxwtzGGhMQ4cOm3nzHfji/X4O/mquh7U4ufpISeGLwtZKy5YRz+hl48iAVw5pkH/7m89lvNwkgwERO+Nk0/d3nNco540u1k8C1WI3N1u7HtuwG7DnjW9DUg+F/uD4l1RUyMDBQwR7xPZJtUdiUWQWjOlxfM0iHyd/bifiOy+K8HkVeiV6owLsH3JTPuwe171EqIqOV6zkYCTNDm7hIU74bgKvk2jVwXJjeZAfbx/yMVI7BHolTJGr8GXAUjxzxcC5HSaPKnpQVRW90hWasJ9+2Mqeh7b8GzKYreNJ1B7I7obsuMhlQ5vkZ3/zKfcFPmajjIMw0PP0w6m+Lw7eSKV3cgf3xjmlZrykpESmT0vfD3qvmzq6T55cBMMejDldug7OOzGuHoqQBQOGQFwP/MT0wOARG2Mdp2zGKB7QgOjN2dh0XHm+XCsnYlcS41ll4U0O6FDuLE/IBjzDFYLPO3z4yPMCbT8hPTekaV/GDVg5udt6ho7oyHnZsCa58W8+0aUn6pjr4KDwg1s0IGdEzqgaa/fgCdDJGe8v3xetGQgveenEEjl3BD5XiQLoFc2oOOWweqne6fh0UgtVYKRlKXImtxdAHhVo/JlcKgM8bbZ6l5Uc8mbTM+JWAIjYg7cuUSWbNm+VhUvXhhMwjausrLQv3u3w1YysvRzpuSGVF12qdbO2WadbhUPcGJAQoWeUbpN/vfZ8eCK//cPy5YAHm5di09mRprDJNnyaZc8OmTC0n0yfeniOFu4b0rT+BTIb95l47tb6oBhdeAB0U05fLsdFD/wQagiIEZCWg5ZO9dlinhj3jF1dJykL8nRXDtLzsdthQ7ISL1nJl9/c+2hGLagv/fr1uziD2MuRnhtSqv07XXZ6FxUfn79dvnPlmTJ0kPvGUResB20SdYFvLSD8/a0/l51bNu6Xtpw2rEj+alqp/P20cvkejmP64CNhqBMmR2pckeVE9aMy+ygbsFehk3x8/ohJnSSHorpJ58qk5BfJInyvil7pplvuD16JMgYPHnJ8kLUfkJ4Z0jGfx6a4vI632kOFfS/k6IzivEb59ORKOfXYKWluP1gHm+cJDciBsOlslnVBEfbY7a/ApXruzpiMVcZTB+nVUboqVsE05b3DcsmOl8BD7+Qu0t1LyiXE82N6t721QnYXDJQXX35DXn59STAmfO+3eH9O73pmSO2Fe30xd3JynXzxyotCg3N34cFPzR7+wYPw0NwBEFgvm+bRM/VOyCyoNcOYohq8Q+9XxKVQHG+2D8AjS/lyJ16BrMEXtz+ndz0zpETqO1Hze4wOza+Rk/AR46GD8NxfD8PB6KW4YdVWp5ob3M3XPhXlPWzxvmWzeu3bUrqRzucqcoW9WV7nCh5eN7shb7Ds2l0tby9ZHSQPGjR4v03vujekYz5PK+hiWhfa0QE5LLlDPnL6fmtbh/rsKwJvdnIbEfWiEbsYSkpKpaJ8/xpS/FZX7i/QoxN9fs/6JcgPiBMdDCmLnlUwv5yefW8piwU3x9xUdQ0erWB4xn84gCdgTu/uuOOO/bJlqHtDak2cFBoT+iEgPsnHY3J+m5Tii3unHId3lH0AwoASd4Nw07rVMmlSzx6b2FfdsmXXHvn7f79RxU/GWyypx9xCSmMKrlNTox8bu73xEirGBEQyDW1H6V0kd5fdxBAW0SPxqV5s5KvP7ysL3lqMK6/0VLKiquqcmL+38O4NKZX8s72pzIhErUyZfFinWQ/GKVynjUECL/D5Gu0BeIPs7NO6v93Wlax3k9aCZ4Hue20VdgC4bTTUXzUiIM4xADGlptEoboS9KDnD8DqREzxSJ/IzZOTgCelePu+GI2xMlUtjY6O89PrikGlQ//4fCpFeRLo3JJFPan2sMdZXFrfKWpwQx+hUHT7fMTE6VzjG95sBWfMJB5YVyEnHHfWOnj+K878X+FOb2mQ3viY+HV+/YOBj6mFqR0IYP0biYAmkEXfjGHM43PPpOPtUG/tsZq8L3oKj1OyyoqRO0HQOYP5zP9vbSrFMWiDPPv+a5tqybeuGysqqYTfffPPQTsTsM3LXhjTtal8ha4ZBX58OHZhOL2+tlgljR+yzin8QBa9cu16ex1ct+BLJZ3Fkv53o1a3NMm9Hq9SvWyxzTnXXpkPxnPzh8Jaf6u++aKH9lh4m140Wt/G0eNzJmmYJBmMGw32ayfLkdnoly0ZouGWLYSgrYjJ5IOXzTb6M421D1Xl95I1FK9Evy9r/8tprH6SY0tLST8XiegPvetNqUk70d/GiukSNIzVqoGNCOnZ357W3yZBB/aJ8h9C97YENW3fImh210pqHp0TLBktTc4sse+VZeeLp52Ts2DFS2negtI06Uta34J0P1RulEtPLfn3Six2/PaVSi/5nbKz90VsN8oOVeA6Mw6iHIVm1I5lBFdYijpT+jegRmk73GGQkcWOW26g6GFB2vux4LMyncftTO40JOra4Be9dx7eXvvHzx/Kr6hoqt2zdsgGGdFycrTfwrg1JUp9OdyRaEYzGWuthFr0oD6+zwsR84tjMl5t016D387Svu7Z3lr5q6x6pwUV1CW4h4IMdeqHDV3IfNudSaazZjS9RFOIGZZnuPm/jWX/jMjm6k2tTPqr+/aPKpQYG9R8rmzKV2gzGxrKDxqNs5SHsrLYRPZsnO55DiFu1czJCNSKRGQVz0aEZiZBb246L0/Y8mTBg5Mg1a9duOGzCxBMysvVCpOupXSo1J1TeOsJaaFAryUTPADAAr5u1i91eaMP7sojWtjZZXd2MF+iXp19hDEPhvU0aDLewtZf2lRZ8XoavNcYaA15pLFK3dT2+QtH1W4uuP65CzsYX0zWYccS9aGOraRBq8Vw8Ou7gIVTQCT+3CmkgE4IHEeLo8a+Va/XQNC0EmwehuiGd8rB2V1hZtXrlyu0VFRWjYjG9gXduSGOv5rKPu5OqFQ4tZ61dI7RNnm6NQlofvDB3TDeD2RuNO1jLaMWO6XUNWN5N5svwonaZ3jdPTsRm1NPxDgm+hB8Oxb0THH3O94LTqPhe8EJ84aIN074Rg92Tx121/96TMd3DtZML2WOYIyfHl2w6zhG/0ozf0zUKXPPEvKQZL2E6ErxRnCdmVXafHyCfL0cxGuUgX2th+aB169bV8H4SFhx69WE/60lXqfi3qHmsRrVhPoE4gwcOYSMc2TquT4o+91DY2x6obsXHyfZsl8MqUjKoT7F7z5sXNp6GBA9EA3JHSj/5ogbV2oKh4JfusvbX5ahIObaFv3wajCmMqY0tIcfUBjXOHNGUzeKAGmdWo8X5snHPY3k0czaPjwd5Jtdl4kOMuhs3ZMNX/5LlI/AB5+0kFZWWzgpJvYB0bkjtiZnp9qHybFB8sHJskwYiIYKPkjTLEVM6v4fkMx0CnfTAIDxfNGnUUHxGqqNBrK5pl2ZcI7XAmPiFCv1KBXB+O4nTPo7CWyvWBcnL8KHonfiKoIW1W3fL2q27NHoc3jmunx3sMK5+LDPoNr6ApNt4K05xlk7U81gaIeee2TzMFgWYRjpoEV6myWF+pZMNiL5umTQSsasEH3IbP/6wkQ0NDTXlvbzg0PliQyp1olbWGmHQWqJx3wjicVybdejnve6BFTsa5JXqPDUifnjMjIk4P/XSgEWHosJiue2Bh2X0lBmyvDFfmpe9hqe9E/KvX7tGttW3yg9vvU/fg/Ddaz4lg6rKZAZeH7tgd2tQRlPKnMZAfdWDPwweWtTiLtH9mm6YHWncGJDRxzvdHhT0yoqzMgG5idXKBh+nwqMr+g3aU1tTgzcMTbNSegN2bkiJFDwSa4lDIatD3IFAD2mku8SS5moyHwrvcQ+sbymQJmy3odE0wwOZMfE7SfRINXklUnPCZbIbF0078P7NXXh/w8TD+8v0RY/LlY8sl9+1Dsa3ZM6Qj699Sr5+02/kgSM+JnXbMA23MfTjF+JWf9J1aMPguzwxTXnIx8MyZkNL8NCiYFNvxLjVIRKin8A0+SrSZ+TKndEBW9vxSGOiqHjr5s3bh48Y4TbjZVdhH8U7N6RkapbeQwqNBWKVZiOJa4joPj2Fl2zMmDpxH1X5gyuWl9dmRE2Y3tGYaER8l90XJpdKHZbt/mlpA77r5D6Nyc9jvlzQX16ehvuTXKGgV8ANzPtGXwAcke3wRAxhXD0e03ScOdb+UN6IT3XBksnDANhBJkwlSg7yXAbH73FXpGfWiJepwMu2fFYW42hSoqB0ZFNz84YBAwYcFVh6Aen8Gsm1Jt0h2jGskTXEQ7Y35vUsBBbso7oW7wz2lK+z/O93+pEDCvXcZkbEr/bxG7Ujl/1RH+I7ZlCBXIfXLNeCXq9eCz0CY1ID0nFiHIeOpScYrpCJUbqOq8UJmcjgEc1j8ZgGPM6rLJbZ+EwMv4RutCgf81jgh3G1rCgdJwL9mLRmTdNb8ysS+N6sLjhY9t6AuQ1pxMfdjQhtICvpGxKMCFVjA6xxMV23SGLtyDqnN1rxASmDbyy6HC85mYkvU3AqVA+v1N5QK/2q0s970SvxU5i1akAYJNqGGRNhGDfQbfxsrOJ4Bs3z2jgbnxOWJRO8FoxPZbHsqPwgC14E9PQTXcgc6ujzqDzDDZIPODU4yE/C8SZG1NbW6rLxLbfd1muPVOSe2rUnC6TAVxhAg3aC0aIzROgQpuEskdem3/z0uQ6B97gHKrBsffaoIj22YvGgauaxYbl7RXWrfGlhvRoRz33OiAxyfIDbOMbjZjjraukxdBl9mucJvJZHCYykZZBkgWVr8EiIR2SWaWWRbHGtixJ8MvisflwG1yRH250qlrlPPrn9zz+PFwLz8Y1eCrkNKa+9v6SQpJX1RmMdpBC1y2ikbxgrDZcbeyN2jW8qUzXt0FYg7Yp39MMH9bLvDw0pd8vjTPvDqjr5y7Xuo8z4qmimF6JRcSDMS5kSBsh0G2fgFiw99mSm6JpGRgr2h/ETMlhc0x3JoZbH0cLUzmfxnApUl5QdPyrX5eX9Ms1HQ+L1npZFAdjd0dAwiBCfHp0cy9qXeG5DSgreqMoKI2i98RMgcT8y2R1ldGSbOG44+MBrZwwVlv5hBx0yqHR/dIat3rRNXsbj1NXbNssXLr0og23j9t3y6vrd8vM9VfJGSx6mdG4lTw2GxsQtDxwqNSBAHVOOH+mmfIyTyaeTbmlu0JngeAA0r0GlM80OCvFByzIcUPUg4qMM5A9GZDKUrImRXNaPNMvvIeNcAmfQ8pJS34ZP8KDtLS0tzXgBzXiXuO9/cxuSVYwdynfhaiMJPW7p1ngOFHdU4oaYa2+qR++v2/fNO3hLoJd5avk2eaqpSkrXbJDzTzgyozF3v7ZWfr2rSFZKf9mD/qcR4YudHY3HjIjQxiuGHZTTF0OekMeKjmSEfEgjr4Y4nXTTHdA5LTG+UD7IwLu+PqJsHKEuURmaxDjK0fpgVRPSigqKindX7+7VBYfchpRMlaQ73XeANt7jNDA1HN+o0KnsuMypHXIcCu+wB9bvrJVb1iRlG76fyj10bVvWY0Hh1CDlla0t8qPqKqlFv3OFLngi80CE8fROxy5Sao37scvGzRuRnjGuEX+gs0rkI4jTLe5hSFeERCIa1CMxauVZGuL8c3LJStzzKS9xGhAhErTejGOLVFnloEBXZN//5DakVPLw0DHqlXyDOE+wBlujQmM9j3bA3lf8gz7le2VDjfxyYwIG5HYw0JCK0bUNTW7/YhPuB/14RZPedNXVORiN7r4xz5NtREpPj02YtnEcuzvUC2Asu+ILniIa85ifZI3HUIkdpnVkc/rlYWzUKsMZCnkSlqbvb2BbXJ52PE5hF+Xl5eW9trshtyElBbsazGhQQXYW7pIHaI1SHs+nNDbIueot26vx7Zr0g30fdANBL3Yb7l1RL/fjwxVt6EM+EsHHIwgH4Zi3YKGUVfaTH60SmYuvX/Bmax31Sg8wmAcyaPRoXJxCgzfQwEScwWiKMzPp5CVPnE4aCQya4OLkM+XWJM9jcvk0ntGV1sNpnfJaPSETZehCA34pUV85o/XxPARYOca7HJrLy/BZ+V4KuQ2JHaRnGt85Oo1jDe1AunUQ+yvgTEcz0cLN2BhphkQW343aLDMqg73U1gO2mKbWNvnxW/XySj1eOo/+o1Np1gMbUwGHTP+QzGtrkeveaNMbrTQi8ugYocuDERHnuBnMGpeg6Ep3Y6VjRwMwI9Axpgwclp/6YLjBOB3JIVg6CcSZVw8fVxpwhHhaR12I+dLTOtBNZgy1ndYG1t/zEcIpbcE2ofETJvTaWzo7MSSc1qKFg9AQtp6NYafTQwWcDeKBFgCyE9gxaijM08nKHZMOBZGfLm6RP9bwmSLeUHS7ebh5Rzejoh/Xl47CXjrsbob18HEJNRTte+C0KNIAchqRGYhB5jNjUZzx6FCFpLyYxrGN4kBBiGhRuiZFcfIib75OwdL0PNRHT64mV/OpYCc3o74qROnUrTCtY97AR9nu6MXbR6y1htyGhA2PbipnlWOFcdgAaCdaGiHT/EGxxN9F+KB5qjPw0N4btW3yRgPebYC+pTeiQZlX4v467VJARQj1AJPSGDecEIeOBxIJg7KR7mmabnwGvTDyxIYS45YvyAQrg9EV+rjpCaIJfuSMaT44bxTRmBTLCGVafQGtTKTpSl/gN560POfhrLR9D3MbknUAK6oDhIpyGZw4p3lskHmk0BjfCKRx02quEBtIjOfi/SDR+PTrb3HsakrJx1+skRcb2nVKx67lUDgFA0S3O8MBkTjTggF5PNtQTPl0nJApx3g5BYcwppkRxvmU5gs0OSjOyQLdeJUWl0EeHJyRaD5lyLHIwLIpHwF8qew2xPUynGW6zvEgXff8gj67kZi+QKfcfRwwF8sVMLWzztMOYEPBF3BWOuowxRlP6tQj19mA2XOFXLy5+D4INHqjXZiq8cG9FKds4UDrOUuI4zGuxuT6P4wRxyQeo5zKaWPoec2IbJwtPwefA2j0GNrABJrn0zyQS8g5XJTe7b0j1jXSKWdkrEPWtM5k8m0w2j6fD8UtWLBgA0Cvhdweie1Xz4PKW4MI8ZotV2HXqFD5uBHtEOndOLhc4wnf4XXSB8ljvb58vbywMyV/saWcPYU+iw/2dRRXZffxgHNcQOMPlcsMwBQt24iYHvMEOcxPWV6OQU1nnohueIacOG9UR31RiaufGpHKZbq7jgbCRF8uZWgkqzx37c0pXZjWgmBhsAAAQABJREFUZbfD1zepqy8U5+Wq8H37k9uQUsm5qMWs0KnsNFbapnUJnAHC+j3SWGHyBAMC3kn4IBlIri647+lX5YEnn5XJ48dKe9UQeaqlQp7ClxXwChzXj8zE7rMuNFyVBHQMg/a30n2iVyBHBy0jHim3Kb1BHTdLJzQ8lgEaK0Neg9l4RnnGF+XT99lRBlUkMgTN59sDwDJSWjfkVUO1+sCIWDem2RHXhXIiw04mC/RBKzwou4RieyPkNiSOllaYjbfGEI8Pz0MvFS+PIx+NpaYu/Z4Aawhyu5UaTzCjMmh8BjujW/rBCC/eOlZkGg4GvP5PA7pQ+9ZHqSMhrjjjnmYwViTm43hljA8Yc41dBp/lMcg8ODJ4PC2DbnVBGoOVa3hQaqbDcPy7FTr1RkG2doSvd1adwJPOj7SMOpLXaElMjQtqn37qqZozzjwTb3fpnZD7GimVbAoVY4Xt0Ab7jg1nDDYi6mzgPKssX7lO6dqVlt47bTpgS3ltOy50wrUNeqZLHM2A4w88YQxipYEM0vVrD/EYeB7rd4PkNVwVj3k8zdIMGp38ZhgBR57AF8kw2WrkqLvGsU6l10g98EYmP6O8uKwcON7/F/STdUJe3otbvHRps9J7SRs680hbXCe4imVU1KZ3BumR2ADC4J3QuV2E2NMYbjA7W2f0bL6DIf6r1U3OOHJVlkpkQVEfN3o2NEVmHqbFR+ytjC+k+zHVOHBC4zGoNMo0Xs8X51Hc8uaog6X7aV3wJt5IOK4oILPearwsi+V66A1a7x3FBsbszE9DsrIU4gopmcD+EEm0tbebzyfzPg2dGJLMD2eq0DhUmo3jEaZyviNiGnB2kuuojnVn+/VGXMek9y1l+556WVCTLzeuaHAeJrsD2CkaAqI64n+cojA9Vpg43kEh/bjE/F7J0t6Figo+jl0MA+7pXpFD2VauQZXbWXmg+8cc9AYseUM+IBZXnUF5NBSrj8plHdz1kTNEFzc9TF9PMW/6yJN2fp7i2D3V1U9oeb3w05khoQFcUsTMD58ZjCuZgXPRIYF0804eqhFp3/LCEmL8fQTVnxyrd+Tns0kGs9vdGT2b70CMr9peJxMeWo+qRV909/qUs76mXEw0XJUqUkJL03Tt6I68TMtQSvJRESN+SzeoaVk8xm/eoEten1d5PQ5DohFp8HVS/TDjV3nkjY5AYxugG4zHtLieuvTt26Z8uIXQVIB9InRWbRtdwfv+N7chFRatEbz6VjtdzxJZg6CNMlpWB2B615rAUxjsqE6CpqAzPggP9k2fRy/EN0PxpJPtinJ0EJWEwWCMG00h+98fxmPxDpBjBF4zhtigwlhSFhXWQ+WP8zHNxy0tlzymmZEAL4Qh0RDoUUKbyEJZDKCrZ2E8lq91yfJGUXlqjOTBc1uaj1vgvYzmhqK3IPlDeFHkai2jF35yG1L13GopPQmNjLwSK5qHOD0UV2FYaXojeiXdus44eTBHxa5VNpT9xY7qiVeytnbmfTqjW74DFpqCeK/cbT2pcCEAt6jSGfeEGBLPdTBzUD7jwRgZbwfFJY9PtzQzLIszb4xr3Mu2sgzi/pFOySLDCgbANqocqw8hjpgGPNMb+XTjAQzL4tomL6P6sTWQ/va3vvWtdSymNwIsobOQWpvR4ax89mGdrtA3QhuXkjffXNSZ4EDXTvWxGA8M7wOksdY8e47+y+5PxmMl1zjz8YTm88eK3Gl+yjF+j9sYUcktnymfxrswIqtTZzAylLQhQh4WGtQTmWFl8DnjS1/nuLi2n/XBSqRtFUpoWyzdXYM7gwONz2lZezRfco9Xm1/2pvrk9khag8QadMqY4JVsYOJKE9fVukyvRKNwZx5AnInjCQ3p5qFiOovUtPfbtVI9VpUsdDe1o6LGIY4bTpiNZ8RpOOSBIONVI/L5lAYeU26LGy/HlLimm6wor6Ubf5Ad53P8iUK8+TTwQRfAEuoOOan4BEG5Fgcjjag7b9ROfs3n8xKX9vlxF/YW3oUhYeVOZJY7w7CiPNjBhnuoK3hwbNqhoLETwINuC23oifEE5m4QM7Zu2A6cZPaXGRCVqichm8+UkXmz8UBj30fpKgME4ydkXULc+COapWcbUaBHvDreXn4wyigdZ0m8hs/pDMrkuGkFM+oBfpXNfD6vGYevp/NGaT6V4+vT3gJvTzwcbGNqDQrq9dC5ISUSS12ns4G0fBiLNpIwrjxwXb1Dr/lrpRq8Fo+Dyq7jGem99Eq93kPvtkD2lRmSycqOq5JZImAcNzwnZCfbYfks3hXkmPr0DkZDepzucbbD8jDd8pkRGVQepPODyaQhnyo/6ZEM9UZBBuWlj7Q38h7HytX8jk+nfcGQyBfkr4l6stfQLgxJ5gWnoh2bbmgHg6JiqGciDx4BSCZk5apVGY1QTwJKB6MiFzoq1wqe5slWOmXPzU9RB1LYVONXlFip7HbEcSpKHOJ4Bxy8pGkWD5XH6AYhMDYIzWNpgBRgimxpHeIYT6ZFBqAyjU8hZRofcX9gWqc42wVSwCHLTenIF03NvI6pgXij0qkd6T4eeyOl4RuylubqCHnSNhc/vR46X2yoTy0Ng6+NtEZnw3RDnYG5qV1dLd5xg05lH742f5kbd98816/sSGIuaCflwC09G8b82WkHSvz+ZbidYYrllSEMPLf12JGdxjxG8wpmfevoUTr5ImVzxsF0yNe8wLUOni/I47jZWPoxzJBDfl+OtUHjJs8g8xruIU4SJX5Hg46T1cPqquWwbPArzUPfZk7ndEpn9bH6+/qmdDUZ5TZxahe1gfxtbWv2x/h3bkgyD5++lrWhUqykNSxas1dl8B1gg8+PXwUFArpshRPjOhWdlhU6UpjdUQ1mZdFoV2m5+HuTVouHiq59Da9W04H2g2192BWM+TP6NVPZwljYmASFZFk4TOmDoiF/oGGAjF+V1NI4xh5X3jge5yFOPoMetzz0RpAfxjuSmXHPKNSN9XWeSr2Q6ZfJ4wqe1tfXhziPeMWOxtXevkeaXlzTm+NsZXVhSGRJzc3tldAINpZnVGtUgO34anYeyElZunKDdmYtdoL/32MveA/vBgq/6Y72tenMMDqjaw3Z2QdguOYx3FTn0rf2i1e00EdeEXLGwWtn6ux0MxqDHfhiA/JlqBIDD3mIsz45yjG6pkV8mtfnCTjlG83LYhryFsKQghGxDV5eWKXLqAvT4+me90ZmZCrT8bAvbVrYqtdHsf4Bl+R+WbGj+nVtSHkFL2XoqDYqq/I62EZzMEUDQ+fV7KlTOOOIw+XWO36XIcoi1uEYCg2x0cS48eeCPeXLlXdf0EbeukTuWYrPS6rCUMmgCHaW1f5CvDtoChT4rI+9PKUbzeRFaR3yex6tU4RTyePDygs08pIHUPN6PMOIfBrz4CYszAi86FnKYgCMr32UHuRRvmtHAtAteTv9sT6yvMErUb+auAGYeX1+eqSEzNXy9sNPN4bU9kfWroNX0otE13g3z0djzDuhg9rbE+h7vAW0DttjEIYOHihbt27J6ZXiNrPvs4MZicHsdIt3l258+xLOX7VVPnnfatm4Ce02hVQloWLYoHcDlc/3rcpArxBSSU1pTLbRYqWM8WyPpfzZ8rLqQ56Muvq45dU00uxg3ax+oNEbIep+ALXuLINtituVptFAOk7pHG/mVJB5cLAAGhLl6Unb05LJuftyfLuS3bUh1cxbASuyO8VOjg5idof4BjKNDeNbDdHYpctX64lp1PB+2GlWKL++/V6VgVQXMBjE1Qg4MMQtrjH3Y0ZiMErKQLtLz2B+DyPzV2yRi371shx11yq5Z8mO9ABrX3GQ0SrDewIz+K2vPbQ0KlOGYqIMpZFu5SEP+TWPp5EnyPBpFg91Mzp5TR5pHjeZcZxl4pxbnM/VuqgMyHRL3cxrB+vleMzbMM3dM7L2Qh7bp2Vwl4Nvi8lowI4GeiSVgzSGkpIDdGrHyuXhOin2SlR180jmhWxAQ5zvZyuQzZu3ogOcsQwaN0O90oOPPk+pSlfE/6gRcIDiuEUAzUgMRkkZaHfpGczvMlLX2CJz/hcGdOdqeWAjlQTnJRvoDOU05TBF6gqCN+rHIC82jrgMVTQqXSyT5XGcIrryxTzAM9I9P2l6WHoUN5mWzjKtfNKK+bi8z+flOCNCWqif9UW6nfRGwYiYT3n9FiHgOqaexjS9PmIfqXERokxJLRDuEd1PofP7SFahvPzfoqIXqqvAGSfdyewQKA4bxHsielMW6aQBbwFcsXKV40d6UXl/9Uo3/c+vZfapR0mfijJNU5FIJ9SAjrR7TezAru4vPTL3NdmyfZfy1Dc0yqp1G+WkY4+U046bJkMH9jWJAf7usXkyccxwmXH4mEDbW2T5xmqZdOdyfDYP94oY2AfQASD6n4lrK5nYwwBBKkt/PM6s2fQo7hVXx0dZmZbjiNOonOQxubFRZOQFXzAiw33eiF6sLznxZdIAeJ9HDYu6QoXnwfwuTm/E6yKLqwHpScSv0qnxgN9OLCbLpnUmi21K5N1PsL9C94aUbHtCEnDXDNrpDk13EM/C7AwoC66N1KDAUt1WKKtWrFRmGsTYwVXybFulTKzbIU89+7pccM6pXlfSe+8o3wyHw6vqF9M8Xge3ftEPH5AXtuI+DRS4OY/NyJcq3LtYuOIPcufvH5bPX3GxnH360Vq+/YwfM0r+7p//Uz561mz5zEVn7vWnZ255eqX82RNYlWMFaUBqPL7G+gIYlsi+oFJ5nKDHQTP5vB5nXrTfd5qTpHHjZVqUbmmEDHG8U9wbB9ODgVAmlZ/QDs9nNCq8eiOfTiNSw2E+6IYZAvlVV5gOI/J0t8BAXsqNYfaUzhtYLd4HonK4jxEyGfLy5ircTz/eQroovWV9vRSP+xg6cahyUW80+AYoTqWhJ2KEODwMJPctaJRx4yfKeHiBP72wTJ5ZuFGGFDXJSniqT338bMfHHFRGVUgV5sWoMIcbj0uWa372vDy4fCce1yjUQ1+vjAXIZnyNZmXBUHwxqFHeeOlF2bh9j8ycOkGKuF0FYdjASpm3MSXznn9Gnp73Bl7xki8D+lXCoEq85O7B5+54U7774hbHSMVi6ACNhnRVPmUisWdHUFjm97ICjcpmcplo6YRIYwZLD2kRzdIMkp8KbvnMOCjLeAKNcjxdacB93vyyIrcEbEakis4TLHnsgOJnGU9YpQs8zsiYJ31t5eRwNTiJR8tTu3HZnqK3A10DruMbnv+ij+wX0L0hsVol4w7H74kda4iOVQOAEakBERDnekOeDChqlnXrN0q/QaPk3rlvyfotO6UNF6MF9dvllJNPkIH98ZIXb0DOBtNTPItTFnHzVIz//MllsmpHLdGQ3+FKkPUwperiUmlevVgNZtzokTJ0kHvx5qjBA+SvX22QVe35snnh2/J/j/xRnn99sTThpdoD+nZtVDc+uUZ++OIGp2AsivrnfhyNiqckKlwXuCloLkiFCvQYz5Kpiszije5hiEdpRiNkiONmGExS3MNOjcfKoXF4vLgAH/eCKgXljwwoeKM0jQbilrpBC+mUR48Dml6Du7gzQkdTQ6rHimgDV0XpjXxIyN3SumG/Tu16ZkhF41ZDm7+i1eYgOGdhzfDKDKIaBSGTElKfKJKt1Q3yq0fmy/qtO5XWIAUyLL9W8gqK5SR8hc6x6m/AXczEWIziHb5yzW55ZsVWXz41wALTXbwxVQrvNFD6NlfL03OfljcWrZaCsgEydcxA+efHV+BNWOWyOn+IrCgeJkvwtvoNi5bIQ488Lo8/97qsXL9N8EmQDtdZD7+9Q+auxdtwTSFZrOEsVouO6hMrrPHGtO5w5mEgXy7DYYG5ZFieOC0XjemUYQah/DReX2aI5+CxPOjy/FJ4I/A6D2IGY9AMwoyE10Xu0OkZjZcnDxhUWOrGapwzKJ8Go0npCh146I1asWLnOptKAbzge9K6bgmQ/RbcnKe74mufWiqVs9ei1mO04uxo1Vkg2hE8O4DAayRCAvw0NhZIYyuKyEen6juZAFsT0lJcjFfKLoQOID86wnaIUymYNWOxQUXpuzWR4K6hNB/zMqCvdcMsJxYcEO7xckSAfHkmMRED3Sg71u+U//3FE/jKHTwTO5+H7gcrkLrEQJlbgI+89cEesdYaWffaCnny+Zfk/I/Mli99+hyWomHCAEwBWQbz+rprgsljxFdLeVyi/moCq9ZVsLzK4yPWTsvHeEwzPIbBs0QyLJ/yeRmBBuE6jtl0xtFeiumQDjqNCUZUADk5jUi9DcYceV26uy7SBYbgiZzB6TK4lgFjMY/k89PASGvnY+VN2LlGPg0ch7w9WHOfK+6Wpaf3PnDzsJ6Um1dwi7sOQuWpOKryhAhsmDaenYJD7zgT+oPKR7qmtckeLESsXLkCeTAAOrBeDEX5weXYMVhccR//xWurNS/z66FnR9aB5YCmB+NM5+uZSuS19pFSm8RUknXR+pLPcOZzR1Oyj8wtnCJbykfIg4/PlZXrzPOJXHAULhP9PjJXLvN7OUEx0rIy5GvdstJ8mVa2qxdldsfny9T6R3iog7UtSstoK+l2sCyODeLWn9o/vg7WPk2P6wV+nIi4Uqercza+CsHnjYBtcen0Qm5Kp+VltNF0I/JKJgdQPRXlcVpHugWqX17i/v257G1V6bkhFefd6AwJWewM7O1IhWnD0Ug2OPvgu8eMBr5drbz7jRu2K9ZrVgyJG0QCRd2gKj2KA5W5r67HR6QwTbQt9Dro4IwVwxtQUNCgBE6u40U9VZGZFwMfKw/ibySGa53qGppYrIbK0gL57gmjfD7Lz7wmNwtX+aC9GxjL1nr6+ppM9qvhQel9PQKdcdaDebPyd0VTeWybtYF4dODayDyNM0bwRePMfLERaZrVSeuNugOGKZ2mWXsAcXLmns0gu47XxSifwU7mKdmv10auMrBnQ7qFWx/fJgX5T+uLT7QRzAFLCjg72DVeG57tlayDQW/CG0bpymtqsIyJgaHX0e7hICHw1zyRo6Tjl/9yrhssNVwYqA1MBuRgIGc4MBiUncFj6RyoCKfSqOJASXx9WCcL1104WfoMwMvuNQ/z4jClyJBPOdllev5svlxx5s2VX8uK5Ghds8qK81l6XF+jBciyKCM6Murk66J18mVDc4r0c6iMo79tfDUf9aCjEYUVuqgNbmcDxwv8OqZeHnC9LlK5mFU0YkrXFt2zczMirNY9e5AZEjUpkfdzXdfWpW7vmWJj0oGhckcdq53m476T+f5LnmliA4pxFoWhc4qMwSPO8JUfPy7bNnELTuThbFB0kP2Am9KoYpDmB1/jwA1qfXxawMGvJwFMRVDm/EUrtOz45xtTBuvAB0VX+cgXZHiZ1vZserfxqP+yec1IDFpbjU/rgvwZbcxRN80f9Y3mJ58/tD+z+8bHccLML8G1r+axsQW0uBqBO8nZ9VAwIqsneagnepjR+Tj6za6LVCbb4vdt6smbg8ETeJ7cEo/L/sR77pFYyx2P/QZvztwjeVjs4yu52Bj1SFQ5Hgg6gOzELGWnUtnRxrNPSpYsW/WOjOnnr0OpQ+ezDBsIlsU4OlzLp4LgMK9oyhEgFYI85KfiMO5plKl0bHPKx32ptVjuzg5xHvKq3GxZFo/lk7cnB+vm62f8Hco0+YSU6ett7dC2Z5Ud2hvRg9yIZmVqH7Ee/mAZHENcJ+ZTlo2njgPr4MbEPIteE4Enw4iYB/zBiFBPxbUNrh2MK63N8eq7GZr8aoKqmde7goLrs4dmf8XfmSGxlvmovBoRDSkyJm9H2hB2bPbiAxU9ulZqw4raI4/+SQcp9kYxTlkYQoyjG8jpVdhWRDk6gITRoYOJeFACDIoqCfLGNFO0mKYKxkHkQX4cGOBdhX3llTfelNp6fFMAsuzoX+b3lMUyYjxDnsn19TGlzAVjGYYHBYvkWJr2s9FdndNGTToVMW5/hGfL1fqwjiaPOPgtbn2N6VxREcZd60D57HNAMyo1FL8653FXD8jTeA4jsvyAnM6FxQWtP2RzkYHBTtruBP40FhnWKP0A+HnnhpSS/xbu8KUxmVfShvizhDXKOsEGQM+Q6Q7f0Yaz/YoV8vJri3XAYgOKcYrDcKoSnzhqgBs0Gzwtg8aUlus8E+JUAD2ylCemUVGCUkZKQxrS5uPGLj3n7x55zlqlcOaoqigfeJWfEOUGeZ5u8YyystJ6xBO1yfi9wQdjUaWP6+DbZ33BfMrjy1ec7SYf8xH6uNWX48YxZDr5S3AS0f72/a51Yd60gXDrj07pVCbSbHwiHp6onFeifJ8fUGkad3XU6yTegI2NiHoneQeMN6JSvHND2v7wFilM/NoZEw0qmubF10tUf1N460i6ajWsdtlZl6/9d/1//cJdA2HgYgOKcVYU0uSMo8amB0Vl2mByIIj7AdcyGHeDoYqiigEpZtCmRKoIrKvxeoh4e3upNBb3kz889hSm6LwJ6MKMcX3T/Kp8lieSowoJOsvRspyyOIUlbnmy6MafUT/yetlaf+Am02CQZ3XwMMgxutWHcR5WlyhdZYGu/Rn1KXcwBKNjnXzdvQHo3jngdl2kbeQ4eXnOcCg3NiIvPzYyymU+lJXU72yhbqZbzqDWSu3c+208DgQIK9iLUHnkq+itb6Cl+t9BQjzNy0ik1zICNptiW0n7ni1SXFYpRx4xKUpKbxXimciyTJkwWP7xt89jiohOJtH3rxqKM0dHJF0D62dMRouhMUKY8vk04l7+prxSGdm4EeeLYuzbG68MxbhG+N6DC30elkFyFqQMOzTN4o41pDFvODyPGmHEH+dX3BuW5iMfZUTQ+A1aPWIeGlhMhwhn9JBjRhlPz9HmIhiSGg/zeQM0r2LXQQbNeExWd0aUVINzRmZGpAsOe7AxmcFN5wBx7s/P/7o0rZ7vEg6M33fukVjvjfdtwLXS0+qVdJoXeaXYBZNXB4xnF3YSzj7qlRxeV1sgDbg5e8PP/gcLD3hDsvJ39Ex82tbSLpo+zg1i7H2C56MXgmzzThk8pNvZmIrolTHDQ3m6KorDW9uLpaWwQlauWc/aaajhoxOmbOYpLG7yvKI5z2HldQV9/TLqSBoOlRnnjZTdylfPAx6DVp+QjjyaZuV4GWpMXjbLYZ9pv/m+JI5d7PlFGGPzLsrDejlZ5oHMI2nfME3l8bqHfC6eNijI1T7CvaIg15fPOiEkuVLHOsdGlMhfK9VP3qIMB9DP3hkSG1BY8C0pwBnKrpfiJfFcxkTlzmFMa+tKdTy++a0f6qPpnNLxTJkxtYviHz99ihtoHSgbbA6SDRZpHCRLM9wg+Dg4pnAsj8rWqbKm5Pjph8uXP3ORDlttfbN8+ZcvI08kQ5WWckALeByP6YZnw874Y3qEW/071INyjc8gaewfxj1N+9nXIRgQThDar74/2Y8sB9dF+h6GcMLKuh5Cng7XRNoPab70dM7L7mBEpLM81A9B9aCR10ZQUTUkQHddfr0yHGA/eze1YyOqF2+Q/tPOQJPHoqWdNysksYNwsFO0r3wCvlxRiw8RFzbtlBdenC8f+cjpUlxU4CSyU9Uo0yUMH1QpP7nzaSeLpfoPQBN1QYX7MoD7gXFlgkPjpAO3uvksgVcFOeJpslJOmDJGmlvb5DZsvj331jflrY18sQnTQ0aHGo1Qkz2PB5pH05ie6/Aild/SochOWDoP4x3yk410D5UHeQOfpSuDo3tl1xMcFVuNkxCHxWFERfxYmCp++trGpnD6ZCuNLzZsxMONVsONh7AbI0JN3bUR3xRkC1p6LQ5vJG1flKY16e0mZD4Awt4bEis/aOoT2GH6DR28ThuDgfPGgN4Gl48T9Zrc3paQhrwivV7agmeIzph9gpOmRqeMKoN6X4KBfXvRZlm6kV83RBoVRYNBkonniJuikd8UjHh2MJmAbeihZ9fWys/fqJZnNmD8ePaO8xJPtMpPLzhavnTaBHlyXbXUY7ncBaQpL2KWp0cwh/HQk2TkjWV6XPvD10/5jW7Qy1CvFBmMV2xnPGlFx7MRWOr210UwOhoHDcgZESF4zUDUKFE2aLp8TcOiEQXZTPPpMd28Idvmg74cn9dGHH/1QhgEGlJBwddl1xMvGt+BBN+dIe1aXCMDedEiM0Ojog5xNKo/OinbmEIGIgncYsqDMRXKdjxDtGjZOjn5pGPUMzEfJWjw+JnHHyY/ue8F7CTHVMASOQ7mnVgHLTYllxw7SU6dOExaQdi62+/VUoX0MhUHf0a9GXfpte0lUpcsDnFFjJc8wM9ILpeFS5fIFeeeKudNHiK/nrdK6YHX82UaAsvoycEyXDmOP4qr4VAGFJSyujIe8xjBIzilNu8QvJBXdt50LcLObpuumhExTi/kpnKUER/miZxsNSg1pHRZ7j6RN9YcRsRxS+FToTrNMyPiU6IFibWy4/Gr0foDMpga7n3lpn1iqDTJEmlpqdIbrrzp6u9IayfbIBMymBLq3NefafJx1uMZB9dbpX2SMqq4TiZOOkz+58Z/ksqKUhiFNyZCHAyvv7VBZv3V/8KYMK9Xt8+5NOfRlAlYkJQzhxbIQzf/g/Lzhzl/j4cC56/cJg8v2Sxbmlpl27Zqx0+5yP/hKaPkxLGD5IwZw0NZzLtma538ceFmuXPxJsE8jyStl0K893w2poBL8ofKtvKhkqzBvjAGX1cX2Ytf6yvNSoMhoj8OxOmGK/S8xPVA34dxAI3Kr3EPNW50KDl2deeXl+LeiMuviwiUQyOiYTCvGRDp9DBK82kwEH0UgoYSPJLzVO5mK3SE+WnUzM/gNVEfldiFZ750SufHkw8NFuV/TDY9cr9jPvB+ffXfZcUOv+w6GNJ3VanpJWwHg52N4kG0s6gWieJV8dOGRGMqxJ7QsaX10qdPmfzzj74jJxw71VWQhkSMEMfqtbvkU9+9QxavgXLHRoRBGF9SI5+efYT8w99cE/I6JIyZRh+Yu0I++V+P4u2gLfJXJ42Tb37+PKkoL7FxtSwBstw/PLdabpy7XJ5YgnIZQMsIFs8iZ5RsaV6P0vkjQoQGhSOjKV8GDmbyM00PKGpXUI3H8ygOpaZHoxHh5KVGBLp7uw8NCLyWJwvPmMpxrNVAIgg9UE+ki00sx9JYYQTrC/Rb+zbs7KcMG08uZnGz9NZHZivvAfpjTXj31Zt06RoY0Ji9Nia6b77EhB3Hi9viPBld0SSl+a3y8Us+Jl/+wqc79U5PPLdMfvWHl+Xl9dvxyi8MRFmpfOm4/vK9b14jFVAKNtI8mTbUKzrpP73jZfnWvS/IuMI9MiSvQYrbG/QdDmPHjFb74JOy48eN0vxD8Zj6xLGj5LBxQ1TMOnipmx9bIj98eqnzUmZAmoof7d130cWxwVBmiHsFJFAaEDUag1BEo+t0j3FPM2hGwbjxBCNC1b2xmCFlGBFle2NxRuSMI3MqR7mOnjSvFDyUrwvbZN1DI6rFKl0DpnWZRsRp3VGy8eH5ZD9QgzXj/7d3JWBaFVf29t4NdINAs8uOgISIYTMqkyBI3EWMmE+d4CTRiGiEGZcYYwYzGUMSzRejcTSYLybGTFTiMoJRQyJRVIygooJAg0CzNDRL7/TePefcqltdf9OoKCJLV/d7t+rWreVV3fNuvXr11/vk9Tvh66di44OXYJmcRdovy4TiDUhqoQgmB6i27eqlZ0aFdO/RXX4y5/sy9Lg+rq5oeKenzjqFCyHfK3TMYyILW/zMO5+V+7CXRBhGMB07UWkSZvgxhIO/DdaXdU6ukU5JldKurkxyO7aXKy+fKuPGDtO6MN+Hnl0td72YJ8s3YuN8KyjEqqfp5OsXGKr0IRR5oLB0ngRwaBinAB4opsqR55VU41rye54CycvTz0KwRVo6wETQBABZfh5YNqwLVsjzdVJBQYm8PHCanoeM5ymKUmfthPao5+PALsyGsv+pC7yZckiXlnKXbJ4/06c4ZAlqeoDc9uX50mNUP+Q2Qjs4NBI42nDGiMpLYFHIt7A1NGgtfgS4Cw/7SVWl8vRT8xNXQaADNAsojSaJwlqKV9hQjA8z7smFK+XmhxehSKTkwZ+nm9/TBiysbcD+fNXYKKUIL2a31LWT9ckdJAf7QLy6eLEUlVbL2C/gvRbc5wd2lisnHCe3XniinNC5vazeVob9KnB3Zc00P3qtLOO1RH09zEowDZVVp6RJcVBRLaxKy3zI93Gm9BrXnO+sRMiHMrx2PBNxLSqfgdxEAsvYO62zOuD7KfIwK0dZWiktM3oeYji2RChNnXYKTuwTHLoXA3tTJxZQEe78lJa6ETN1X5PiVTYNaqkPOXrggMRLyz15IfZnmIGGweYGsdNWixlN/oQoKISBiRIM0qEvimvTMRubLG+9viRxVo/x6IiQjQeLhqmEPl6JC6n8PY+8Km+uL0AZVEIvZ/59UVYIddlcny1JaWlSuPoteWnJ2zLqxGGSjecqc4P7HCNXThws/9IvV97OLwKgMFtIRdMDeQRF94oa4pA5/VS+mKdAYjrw1R+lM1mN8/Eh/xbCquy+DMphpjOpbRv9TKVOKlh+bAP185qZj59QYL00jJuXyTYrj2Bzkw2+fMpbG1tHKIAQwAigvgKTM/rOCOpIK8QX/XpkXCAbHl9l7Xoo0wMLpB2v18ixYzFWkksSLzqouWN7ZQ8yjA48dFzc6BQCC++rpLwaS4owRV6yZa28jH3pTjppJCYk2joQWXpL68MxoJiNlTP7d4tkRxHeVai8L9OsAAskPyhzHO/8aqGSs6VNyVZ5av7zUgurdeLnBrKE4Pp0z5ErTh8CQHWVh/65zk3XhzyhkC35qZRx2RoGz5SWaWIe/abwpBr2MhYXeFRokwFF46RiOJfG8kL+9CemTxjGARRuhg6TSqyLBxlXkiiAtA7IO7ZC2sa+WeK+Jog4MVWKGw2HdG5iwYEoPe0uWf/n+0JjHuKeAwskXmzBsjyAqR96aYRquCk444Jf1Vs70vGiMOXo2ElmktC3TuHx+IVdiIoa06WxbLs888xCGTNmlHTqhJ81wGkuVobvPCZlGb4EhtTNuneBU+wAGkhqGk8VVJra8S1MGX804Ju5+Q0dpBOepY7rlStjR/rZRSvE0z49crB33ibZUFgkyZlJsvCGs+XX106Q7180Ssb17yrDu3SQt7FPXwUfthUoVHhcvym9+k25fRyVXWU9n7JU3pjXHEhB6SGHBiGI9Ad6IQ3y4HX6dE3DNvJ5NK1sCPVUWfLNCvn6GKitLdgBengPZlZxb5TGXdheSwHkrZAO6dKw8DIbQ7q3DvkhXXx55j9wdNL1bWV36QqprsEsHiYf+K6Hdx6l7HB/aAfCHyknAi5stdGHfw7egXmbiOA7hqwkGdiuXHJy2so9d8+RoUP6Ai/sJNdfBlrlGN/TktIq6XXubAgyX0jYOwv69TA+w/BTA0Kc9xsvuV5OSd4g5501EdPmbVi8uvexyLV0T63srGiUJzbgGpG+Z2qZfO+CkfKNaIsvkydkl68ulJ8/9ro8hnuROgU2fVGbKI9hsvXk6F5tSFBRhpTyOKj0DKen4VkT7+dCHHhmjSEXLJD2DwESpfXA0bQAi7NCTG8HrlXLYeHeoclcG5L4NkWb1+/GOzxOMgQgoY8xZMYYfrys+tMipjpcnF7ip1LZcdcej03tVkgNfsdjYDJA2XumBPOPjrAOVw1ArRg2R4Xm9LhSDyp8f753dqV0zMmUOXP8+yZ01D4BxbwQv/Cl1TLl5rkOmKFjfQdbWKnxmM6Di3wDEfMDOzcN0/RJdbK1AcqJuDpspYz91lSMIk6+USa1K5A//Pp2fU/l+NE5utaNW0tl6pyn5Z0NeIajC3FoD9w4hB9wo7KGOPCt7QKN2lN5PpyZLhlZfn8+43sQuQXDlMOhYGC2HhgGFAWfi9cdfhhWS4c60AppvKuanrW5eIJj2/mbVj1/Z1QJg8OX8fZcRBClpd0mq/44W+UPo9OBH9rZxef/c4f0O7UEjXeGsrQtcSJVZTRBUvJ9nAYpBOeJCxBU/iChQ7+V1GBRZdIeee4vz0nnrj1kyOC+7H2NNrGQDcqgn9H3P7bIeVSWykNpHKQJh48jz+60qiyUp0I1yvQzTpFrLpogg3M7S/uMNvIeVzZQSUI+DfLv43rLz384Yy8QMZfmLqddunzrzOHywMIVUlHKrx42yKyJQ+U3N0yWn0wbJzPOHil922fLX95Z76y81ot14WGKb9R4mFTAHucZ3Ow+YfiGeIJFr4lpnJVxYIryYLwHk5vW9uFwM2Qe0dWwofXwrW83QND6aoxS8PUQnVBwQzlniVLT/iGr/3h58/Y4HMK4HXyK7uVf/ELGzcKzUtI0B5Torq7AQSOT6h0NFH2jv9m1DmG/sB+0f3DSzoZQEg714z6AKer8okzp1b5Sbv/Rz7QzJ5833vWhT6rZEETIl/7+fTrJ3O9eKnc++qJ0xHPCiQN6aD2S0Ml8jpm/5F1Xr9gKxfWlnyVgB9lRadvl/FOnysgR/WX8Sf3BxzslHJd9f548sXQVrqdOJnVtkKv/dZK0xcyeXgri9e5PYe/KsdB1zdp8yVu3CaPiannwte3YMWm7ph+dUiATRn1FduwoxLFd3t9cLG+sQhyVUdsBmZDSUdnjGwLDeCeThOvUVdwcSiHeDd9YGxyUQfqEIRz7wPONhmEcy2r+PIacgmPzsH20mUjR72qJmAz58msSYWaOFkktEXZMTZ0c8jjMPHrJn2qdz53dRopLX8EQ74QPHObp+jx0kN1R2ZGmHAoshnEEZx0EMLGjMDXeObtWcrBx/ynjxsl/3TZTv8HEYV64SPoVBK6PNavmYTD/iqHfhTc/gM73ZVDGDlUQHwaQjseKiFRMIWc0VuDLNulShZn/FTW5oZZ8qTsstVjSGyqxn3im9OvbJ8TRU4u90LcUlsiaXXukFJMolfg8Tm19etO1Aog9UzAJoa4R8Smyuw6LaPkZHW0jtolvGwsHivbMwJbCWVm6Y3TT0I3ybGuXTmfhNA15OBL8fiIhBpWmi2R97UJD+zZtAhDqirasJ/iKMVNKUAUgKYjwXJR5orw195BevWCX2RLFFR4Ed/rsHlJdulIXtuozEyYf+NwUJiAwEUGrZGCinx2tR6QkVBg6dnRw7CSCyQEqEyshurWplpzsdvLVqVNk8rmnSc+eXVoE0F6gYp5eCc686j555e01TQAyIBG0Jmc8A5fxY+qEkY8yNbTvk10fJaJrNGAom3wc1gYWp5RtRiFHaYXS0glKhn0a0ETgGB8yBhafV7BAzNSegxSAPj8WRWdaFAAEhllz3owIHAjVF2OGjvUzELlnIoQz/g0gehAxh62D9h0E9/6iMhk2cQH69xI0KlaEsqF5sGw2tIWNko/G13gvo8QzlIRIpyjaQ/j9UE2yFFenSXFVnax5+0159NEnZOWqfPRdBtbM9XR6Zh3ulYt9y8NAxJw3Y9P9xW9gaKZKidj4Ts10dlc2wDM+VkQNQy7E+zyCDJXRH5bWaHjAxw1Fef7GYg/zlocqN+Nw2M2HMpgFS83JxjM82pDhMAzjkI43rbhcxIcynJ/T3u7n4f6amIfJkMbO+sLaVIdxUCuCh+Xryn48F+neCxA28KQB4AR5eupd8uYDc+IsD0f/wQESWybvxUIZNikfvgsDkMg3UKnfh1vkkxm5AETjeaUlJKDk9VhaVFKZjqU9abJ102Z56e/Py9PPvCBZWdky5Li+mgiSCeCxuzz5FeXVMu+516CkzJcHlc9TU+QAqCjeAGYyqoAW7/NQnikpeXZAYenXtFReU2DyGGdhiyPPx2kat0ohHUNIW3TqrA/kFDw+PdPEwPPlNK2N8/kzDeMUsPDHjgDSAyej9lKVN0Y+lxmI+MIVTeBAZAACzcj4nSybe1Wc7eHqP3hAYgvlYYXo0K9sRMNPDgAyICnFHcw6JYFPJlwc5zhNPAuzx6go2nPw4wa8pyoFVioDXwQplddeflFWrsYPB08eiRsixuceKOxnHubWrS+Uec8u8fHIz0Dk5Zsski9PAWR+L28g8kru7uqIU/4H0UjhFUDMz8sHMBnPySZhNi4Fw1laoYSlOyEd5A08EajU+qA+OvmggCJwfFkeYNYmSrUP4LP+YafQ+ug7PlKEAaAkWMVG8OsJIsqYJVIrhGe8tPTl0jbza7JhCaY3D393cIHE9sp74S0ZdoabFrdxtHUKO0Q7CifjKWVCjXB8BhlmnPI90TDj6LxSU5G85dhThe814Wvruwvy5BVdYjRKf/Pk8vE5URZu7fvbsTHkq06BDTzNqQKESheVZX4FC/gqY5R1+YBD0zA/DyQDkfLBY1qzEgYovoPBi+A0TCroim3lszzLw5eXAB6WQfCYDKjla2WRxs6a2vpF2x/9xZepCiQIwJ+E558kghl9W1+GqXvKcVbOAJQOEKUDRG3SvyyLfoE3skeGO/hAYrut+fsSGX5mPyjwCO0Edg7vZHSkCrAIVOwM5XsZ7UQKM+x5BiJlmRxl6Lyig9ZjiREXwNaWF8gzC7jEaLTk+i+gQypYpTwA6fEFL0PhmJaKSYX0+aiyWbh5vJdVeS+j8hHf0rdIPWDMklg+pGZR6Od1Y8V2Gg79hpvKoYwgYyBhHcziePCEvCMAhXTII3baniwOHm1jUloeAxHCfhhHANES0TrVc4qbdaQlAsibgJS1HB8GO6JAxOb6bIDEklf97UkZfk4/AMSDicDxnURqdznrQOtEtVqUw8GOUsKTd8qHP/CjOAMU9Ke0GnsSNJbKwoUvysSJX8YsH1YMMJlPn7euQJ6Yv9iDiMptQAA1y0TltSMoJxXXZFvwU25fR7AQkKFiW970W5iVxI8V01DfFNZVAQR5lWU96XdpbdZNh22hfs3ytTKYb+y0/cBgGdompBGAyPNgInh4JMMa1eLaGzixwKFebIXwlUbJylwuqe0BojlHjCWyJvvsgMQarPrrk/L5s2GZkh2YFCTsLN952okEGA/IJ/ApAx7j6EnocI0An1EmR545KjrBhF1yZLesxjPTuedMgP6DD0fa6Zhsuef+p7zSG3iQKAaBWStVUpNh3l6xTXljYPm4gYN6S0d8UX03h1TcCNHSkBpojJLH6iuAsNAUd34Fi+bvwMOJAgcizszZCm3wND/mafH0ezD569WL5smaTSlObDttW5TnQaM89oN/DqIVSsbQjUCqoSyvhdPbaoUAHgIoIxOgylguSdkA0ewjDkRsus8WSKzByueflJGTN6LDJrvO8p1mdz92JjuuJZApD3H4bwIUM1UGCCmDRs3vw1h+XCuYKt+xVnK79sbyon4qzhO3/Vq9foeseW8dkeUUUin9/mA4gMgrLa2B8ajElOmYLVO+NFL+8zsXyO03XSy3XjdFvvnVU/VY9toaWb9hs8sfZc667Cy5+rJJUlJWJevXb4FSoj0wC5eGNXYOQH6Y5suwyQJXJuvgQcKyWzpYn+aOzaFNghPbKhwom6CldSEvAMg9ByUrmAAaAKeG7wD51Ygwre0BpEDCcK59my/PPknSFy1axDHfEee0+Q6Jq7r03kukpvJhXf3Al7a22FV/us4XuDj4ApdfbeMdNSx89YqjD8uR8nAYR0XS4RwV3iuQUXsawg5AXXMqMUyqkltuvVUuOH+CNocN8b41839kwdN/hyJBoahtCsqYks1mJM/8oAzkZMmtV5wj11xxLhnBmeUjo9uY6VDASjlldD958O4bdPLD4v/vL2/Ik39dJq9hO+cSrt1T56+DYA7XJjJ24LFy+snHy6TTRkivHp3Uqs5/7k156PFFsjQv36eNCOtqTuvvA/TrgetVCr6/qSXxxgUwJRuwOL0NoNVwqVIt+oGWiIfO0OG5SEGVsfyuCwb8R0pdec4111zzhBV5pNG4OT/7a5t2/9lSU/WwVFe3d0AioLACwlaPU3H0E4h8qUhQkaID7SBwYkARNLxzB8pLJI9KSK+nKQ3SqV21ZKZUyogvjJFZM6+U44f0dzI4572/TX5y9+PyzKtYwbIT+wo0BxUlgzI6RcxsUy+PzMWK9DHDQj70GEiM2X30FXLT5RPluqunOpavksVjoBbSvLNikxSX7CFHo5OxNOmLY44L6SzvkAZi5C1eslp+P+8fsogrNcyF+oKhflfv7hjS9uzUQcoqq2V1obvWFgEEUDXgqAszczGAOEuXIVOGd1184ehuOaVFux6fPn36bVb0kUgPLSCxhb/xm8FSV/2aVEVgIpAIKCoQ3/0QTBWYWq0C0Aio2EIpmGilIBuGNtQob51iK8XyDEygydgL75i2EaCuu1KGDOlLKeiaa6pfzX1W1m/aLhPGnSBnnX6iLFm6Vpa9tVae+ts/5d2l/HFwkmR3zpSH7r5JxoxOBJHXf80vPhkwyDMwJPhRfXMxSGKZwFemyyfwePm4vvzNu+S3+JnPglfw8bQqtCevCcfgHrlyPrYuG3/KMOnapb0Cld+F2rKtWP77vmdl2eYdTlZn5GiV8DzEduRQjlbJLTp1FFPx5x3XUb4+vl9VRmpq0nsrV5534403Pm/1P1LpoQcktvTVj7aTquLF+GGgW+gaD/VohTIzJA39yeX4DVUEFTqUNLZQfFbAR5/dMwMpOp4HgaOH91O7GabzNDm1XnKxFVgqhntTvnqxTP/2Je59k5MKoPLBQPLWbZPf/3GB3DQrUT4GRxCOPAnxviqMNoCF+FBNhYjmEMfR3xw8IR+9TMyoqYUWWbFqM5qtUoYM7KGr0vWbvkwNAIV8vP+NdzfJ77Dv+dKtu/Ulay1vYNwliiCyF63Ytmz66O5yJn4czb3bi4uLCzZu2PAFgGibVvQIPx2aQLJGv+qhBwGQaVKN5wN7ZtJhHu6muDum8bcsXDumAKoT7WDK8nmimp2N5ykFlAdRbKUUTKpd0NgYVE71eM7KqpVOmWXSrVsvufl7s2T0KGdhsIZca7hl6w55fdm70rN7lxCnEftxouKbC6Ago4kdFFvZAfTEvRP6MPAYMJin+i0dqAGIcS35DVgE4PL3CmTu8+/KG2u37gWgs/ATEgKIeRQUFLy0o7Bw6tECIvbLoQ0k1vCa/8UkRO29Ul2J5yYCCiCq9SDhkA6dl4EH4EaAqdGemxQ8mALGxEQdf0RmoCKw6NfnKNUcByICjMqlCtbMj+en3LY1KKNCTj71SzLzum8COLny0ivvyMzv3oEqVWAbq3pYyAYZNXqE3PPL21jrD3YooiUXA4PxFlZZnyaAwuK1ui5SQRmHcT0xz0AUKGMjC2RAI2hUBnHmV6CRD14pPm2zdnMRJhQbZUjfTg6AKKsaDlbop9dee+0PtM5H0enQBxI747qnBktNxSNY2n1CsE60UHUEFcABIKXh2SkZAGpEuOnDVu75yW0z5a0SrQ8AWENA2rsVgiuAidYJZRKACiz4Yfly0mukM35SnowJ85TOg/E1DOxPzXhMPKQgflBmCb46OEB++uObWeN9OlXsZrFU2gTng8a3NBpuKQ68IIu8VN7zEviM8/EfBiDmQesSAMR0BJ3nMx+1YJ6WlJRwKHf50fA8lNBXPnB4AImVnf1CppQUz4EJuC6AiZbJZvVojbDuLINrz2CJCCa1ULRaPLyVslXR0AIoCQ5S9UNFqCzKC9oKEcRTmxDnDt9yRsiHG5BRJj1z28hvHviZxexNfbZxhCk6eVRSc4HvWRYOMuC7+joB5TfjaZ56TbwuSuCPYPB+Fkf/XlaH8ZAzfgwgpiE/BtHWLVvm79q164qjaShn/WT08AGS1fjGZ07C0O5PAFSfvd456TMRAAULkcnhnp/R02FfeFZy+6/RSiWCilrVBCpomIIIZ2obDlSAPPVrwPF8fL/0SmmTVCqP//kBq+k+qeYRxzI77+I4LZt8H29xpHGchlkv7ywc5BAVeEwZgUn53tLE/tga7eVHOeRV7NlTsn7duhnXX3/9w1b20UoPPyCxp2idqiphnaphnWCV1DKRcqjnh3tcA4SXg5l416JDPU5IcOinlooWiqAhz4EnfLokgAnlEHwBOAhTgSGvSqx8VkbkvNHHS79u2ZKdVSfnn3Oa/qTcxXz4WfMysSYsOMCCT+WmC3IeFMqzuIgqGCCt/+C3FKZFCfHMmXIeTDFomvM1DFnKtFoh7ZZwOjyBZNWf/cJADPPmYXiHafJmExE2IUGNgYXCzl2S5Id8+u6JgCCoCBaCicM/KBiBQkul1ooKqsACZT5QNg0rv1FOG9RFbp4xWbp1OcZq9JEoFTJ2cTgAhgJezBS4eRpLp/EU5j/ybinMtDGAbNjmkjlwWHqLs7wIHPOXlJZu27RxI4xQqxWK++PwBpJdyQ//cQkAdS8sFGb2vFWy6XIuKdIhH4CC56dUrF1LwZAvibN8CiBnlRyonHVyVioCFhWf4PIAysQ+YJeN7YWlP1OsBh+PeqAwMRXVXOyP44yvSk2th6MlUUoAOVQ0hcGLwcMIAwlFW/Jr3syLadk+TAOKyZmaTfn5v54xY8a1ymw9JbTAkQEkXhKHe6lpMzHU+3EY6imYACQFEwBGyucmrA/jqmVu15uiz0puyBcmJTjM4TCQ1shm9qhUCGdiyDh1aDuZddXFCQ3JgK1+2CvCMwwIHyXeZAP1wFGseEVnPgaeIGfgcZEOEKi3xgM8lKdfDz+cC2HPjwFEf/7GjQ+XlpZefzRPJuyrz4x/5ADJruiOpZ3xnaY78AJpWnjfFADln58IKB7USoIKExP8dWmqBxWfl9RacdhHIFH5OPSDUp2atk1u/9638S0zrG727sMAZHJGVaktABqHqejBUfGh3HSq7BbnRZTn49XyqGCTbIiHfGx9LC8FDMvgH/JpDqDt27fzxep3ACAsMmx1H9QCRx6Q7GrvWN0ZP9MEoGqmuVURNhkBAHGoZ2AiJWDYEgQUD//cRGuVDPBYeFDjbpk4qL1Mu/hsV8onab0IDFZlUiq00hZAE8c3Bw7jjKd5RABR4DSzPszewGVlEkg8WgHE1tw/90lUYf9K+qykf76ioyTV34jJiKsAoPZNM3uwThzm2SyfTpUjzNk9/e02FrHCWvF+TUvEYd+4qjyZNHqonHHamHA1tlwoMD6CJ8HqUN5hR1OaUis7AlXgEyDN+BZmPmZdlOdlyduX9aEcj9qamtrCwsLn8D7o1lYLpF2xX6cjH0jWHL/Mw1is/lIM+X4AremjFolDPgKIVolWyvx+qlxBRe1kK+EYX71GBnTKkm9f6n5ftL9DOquK0QAAMAxcMY9F0xkvASQa0Qw4lLXJBwOPl2vJ+jDfPZVV5du2bnmweMuWH91y++3YB7nVfZwWOHqAFLfO/euHAEzfxTHNDfE4EeEBxWVHfB4iuJSCz6Ee4vvW5Evvsny56Ix/kTHDB7kcP24LepBYtQwsDBtg1A9lVxeIsyAhDnym5R+dPecwaEM946kcZBneVrDj1d27C3/VOo2tzfaJTx9XDT5xwYdEBo+uSJfSnNMwKXEVgHO+s0rNrBPBREulYMK+4sVvSkZViXxp5Ofk9C8O18vYX8sUg4YZJIQ9YJRPeHggGSVA6DfgqJ8yPl1zy2PxpIU7i1YVF+18LH/Dhl/eeeedO7XyracD0gJHN5DiJuTQr13WKbBC31FQmYWyZyelBFW1DNjzvgzYuUbaYyusMccPlKH9ussxfheiOMsP8sdAiOWo8OqM+HAsrzIW78FmgGFa85Nu37V7TdnuXY9saAWPa9dP6dwKpH017B+2DccPA8/AXgSXSkPtCTr0o3XSvbM51KuQzKptMrp8i2SXbpMcfAHvWKxw6N2lowzp001/m7OvrM16MF5B4QUNLMYPcc1As1e8z4fyxaXlxWUVFUuLd2yfd8MNN9zvs24ln3ILtALpozTw/fgEX/quAZLScBKe5i/CQwYsV117He75GT2p3Sn99xRIf2w8mVW+S3Lbt5NhvbvJoF6dATJsR6wRMJQAAADvSURBVOVdAAfCsV+jPWDoJ6gsntT8Ksd48Gpq6xpKyisLy8vLllSWFi3cvHnzI61DNmuhg0tbgfRx2/u364GOzG74ddsITOn1ArjGgY6FimNGkNZqq4wvXiuZpTskN7uNDMXOPv26dsDCVvcityVgsCrN+eSVV1XVVlfV7K6oqslrqKneWVFaNG/Pnj3v3HLLLW8zvtV99i3QCqRPqw9+W9TBZb2tw+fL1g/vW17QLb2o4JhObdtkH9u5Q48O7TJz01NTsqz4xrqaSnyvdVdVbeMryfW19fVVFdWzZs066n+eYO3TSltboLUFjoIW+H8fLKB/f5M8DwAAAABJRU5ErkJggg==" alt="Logo" />
-      <div>
-        <div class="brand-name">选址赢家<em>Online</em></div>
-        <div class="brand-sub">智能选址&商圈分析平台</div>
-      </div>
-    </div>
-    <nav class="nav">
+<header class="hd" id="hd">
+  <div class="wrap hd-in">
+    <a class="brand" href="/home/" aria-label="选址赢家Online 首页">
+      <img src="assets/logo.png" alt="" width="113" height="96" style="width:34px;height:auto">
+      <span class="brand-txt">选址赢家<em>Online</em></span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <a href="#demo">操作演示</a>
       <a href="#ability">平台能力</a>
       <a href="#reason">选择理由</a>
-      <a href="#scene">应用场景</a>
-      <a href="#flow">使用流程</a>
       <a href="#faq">常见问题</a>
     </nav>
-    <div class="nav-actions">
-      <a href="https://mka-online.cn/login" class="btn btn-outline">登录</a>
-      <a href="https://mka-online.cn/register" class="btn btn-primary">免费注册</a>
-      <button class="menu-toggle">☰</button>
+    <div class="hd-act">
+      <a class="btn btn-sm btn-line" href="https://mka-online.cn/login">登录</a>
+      <a class="btn btn-sm btn-dark" href="https://mka-online.cn/register">免费注册</a>
     </div>
   </div>
 </header>
 
-<!-- ============ Hero ============ -->
+<!-- ================= Hero ================= -->
 <section class="hero">
-  <div class="container hero-grid">
-    <div>
-      <div class="hero-kicker">基于位置大数据的商业智能分析平台</div>
-      <h1>让每一次选址决策，<br>都有<span class="grad">数据支撑</span></h1>
-      <p class="hero-desc">
-        选址赢家Online 将商圈人口分布、门店管理、竞品追踪、地图可视化与数据大屏融为一体。
-        在浏览器中即可圈定商圈、透视人口画像、分析竞争格局，一键投屏数据驾驶舱，让开店决策从「凭经验」走向「看数据」。
-      </p>
-      <div class="hero-cta">
-        <a href="https://mka-online.cn/register" class="btn btn-primary btn-lg">免费注册</a>
-        <a href="#ability" class="btn btn-outline btn-lg">查看平台能力</a>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="hero-arc" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="eyebrow"><i aria-hidden="true"></i>基于位置大数据的商业智能分析平台</span>
+    <h1>选址，<span class="grad">看数据</span>说话</h1>
+    <p class="lede">商圈人口、竞品格局、门店体检、AI 建议 —— 一个平台，把开店决策从经验变成依据。</p>
+
+    <div class="feats">
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 2.6 15.4 0 18M12 3C9.4 5.6 9.4 18.4 12 21"/></svg>
+        商圈人口 <em>1km 网格，分龄可算</em>
       </div>
-      <div class="hero-note">✓ 无需安装 · 浏览器即用　✓ 门店/竞品数据一站式管理　✓ AI 智能分析助手　✓ 数据大屏一键投屏</div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l6 4V9l6 4V5l6 4v12H3Z"/></svg>
+        竞品追踪 <em>半径内自动计数</em>
+      </div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>
+        门店体检 <em>自我蚕食看得见</em>
+      </div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg>
+        AI 选址 <em>一句话给出结论</em>
+      </div>
     </div>
 
-    <div class="hero-visual">
-      <div class="dashboard-frame">
-        <picture>
-          <source type="image/webp" srcset="assets/dashboard_screenshot.webp">
-          <img class="dashboard-screenshot" src="dashboard_screenshot.png" alt="选址赢家 Online 数据大屏" fetchpriority="high">
-        </picture>
+    <div class="cta-row">
+      <a class="btn btn-xl btn-dark" href="https://mka-online.cn/register">
+        免费开始使用
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn-xl btn-ghost" href="#demo">看 4 步操作演示</a>
+    </div>
+    <div class="hero-note">浏览器即用 · 无需安装 · 门店与竞品数据按账号隔离</div>
+
+    <div class="hero-shot">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 数据大屏</span></div>
+      <picture>
+        <source type="image/webp" srcset="assets/dashboard_screenshot.webp">
+        <img src="dashboard_screenshot.png" alt="选址赢家Online 数据大屏：门店与竞品全国分布驾驶舱" width="1280" height="577" fetchpriority="high">
+      </picture>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 操作演示 ================= -->
+<section class="sec sec-soft" id="demo">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">操作演示</span>
+      <h2>四步，从一张地图到一份结论</h2>
+      <p>下面是线上环境的真实界面。点任一步，看这一步在界面上做什么。</p>
+    </div>
+
+    <div class="demo rv" id="demoBox">
+      <div class="steps" role="tablist" aria-label="操作演示步骤">
+        <button class="step is-on" type="button" role="tab" aria-selected="true" aria-controls="stagePanel" data-i="0">
+          <span class="n">01</span>
+          <span class="t"><b>圈定范围</b><em>选地址或直接框选，半径、驾车、步行三选一</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="1">
+          <span class="n">02</span>
+          <span class="t"><b>看清人口</b><em>1km 网格逐格上色，5 档读出人口疏密</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="2">
+          <span class="n">03</span>
+          <span class="t"><b>比出竞争</b><em>半径内竞品数量、重合度、威胁一屏看清</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="3">
+          <span class="n">04</span>
+          <span class="t"><b>得出结论</b><em>评分、洞察、图表，一页成稿可导出</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
       </div>
-      <div class="float-card fc-1">
-        <div class="fc-icon" style="background:var(--primary-light)"><img src="assets/icons/shop.svg" alt="" width="18" height="18"></div>
-        <div><b>商圈人口分布</b><span>半径圈选 · 整城分级</span></div>
-      </div>
-      <div class="float-card fc-2">
-        <div class="fc-icon" style="background:#fff3e0"><img src="assets/icons/aim.svg" alt="" width="18" height="18"></div>
-        <div><b>门店竞争分析</b><span>重合度 · 竞争追踪</span></div>
+
+      <div class="stage" id="stagePanel" role="tabpanel" aria-live="polite">
+        <div class="frame" id="frame">
+          <img class="shot is-on" src="assets/screen-sitefinder.webp" alt="地图工作台：右上角展开「商圈工具」菜单，可选商圈内点位、周边商业配套、常住人口分布与开店余地" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="assets/screen-population.webp" alt="常住人口分布：以上海五角场万达广场为圆心、半径 3 公里的圆形范围，按 1km 网格分档着色（6 档，颜色越暖人口越密），右侧面板汇总常住人口 72.2 万及各年龄段" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="assets/screen-competitor.webp" alt="竞品门店管理：按城市、区县、商圈、品牌筛选，列表显示价格、星级与评论数" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="assets/screen-report.webp" alt="商圈分析报告：五个维度星级评分、逐条数据洞察结论，以及人口结构、年龄分布、到访趋势等图表" width="1200" height="750" loading="lazy" decoding="async">
+          <div class="spot" id="spot" aria-hidden="true"><span class="spot-tip" id="spotTip">商圈工具</span></div>
+        </div>
+        <div class="demo-hint">自动播放 · 点步骤可切换</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============ 主视觉轮播 ============ -->
-<section class="section" style="padding: 8px 0 0;">
-  <div class="container">
-    <div class="banner-slider" id="mainBanner">
-      <div class="banner-track" id="bannerTrack">
-
-        <!-- Slide 1: 商圈人口分析 -->
-        <div class="banner-slide">
-          <picture>
-            <source type="image/webp" srcset="assets/screen-district.webp">
-            <img class="banner-img" src="assets/screen-district.jpg" alt="商圈洞察：商圈边界与人口评分" loading="lazy" decoding="async">
-          </picture>
-          <div class="banner-text">
-            <span class="bt-tag">商圈人口分析</span>
-            <h2>圈定商圈，看懂人口</h2>
-            <p>按半径圈选，或直接选到城市/区县把 1km 网格铺满全域；常住人口、居住与工作人群分布一目了然，配套统计面板一键汇总。</p>
-            <a class="bt-cta" href="#ability">了解平台能力 →</a>
-          </div>
-        </div>
-
-        <!-- Slide 2: 竞品追踪 -->
-        <div class="banner-slide">
-          <picture>
-            <source type="image/webp" srcset="assets/screen-competitor.webp">
-            <img class="banner-img" src="assets/screen-competitor.jpg" alt="竞品门店管理：品牌、价格与星级" loading="lazy" decoding="async">
-          </picture>
-          <div class="banner-text">
-            <span class="bt-tag">门店竞争分析</span>
-            <h2>追踪竞品，洞察格局</h2>
-            <p>门店重合度、竞争数量、竞争追踪三种模式，透视门店与竞品的空间关系，评估市场饱和度。</p>
-            <a class="bt-cta" href="#ability">查看竞争分析 →</a>
-          </div>
-        </div>
-
-        <!-- Slide 3: AI 助手 -->
-        <div class="banner-slide">
-          <picture>
-            <source type="image/webp" srcset="assets/screen-sitefinder.webp">
-            <img class="banner-img" src="assets/screen-sitefinder.jpg" alt="开店余地评估：高潜力区域筛选" loading="lazy" decoding="async">
-          </picture>
-          <div class="banner-text">
-            <span class="bt-tag">开店余地评估</span>
-            <h2>筛出高潜力的开店区域</h2>
-            <p>设定城市、半径、门店数与竞品品牌条件，一键在地图上圈出符合条件的高潜力网格。</p>
-            <a class="bt-cta" href="#ability">查看平台能力 →</a>
-          </div>
-        </div>
-
-      </div>
-
-      <button class="banner-arrow banner-prev" aria-label="上一张">‹</button>
-      <button class="banner-arrow banner-next" aria-label="下一张">›</button>
-      <div class="banner-dots" id="bannerDots">
-        <button class="active" data-i="0"></button>
-        <button data-i="1"></button>
-        <button data-i="2"></button>
-      </div>
+<!-- ================= 平台能力 ================= -->
+<section class="sec" id="ability">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">平台能力</span>
+      <h2>选址要看的每一面，都在里面</h2>
+      <p>从人口到竞争，从单店体检到全国大盘。</p>
     </div>
-  </div>
-</section>
-
-<!-- ============ 平台能力：能看见什么 ============ -->
-<section class="section section-soft" id="ability">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">What you can see</div>
-      <div class="section-tag">平台能力</div>
-      <h2>一个平台，看清选址的每一面</h2>
-      <p>商圈在哪、人口多少、竞争强弱、趋势如何 —— 选址赢家Online 用地图与数据，把答案直观呈现。</p>
-    </div>
-    <div class="cap-grid">
-      <div class="cap-card">
-        <div class="cap-no">01</div>
-        <h3>商圈人口分布</h3>
-        <p>两种看法任选：按圆心与半径圈选商圈，或直接选城市/区县把 1km 网格铺满全域；常住人口等指标按 6 档着色，档位区间可自己设定。</p>
-        <div class="cap-tags"><span>半径圈选</span><span>整城铺图</span><span>自定义值域</span></div>
+    <div class="caps rv">
+      <div class="card">
+        <div class="ci"><img src="assets/icons/collection.svg" alt="" width="21" height="21"></div>
+        <h3>商圈人口</h3>
+        <p>半径圈选或整城铺图，1km 网格 6 档着色，档位区间可自定。</p>
       </div>
-      <div class="cap-card">
-        <div class="cap-no">02</div>
-        <h3>常住人口画像</h3>
-        <p>多商圈常住人口对比分析，从人口总量、结构维度看清区域潜力，为选址与开店决策提供量化依据。</p>
-        <div class="cap-tags"><span>多商圈对比</span><span>人口结构</span></div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/position.svg" alt="" width="21" height="21"></div>
+        <h3>驾车 / 步行可达</h3>
+        <p>按真实路网算 N 分钟能到哪，不再是半径圆，边界可微调。</p>
       </div>
-      <div class="cap-card">
-        <div class="cap-no">03</div>
-        <h3>门店竞争格局</h3>
-        <p>门店重合度、竞争数量、竞争追踪三种模式，透视你的门店与竞品的空间关系，评估市场饱和度。</p>
-        <div class="cap-tags"><span>门店重合度</span><span>竞争数统计</span><span>竞争追踪</span></div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/compass.svg" alt="" width="21" height="21"></div>
+        <h3>网点优化</h3>
+        <p>自家蚕食、竞争强度、竞品追踪，重叠率直接画在图上。</p>
       </div>
-      <div class="cap-card">
-        <div class="cap-no">04</div>
-        <h3>开店余地评估</h3>
-        <p>按门店数、竞品与人口等条件筛选高潜力区域；门店取自你的门店库、竞品数据与平台已收录的品牌门店，按半径聚合后在地图圈出结果。</p>
-        <div class="cap-tags"><span>品牌门店库</span><span>多条件筛选</span><span>区域定位</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">05</div>
-        <h3>AI 智能分析</h3>
-        <p>内置 AI 助手，自然语言即可完成地图操作、POI 搜索、商圈分析、统计查询，无需记忆复杂操作。</p>
-        <div class="cap-tags"><span>20+ 分析工具</span><span>自然语言</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">06</div>
-        <h3>一键报表输出</h3>
-        <p>查询结果一键导出 Excel / PDF 报表，包含地图截图与人口明细，输出即交付，汇报直接可用。</p>
-        <div class="cap-tags"><span>Excel 导出</span><span>PDF 报表</span><span>地图截图</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">07</div>
-        <h3>数据大屏驾驶舱</h3>
-        <p>深色科技风全屏数据驾驶舱：门店与竞品全国分布、省级/城市级聚合、类型与品牌多色区分、KPI 实时统计，客户演示与投屏汇报利器。</p>
-        <div class="cap-tags"><span>全屏大屏</span><span>省级/城市聚合</span><span>多色区分</span><span>实时刷新</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">08</div>
-        <h3>销售预测引擎</h3>
-        <p>录入已开业门店真实销售，候选门店年销售额智能预测：L1 类比 → L2 回归 → L3 机器学习三级引擎随样本自动升级，置信区间、特征归因与周边门店影响模拟辅助决策。</p>
-        <div class="cap-tags"><span>三级引擎</span><span>21 维特征</span><span>参照店圈定</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">09</div>
-        <h3>AI 选址建议</h3>
-        <p>查询结果一键生成品牌专属选址建议：自动识别品牌与业态（30+ 品牌映射），结合运营商级人口大数据与周边竞争，输出选址结论、客群匹配度、风险提示与运营建议。</p>
-        <div class="cap-tags"><span>30+ 品牌映射</span><span>客群匹配</span><span>风险提示</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">10</div>
-        <h3>驾车 / 步行可达范围</h3>
-        <p>不只画圆：按真实路网计算 5 / 10 / 15 分钟车程（或步行）究竟能到哪，连成可达范围直接用于人口统计；边界还能手动微调，松手即按新形状重算。</p>
-        <div class="cap-tags"><span>真实路网</span><span>多时间档</span><span>边界可微调</span></div>
-      </div>
-      <div class="cap-card">
-        <div class="cap-no">11</div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/aim.svg" alt="" width="21" height="21"></div>
         <h3>门店体检</h3>
-        <p>以门店坐标与距离为准做结构体检：同品牌贴身与重叠、同址双店型、半径内竞品密度一屏看清，按红黄绿灯排序，可导出 Excel 与打印报告。</p>
-        <div class="cap-tags"><span>自我蚕食</span><span>竞品密度</span><span>红黄绿灯</span><span>报告导出</span></div>
+        <p>自我蚕食、竞品密度、数据完备度，红黄绿灯排序。</p>
       </div>
-      <div class="cap-card">
-        <div class="cap-no">12</div>
-        <h3>门店数据清洗</h3>
-        <p>导入后自动识别疑似重复门店（同址异码、商场双店型），按判据给出合并建议；确认后合并、也支持一键恢复，避免同一家店被算两遍。</p>
-        <div class="cap-tags"><span>重复识别</span><span>双店型豁免</span><span>可恢复</span></div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/magic-stick.svg" alt="" width="21" height="21"></div>
+        <h3>销售预测</h3>
+        <p>录入真实销售，L1 类比→L2 回归→L3 机器学习随样本升级。</p>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 最新功能 ============ -->
-<section class="section section-soft" id="latest">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">What's new</div>
-      <div class="section-tag">最新功能</div>
-      <h2>近期上新，让选址更聪明</h2>
-      <p>驾车 / 步行可达范围、门店体检、整城人口分级、销售预测、AI 选址建议、商圈洞察、报表增强 —— 持续迭代中。</p>
-    </div>
-    <!-- ⭐ P2-2（v1.13.179）：4 张大卡 → 「一行一条」的紧凑时间线。
-         原 4 张卡的正文与上方「平台能力」区近乎逐字重复（销售预测 / AI 选址建议两组），
-         本版改为「一句话上新」并保留原有转化入口（免费体验 → register），既减屏又消重。
-         ⭐ P2-4（v1.13.180）：删除首页「资讯」区（原 3 张 news-card），其中 2 条有净增量者并入本时间线
-         （竞品品牌追踪 ← NEWS 2026.08.01；报表导出增强 ← CASE 2026.07.15），随条目一起**不带绝对日期**
-         ⇒ 从根上消除「日期过期」观感；另 1 条（开店余地分析上线）与「平台能力 04」正文逐字级重复
-         ⇒ 判定已被覆盖，不再下沉（避免三重复）。 -->
-    <ol class="func-timeline">
-      <li class="tl-item">
-        <span class="tl-node tl-blue" aria-hidden="true"><img src="assets/icons/position.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>驾车 / 步行可达范围</h3>
-          <p>按真实路网算「开车 10 分钟、步行 15 分钟能到哪」，不再是半径圆；范围可直接用于人口统计，边界支持手动微调。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-green" aria-hidden="true"><img src="assets/icons/aim.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>门店体检</h3>
-          <p>以门店坐标与半径判自我蚕食、竞品密度与数据完备度，红黄绿灯排序，可导出 Excel 与打印报告。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-blue" aria-hidden="true"><img src="assets/icons/collection.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>常住人口分布 · 整城分级</h3>
-          <p>选城市或区县即可把 1km 网格直接铺满全域，按常住人口等指标 6 档着色；支持等值均分与自定义档位区间，多套配色可选，图例可拖动。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-orange" aria-hidden="true"><img src="assets/icons/magic-stick.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>销售预测（AI 智能引擎）</h3>
-          <p>录入已开业门店真实销售，候选门店年销售额一键预测，L1→L2→L3 三级引擎随样本自动升级。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-green" aria-hidden="true"><img src="assets/icons/cpu.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>AI 选址建议</h3>
-          <p>一键生成品牌专属选址建议，自动识别品牌与业态，结合运营商级人口大数据输出结论、客群匹配与风险提示。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-cyan" aria-hidden="true"><img src="assets/icons/office-building.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>商圈洞察增强</h3>
-          <p>商圈详情卡新增「商圈内购物中心」，数量、星级、地址一目了然，点击即在地图精准定位。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-purple" aria-hidden="true"><img src="assets/icons/compass.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>周边竞争强度增强</h3>
-          <p>点击竞争强度圆圈即可下钻：品牌构成雷达图 + 8 方向玫瑰图 + 威胁评级，看清圈内竞品格局。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-red" aria-hidden="true"><img src="assets/icons/aim.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>竞品品牌追踪</h3>
-          <p>以指定竞品品牌为圆心展开分析，追踪该品牌在目标商圈的门店分布与重合度，看清竞品加密动向。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-      <li class="tl-item">
-        <span class="tl-node tl-blue" aria-hidden="true"><img src="assets/icons/collection.svg" alt="" width="16" height="16"></span>
-        <div class="tl-body">
-          <h3>报表导出增强</h3>
-          <p>竞品品牌汇总、上网标签分布三组人群一键导出 Excel，报表维度更细，汇报直接可用。</p>
-        </div>
-        <a href="https://mka-online.cn/register" class="func-more">免费体验</a>
-      </li>
-    </ol>
-  </div>
-</section>
-
-<!-- ============ 真实产品界面 ============ -->
-<section class="section" id="screens">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">Real interface</div>
-      <div class="section-tag">真实界面</div>
-      <h2>不是示意图，是产品本身</h2>
-      <p>以下截图为线上生产环境的真实界面，未做任何美化或数据改写。</p>
-    </div>
-    <div class="ui-grid">
-      <div class="ui-card">
-        <picture>
-          <source type="image/webp" srcset="assets/screen-dashboard.webp">
-          <img class="ui-shot" src="assets/screen-dashboard.jpg" alt="数据大屏驾驶舱" loading="lazy" decoding="async">
-        </picture>
-        <div class="ui-body">
-          <span class="ui-tag">数据大屏</span>
-          <h3>门店与竞品全国分布驾驶舱</h3>
-          <p>省级 / 城市级聚合、类型与品牌多色区分、KPI 实时统计，全屏投屏即可用于汇报与客户演示。</p>
-        </div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/cpu.svg" alt="" width="21" height="21"></div>
+        <h3>AI 选址建议</h3>
+        <p>30+ 品牌映射，输出结论、客群匹配与风险提示。</p>
       </div>
-      <div class="ui-card">
-        <picture>
-          <source type="image/webp" srcset="assets/screen-forecast.webp">
-          <img class="ui-shot" src="assets/screen-forecast.jpg" alt="销售预测" loading="lazy" decoding="async">
-        </picture>
-        <div class="ui-body">
-          <span class="ui-tag">销售预测</span>
-          <h3>候选门店年销售额预测</h3>
-          <p>基于已开业门店真实销售建模，输出年销售额预测、置信区间与特征相似样本门店对照。</p>
-        </div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/office-building.svg" alt="" width="21" height="21"></div>
+        <h3>数据大屏</h3>
+        <p>门店与竞品全国分布一屏投出，KPI 实时统计。</p>
       </div>
-      <div class="ui-card">
-        <picture>
-          <source type="image/webp" srcset="assets/screen-ai.webp">
-          <img class="ui-shot" src="assets/screen-ai.jpg" alt="AI 智能助手" loading="lazy" decoding="async">
-        </picture>
-        <div class="ui-body">
-          <span class="ui-tag">AI 智能助手</span>
-          <h3>一句话驱动地图与分析</h3>
-          <p>自然语言即可完成门店筛选、POI 搜索、商圈分析与统计查询，无需记忆复杂操作。</p>
-        </div>
+      <div class="card">
+        <div class="ci"><img src="assets/icons/refresh.svg" alt="" width="21" height="21"></div>
+        <h3>门店清洗</h3>
+        <p>同址异码、双店型自动识别，合并可一键恢复。</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============ 社会证明 ============ -->
-<!-- ⛔ v1.13.250：按业主要求隐藏整个「行业积累 / 15 年位置数据积累」区块。
-     代码完整保留，恢复只需删掉这一对注释标记（区块内无 HTML 注释，可安全包裹）。
-<section class="section section-soft" id="trust">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">Track record</div>
-      <div class="section-tag">行业积累</div>
-      <h2>15 年位置数据积累</h2>
-      <p>从数据采集、清洗到商业分析，长期服务于连锁品牌与商业地产的选址决策。</p>
-    </div>
-    <div class="proof-grid">
-      <div class="proof-item">
-        <div class="proof-num">26<span>城</span></div>
-        <div class="proof-label">1km 人口网格</div>
-        <div class="proof-desc">运营商级人口数据，可按半径聚合</div>
-      </div>
-      <div class="proof-item">
-        <div class="proof-num">3,300<span>+</span></div>
-        <div class="proof-label">竞品门店库</div>
-        <div class="proof-desc">覆盖 138 城 · 5 大品牌，按半径自动计数</div>
-      </div>
-      <div class="proof-item">
-        <div class="proof-num">2,000<span>+</span></div>
-        <div class="proof-label">在管门店</div>
-        <div class="proof-desc">覆盖 90 城，支持多品牌与集团多账号</div>
-      </div>
-    </div>
-  </div>
-</section>
--->
-
-<!-- ============ CTA ============ -->
-<section class="section" style="padding:0 0 88px;">
-  <div class="container">
-    <div class="cta">
-      <div>
-        <h2>准备好用数据做一次选址决策了吗？</h2>
-        <p>免费注册账号，即刻体验商圈分析、竞品追踪与 AI 智能助手。</p>
-      </div>
-      <div class="cta-actions">
-        <a href="https://mka-online.cn/register" class="btn btn-white btn-lg">免费注册</a>
-        <a href="https://youshi-tech.com/Contact.html" target="_blank" rel="noopener" class="btn btn-lg" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);">获取报价</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 选择理由（地图工具 vs 选址系统，v1.13.244）============ -->
-<section class="section section-soft" id="reason">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">Why choose us</div>
-      <div class="section-tag">选择理由</div>
+<!-- ================= 选择理由（保留旧版 v1.13.244/246 的对照内容） ================= -->
+<section class="sec sec-soft" id="reason">
+  <div class="wrap">
+    <div class="sec-hd wide rv">
+      <span class="kicker">选择理由</span>
       <h2>同样是管门店，为什么还要一套选址系统</h2>
       <p>地图负责告诉你店在哪，选址赢家负责判断该不该开在这。</p>
     </div>
-    <div class="reason-grid">
-      <div class="reason-card">
-        <div class="cmp-dim">01　门店数据</div>
-        <div class="cmp-row map">
+
+    <div class="reason-grid rv">
+      <div class="rc">
+        <div class="rc-dim">01　门店数据</div>
+        <div class="cmp map">
           <div class="cmp-who">通用地图 App</div>
           <div class="cmp-txt">收藏点，只有名称和位置</div>
         </div>
-        <div class="cmp-row us">
+        <div class="cmp us">
           <div class="cmp-who">选址赢家</div>
           <div class="cmp-txt">结构化门店库：品牌、经营状态、面积、商圈类型，可筛选、可统计</div>
         </div>
       </div>
-      <div class="reason-card">
-        <div class="cmp-dim">02　人口与客流</div>
-        <div class="cmp-row map">
+      <div class="rc">
+        <div class="rc-dim">02　人口与客流</div>
+        <div class="cmp map">
           <div class="cmp-who">通用地图 App</div>
           <div class="cmp-txt">一张热力图，看不出多少人、什么年龄段</div>
         </div>
-        <div class="cmp-row us">
+        <div class="cmp us">
           <div class="cmp-who">选址赢家</div>
-          <div class="cmp-txt">最小 1km 网格分龄人口，可按半径聚合或整城/区县铺图，档位区间可自定义</div>
+          <div class="cmp-txt">最小 1km 网格分龄人口，可按半径聚合或整城 / 区县铺图，档位区间可自定义</div>
         </div>
       </div>
-      <div class="reason-card">
-        <div class="cmp-dim">03　决策输出</div>
-        <div class="cmp-row map">
+      <div class="rc">
+        <div class="rc-dim">03　决策输出</div>
+        <div class="cmp map">
           <div class="cmp-who">通用地图 App</div>
           <div class="cmp-txt">看到的是位置，判断还得靠人</div>
         </div>
-        <div class="cmp-row us">
+        <div class="cmp us">
           <div class="cmp-who">选址赢家</div>
           <div class="cmp-txt">开店余地、竞争强度、AI 建议，直接给出候选区域与理由</div>
         </div>
       </div>
     </div>
-    <div class="cmp-table-wrap">
+
+    <div class="cmp-wrap rv">
       <table class="cmp-table">
         <thead>
           <tr>
@@ -1102,157 +579,88 @@ a { text-decoration: none; color: inherit; }
         </tbody>
       </table>
     </div>
-    <div class="reason-note">人口数据来自运营商授权数据源，按次计量调用</div>
+    <div class="reason-note rv">人口数据来自运营商授权数据源，按次计量调用</div>
   </div>
 </section>
 
-<!-- ============ 应用场景 ============ -->
-<section class="section" id="scene">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">Use cases</div>
-      <div class="section-tag">应用场景</div>
-      <h2>多种业务场景，一个平台支撑</h2>
-      <p>从单店选址到连锁扩张，从竞争监测到区域评估。</p>
+<!-- ================= 常见问题 ================= -->
+<section class="sec" id="faq" style="padding-top:96px;padding-bottom:86px">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">常见问题</span>
+      <h2>你可能想先知道</h2>
     </div>
-    <div class="scene-grid">
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/shopping-bag.svg" alt="" width="28" height="28"></div>
-        <h3>新店选址评估</h3>
-        <p>圈选候选商圈，透视人口规模与结构，评估周边竞争密度，量化比较多个候选位置。</p>
-      </div>
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/aim.svg" alt="" width="28" height="28"></div>
-        <h3>竞品监测分析</h3>
-        <p>追踪竞品品牌门店扩张，分析门店重合度与竞争压力，提前预警市场饱和风险。</p>
-      </div>
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/refresh.svg" alt="" width="28" height="28"></div>
-        <h3>门店布局优化</h3>
-        <p>分析现有门店商圈重叠情况，识别门店密度过高区域，为门店调整与资源分配提供依据。</p>
-      </div>
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/position.svg" alt="" width="28" height="28"></div>
-        <h3>开店余地研究</h3>
-        <p>按品牌统计目标商圈门店数量，结合人口与竞争条件，找出仍有开店空间的潜力区域。</p>
-      </div>
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/collection.svg" alt="" width="28" height="28"></div>
-        <h3>区域市场研究</h3>
-        <p>多商圈常住人口对比、上网标签分布洞察，支撑城市进入策略与区域分级决策。</p>
-      </div>
-      <div class="scene-card">
-        <div class="scene-ico"><img src="assets/icons/tickets.svg" alt="" width="28" height="28"></div>
-        <h3>分析报告输出</h3>
-        <p>将人口分布、竞争分析结果一键导出为专业 Excel / PDF 报表，附地图截图，汇报材料即刻可用。</p>
-      </div>
+    <div class="faq rv">
+      <details>
+        <summary>需要安装软件吗？</summary>
+        <p>不需要。浏览器打开就能用，Windows、macOS 与移动端都支持，无需安装任何客户端。</p>
+      </details>
+      <details>
+        <summary>人口数据来自哪里，准确吗？</summary>
+        <p>接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。</p>
+      </details>
+      <details>
+        <summary>我的门店数据是私有的吗？</summary>
+        <p>按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。</p>
+      </details>
+      <details>
+        <summary>分析报表能直接用于汇报吗？</summary>
+        <p>可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。</p>
+      </details>
     </div>
   </div>
 </section>
 
-<!-- ============ 使用流程 ============ -->
-<section class="section section-soft" id="flow">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">Getting started</div>
-      <div class="section-tag">使用流程</div>
-      <h2>4 步开启数据化选址</h2>
-      <p>从注册到第一次分析，几分钟即可完成。</p>
-    </div>
-    <div class="flow">
-      <div class="flow-item">
-        <div class="flow-num">1</div>
-        <h3>注册登录</h3>
-        <p>注册账号并登录，系统为新用户提供使用向导，快速熟悉功能模块。</p>
-      </div>
-      <div class="flow-item">
-        <div class="flow-num">2</div>
-        <h3>添加门店数据</h3>
-        <p>添加或 CSV 批量导入我的门店；再导入竞品门店，完成数据准备。</p>
-      </div>
-      <div class="flow-item">
-        <div class="flow-num">3</div>
-        <h3>圈选分析</h3>
-        <p>在地图上圈定商圈，或发起门店商圈、开店余地分析，查看人口与竞争数据。</p>
-      </div>
-      <div class="flow-item">
-        <div class="flow-num">4</div>
-        <h3>导出决策</h3>
-        <p>将分析结果导出 Excel / PDF 报表，形成选址决策依据。</p>
-      </div>
+<!-- ================= 结尾 CTA ================= -->
+<section class="end">
+  <div class="wrap">
+    <h2>准备好用数据做一次选址决策了吗</h2>
+    <p>免费注册账号，几分钟跑完第一次商圈分析。</p>
+    <div class="cta-row">
+      <a class="btn btn-xl btn-dark" href="https://mka-online.cn/register">免费注册</a>
+      <a class="btn btn-xl btn-ghost" href="mailto:jyo@youshi-tech.com">联系我们</a>
     </div>
   </div>
 </section>
 
-<!-- ============ FAQ ============ -->
-<section class="section" id="faq">
-  <div class="container">
-    <div class="section-head">
-      <div class="sub-en">FAQ</div>
-      <div class="section-tag">常见问题</div>
-      <h2>你可能想了解</h2>
-    </div>
-    <div class="faq-list">
-      <div class="faq-item">
-        <h3>需要安装软件吗？</h3>
-        <p>不需要。选址赢家Online 是 Web 应用，使用浏览器访问即可，支持 Windows / macOS / 移动端，无需安装任何客户端。</p>
-      </div>
-      <div class="faq-item">
-        <h3>人口数据来自哪里，准确吗？</h3>
-        <p>平台接入运营商级人口大数据，数据经匿名化处理，按网格粒度统计商圈人口与人群结构，能够反映区域人口的量级与分布趋势。</p>
-      </div>
-      <div class="faq-item">
-        <h3>我的门店数据是私有的吗？</h3>
-        <p>是。门店与竞品数据按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。</p>
-      </div>
-      <div class="faq-item">
-        <h3>分析报表可以直接用于汇报吗？</h3>
-        <p>可以。系统按统一模板输出 Excel / PDF 报表，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ 页脚 ============ -->
-<footer class="footer">
-  <div class="container">
-    <div class="footer-grid">
-      <div>
-        <div class="footer-brand">
-          <div class="brand-logo">赢</div>
-          <b>选址赢家Online</b>
+<footer class="ft-foot">
+  <div class="wrap">
+    <div class="ft-in">
+      <div class="ft-brand">
+        <div class="brand">
+          <img src="assets/logo.png" alt="" width="113" height="96" style="width:32px;height:auto">
+          <span class="brand-txt">选址赢家<em>Online</em></span>
         </div>
-        <p class="footer-about">WebGIS 商业智能分析平台，聚焦商圈人口分析与门店竞争决策，用数据驱动每一次选址。</p>
+        <p>WebGIS 商业智能分析平台，聚焦商圈人口分析与门店竞争决策。</p>
       </div>
-      <div class="footer-col">
-        <h4>平台</h4>
-        <a href="#ability">平台能力</a>
-        <a href="#reason">选择理由</a>
-        <a href="#scene">应用场景</a>
-        <a href="#flow">使用流程</a>
-      </div>
-      <div class="footer-col">
-        <h4>支持</h4>
-        <a href="#faq">常见问题</a>
-        <a href="#latest">新功能公告</a>
-        <a href="mailto:jyo@youshi-tech.com">反馈建议</a>
-      </div>
-      <div class="footer-col">
-        <h4>联系我们</h4>
-        <a href="mailto:jyo@youshi-tech.com">jyo@youshi-tech.com</a>
-        <a href="tel:13817791741">138 1779 1741</a>
-        <a href="https://youshi-tech.com/Contact.html" target="_blank" rel="noopener">商务合作 · 获取报价</a>
-        <a href="https://youshi-tech.com/" target="_blank" rel="noopener">上海优事商务咨询有限公司</a>
+      <div class="ft-links">
+        <div class="ft-col">
+          <h4>产品</h4>
+          <a href="#demo">操作演示</a>
+          <a href="#ability">平台能力</a>
+          <a href="#reason">选择理由</a>
+        </div>
+        <div class="ft-col">
+          <h4>支持</h4>
+          <a href="/help/">用户手册</a>
+          <a href="#faq">常见问题</a>
+          <a href="mailto:jyo@youshi-tech.com">反馈建议</a>
+        </div>
+        <div class="ft-col">
+          <h4>联系我们</h4>
+          <a href="mailto:jyo@youshi-tech.com">jyo@youshi-tech.com</a>
+          <a href="tel:+8613817791741">138 1779 1741</a>
+          <span>上海优事商务咨询有限公司</span>
+        </div>
       </div>
     </div>
-    <div class="footer-bottom">
+    <div class="ft-copy">
       <span>© 2026 选址赢家Online · 位置智能分析平台</span>
-      <span>上海优事商务咨询有限公司 技术支持</span>
+      <span>人口数据来自运营商授权数据源</span>
     </div>
   </div>
 </footer>
 
-<script src="home.js" defer></script>
-
+<script src="home_v2.js" defer></script>
 </body>
 </html>
