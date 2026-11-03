@@ -20,7 +20,7 @@ const filterMarkers = {
         store_type: { type: 'string', description: '门店类型：已开业 | 重点候选 | 一般候选' },
         store_category: {
           type: 'string',
-          description: '门店分类：社区店 | 临街店 | 商场店 | 写字楼店 | 交通枢纽店 | 校园店 | 景区店 | 专业市场店'
+          description: '门店分类：社区店 | 临街店 | 商场店 | 写字楼店 | 交通枢纽店 | 校园店 | 景区店 | 专业市场店 | 履约店'
         },
         brand: { type: 'string', description: '品牌名称' },
         keyword: { type: 'string', description: '关键词搜索，匹配门店名称或地址' }

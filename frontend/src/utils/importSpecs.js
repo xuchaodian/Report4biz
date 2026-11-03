@@ -13,10 +13,15 @@
  *    这里多一个（客户填了没人用）、少一个（客户没机会填）都会红。
  *    ⇒ 改后端导入逻辑必须同步改这里，反之亦然。
  *
- * ⚠️ 本模块**必须保持零依赖**（不 import vue / axios / 任何 util）：
+ * ⚠️ 本模块**必须保持「无浏览器依赖」**（⛔ 不 import vue / axios / 任何会碰 window 的 util）：
  *    守卫测试会在 Node 里直接 import 它，一引浏览器 API 就跑不起来。
  *    需要浏览器能力的下载函数放在 `utils/importTemplates.js`。
+ *    v1.13.313：**允许** import 纯数据模块（`./storeCategory.js`），且必须用**相对路径**——
+ *    `@/` 是 Vite alias，Node 的 ESM 解析不认识。
  */
+
+// 门店区分选项的唯一来源（本文件只取文案，保持选项与下拉同源）
+import { STORE_CATEGORIES_TEXT } from './storeCategory.js'
 
 /** 引擎门槛 —— 与后端 sales-forecast 的 L2/L3 判据同口径（守卫钉住） */
 export const ENGINE_THRESHOLDS = {
@@ -40,7 +45,7 @@ export const STORE_IMPORT_FIELDS = [
   { key: 'district', label: '区县', required: false, note: '用于城市内的片区筛选' },
   { key: 'address', label: '地址', required: false, note: '体检复核清单里靠它人工确认「是不是同一个地址」' },
   { key: 'store_area', label: '门店面积（㎡）', required: false, note: '🔴 缺面积 ⇒ 判不了店型（大店/小店），体检面积分档不计它，销售预测也少一个特征' },
-  { key: 'store_category', label: '门店区分', required: false, note: '🔴 是**选址形态**（社区店/临街店/商场店/写字楼店/交通枢纽店/校园店/景区店/专业市场店），⛔ 不是菜系业态；缺它销售预测仍能算，只是参照店的「类型匹配」少一个加分项' },
+  { key: 'store_category', label: '门店区分', required: false, note: `🔴 是**选址形态**（${STORE_CATEGORIES_TEXT}），⛔ 不是菜系业态；缺它销售预测仍能算，只是参照店的「类型匹配」少一个加分项` },
   { key: 'store_status', label: '门店状态', required: false, note: '正常 / 闭店 / 停业' },
   { key: 'open_date', label: '开店日期', required: false, note: '用于「开满一年才算成熟店」这类筛选' },
   { key: 'business_hours', label: '营业时间', required: false, note: '如 07:00-22:00' },

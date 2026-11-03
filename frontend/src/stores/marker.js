@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import axios from 'axios'
+// v1.13.313：门店区分选项抽到 utils/storeCategory.js 单一来源（原来 4 处各写一遍）
+import { STORE_CATEGORIES } from '@/utils/storeCategory.js'
 
 const API_URL = '/api'
 
@@ -17,7 +19,7 @@ export const useMarkerStore = defineStore('marker', {
     categories: ['门店', '设备', '人员', '仓库', '站点'],
     statuses: ['正常', '告警', '维护', '停用'],
     storeTypes: ['已开业', '重点候选', '一般候选'],
-    storeCategories: ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店'],
+    storeCategories: [...STORE_CATEGORIES],
     // visibleIds: null = 显示全部；数组 = 仅显示这些ID（用于地图联动筛选）
     visibleIds: null,
     // 筛选条件（持久化，切换页面后保留）

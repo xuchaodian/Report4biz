@@ -230,12 +230,14 @@ import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useUserStore } from '@/stores/user'
 import { currentUidOr } from '@/utils/currentUser.js'
+// v1.13.313：门店区分选项与「我的门店」共用同一份（原来这里是独立拷贝）
+import { STORE_CATEGORIES } from '@/utils/storeCategory.js'
 
 const userStore = useUserStore()
 const brandStoreStore = useBrandStoreStore()
 const router = useRouter()
 
-const storeCategoryOptions = ['社区店', '临街店', '商场店', '写字楼店', '交通枢纽店', '校园店', '景区店', '专业市场店']
+const storeCategoryOptions = STORE_CATEGORIES
 const statusList = ['正常', '关注', '暂停', '关闭']
 
 const searchKeyword = ref('')
