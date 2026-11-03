@@ -158,13 +158,13 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
 .cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
 .hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
-.hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#0b1220;
+.hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
   border:1px solid rgba(16,32,64,.10);
-  box-shadow:0 50px 90px -40px rgba(11,18,32,.55),0 16px 40px -24px rgba(11,18,32,.35)}
-.shot-bar{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;background:#111a2b;border-bottom:1px solid rgba(255,255,255,.06)}
-.shot-bar i{width:9px;height:9px;border-radius:50%;background:#3b475c}
+  box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
+.shot-bar{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;background:#e9eef7;border-bottom:1px solid rgba(16,32,64,.08)}
+.shot-bar i{width:9px;height:9px;border-radius:50%;background:#ccd6e4}
 .shot-bar i:nth-child(1){background:#ff5f57}.shot-bar i:nth-child(2){background:#febc2e}.shot-bar i:nth-child(3){background:#28c840}
-.shot-bar span{margin:0 auto;font-size:11.5px;color:#8d9bb2;letter-spacing:.02em}
+.shot-bar span{margin:0 auto;font-size:11.5px;color:#8b95a7;letter-spacing:.02em}
 .hero-shot img{width:100%;height:auto}
 
 /* ---------------- 通用区块头 ---------------- */
@@ -179,7 +179,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 
 /* ---------------- 操作演示 ---------------- */
 .demo{display:flex;flex-direction:column;gap:26px;margin-top:46px}
-.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
 .step{position:relative;display:flex;flex-direction:column;gap:7px;width:100%;padding:16px 18px 22px;border:0;border-radius:14px;background:transparent;
   font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background .25s,box-shadow .25s;-webkit-tap-highlight-color:transparent}
 .step:hover{background:rgba(255,255,255,.72)}
@@ -382,16 +382,13 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         免费开始使用
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
       </a>
-      <a class="btn btn-xl btn-ghost" href="#demo">看 4 步操作演示</a>
+      <a class="btn btn-xl btn-ghost" href="#demo">看 5 步操作演示</a>
     </div>
     <div class="hero-note">浏览器即用 · 无需安装 · 门店与竞品数据按账号隔离</div>
 
     <div class="hero-shot">
-      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 数据大屏</span></div>
-      <picture>
-        <source type="image/webp" srcset="assets/dashboard_screenshot.webp">
-        <img src="dashboard_screenshot.png" alt="选址赢家Online 数据大屏：门店与竞品全国分布驾驶舱" width="1280" height="577" fetchpriority="high">
-      </picture>
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 地图工作台</span></div>
+      <img src="assets/screen-hero.webp" alt="地图工作台：上海人民广场周边 2 公里圆形范围内，按 1 公里网格分五档着色显示常住人口密度，右侧面板汇总常住人口 29.2 万及各年龄段构成" width="1200" height="750" fetchpriority="high" decoding="async">
     </div>
   </div>
 </section>
@@ -401,7 +398,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   <div class="wrap">
     <div class="sec-hd rv">
       <span class="kicker">操作演示</span>
-      <h2>四步，从一张地图到一份结论</h2>
+      <h2>五步，从一张地图到一份结论</h2>
       <p>下面是线上环境的真实界面。点任一步，看这一步在界面上做什么。</p>
     </div>
 
@@ -427,6 +424,11 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
           <span class="t"><b>得出结论</b><em>评分、洞察、图表，一页成稿可导出</em></span>
           <span class="prog" aria-hidden="true"><i></i></span>
         </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="4">
+          <span class="n">05</span>
+          <span class="t"><b>大屏总览</b><em>门店、竞品、覆盖城市，一屏汇总给团队</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
       </div>
 
       <div class="stage" id="stagePanel" role="tabpanel" aria-live="polite">
@@ -435,6 +437,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
           <img class="shot" src="assets/screen-population.webp" alt="常住人口分布：以上海五角场万达广场为圆心、半径 3 公里的圆形范围，按 1km 网格分档着色（6 档，颜色越暖人口越密），右侧面板汇总常住人口 72.2 万及各年龄段" width="1200" height="750" loading="lazy" decoding="async">
           <img class="shot" src="assets/screen-competitor.webp" alt="竞品门店管理：按城市、区县、商圈、品牌筛选，列表显示价格、星级与评论数" width="1200" height="750" loading="lazy" decoding="async">
           <img class="shot" src="assets/screen-report.webp" alt="商圈分析报告：五个维度星级评分、逐条数据洞察结论，以及人口结构、年龄分布、到访趋势等图表" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="assets/screen-dashboard.webp" alt="数据大屏：在营门店与竞品门店数量、覆盖城市与省份、全国门店分布地图、门店城市 TOP10 与竞品品牌 TOP10 排行" width="1200" height="750" loading="lazy" decoding="async">
           <div class="spot" id="spot" aria-hidden="true"><span class="spot-tip" id="spotTip">商圈工具</span></div>
         </div>
         <div class="demo-hint">自动播放 · 点步骤可切换</div>
