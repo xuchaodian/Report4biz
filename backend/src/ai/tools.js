@@ -204,7 +204,7 @@ const storePopulationDistribution = {
   type: 'function',
   function: {
     name: 'store_population_distribution',
-    description: '对指定门店进行商圈人口分布分析。根据门店名称或关键词找到目标门店，以该门店为圆心展示周边人口分布热力图（需要已上传Shapefile人口数据）。用户说"XX门店人口分布"、"分析XX的商圈人口"、"XX周边人口分布"等时调用此工具。',
+    description: '对指定门店做商圈人口分析。根据门店名称找到目标门店，以该门店为圆心统计周边人口（需要已上传Shapefile人口数据）。用户说"XX门店人口分布"、"分析XX的商圈人口"时调用；用户提到"开车/驾车/步行 N 分钟能到哪、覆盖多少人口"时，用 scope=drive 或 walk 配合 minutes。',
     parameters: {
       type: 'object',
       required: ['store_keyword'],
@@ -213,9 +213,18 @@ const storePopulationDistribution = {
           type: 'string',
           description: '门店名称或关键词，用于在"我的门店"中查找目标门店，如"朝阳路店"、"北京一号店"'
         },
+        scope: {
+          type: 'string',
+          description: '范围口径，三选一：round（半径圆，**默认**）| drive（驾车可达）| walk（步行可达）。用户没明确说"开车/步行"时必须用 round'
+        },
         radius: {
           type: 'number',
-          description: '分析半径（公里），默认2公里，范围0.5~10'
+          description: '分析半径（公里），默认2公里，范围0.5~10。⛔ 仅 scope=round 时生效；可达口径请用 minutes'
+        },
+        minutes: {
+          type: 'array',
+          items: { type: 'number' },
+          description: '可达时间档（分钟），1~3 个，如 [10] 或 [5,10,15]，仅 scope=drive/walk 时有意义。⚠️ 每分析一次消耗一次可达范围探测配额，用前先告知用户'
         }
       }
     }

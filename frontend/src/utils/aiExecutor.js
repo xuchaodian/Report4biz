@@ -310,8 +310,19 @@ export async function executeTool(name, args, ctx) {
     }
 
     // ===== 门店人口分布分析 =====
+    // v1.13.312：支持可达口径（scope=drive/walk ＋ minutes）。
+    //   原来只能传 radius ⇒ 客户问"开车 10 分钟能覆盖多少人口"时 AI 只能答「做不到」，
+    //   302~311 做的可达范围能力对 AI 完全不可见。
     case 'store_population_distribution': {
-      const { store_keyword, radius = 2 } = args
+      const { store_keyword, radius = 2, minutes } = args
+      // scope 兜底归一：模型偶尔会传中文/大写，认不出的一律回圆模式（宁可按圆算，也不瞎猜可达）
+      const rawScope = String(args.scope || 'round').trim().toLowerCase()
+      const scope = ['drive', 'walk'].includes(rawScope) ? rawScope : 'round'
+      const givenMins = Array.isArray(minutes)
+        ? minutes.map(Number).filter(m => Number.isFinite(m) && m > 0).slice(0, 3)
+        : []
+      // 可达口径但没给档位 ⇒ 用弹窗默认的 10 分钟（并在回复里说明，⛔ 不静默替客户选）
+      const useMins = scope === 'round' ? [] : (givenMins.length ? givenMins : [10])
 
       // 在门店列表中查找目标门店
       const allMarkers = markerStore.markers
@@ -340,13 +351,18 @@ export async function executeTool(name, args, ctx) {
 
       // 调用全局函数打开人口分布对话框（由MapView注册）
       if (typeof window.openStorePopulationDistribution === 'function') {
-        window.openStorePopulationDistribution(lat, lng, radius)
+        window.openStorePopulationDistribution(lat, lng, radius, { scope, minutes: useMins })
         const storeName = matched.length === 1
           ? `"${store.name}"`
           : `"${store.name}"等 ${matched.length} 家门店中的第一家`
+        // 回复里必须写清口径与档位 —— 客户要能一眼看出「这个数字是按什么范围算的」
+        const scopeText = scope === 'round'
+          ? `半径 ${radius} 公里`
+          : `${scope === 'walk' ? '步行' : '驾车'} ${useMins.join('/')} 分钟` +
+            (givenMins.length ? '' : '（未指定时间档，按默认 10 分钟）')
         return {
           success: true,
-          message: `已定位到${storeName}，正在打开人口分布分析对话框（半径 ${radius} 公里）`
+          message: `已定位到${storeName}，正在打开人口分布分析对话框（${scopeText}）`
         }
       } else {
         return { success: false, message: '人口分布功能未就绪，请确认已打开地图页面' }
@@ -624,6 +640,16 @@ export function getActionDescription(name, args) {
     case 'poi_polygon_search':
       return `多边形搜索：${args.keywords}`
     case 'store_population_distribution': {
+      // v1.13.312：摘要必须与真实口径一致。原来固定写「半径 N 公里」——
+      //   客户说「开车 5 分钟」，面板却显示「半径 2公里」，而弹窗里跑的是驾车，
+      //   两句自相矛盾，客户会以为系统又算错了范围。
+      const scope = String(args.scope || 'round').trim().toLowerCase()
+      if (scope === 'drive' || scope === 'walk') {
+        const mins = Array.isArray(args.minutes)
+          ? args.minutes.map(Number).filter(m => Number.isFinite(m) && m > 0).slice(0, 3)
+          : []
+        return `门店人口分布分析：${args.store_keyword}（${scope === 'walk' ? '步行' : '驾车'} ${mins.length ? mins.join('/') + ' 分钟' : '默认 10 分钟'}）`
+      }
       const radiusText = args.radius ? `${args.radius}公里` : '2公里'
       return `门店人口分布分析：${args.store_keyword}（半径 ${radiusText}）`
     }

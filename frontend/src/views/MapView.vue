@@ -4044,7 +4044,8 @@ const openHdPopulationDistribution = async (opts = {}) => {
 }
 
 // 门店popup"人口分布"按钮 - 直接以门店坐标为圆心打开对话框
-const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
+// v1.13.312：新增 opts.scope / opts.minutes（AI 操作助手用），默认仍是圆模式
+const openStorePopulationDistribution = async (lat, lng, radius = 2, opts = {}) => {
   if (!map) return
 
   // 关闭商圈工具面板
@@ -4052,6 +4053,27 @@ const openStorePopulationDistribution = async (lat, lng, radius = 2) => {
 
   // 设置为人口分布模式
   circleDialogMode.value = 'population'
+
+  // 🔴🔴 v1.13.312：**必须先重置范围口径**。
+  //   `popScopeMode` 是弹窗的全局状态 —— 客户上次选过「驾车可达」就会一直留着；
+  //   而本入口传进来的 radius 只写进 `circleForm.radius`（圆模式字段），
+  //   驾车口径下既不显示也不生效 ⇒ 客户/AI 说「半径 2 公里」，弹出来跑的是
+  //   **驾车 10 分钟**，数字对不上且不报任何错（2026-11-03 审计坐实）。
+  //   ⚠️ 这也是 AI 助手触发人口分析的唯一路径（store_population_distribution）。
+  //   ⛔ 别删这行「重置」，它比 opts 支持更重要：不传 opts 时也必须回到圆模式。
+  const wantReach = opts.scope === 'drive' || opts.scope === 'walk'
+  popScopeMode.value = wantReach ? opts.scope : 'circle'
+  if (wantReach) {
+    // 时间档：调用方给了就用，没给则沿用弹窗里现有的三档（默认 10 分钟）
+    const mins = Array.isArray(opts.minutes)
+      ? opts.minutes.map(Number).filter(m => Number.isFinite(m) && m > 0).slice(0, 3)
+      : []
+    if (mins.length) {
+      driveMinutes.m1 = mins[0]
+      driveMinutes.m2 = mins[1] ?? null
+      driveMinutes.m3 = mins[2] ?? null
+    }
+  }
 
   // 直接使用门店坐标作为圆心（不需要点击地图）
   circleForm.center = { lat, lng }
