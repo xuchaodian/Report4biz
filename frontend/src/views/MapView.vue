@@ -5425,18 +5425,23 @@ const analyzePopulationDistribution = async (opts = {}) => {
           const rawValue = parseInt(props[fieldName]) || 0  // 原始shapefile值
           const color = getColorByValue(rawValue)
 
-          let latlngs = []
-          if (geom.type === 'Polygon') {
-            latlngs = geom.coordinates[0].map(c => [c[1], c[0]])
-          } else if (geom.type === 'MultiPolygon') {
-            latlngs = geom.coordinates[0][0].map(c => [c[1], c[0]])
+          // v1.13.314：geom 是「格子 ∩ 统计范围」的裁剪几何（后端返回）。
+          //   ① Polygon 可能带内环 ⇒ 按「多环」交给 L.polygon；
+          //   ② 凹范围（驾车可达）会把一格切成几块 ⇒ Polygon 变 MultiPolygon。
+          //   原来只取 coordinates[0][0]，多块时只画出第一块，其余部分凭空消失。
+          const toLatLngs = ring => ring.map(c => [c[1], c[0]])
+          const shapes = []
+          if (geom && geom.type === 'Polygon') {
+            shapes.push(geom.coordinates.map(toLatLngs).filter(r => r.length >= 3))
+          } else if (geom && geom.type === 'MultiPolygon') {
+            for (const part of geom.coordinates) {
+              const rings = part.map(toLatLngs).filter(r => r.length >= 3)
+              if (rings.length) shapes.push(rings)
+            }
           }
 
-          if (latlngs.length > 0) {
-            const polygon = L.polygon(latlngs, {
-              color: '#888', weight: 1, fillColor: color, fillOpacity: 0.7
-            })
-            polygon.bindPopup(`
+          if (shapes.length > 0) {
+            const popupHtml = `
               <div style="font-size: 12px; min-width: 140px;">
                 <strong>${props.name || props.NAME || `区域 ${index + 1}`}</strong><br/>
                 <span style="color: #666;">${fieldName}:</span>
@@ -5445,13 +5450,43 @@ const analyzePopulationDistribution = async (opts = {}) => {
                   占比: ${(value / (grandTotal || 1) * 100).toFixed(1)}%
                 </span>
               </div>
-            `)
-            populationLayerGroup.addLayer(polygon)
-            polygonCount++
+            `
+            for (const shape of shapes) {
+              const polygon = L.polygon(shape, {
+                color: '#888', weight: 1, fillColor: color, fillOpacity: 0.7
+              })
+              polygon.bindPopup(popupHtml)
+              populationLayerGroup.addLayer(polygon)
+              polygonCount++
+            }
 
             // 添加标签
-            const polyCenter = getFeatureCenter(feature)
-            if (polyCenter) {
+            // 🔴 标签必须落在**裁剪后**的形状上：贴圆边的那半格，原格子中心已经在圆外，
+            //   用 feature 的格子中心会让数字飘在着色区外面（v1.13.314 实测很明显）。
+            //   取环顶点包围盒中心（不用顶点均值：圆弧一侧顶点密集，均值会偏到圆边上）。
+            let polyCenter = null
+            let bestRing = null
+            for (const shape of shapes) {
+              const r = shape[0]
+              if (r && (!bestRing || r.length > bestRing.length)) bestRing = r
+            }
+            if (bestRing && bestRing.length >= 3) {
+              let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity
+              for (const [la, ln] of bestRing) {
+                if (la < minLat) minLat = la
+                if (la > maxLat) maxLat = la
+                if (ln < minLng) minLng = ln
+                if (ln > maxLng) maxLng = ln
+              }
+              polyCenter = { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 }
+            }
+            if (!polyCenter) polyCenter = getFeatureCenter(feature)
+            // 🔴 v1.13.314：被裁成细条的格子（覆盖比例 < 0.5）不挂标签。
+            //   标签宽约 90px，细条只有十几像素宽 ⇒ 一定飘到圆外，
+            //   看上去像「圆外的格子也有人口」（实测业主第一眼就是这个观感）。
+            //   数字本身仍是整格原始值（未折算），所以隐藏细条不会丢任何统计口径。
+            const coverRatio = typeof data.intersectionRatio === 'number' ? data.intersectionRatio : 1
+            if (polyCenter && coverRatio >= 0.5) {
               let displayValue = rawValue
               if (displayValue >= 10000) displayValue = (displayValue / 10000).toFixed(1) + '万'
               else if (rawValue >= 1000) displayValue = rawValue.toLocaleString()

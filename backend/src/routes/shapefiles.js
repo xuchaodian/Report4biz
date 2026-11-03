@@ -1198,6 +1198,25 @@ router.get('/isochrone/usage', authenticate, (req, res) => {
   }
 })
 
+/**
+ * v1.13.314：把 turf.intersect 的结果拆成「Polygon 坐标数组」列表。
+ * turf.intersect 可能返回 Polygon 也可能是 MultiPolygon（凹多边形相交会断成几块）。
+ */
+function intersectPolygonParts(g) {
+  if (!g || !g.type) return []
+  if (g.type === 'Polygon') return [g.coordinates]
+  if (g.type === 'MultiPolygon') return g.coordinates.slice()
+  return []
+}
+
+/** 把坐标数组列表拼回一个 GeoJSON 几何；空列表 ⇒ null（由调用方决定回退） */
+function partsToGeometry(parts) {
+  if (!parts || !parts.length) return null
+  return parts.length === 1
+    ? { type: 'Polygon', coordinates: parts[0] }
+    : { type: 'MultiPolygon', coordinates: parts }
+}
+
 // 计算人口分布 - 根据圆心+半径计算各shapefile内人口统计
 router.post('/calculate-population', authenticate, (req, res) => {
   try {
@@ -1360,6 +1379,7 @@ router.post('/calculate-population', authenticate, (req, res) => {
           } else {
             // MultiPolygon: 逐个处理每个多边形
             let totalWeight = 0
+            const clippedParts = []
             for (const coords of geom.coordinates) {
               try {
                 const subPoly = turf.polygon(coords)
@@ -1369,6 +1389,7 @@ router.post('/calculate-population', authenticate, (req, res) => {
                 const subIntersectArea = turf.area(subIntersect)
                 const subRatio = Math.min(subIntersectArea / subArea, 1)
                 totalWeight += fieldVal * subRatio
+                clippedParts.push(...intersectPolygonParts(subIntersect.geometry))
               } catch (e) { continue }
             }
             if (totalWeight <= 0) continue
@@ -1377,7 +1398,8 @@ router.post('/calculate-population', authenticate, (req, res) => {
               feature: { properties: { shapefileName: row.name, ...props }, geometry },
               value: totalWeight,
               coverageRatio: 1,
-              geom: feature.geometry
+              // v1.13.314：画「格子∩范围」，⛔ 不是整格（见下方 Polygon 分支注释）
+              geom: partsToGeometry(clippedParts) || feature.geometry
             })
             continue
           }
@@ -1396,7 +1418,13 @@ router.post('/calculate-population', authenticate, (req, res) => {
             feature: { properties: { shapefileName: row.name, ...props }, geometry: feature.geometry },
             value: weighted,
             coverageRatio: ratio,
-            geom: feature.geometry
+            // 🔴🔴 v1.13.314：`geom` 是**绘制几何**，必须是「格子 ∩ 统计范围」，⛔ 不能回全格几何。
+            //   交集已经在上面算过（ratio 用的就是它），这里只是把同一份结果顺手带出去，零额外开销。
+            //   回全格会怎样：3km 圆配 1km 网格 ⇒ 圆外那 4 个角的格子被整格填色，
+            //   着色区看起来是个 7×7 方块阵而不是圆（业主一眼就指出「这不是半径圆的着色」）。
+            //   ⚠️ `feature` 仍保留原始整格几何：弹窗里的「原始值」、标签字段、属性都靠它，
+            //      换成裁剪后的几何会让 props 与几何对不上。
+            geom: partsToGeometry(intersectPolygonParts(intersect.geometry)) || feature.geometry
           })
 
           // 收集所有字段
