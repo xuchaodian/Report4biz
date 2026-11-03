@@ -270,8 +270,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft-col a,.ft-col span{display:block;font-size:13px;color:var(--ink2);margin-bottom:9px;transition:color .2s}
 .ft-col a:hover{color:var(--brand)}
 .ft-copy{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
-/* ICP 备案号：工信部要求「网站主页底部展示 + 可点进 beian.miit.gov.cn」 */
+/* ICP 备案号：工信部要求「网站主页底部展示 + 可点进 beian.miit.gov.cn」
+   🔴 色值用 --ink2（#5a6577 ≈ 5.6:1）而非周围的 --ink3（#8b95a7 ≈ 2.6:1）：12.5px 小字要过 WCAG AA */
 .ft-legal{display:flex;gap:16px;flex-wrap:wrap}
+.ft-legal a{color:var(--ink2)}
 .ft-legal a:hover{color:var(--brand)}
 
 /* ---------------- 进场动画 ---------------- */
