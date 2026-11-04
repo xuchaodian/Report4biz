@@ -142,61 +142,88 @@
   }
 
   /* ======================== 4. 首屏演示视频 ========================
-   * 图片是底层（LCP 快、视频失败也有画面）。视频进视口自动播「一遍」即停，
-   * 停住的那帧是放大后的可达范围（数字看得清）；右下角按钮可暂停／续播／重播。
-   * 关掉动画偏好 / 省流量模式 ⇒ 不自动播，只留按钮由用户主动触发。 */
+   * 默认停在封面截图上（不自动播），点中央播放键才加载并播放。
+   * 播完 video 淡出、露出垫在下面的末帧截图 hero-end.webp —— 绝不留空白画面。
+   * 状态机：idle（封面+播放键）→ playing（视频+暂停键）→ paused（画面+继续键）／ended（末帧+重播键）。 */
+  var media = document.querySelector('.hero-media');
   var hv = document.querySelector('.hero-video');
-  if (hv) {
-    var hb = document.querySelector('.hv-btn');
-    var conn = navigator.connection || {};
-    var autoSkip = reduceMotion || conn.saveData === true;
-    var userPaused = false;
+  if (media && hv) {
+    var playBtn = media.querySelector('.hv-play');
+    var pauseBtn = document.querySelector('.hv-btn');
+    var hvLbl = playBtn && playBtn.querySelector('.lbl');
+    var hvSub = playBtn && playBtn.querySelector('.sub');
+    var st = 'idle';
 
-    var setBtn = function (s) {
-      if (!hb) { return; }
-      hb.setAttribute('data-state', s);
-      hb.setAttribute('aria-label',
-        s === 'ended' ? '重新播放产品演示视频'
-          : (s === 'playing' ? '暂停产品演示视频' : '播放产品演示视频'));
-      var t = hb.querySelector('.hv-txt');
-      if (t) { t.textContent = s === 'ended' ? '重播' : (s === 'playing' ? '暂停' : '播放'); }
-      hb.hidden = false;
+    var setState = function (s) {
+      st = s;
+      media.setAttribute('data-state', s);
+      /* 中央大键只在 idle 显示（CSS 控制），播放/暂停/重播都走窗口条右侧的小键，
+         这样暂停或播完时画面完全不被遮挡 —— 那一帧里的人口数字是重点 */
+      if (pauseBtn) {
+        pauseBtn.hidden = (s === 'idle');
+        pauseBtn.setAttribute('data-state', s === 'playing' ? 'playing' : (s === 'ended' ? 'ended' : 'paused'));
+        var bt = pauseBtn.querySelector('.hv-txt');
+        if (bt) { bt.textContent = s === 'playing' ? '暂停' : (s === 'ended' ? '重播' : '继续'); }
+        pauseBtn.setAttribute('aria-label',
+          s === 'playing' ? '暂停产品演示视频'
+            : (s === 'ended' ? '重新播放产品演示视频' : '继续播放产品演示视频'));
+      }
+      if (playBtn) {
+        var lbl = s === 'ended' ? '重播演示' : (s === 'paused' ? '继续播放' : '播放演示');
+        if (hvLbl && !playBtn.classList.contains('is-loading')) { hvLbl.textContent = lbl; }
+        if (hvSub) { hvSub.textContent = s === 'ended' ? '再看一遍 18 秒演示' : '18 秒 · 车行 15 分钟可达范围'; }
+        playBtn.setAttribute('aria-label',
+          s === 'ended' ? '重新播放产品演示视频'
+            : (s === 'paused' ? '继续播放产品演示视频' : '播放产品演示视频：车行 15 分钟可达范围，约 18 秒'));
+      }
     };
 
-    var start = function () {
-      if (hv.ended) { try { hv.currentTime = 0; } catch (e) { /* 元数据未就绪，忽略 */ } }
+    var doPlay = function () {
+      if (st === 'ended' || hv.ended) {
+        try { hv.currentTime = 0; } catch (e) { /* 元数据还没到位，忽略 */ }
+      }
+      /* 首次点：preload=none ⇒ 现拉 1MB，给个「加载中」反馈，别让用户以为没点到 */
+      if (hv.readyState < 3 && playBtn) {
+        playBtn.classList.add('is-loading');
+        if (hvLbl) { hvLbl.textContent = '加载中…'; }
+      }
       var pr = hv.play();
-      if (pr && pr.catch) { pr.catch(function () { setBtn('paused'); }); }
+      if (pr && pr.catch) {
+        pr.catch(function () {
+          if (playBtn) { playBtn.classList.remove('is-loading'); }
+          setState('idle');
+        });
+      }
     };
 
-    hv.addEventListener('playing', function () { hv.classList.add('is-on'); setBtn('playing'); });
-    hv.addEventListener('pause', function () { if (!hv.ended) { setBtn('paused'); } });
-    hv.addEventListener('ended', function () { setBtn('ended'); });
+    hv.addEventListener('playing', function () {
+      if (playBtn) { playBtn.classList.remove('is-loading'); }
+      setState('playing');
+    });
+    hv.addEventListener('pause', function () {
+      if (!hv.ended && st === 'playing') { setState('paused'); }
+    });
+    hv.addEventListener('ended', function () { setState('ended'); });
 
-    if (hb) {
-      setBtn('paused');
-      hb.addEventListener('click', function () {
-        if (hv.paused) { userPaused = false; start(); }
-        else { userPaused = true; hv.pause(); }
+    if (playBtn) { playBtn.addEventListener('click', doPlay); }
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', function () {
+        if (st === 'playing') { hv.pause(); } else { doPlay(); }
       });
     }
 
-    if (!autoSkip) {
-      if ('IntersectionObserver' in window) {
-        var vio = new IntersectionObserver(function (entries) {
-          entries.forEach(function (en) {
-            if (en.isIntersecting) {
-              /* 播过一遍就不再自动重播，避免又变成无限循环 */
-              if (!userPaused && !hv.ended) { start(); }
-            } else if (!hv.paused) {
-              hv.pause();
-            }
-          });
-        }, { threshold: 0.25 });
-        vio.observe(hv);
-      } else {
-        start();
-      }
+    /* 切走标签页 / 滚出视口 ⇒ 暂停；回来不自动续播，等用户点（不跟用户抢） */
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden && !hv.paused) { hv.pause(); }
+    });
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting && !hv.paused) { hv.pause(); }
+        });
+      }, { threshold: 0.25 }).observe(hv);
     }
+
+    setState('idle');
   }
 })();

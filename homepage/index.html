@@ -166,11 +166,53 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .shot-bar i:nth-child(1){background:#ff5f57}.shot-bar i:nth-child(2){background:#febc2e}.shot-bar i:nth-child(3){background:#28c840}
 .shot-bar span{margin:0 auto;font-size:11.5px;color:#8b95a7;letter-spacing:.02em}
 .hero-shot img{width:100%;height:auto}
-/* 首屏演示视频：图片当底层（LCP 快），视频播起来后淡入覆盖；视频失败/省流量时保持静态图 */
+/* 首屏演示：静态截图当封面（LCP 快，且任何浏览器都有画面）
+ * 🔴 不自动播：进视口不 play()，点中央播放键才加载视频（preload=none，1MB 不进首屏带宽）。
+ * 🔴 播完不能空白：视频淡出，露出下面垫的末帧截图 hero-end.webp（视频末帧 = 可达范围 + 人口面板）。
+ *    老做法靠 video 自己停在末帧，Safari / 部分内核 ended 后会清帧 ⇒ 一片雪白。 */
 .hero-media{position:relative;display:block;line-height:0}
-.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease;pointer-events:none}
-.hero-video.is-on{opacity:1}
-/* 播放控制：放在仿浏览器窗口条右侧，常显、不遮挡画面内容（画面右下角有产品自带地图控件） */
+.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s ease;pointer-events:none}
+.hero-media[data-state="playing"] .hero-video,
+.hero-media[data-state="paused"] .hero-video{opacity:1}
+/* 末帧兜底图：除 idle 外常驻垫底，视频淡出时露出的就是它，重播时又被视频盖住 */
+.hero-media .hm-last{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s ease;pointer-events:none}
+.hero-media[data-state="playing"] .hm-last,
+.hero-media[data-state="paused"] .hm-last,
+.hero-media[data-state="ended"] .hm-last{opacity:1}
+/* 中央播放键：只在未播放（idle）时盖在封面上；一旦开始播就收起，
+ * 免得挡住画面里的数字（尤其播完那一帧，人口面板正中间） */
+.hv-play{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:0;border:0;background:transparent;font-family:inherit;cursor:pointer;
+  transition:opacity .26s ease,visibility .26s}
+.hero-media:not([data-state="idle"]) .hv-play{opacity:0;visibility:hidden;pointer-events:none}
+.hv-play .ring{position:relative;display:grid;place-items:center;width:74px;height:74px;border-radius:50%;color:#fff;
+  background:linear-gradient(135deg,#3a86ff,#1465f0);
+  box-shadow:0 16px 32px -12px rgba(20,101,240,.70),0 2px 6px rgba(16,32,64,.20);
+  transition:transform .2s ease,box-shadow .2s ease}
+.hv-play .ring::after{content:"";position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(30,111,255,.38);animation:hvpulse 2.8s ease-out infinite}
+.hv-play:hover .ring{transform:scale(1.07);box-shadow:0 20px 40px -12px rgba(20,101,240,.78),0 2px 6px rgba(16,32,64,.20)}
+.hv-play:focus-visible{outline:none}
+.hv-play:focus-visible .ring{outline:2px solid var(--brand-d);outline-offset:4px}
+.hv-play .ring svg{width:26px;height:26px;margin-left:3px}
+.hv-play .lbl{display:inline-flex;align-items:center;height:30px;padding:0 15px;border-radius:999px;
+  background:#fff;color:#16233a;font-size:13px;font-weight:700;line-height:1;
+  box-shadow:0 8px 18px -8px rgba(16,32,64,.55),0 0 0 1px rgba(16,32,64,.06)}
+/* 🔴 底图是地图，标签下面常有门店图标/POI ⇒ 必须实底，半透明会透出「铅笔状」暗块 */
+.hv-play .sub{font-size:11px;font-weight:600;line-height:1;color:#2b3a55;
+  background:#fff;padding:6px 11px;border-radius:999px;
+  box-shadow:0 6px 14px -10px rgba(16,32,64,.5),0 0 0 1px rgba(16,32,64,.05)}
+@keyframes hvpulse{0%{transform:scale(.92);opacity:.9}70%{transform:scale(1.24);opacity:0}100%{transform:scale(1.24);opacity:0}}
+/* 窄屏：卡片本身只有 ~340×213，播放键按桌面尺寸会把整张图盖住 ⇒ 等比缩小 */
+@media (max-width:640px){
+  .hv-play{gap:8px}
+  .hv-play .ring{width:52px;height:52px}
+  .hv-play .ring svg{width:19px;height:19px}
+  .hv-play .ring::after{inset:-6px}
+  .hv-play .lbl{height:24px;padding:0 11px;font-size:11.5px}
+  .hv-play .sub{font-size:10px;padding:4px 8px}
+}
+@media (prefers-reduced-motion:reduce){.hv-play .ring::after{animation:none;opacity:0}.hv-play .ring{transition:none}}
+/* 播放中的暂停键：放在仿浏览器窗口条右侧，不遮挡画面（画面右下角有产品自带地图控件） */
 .hv-btn{position:absolute;top:5px;right:12px;z-index:4;display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;
   border:0;border-radius:7px;background:rgba(16,32,64,.06);color:var(--ink2);
   font-family:inherit;font-size:12px;font-weight:600;line-height:1;cursor:pointer;
@@ -179,11 +221,11 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hv-btn:hover{background:rgba(16,32,64,.12);color:#1b2536}
 .hv-btn:focus-visible{outline:2px solid var(--brand-d);outline-offset:1px}
 .hv-btn svg{width:11px;height:11px;flex:none;display:none}
-.hv-btn[data-state="playing"] .i-pause{display:block}
-.hv-btn[data-state="paused"] .i-play{display:block}
+.hv-btn[data-state="playing"] .i-pause,
+.hv-btn[data-state="paused"] .i-play,
 .hv-btn[data-state="ended"] .i-replay{display:block}
-.hv-btn[data-state="ended"] .hv-txt{color:var(--brand-d)}
-@media (prefers-reduced-motion:reduce){.hv-btn{transition:none}}
+/* 播完的「重播」用品牌色，提示可以再看一遍 */
+.hv-btn[data-state="ended"]{color:var(--brand-d);background:rgba(30,111,255,.09)}
 
 /* ---------------- 通用区块头 ---------------- */
 .sec{padding:118px 0}
@@ -410,11 +452,17 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>
         <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg>
         <svg class="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12.2a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3 4.7v5.4h5.4"/></svg>
-        <span class="hv-txt">播放</span>
+        <span class="hv-txt">暂停</span>
       </button>
-      <div class="hero-media">
+      <div class="hero-media" data-state="idle">
         <img src="assets/screen-hero.webp" alt="地图工作台：上海市全域地图同时展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="750" fetchpriority="high" decoding="async">
-        <video class="hero-video" src="assets/hero-demo.mp4" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <img class="hm-last" src="assets/hero-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
+        <video class="hero-video" src="assets/hero-demo.mp4" poster="assets/hero-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <button class="hv-play" type="button" aria-label="播放产品演示视频：车行 15 分钟可达范围，约 18 秒">
+          <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
+          <span class="lbl">播放演示</span>
+          <span class="sub">18 秒 · 车行 15 分钟可达范围</span>
+        </button>
       </div>
     </div>
   </div>
