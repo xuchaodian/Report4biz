@@ -166,6 +166,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .shot-bar i:nth-child(1){background:#ff5f57}.shot-bar i:nth-child(2){background:#febc2e}.shot-bar i:nth-child(3){background:#28c840}
 .shot-bar span{margin:0 auto;font-size:11.5px;color:#8b95a7;letter-spacing:.02em}
 .hero-shot img{width:100%;height:auto}
+/* 首屏演示视频：图片当底层（LCP 快），视频播起来后淡入覆盖；视频失败/省流量时保持静态图 */
+.hero-media{position:relative;display:block;line-height:0}
+.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease;pointer-events:none}
+.hero-video.is-on{opacity:1}
 
 /* ---------------- 通用区块头 ---------------- */
 .sec{padding:118px 0}
@@ -388,7 +392,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 
     <div class="hero-shot">
       <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 地图工作台</span></div>
-      <img src="assets/screen-hero.webp" alt="地图工作台：上海市全域地图同时展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="623" fetchpriority="high" decoding="async">
+      <div class="hero-media">
+        <img src="assets/screen-hero.webp" alt="地图工作台：上海市全域地图同时展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="750" fetchpriority="high" decoding="async">
+        <video class="hero-video" src="assets/hero-demo.mp4" width="1200" height="750" muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+      </div>
     </div>
   </div>
 </section>

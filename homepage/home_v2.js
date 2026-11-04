@@ -140,4 +140,30 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
   }
+
+  /* ======================== 4. 首屏演示视频 ========================
+   * 图片是底层（LCP 快、视频失败也有画面），视频只在进入视口后按需加载并播放。
+   * 关掉动画偏好 / 省流量模式 ⇒ 不播，保留静态图。 */
+  var hv = document.querySelector('.hero-video');
+  if (hv) {
+    var conn = navigator.connection || {};
+    var skip = reduceMotion || conn.saveData === true;
+    if (!skip) {
+      var play = function () {
+        var p = hv.play();
+        if (p && p.catch) { p.catch(function () { /* 自动播放被拦：保持静态图 */ }); }
+      };
+      hv.addEventListener('playing', function () { hv.classList.add('is-on'); });
+      if ('IntersectionObserver' in window) {
+        var vio = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            if (en.isIntersecting) { play(); } else if (!hv.paused) { hv.pause(); }
+          });
+        }, { threshold: 0.25 });
+        vio.observe(hv);
+      } else {
+        play();
+      }
+    }
+  }
 })();
