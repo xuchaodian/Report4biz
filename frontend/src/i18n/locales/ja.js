@@ -1,4 +1,5 @@
 // 日语语言包
+import { BRAND_NAME } from '../brand.js'
 export default {
   langName: '日本語',
   // ===== ナビゲーション =====
@@ -20,7 +21,7 @@ export default {
   },
   // ===== ログインページ =====
   login: {
-    title: '選地Winオンライン',
+    title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）
     subtitle: 'スマート立地分析プラットフォーム',
     username: 'ユーザー名を入力',
     password: 'パスワードを入力',

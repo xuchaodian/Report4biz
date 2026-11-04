@@ -1,4 +1,5 @@
 // English locale
+import { BRAND_NAME } from '../brand.js'
 export default {
   langName: 'English',
   // ===== Navigation =====
@@ -20,7 +21,7 @@ export default {
   },
   // ===== Login =====
   login: {
-    title: 'SiteWin Online',
+    title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）
     subtitle: 'Smart Site Selection Platform',
     username: 'Enter username',
     password: 'Enter password',

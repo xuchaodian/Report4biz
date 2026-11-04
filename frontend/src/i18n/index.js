@@ -27,11 +27,35 @@ export const i18n = createI18n({
   }
 })
 
-// 切换语言（同时更新 localStorage 和 Element Plus locale）
+/**
+ * 语言 → `<html lang>` 的映射（v1.13.318）
+ *
+ * 🔴 为什么必须同步：屏幕阅读器与浏览器断词规则都按 `<html lang>` 选语音/词典。
+ *   原来切到日文只改了 vue-i18n 的 locale，`<html lang>` 仍是 `index.html` 里写死的
+ *   `zh-CN` ⇒ **用中文语音朗读日文界面**（a11y 缺陷，业主 2026-11-04 指出）。
+ * ⚠️ 中文必须写 `zh-CN`（带地区），日文只写 `ja`、英文只写 `en`。
+ */
+const HTML_LANG = { zh: 'zh-CN', ja: 'ja', en: 'en' }
+
+/**
+ * 同步 `<html lang>`。
+ * ⚠️ 用 `typeof document !== 'undefined'` 而不是 `document?.` —— 后者在 Node（vitest）
+ *    里仍会抛 ReferenceError，而本模块会被源码守卫直接 import。
+ */
+function syncHtmlLang(locale) {
+  if (typeof document === 'undefined' || !document.documentElement) return
+  document.documentElement.lang = HTML_LANG[locale] || 'zh-CN'
+}
+
+// 启动即同步一次：localStorage 存的是 ja 时，index.html 里写死的 zh-CN 是错的
+syncHtmlLang(savedLang)
+
+// 切换语言（同时更新 localStorage、Element Plus locale 与 <html lang>）
 export function setAppLocale(locale) {
   if (!SUPPORTED_LOCALES.some(l => l.key === locale)) locale = 'zh'
   i18n.global.locale.value = locale
   localStorage.setItem('app_lang', locale)
+  syncHtmlLang(locale)
 }
 
 export function getEpLocale(locale) {

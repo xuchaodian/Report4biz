@@ -181,8 +181,13 @@
       </template>
     </el-dialog>
 
-    <!-- 导出报表对话框 -->
-    <el-dialog v-model="exportDialogVisible" width="900px" :close-on-click-modal="false">
+    <!-- 导出报表对话框
+         v1.13.318：补 `title` —— 用于**无障碍名**（视觉仍由下面 #header 的 .dlg-title 决定）。
+         实测：`role="dialog"` 在**外层** `.el-overlay-dialog` 上，Element Plus 用 `title` prop
+         生成它的 aria-label；本弹窗原来只有 #header、没有 title ⇒ 那个 dialog 节点没有名字，
+         屏幕阅读器只会念「对话框」。
+         ⚠️ 直接给 el-dialog 加 aria-label **无效**（会落到内层 .el-dialog，不是 role=dialog 的节点）。 -->
+    <el-dialog v-model="exportDialogVisible" title="导出报表" width="900px" :close-on-click-modal="false">
       <template #header>
         <span class="dlg-title"><AppIcon><Document /></AppIcon>导出报表</span>
       </template>

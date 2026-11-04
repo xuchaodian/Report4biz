@@ -1,4 +1,5 @@
-// 中文语言包（默认）
+// 中文语言包
+import { BRAND_NAME } from '../brand.js'
 export default {
   langName: '中文',
   // ===== 导航 =====
@@ -20,7 +21,7 @@ export default {
   },
   // ===== 登录页 =====
   login: {
-    title: '选址赢家Online',
+    title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）
     subtitle: '智能选址分析平台',
     username: '请输入用户名',
     password: '请输入密码',
