@@ -170,6 +170,20 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hero-media{position:relative;display:block;line-height:0}
 .hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .6s ease;pointer-events:none}
 .hero-video.is-on{opacity:1}
+/* 播放控制：放在仿浏览器窗口条右侧，常显、不遮挡画面内容（画面右下角有产品自带地图控件） */
+.hv-btn{position:absolute;top:5px;right:12px;z-index:4;display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;
+  border:0;border-radius:7px;background:rgba(16,32,64,.06);color:var(--ink2);
+  font-family:inherit;font-size:12px;font-weight:600;line-height:1;cursor:pointer;
+  transition:background .18s ease,color .18s ease}
+.hv-btn[hidden]{display:none}
+.hv-btn:hover{background:rgba(16,32,64,.12);color:#1b2536}
+.hv-btn:focus-visible{outline:2px solid var(--brand-d);outline-offset:1px}
+.hv-btn svg{width:11px;height:11px;flex:none;display:none}
+.hv-btn[data-state="playing"] .i-pause{display:block}
+.hv-btn[data-state="paused"] .i-play{display:block}
+.hv-btn[data-state="ended"] .i-replay{display:block}
+.hv-btn[data-state="ended"] .hv-txt{color:var(--brand-d)}
+@media (prefers-reduced-motion:reduce){.hv-btn{transition:none}}
 
 /* ---------------- 通用区块头 ---------------- */
 .sec{padding:118px 0}
@@ -392,9 +406,15 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 
     <div class="hero-shot">
       <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 地图工作台</span></div>
+      <button class="hv-btn" type="button" hidden data-state="paused" aria-label="播放产品演示视频">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg>
+        <svg class="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12.2a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3 4.7v5.4h5.4"/></svg>
+        <span class="hv-txt">播放</span>
+      </button>
       <div class="hero-media">
         <img src="assets/screen-hero.webp" alt="地图工作台：上海市全域地图同时展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="750" fetchpriority="high" decoding="async">
-        <video class="hero-video" src="assets/hero-demo.mp4" width="1200" height="750" muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <video class="hero-video" src="assets/hero-demo.mp4" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
       </div>
     </div>
   </div>

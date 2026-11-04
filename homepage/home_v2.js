@@ -142,27 +142,60 @@
   }
 
   /* ======================== 4. 首屏演示视频 ========================
-   * 图片是底层（LCP 快、视频失败也有画面），视频只在进入视口后按需加载并播放。
-   * 关掉动画偏好 / 省流量模式 ⇒ 不播，保留静态图。 */
+   * 图片是底层（LCP 快、视频失败也有画面）。视频进视口自动播「一遍」即停，
+   * 停住的那帧是放大后的可达范围（数字看得清）；右下角按钮可暂停／续播／重播。
+   * 关掉动画偏好 / 省流量模式 ⇒ 不自动播，只留按钮由用户主动触发。 */
   var hv = document.querySelector('.hero-video');
   if (hv) {
+    var hb = document.querySelector('.hv-btn');
     var conn = navigator.connection || {};
-    var skip = reduceMotion || conn.saveData === true;
-    if (!skip) {
-      var play = function () {
-        var p = hv.play();
-        if (p && p.catch) { p.catch(function () { /* 自动播放被拦：保持静态图 */ }); }
-      };
-      hv.addEventListener('playing', function () { hv.classList.add('is-on'); });
+    var autoSkip = reduceMotion || conn.saveData === true;
+    var userPaused = false;
+
+    var setBtn = function (s) {
+      if (!hb) { return; }
+      hb.setAttribute('data-state', s);
+      hb.setAttribute('aria-label',
+        s === 'ended' ? '重新播放产品演示视频'
+          : (s === 'playing' ? '暂停产品演示视频' : '播放产品演示视频'));
+      var t = hb.querySelector('.hv-txt');
+      if (t) { t.textContent = s === 'ended' ? '重播' : (s === 'playing' ? '暂停' : '播放'); }
+      hb.hidden = false;
+    };
+
+    var start = function () {
+      if (hv.ended) { try { hv.currentTime = 0; } catch (e) { /* 元数据未就绪，忽略 */ } }
+      var pr = hv.play();
+      if (pr && pr.catch) { pr.catch(function () { setBtn('paused'); }); }
+    };
+
+    hv.addEventListener('playing', function () { hv.classList.add('is-on'); setBtn('playing'); });
+    hv.addEventListener('pause', function () { if (!hv.ended) { setBtn('paused'); } });
+    hv.addEventListener('ended', function () { setBtn('ended'); });
+
+    if (hb) {
+      setBtn('paused');
+      hb.addEventListener('click', function () {
+        if (hv.paused) { userPaused = false; start(); }
+        else { userPaused = true; hv.pause(); }
+      });
+    }
+
+    if (!autoSkip) {
       if ('IntersectionObserver' in window) {
         var vio = new IntersectionObserver(function (entries) {
           entries.forEach(function (en) {
-            if (en.isIntersecting) { play(); } else if (!hv.paused) { hv.pause(); }
+            if (en.isIntersecting) {
+              /* 播过一遍就不再自动重播，避免又变成无限循环 */
+              if (!userPaused && !hv.ended) { start(); }
+            } else if (!hv.paused) {
+              hv.pause();
+            }
           });
         }, { threshold: 0.25 });
         vio.observe(hv);
       } else {
-        play();
+        start();
       }
     }
   }
