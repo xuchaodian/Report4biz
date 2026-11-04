@@ -197,10 +197,16 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hv-play .lbl{display:inline-flex;align-items:center;height:30px;padding:0 15px;border-radius:999px;
   background:#fff;color:#16233a;font-size:13px;font-weight:700;line-height:1;
   box-shadow:0 8px 18px -8px rgba(16,32,64,.55),0 0 0 1px rgba(16,32,64,.06)}
-/* 🔴 底图是地图，标签下面常有门店图标/POI ⇒ 必须实底，半透明会透出「铅笔状」暗块 */
-.hv-play .sub{font-size:11px;font-weight:600;line-height:1;color:#2b3a55;
-  background:#fff;padding:6px 11px;border-radius:999px;
-  box-shadow:0 6px 14px -10px rgba(16,32,64,.5),0 0 0 1px rgba(16,32,64,.05)}
+/* 🔴 底图是地图，标签下面常有门店图标/POI ⇒ 必须实底，半透明会透出「铅笔状」暗块。
+ * 这行是「这条视频演示什么」的唯一说明 ⇒ 做成品牌蓝实底强调条，一眼能看到。
+ * 🔴 渐变顶色不能再亮：白字 on #1f66e8 = 5.1:1；上过 #2f7bff 只有 3.9:1（不达 AA）。 */
+.hv-play .sub{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;line-height:1;color:#fff;
+  background:linear-gradient(180deg,#1f66e8,#0b45b0);padding:7px 13px 7px 11px;border-radius:999px;
+  box-shadow:0 14px 26px -14px rgba(11,69,176,.85),0 1px 0 rgba(255,255,255,.20) inset}
+.hv-play .sub svg{width:13px;height:13px;flex:none;opacity:.9}
+.hv-play .sub-t{font-size:11.5px;font-weight:600;color:#fff}
+.hv-play .sub-t::after{content:"·";margin:0 4px;color:rgba(255,255,255,.7);font-weight:400}
+.hv-play .sub-k{font-weight:700;color:#fff}
 @keyframes hvpulse{0%{transform:scale(.92);opacity:.9}70%{transform:scale(1.24);opacity:0}100%{transform:scale(1.24);opacity:0}}
 /* 窄屏：卡片本身只有 ~340×213，播放键按桌面尺寸会把整张图盖住 ⇒ 等比缩小 */
 @media (max-width:640px){
@@ -209,7 +215,9 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   .hv-play .ring svg{width:19px;height:19px}
   .hv-play .ring::after{inset:-6px}
   .hv-play .lbl{height:24px;padding:0 11px;font-size:11.5px}
-  .hv-play .sub{font-size:10px;padding:4px 8px}
+  .hv-play .sub{font-size:10.5px;padding:5px 9px 5px 8px;gap:5px}
+  .hv-play .sub svg{width:11px;height:11px}
+  .hv-play .sub-t::after{margin:0 4px}
 }
 @media (prefers-reduced-motion:reduce){.hv-play .ring::after{animation:none;opacity:0}.hv-play .ring{transition:none}}
 /* 播放中的暂停键：放在仿浏览器窗口条右侧，不遮挡画面（画面右下角有产品自带地图控件） */
@@ -461,7 +469,11 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <button class="hv-play" type="button" aria-label="播放产品演示视频：车行 15 分钟可达范围，约 18 秒">
           <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
           <span class="lbl">播放演示</span>
-          <span class="sub">18 秒 · 车行 15 分钟可达范围</span>
+          <span class="sub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v4.9l3.1 1.9"/></svg>
+            <span class="sub-t">18 秒</span>
+            <span class="sub-k">车行 15 分钟可达范围</span>
+          </span>
         </button>
       </div>
     </div>

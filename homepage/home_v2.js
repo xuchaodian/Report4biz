@@ -151,7 +151,6 @@
     var playBtn = media.querySelector('.hv-play');
     var pauseBtn = document.querySelector('.hv-btn');
     var hvLbl = playBtn && playBtn.querySelector('.lbl');
-    var hvSub = playBtn && playBtn.querySelector('.sub');
     var st = 'idle';
 
     var setState = function (s) {
@@ -171,7 +170,8 @@
       if (playBtn) {
         var lbl = s === 'ended' ? '重播演示' : (s === 'paused' ? '继续播放' : '播放演示');
         if (hvLbl && !playBtn.classList.contains('is-loading')) { hvLbl.textContent = lbl; }
-        if (hvSub) { hvSub.textContent = s === 'ended' ? '再看一遍 18 秒演示' : '18 秒 · 车行 15 分钟可达范围'; }
+        /* ⚠️ 不要在这里改 .sub 的 textContent：它内部是 svg + 两个 span（18 秒 / 车行…），
+           赋值会把结构抹平；且非 idle 时整个中央键本就 visibility:hidden，改了也看不见。 */
         playBtn.setAttribute('aria-label',
           s === 'ended' ? '重新播放产品演示视频'
             : (s === 'paused' ? '继续播放产品演示视频' : '播放产品演示视频：车行 15 分钟可达范围，约 18 秒'));
