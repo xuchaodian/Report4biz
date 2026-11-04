@@ -5420,15 +5420,22 @@ const analyzePopulationDistribution = async (opts = {}) => {
         for (; popRenderIdx < chunkEnd; popRenderIdx++) {
           const data = popRenderItems[popRenderIdx]
           const index = popRenderIdx
-          const { feature, value, geom } = data
+          const { feature, value } = data
           const props = feature.properties || {}
           const rawValue = parseInt(props[fieldName]) || 0  // 原始shapefile值
           const color = getColorByValue(rawValue)
 
-          // v1.13.314：geom 是「格子 ∩ 统计范围」的裁剪几何（后端返回）。
-          //   ① Polygon 可能带内环 ⇒ 按「多环」交给 L.polygon；
-          //   ② 凹范围（驾车可达）会把一格切成几块 ⇒ Polygon 变 MultiPolygon。
-          //   原来只取 coordinates[0][0]，多块时只画出第一块，其余部分凭空消失。
+          // === v1.13.315：网格按**整格**绘制，⛔ 不再按范围裁剪 ===
+          // 🔴 业主 2026-11-04 明确要求：「地图上显示的网格，不要切割网格」。
+          //   314 曾把 `data.geom`（后端返回的「格子 ∩ 统计范围」）拿来绘制，
+          //   结果贴边的那半格被切成圆弧碎片 —— 看着像"不规则的色斑"，不像网格。
+          //   ⇒ 现改用 `feature.geometry`（原始整格）：只要与范围相交就整块上色。
+          // 🔴🔴 **统计口径一个字都没改**：`value` 仍是 fieldValue × coverageRatio（面积加权），
+          //   整格显示只是"可视化更清楚"，不代表把范围外的格子计入总量。
+          //   ⛔ 别因为「整格都画了」就把 value 改成整格原值 —— 那是把 3km 圆算成 7×7 方块。
+          // ⚠️ 布局差异：`feature.geometry` 天然是 Polygon/MultiPolygon 单层，
+          //   仍走下面的多环/多块分支（hd 逐格可能就是 MultiPolygon）。
+          const geom = (feature && feature.geometry) || data.geom
           const toLatLngs = ring => ring.map(c => [c[1], c[0]])
           const shapes = []
           if (geom && geom.type === 'Polygon') {
@@ -5461,9 +5468,10 @@ const analyzePopulationDistribution = async (opts = {}) => {
             }
 
             // 添加标签
-            // 🔴 标签必须落在**裁剪后**的形状上：贴圆边的那半格，原格子中心已经在圆外，
-            //   用 feature 的格子中心会让数字飘在着色区外面（v1.13.314 实测很明显）。
-            //   取环顶点包围盒中心（不用顶点均值：圆弧一侧顶点密集，均值会偏到圆边上）。
+            // v1.13.315：改回整格显示后，标签落在**整格**包围盒中心，与色块范围一致。
+            //   （314 时代画的是裁剪几何，标签必须跟着裁剪形状走，否则数字会飘到圆外；
+            //     现在整格上色，若仍按裁剪几何取中心反而偏向圆边一侧、看着更歪。）
+            //   取环顶点包围盒中心（不用顶点均值：顶点在凹多边形一侧密集时会偏）。
             let polyCenter = null
             let bestRing = null
             for (const shape of shapes) {
@@ -5570,7 +5578,8 @@ const analyzePopulationDistribution = async (opts = {}) => {
     if (maxRadiusData.matchingData.length > 0) {
       const allPoints = []
       maxRadiusData.matchingData.forEach(data => {
-        const geom = data.geom
+        // v1.13.315：与绘制同源 —— 用整格几何算最右点；否则面板会贴到裁剪碎片的边上
+        const geom = (data.feature && data.feature.geometry) || data.geom
         if (geom.type === 'Polygon') {
           geom.coordinates[0].forEach(c => allPoints.push([c[1], c[0]]))
         } else if (geom.type === 'MultiPolygon') {
