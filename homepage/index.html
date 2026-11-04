@@ -168,7 +168,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hero-shot img{width:100%;height:auto}
 /* 首屏演示：静态截图当封面（LCP 快，且任何浏览器都有画面）
  * 🔴 不自动播：进视口不 play()，点中央播放键才加载视频（preload=none，1MB 不进首屏带宽）。
- * 🔴 播完不能空白：视频淡出，露出下面垫的末帧截图 hero-end.webp（视频末帧 = 可达范围 + 人口面板）。
+ * 🔴 播完不能空白：视频淡出，露出下面垫的末帧截图（首屏 demo-market-end.webp / 可达范围卡 hero-end.webp）。
  *    老做法靠 video 自己停在末帧，Safari / 部分内核 ended 后会清帧 ⇒ 一片雪白。 */
 .hero-media{position:relative;display:block;line-height:0}
 .hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s ease;pointer-events:none}
@@ -285,6 +285,14 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ci img{width:23px;height:23px;display:block}
 .card h3{font-size:15.5px;font-weight:700}
 .card p{margin-top:7px;font-size:13px;line-height:1.6;color:var(--ink2)}
+
+/* ---------------- 可达范围演示（放在「选择理由」之前） ----------------
+ * 复用 .hero-shot 那套窗口卡片（同一 .hero-media / .hero-video / .hv-play 状态机）。
+ * 🔴 上边不加 padding：#ability 自己的 118px 底距就是间隔；下方留 64px 再接灰底区块。 */
+.iso-sec{padding:0 0 64px;background:#fff}
+.hero-shot.iso-shot{margin:0 auto}
+.iso-sec .sec-hd{max-width:660px}
+@media (max-width:720px){.iso-sec{padding:0 0 44px}}
 
 /* ---------------- 选择理由（旧版 v1.13.244/246 内容，按 v2 版式重排） ---------------- */
 .reason-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:46px}
@@ -463,16 +471,16 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <span class="hv-txt">暂停</span>
       </button>
       <div class="hero-media" data-state="idle">
-        <img src="assets/screen-hero.webp" alt="地图工作台：上海市全域地图同时展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="750" fetchpriority="high" decoding="async">
-        <img class="hm-last" src="assets/hero-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
-        <video class="hero-video" src="assets/hero-demo.mp4" poster="assets/hero-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
-        <button class="hv-play" type="button" aria-label="播放产品演示视频：车行 15 分钟可达范围，约 18 秒">
+        <img src="assets/demo-market-cover.webp" alt="地图工作台：上海全域地图同屏展示自有门店（品牌图标）与竞品门店（绿色数字聚合），左侧面板可按门店状态、图层开关筛选" width="1200" height="750" fetchpriority="high" decoding="async">
+        <img class="hm-last" src="assets/demo-market-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
+        <video class="hero-video" src="assets/demo-market.mp4" poster="assets/demo-market-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <button class="hv-play" type="button" aria-label="播放产品演示视频：从城市洞察挑出北京，到商圈洞察看五道口，约 27 秒">
           <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
           <span class="lbl">播放演示</span>
           <span class="sub">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v4.9l3.1 1.9"/></svg>
-            <span class="sub-t">18 秒</span>
-            <span class="sub-k">车行 15 分钟可达范围</span>
+            <span class="sub-t">27 秒</span>
+            <span class="sub-k">城市洞察 → 商圈洞察</span>
           </span>
         </button>
       </div>
@@ -581,6 +589,41 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <div class="ci"><img src="assets/icons/refresh.svg" alt="" width="21" height="21"></div>
         <h3>门店清洗</h3>
         <p>同址异码、双店型自动识别，合并可一键恢复。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 可达范围演示（原首屏视频，移到选择理由之前） ================= -->
+<section class="iso-sec" id="isochrone">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">可达范围</span>
+      <h2>车行 15 分钟，能覆盖多少人</h2>
+      <p>在商圈工具里画一个 15 分钟车行圈，圈内常住人口、分龄结构、竞品数量一次算出来。</p>
+    </div>
+
+    <div class="hero-shot iso-shot rv">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 商圈工具 · 车行到达</span></div>
+      <button class="hv-btn" type="button" hidden data-state="paused" aria-label="播放产品演示视频">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg>
+        <svg class="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12.2a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3 4.7v5.4h5.4"/></svg>
+        <span class="hv-txt">暂停</span>
+      </button>
+      <div class="hero-media" data-state="idle">
+        <img src="assets/screen-hero.webp" alt="地图工作台：上海全域地图同屏展示自有门店（品牌图标）与竞品门店（绿色数字聚合），右上角为商圈工具入口" width="1200" height="750" loading="lazy" decoding="async">
+        <img class="hm-last" src="assets/hero-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
+        <video class="hero-video" src="assets/demo-isochrone.mp4" poster="assets/hero-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <button class="hv-play" type="button" aria-label="播放产品演示视频：车行 15 分钟可达范围，约 18 秒">
+          <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
+          <span class="lbl">播放演示</span>
+          <span class="sub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v4.9l3.1 1.9"/></svg>
+            <span class="sub-t">18 秒</span>
+            <span class="sub-k">车行 15 分钟可达范围</span>
+          </span>
+        </button>
       </div>
     </div>
   </div>

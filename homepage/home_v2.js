@@ -141,23 +141,33 @@
     onScroll();
   }
 
-  /* ======================== 4. 首屏演示视频 ========================
-   * 默认停在封面截图上（不自动播），点中央播放键才加载并播放。
-   * 播完 video 淡出、露出垫在下面的末帧截图 hero-end.webp —— 绝不留空白画面。
-   * 状态机：idle（封面+播放键）→ playing（视频+暂停键）→ paused（画面+继续键）／ended（末帧+重播键）。 */
-  var media = document.querySelector('.hero-media');
-  var hv = document.querySelector('.hero-video');
-  if (media && hv) {
+  /* ======================== 4. 演示视频 ========================
+   * 页面有两个实例：首屏（.hero-shot）与「选择理由」上方的可达范围卡片（.iso-shot）。
+   * 每个实例各自独立：
+   *   默认停在封面截图上（不自动播），点中央播放键才加载并播放；
+   *   播完 video 淡出、露出垫在下面的末帧截图 —— 绝不留空白画面。
+   *   状态机：idle（封面+播放键）→ playing（视频+暂停键）→ paused（画面+继续键）／ended（末帧+重播键）。
+   * 🔴 暂停/重播按钮在 .hero-media 外层（.shot-bar 里），只能从 parentNode 找；
+   *    用全局 querySelector('.hv-btn') 会两个实例都拿到第一个。 */
+  var medias = Array.prototype.slice.call(document.querySelectorAll('.hero-media'));
+
+  medias.forEach(function (media) {
+    var hv = media.querySelector('.hero-video');
+    if (!hv) { return; }
+
     var playBtn = media.querySelector('.hv-play');
-    var pauseBtn = document.querySelector('.hv-btn');
+    var pauseBtn = media.parentNode ? media.parentNode.querySelector('.hv-btn') : null;
     var hvLbl = playBtn && playBtn.querySelector('.lbl');
+    /* 中央键的初始 aria-label 描述的是「这条视频讲什么」，各实例不同 ⇒ 从 HTML 读一次存下来，
+       状态切换只换动词，不要把文案写死在 JS 里 */
+    var baseLabel = (playBtn && playBtn.getAttribute('aria-label')) || '播放产品演示视频';
     var st = 'idle';
 
     var setState = function (s) {
       st = s;
       media.setAttribute('data-state', s);
       /* 中央大键只在 idle 显示（CSS 控制），播放/暂停/重播都走窗口条右侧的小键，
-         这样暂停或播完时画面完全不被遮挡 —— 那一帧里的人口数字是重点 */
+         这样暂停或播完时画面完全不被遮挡 —— 那一帧里的数字是重点 */
       if (pauseBtn) {
         pauseBtn.hidden = (s === 'idle');
         pauseBtn.setAttribute('data-state', s === 'playing' ? 'playing' : (s === 'ended' ? 'ended' : 'paused'));
@@ -170,11 +180,11 @@
       if (playBtn) {
         var lbl = s === 'ended' ? '重播演示' : (s === 'paused' ? '继续播放' : '播放演示');
         if (hvLbl && !playBtn.classList.contains('is-loading')) { hvLbl.textContent = lbl; }
-        /* ⚠️ 不要在这里改 .sub 的 textContent：它内部是 svg + 两个 span（18 秒 / 车行…），
+        /* ⚠️ 不要在这里改 .sub 的 textContent：它内部是 svg + 两个 span，
            赋值会把结构抹平；且非 idle 时整个中央键本就 visibility:hidden，改了也看不见。 */
         playBtn.setAttribute('aria-label',
           s === 'ended' ? '重新播放产品演示视频'
-            : (s === 'paused' ? '继续播放产品演示视频' : '播放产品演示视频：车行 15 分钟可达范围，约 18 秒'));
+            : (s === 'paused' ? '继续播放产品演示视频' : baseLabel));
       }
     };
 
@@ -182,7 +192,7 @@
       if (st === 'ended' || hv.ended) {
         try { hv.currentTime = 0; } catch (e) { /* 元数据还没到位，忽略 */ }
       }
-      /* 首次点：preload=none ⇒ 现拉 1MB，给个「加载中」反馈，别让用户以为没点到 */
+      /* 首次点：preload=none ⇒ 现拉视频，给个「加载中」反馈，别让用户以为没点到 */
       if (hv.readyState < 3 && playBtn) {
         playBtn.classList.add('is-loading');
         if (hvLbl) { hvLbl.textContent = '加载中…'; }
@@ -225,5 +235,5 @@
     }
 
     setState('idle');
-  }
+  });
 })();
