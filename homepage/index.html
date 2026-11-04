@@ -7,20 +7,23 @@
 <meta name="build-version" content="v1.13.314">
 <title>选址赢家Online - 用数据看清每一平方公里</title>
 <meta name="description" content="选址赢家Online 是 WebGIS 商业智能分析平台：1km 网格商圈人口分析、驾车/步行可达范围、竞品追踪与门店体检、销售预测与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变成「看数据」。">
-<link rel="canonical" href="https://mka-online.cn/home/">
-<link rel="icon" type="image/png" href="/favicon.png" sizes="190x176" />
-<link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+<link rel="canonical" href="https://www.mka-online.cn/">
+<!-- 🔴 favicon 用相对路径：同一份 HTML 同时服务 www 根（官网主址）与主域 /home/（副本），
+     写 /favicon.png 会在 www 下正确、在主域下落到 SPA 的 dist 根，两边不同源。
+     相对写法两边各自解析到自己的 assets/，不需要在 nginx 里为任何一方开例外。 -->
+<link rel="icon" type="image/png" href="assets/favicon.png" sizes="190x176" />
+<link rel="shortcut icon" type="image/x-icon" href="assets/favicon.ico" />
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="选址赢家Online">
 <meta property="og:title" content="选址赢家Online - 用数据看清每一平方公里">
 <meta property="og:description" content="商圈人口 · 竞品格局 · 门店体检 · AI 选址建议。一个平台，把开店决策从经验变成依据。">
-<meta property="og:url" content="https://mka-online.cn/home/">
-<meta property="og:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
+<meta property="og:url" content="https://www.mka-online.cn/">
+<meta property="og:image" content="https://www.mka-online.cn/assets/og-cover.jpg">
 <meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="选址赢家Online - 用数据看清每一平方公里">
 <meta name="twitter:description" content="商圈人口 · 竞品格局 · 门店体检 · AI 选址建议，一个平台全看清。">
-<meta name="twitter:image" content="https://mka-online.cn/home/assets/og-cover.jpg">
+<meta name="twitter:image" content="https://www.mka-online.cn/assets/og-cover.jpg">
 <meta name="theme-color" content="#1e6fff">
 <meta name="robots" content="index,follow,max-image-preview:large">
 <script type="application/ld+json">
@@ -31,8 +34,8 @@
       "@type": "Organization",
       "@id": "https://mka-online.cn/#organization",
       "name": "选址赢家Online",
-      "url": "https://mka-online.cn/",
-      "logo": "https://mka-online.cn/favicon.png",
+      "url": "https://www.mka-online.cn/",
+      "logo": "https://www.mka-online.cn/assets/favicon.png",
       "description": "选址赢家Online 是基于位置大数据的 WebGIS 商业智能分析平台，聚焦商圈人口分析与门店竞争决策。",
       "email": "jyo@youshi-tech.com",
       "parentOrganization": { "@type": "Organization", "name": "上海优事商务咨询有限公司", "url": "https://youshi-tech.com/" },
@@ -47,7 +50,7 @@
     {
       "@type": "WebSite",
       "@id": "https://mka-online.cn/#website",
-      "url": "https://mka-online.cn/",
+      "url": "https://www.mka-online.cn/",
       "name": "选址赢家Online",
       "inLanguage": "zh-CN",
       "publisher": { "@id": "https://mka-online.cn/#organization" }
@@ -56,7 +59,7 @@
       "@type": "SoftwareApplication",
       "@id": "https://mka-online.cn/#software",
       "name": "选址赢家Online",
-      "url": "https://mka-online.cn/home/",
+      "url": "https://www.mka-online.cn/",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web Browser (Windows / macOS / 移动端)",
       "inLanguage": "zh-CN",
@@ -65,7 +68,7 @@
     },
     {
       "@type": "FAQPage",
-      "@id": "https://mka-online.cn/home/#faq",
+      "@id": "https://www.mka-online.cn/#faq",
       "mainEntity": [
         {
           "@type": "Question",
@@ -408,7 +411,8 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 
 <header class="hd" id="hd">
   <div class="wrap hd-in">
-    <a class="brand" href="/home/" aria-label="选址赢家Online 首页">
+    <!-- 🔴 品牌 logo 用相对路径：www 根下解析为 / ，主域 /home/ 下解析为 /home/，两边都回官网首页 -->
+    <a class="brand" href="./" aria-label="选址赢家Online 首页">
       <img src="assets/logo.png" alt="" width="113" height="96" style="width:34px;height:auto">
       <span class="brand-txt">选址赢家<em>Online</em></span>
     </a>
