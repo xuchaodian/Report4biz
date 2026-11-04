@@ -5489,12 +5489,14 @@ const analyzePopulationDistribution = async (opts = {}) => {
               polyCenter = { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 }
             }
             if (!polyCenter) polyCenter = getFeatureCenter(feature)
-            // 🔴 v1.13.314：被裁成细条的格子（覆盖比例 < 0.5）不挂标签。
-            //   标签宽约 90px，细条只有十几像素宽 ⇒ 一定飘到圆外，
-            //   看上去像「圆外的格子也有人口」（实测业主第一眼就是这个观感）。
-            //   数字本身仍是整格原始值（未折算），所以隐藏细条不会丢任何统计口径。
-            const coverRatio = typeof data.intersectionRatio === 'number' ? data.intersectionRatio : 1
-            if (polyCenter && coverRatio >= 0.5) {
+            // v1.13.317：**只要格子画出来了就挂标签**（业主 2026-11-04：
+            //   「与范围关联到的网格，只要是显示在地图上了，就都显示网格的标签」）。
+            //   314 曾按「覆盖率 ≥ 0.5」过滤，理由是细条格子（宽十几像素）挂 90px 的标签
+            //   会飘到范围外、看着像「圆外也有人口」。该前提已不成立：
+            //   316 起格子整块上色、标签落**整格**包围盒中心，不可能飘出格子。
+            //   ⚠️ 数字仍是整格原始值（未按比例折算），与统计口径无关 ——
+            //     贴边格子标签显示整格人口、参与 total 的是加权值，这个差异本来就存在。
+            if (polyCenter) {
               let displayValue = rawValue
               if (displayValue >= 10000) displayValue = (displayValue / 10000).toFixed(1) + '万'
               else if (rawValue >= 1000) displayValue = rawValue.toLocaleString()

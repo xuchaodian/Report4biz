@@ -58,3 +58,19 @@ describe('B. 统计口径未被顺手改动', () => {
     expect(routeSrc).toContain('geom: partsToGeometry(intersectPolygonParts(intersect.geometry)) || feature.geometry')
   })
 })
+
+describe('C. 网格标签：画出来就挂标签（v1.13.317）', () => {
+  it('🔴 不得再按覆盖率阈值过滤标签', () => {
+    expect(
+      /coverRatio\s*>=\s*0\.5/.test(mapSrc),
+      '标签又按「覆盖率 ≥ 0.5」过滤了 —— 贴边格子会缺标签（业主 2026-11-04 明确要求全显示）'
+    ).toBe(false)
+    expect(/intersectionRatio\s*[><]=?\s*0\.\d+/.test(mapSrc)).toBe(false)
+  })
+
+  it('算出中心点就挂标签（只剩 polyCenter 判空）', () => {
+    expect(mapSrc).toMatch(
+      /if \(!polyCenter\) polyCenter = getFeatureCenter\(feature\)[\s\S]{0,700}?if \(polyCenter\) \{/
+    )
+  })
+})
