@@ -1,14 +1,20 @@
 # ==============================================================================
-# ⭐ v1.13.219（2026-10-13）新增
-#   此前 /robots.txt 无对应文件 ⇒ 落到 nginx 的 `location /`
-#   ⇒ try_files 回落 index.html，返回 1925 B 的 SPA 壳（搜索引擎读不到规则）。
-#   本文件由 vite 从 public/ 复制到 dist 根，随前端部署生效。
+# v1.13.219（2026-10-13）新建 ｜ v1.13.319（2026-11-05）主址收敛后修订
+#
+# 站点定位：mka-online.cn 主域根 = 登录墙 SPA，没有可读内容；官网主址已定为
+#           https://www.mka-online.cn/（独立静态营销页），主域 /home/ 及其子路径
+#           一律 301 到 www。因此主域这份 robots 的职责只剩一个：
+#           让爬虫能取到「/」这一份壳，读到 canonical 指 www 的信号，其余一律不抓。
+#
+# 本文件由 vite 从 public/ 复制到 dist 根，随前端部署生效。
+# ⚠️ 改完必须同步 frontend/dist/robots.txt（dist 不重建时不会自动刷新）。
 # ==============================================================================
 User-agent: *
-# 只开放「可索引」的两页：营销落地页 /home/ 与品牌首页 /
-Allow: /home/
+# `/` 是路径结束符：只放行根路径本身（Google 与百度均支持）
 Allow: /$
-# 其余（登录后应用路由、API、上传件、构建产物）一律不抓
+# 其余（登录后应用路由 /api /assets /uploads）一律不抓：
+#   这些路径对未登录爬虫只会渲染出空壳，放行等于批量制造软 404 与重复内容。
 Disallow: /
 
-Sitemap: https://mka-online.cn/sitemap.xml
+# ⚠️ 必须直接写最终地址：robots 里指向「会跨主机 301」的 sitemap 会被搜索引擎忽略
+Sitemap: https://www.mka-online.cn/sitemap.xml
