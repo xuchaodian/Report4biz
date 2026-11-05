@@ -19,6 +19,9 @@
 <meta property="og:description" content="商圈人口 · 竞品格局 · 门店体检 · AI 选址建议。一个平台，把开店决策从经验变成依据。">
 <meta property="og:url" content="https://www.mka-online.cn/">
 <meta property="og:image" content="https://www.mka-online.cn/assets/og-cover.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="选址赢家Online 地图工作台：自有门店与竞品分布同屏">
 <meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="选址赢家Online - 用数据看清每一平方公里">
@@ -77,8 +80,23 @@
         },
         {
           "@type": "Question",
+          "name": "支持哪些城市？",
+          "acceptedAnswer": { "@type": "Answer", "text": "按城市开通。系统里的城市下拉列表就是当前已开通的范围；需要新的城市可以联系我们申请，通常按区域陆续开通。" }
+        },
+        {
+          "@type": "Question",
+          "name": "门店数据怎么导入？",
+          "acceptedAnswer": { "@type": "Answer", "text": "用 Excel 或 CSV 模板批量导入，门店编码、名称、地址、面积、状态等字段一次带入，也可以在地图上逐条添加。同一个地址编码不同的重复门店，导入后会自动识别出来。" }
+        },
+        {
+          "@type": "Question",
           "name": "人口数据来自哪里，准确吗？",
           "acceptedAnswer": { "@type": "Answer", "text": "接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。" }
+        },
+        {
+          "@type": "Question",
+          "name": "人口数据多久更新一次？",
+          "acceptedAnswer": { "@type": "Answer", "text": "按月更新，期次精确到月份，在系统里能直接看到当前使用的数据期次。人口是慢变量，月度更新足以支撑选址判断。" }
         },
         {
           "@type": "Question",
@@ -87,8 +105,28 @@
         },
         {
           "@type": "Question",
+          "name": "多人协作和集团多子公司支持吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总。" }
+        },
+        {
+          "@type": "Question",
+          "name": "只有几家店，用得上吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "门店少的时候，价值主要在开店之前——先看清目标商圈的人口和竞品，再决定签不签。门店多了以后，体检和蚕食分析的作用才会显现出来。" }
+        },
+        {
+          "@type": "Question",
+          "name": "和 Excel 自己拉表比，差别在哪？",
+          "acceptedAnswer": { "@type": "Answer", "text": "Excel 存的是你已经知道的数据；系统把人口、竞品、可达范围算好，叠在同一张地图上，还能按半径或车行时间随时改口径重算。" }
+        },
+        {
+          "@type": "Question",
           "name": "分析报表能直接用于汇报吗？",
           "acceptedAnswer": { "@type": "Answer", "text": "可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。" }
+        },
+        {
+          "@type": "Question",
+          "name": "手机上能用吗？",
+          "acceptedAnswer": { "@type": "Answer", "text": "能。浏览器直接打开即可，手机上适合看门店分布、商圈人口和体检结果；批量导入和深度分析建议在电脑上做。" }
         }
       ]
     }
@@ -598,6 +636,51 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   </div>
 </section>
 
+<!-- ================= 适用场景（2026-11-05 新增：覆盖行业长尾搜索） ================= -->
+<section class="sec sec-soft" id="scenario">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">适用场景</span>
+      <h2>不同行业，问的是不同的问题</h2>
+      <p>选址系统不该只给一个通用分数，而是回答你这一行真正要回答的那个问题。</p>
+    </div>
+    <div class="caps rv">
+      <div class="card">
+        <h3>连锁餐饮</h3>
+        <p>这条街的午市和晚市客流，撑不撑得起这个租金。</p>
+      </div>
+      <div class="card">
+        <h3>茶饮 / 咖啡</h3>
+        <p>写字楼密度和到访人口，哪个更决定出杯量。</p>
+      </div>
+      <div class="card">
+        <h3>便利店</h3>
+        <p>三公里内到底还缺不缺一个 24 小时店。</p>
+      </div>
+      <div class="card">
+        <h3>连锁药店</h3>
+        <p>社区老龄化程度，和已有药店的真实步行距离。</p>
+      </div>
+      <div class="card">
+        <h3>连锁零售</h3>
+        <p>商场店与街边店，同一个品牌能差多少。</p>
+      </div>
+      <div class="card">
+        <h3>汽车服务</h3>
+        <p>车行 15 分钟圈里，究竟有多少潜在车主。</p>
+      </div>
+      <div class="card">
+        <h3>品牌加盟</h3>
+        <p>进入一座新城市，第一个点应该先落在哪。</p>
+      </div>
+      <div class="card">
+        <h3>集团总部</h3>
+        <p>全国几百家店，哪几家该调整、哪几家该关。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ================= 可达范围演示（原首屏视频，移到选择理由之前） ================= -->
 <section class="iso-sec" id="isochrone">
   <div class="wrap">
@@ -738,16 +821,44 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <p>不需要。浏览器打开就能用，Windows、macOS 与移动端都支持，无需安装任何客户端。</p>
       </details>
       <details>
+        <summary>支持哪些城市？</summary>
+        <p>按城市开通。系统里的城市下拉列表就是当前已开通的范围；需要新的城市可以联系我们申请，通常按区域陆续开通。</p>
+      </details>
+      <details>
+        <summary>门店数据怎么导入？</summary>
+        <p>用 Excel 或 CSV 模板批量导入，门店编码、名称、地址、面积、状态等字段一次带入，也可以在地图上逐条添加。同一个地址编码不同的重复门店，导入后会自动识别出来。</p>
+      </details>
+      <details>
         <summary>人口数据来自哪里，准确吗？</summary>
         <p>接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。</p>
+      </details>
+      <details>
+        <summary>人口数据多久更新一次？</summary>
+        <p>按月更新，期次精确到月份，在系统里能直接看到当前使用的数据期次。人口是慢变量，月度更新足以支撑选址判断。</p>
       </details>
       <details>
         <summary>我的门店数据是私有的吗？</summary>
         <p>按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。</p>
       </details>
       <details>
+        <summary>多人协作和集团多子公司支持吗？</summary>
+        <p>支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总。</p>
+      </details>
+      <details>
+        <summary>只有几家店，用得上吗？</summary>
+        <p>门店少的时候，价值主要在开店之前——先看清目标商圈的人口和竞品，再决定签不签。门店多了以后，体检和蚕食分析的作用才会显现出来。</p>
+      </details>
+      <details>
+        <summary>和 Excel 自己拉表比，差别在哪？</summary>
+        <p>Excel 存的是你已经知道的数据；系统把人口、竞品、可达范围算好，叠在同一张地图上，还能按半径或车行时间随时改口径重算。</p>
+      </details>
+      <details>
         <summary>分析报表能直接用于汇报吗？</summary>
         <p>可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。</p>
+      </details>
+      <details>
+        <summary>手机上能用吗？</summary>
+        <p>能。浏览器直接打开即可，手机上适合看门店分布、商圈人口和体检结果；批量导入和深度分析建议在电脑上做。</p>
       </details>
     </div>
   </div>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 选址赢家Online 官网 sitemap（2026-11-05）
+     ⚠️ 只列 www.mka-online.cn 下的 URL：sitemap 规范要求 loc 与 sitemap 所在 host 一致，
+        跨 host 会被判定为无效条目。
+     ⚠️ 主域 mka-online.cn 是应用入口（登录墙），不进 sitemap；
+        其 /sitemap.xml 由 nginx 301 到本文件，因此全站只有这一份有效 sitemap。 -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.mka-online.cn/</loc>
+    <lastmod>2026-11-05</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://www.mka-online.cn/help/</loc>
+    <lastmod>2026-11-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+</urlset>

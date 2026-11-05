@@ -1,0 +1,11 @@
+# 选址赢家Online 官网
+# ── 2026-11-05：官网主址定为 www.mka-online.cn
+#    主域 mka-online.cn 是应用入口（登录墙），官网 /home/ 已 301 收敛到本站，
+#    因此本文件只对 www 站点有效；主域仍用自己的 robots.txt（vite public/ 那份）。
+#
+#    本文件由 nginx 的 www server 块直接从 /var/www/Report4biz/frontend/home/ 提供
+#    （⛔ 不要让它落进 location / 的 301 兜底：爬虫拿到跨主机 301 会忽略 robots 规则）
+User-agent: *
+Allow: /
+
+Sitemap: https://www.mka-online.cn/sitemap.xml
