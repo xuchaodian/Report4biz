@@ -31,6 +31,8 @@ import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { calcVipUntil } from '../utils/vipRole.js'
+// v1.13.320：审批（改 role）属敏感操作，留「谁批的」
+import { writeAudit, AUDIT_ACTIONS } from '../utils/auditLog.js'
 
 const router = express.Router()
 
@@ -267,6 +269,21 @@ router.post('/:id/approve', authenticate, requireAdmin, (req, res) => {
            SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ?, reviewed_by_name = ?
          WHERE id = ?
       `).run(Number(req.user?.id) || null, reviewer, app.id)
+
+      // v1.13.320 审计：审批=改 role（user → trial），必须有「谁批的、批给谁」
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.VIP_REVIEW,
+        targetType: 'user',
+        targetId: target.id,
+        detail: {
+          applicationId: app.id,
+          result: 'approved',
+          username: target.username,
+          role: { from: target.role, to: 'trial' },
+          vip_until: vipUntil,
+        },
+      })
       db.commitTx()   // 内含统一落盘
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
@@ -297,11 +314,27 @@ router.post('/:id/reject', authenticate, requireAdmin, (req, res) => {
     const note = String(req.body?.review_note ?? '').trim().slice(0, 200)
     const reviewer = reviewerName(db, req)
 
-    db.prepare(`
-      UPDATE vip_applications
-         SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ?, reviewed_by_name = ?, review_note = ?
-       WHERE id = ?
-    `).run(Number(req.user?.id) || null, reviewer, note || null, app.id)
+    // v1.13.320：驳回 + 审计 = 两次写 ⇒ 包事务
+    db.beginTx()
+    try {
+      db.prepare(`
+        UPDATE vip_applications
+           SET status = 'rejected', reviewed_at = CURRENT_TIMESTAMP, reviewed_by = ?, reviewed_by_name = ?, review_note = ?
+         WHERE id = ?
+      `).run(Number(req.user?.id) || null, reviewer, note || null, app.id)
+
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.VIP_REVIEW,
+        targetType: 'user',
+        targetId: app.user_id,
+        detail: { applicationId: app.id, result: 'rejected', username: app.username || null, note: note || null },
+      })
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw txErr
+    }
 
     res.json({ message: `已驳回 ${app.username || ''} 的申请`.trim() })
   } catch (error) {

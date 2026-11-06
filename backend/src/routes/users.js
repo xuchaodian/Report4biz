@@ -6,6 +6,8 @@ import { signToken, bumpTokenVersion, currentTokenVersion } from '../utils/token
 import { getPoolInfo } from './resale.js'
 // v1.13.160：集团品牌 Logo 读时继承 —— 回执与 login//auth/me 同一口径，见 utils/brandLogo.js
 import { withResolvedLogo } from '../utils/brandLogo.js'
+// v1.13.320：敏感操作审计（改额度/角色/停用/删号/重置密码都要留「谁干的」）
+import { writeAudit, diffFields, AUDIT_ACTIONS } from '../utils/auditLog.js'
 
 const router = express.Router()
 
@@ -161,6 +163,20 @@ router.put('/quota', authenticate, requireAdmin, (req, res) => {
         )
       }
 
+      // v1.13.320 审计：池级调整必须留痕（无论是否构成采购，改总配额都是敏感操作）
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.QUOTA_POOL,
+        targetType: 'admin_quota',
+        targetId: 1,
+        detail: {
+          initialQuota: { from: currentInitial, to: parseInt(totalQuota) },
+          remainingQuota: { from: currentRemaining, to: newRemaining },
+          purchaseAmount,
+          note: req.body?.note || null,
+        },
+      })
+
       db.commitTx()
     } catch (txError) {
       try { db.rollbackTx() } catch (e) { /* 忽略 */ }
@@ -256,10 +272,30 @@ router.post('/', authenticate, requireAdmin, (req, res) => {
     // 创建用户
     // v1.13.158：角色为 vip/trial 时必须一并写入 vip_until，否则到期日为空（见文件顶部 calcVipUntil 说明）
     const finalRole = role || 'user'
-    const result = db.prepare(`
-      INSERT INTO users (username, email, password, role, company, vip_until)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(username, email, hashedPassword, finalRole, company || '', calcVipUntil(finalRole))
+    // v1.13.320：建号 + 审计 = 两次写 ⇒ 必须包事务。
+    // 本库是 sql.js：非事务态每次 run() 都会 db.export() + 整库写盘（~166MB），
+    // 不包事务就要多付一次全库落盘（存量代码里「单次写不包事务」是对的，加审计后前提变了）。
+    const vipUntil = calcVipUntil(finalRole)
+    let result
+    db.beginTx()
+    try {
+      result = db.prepare(`
+        INSERT INTO users (username, email, password, role, company, vip_until)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(username, email, hashedPassword, finalRole, company || '', vipUntil)
+
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.USER_CREATE,
+        targetType: 'user',
+        targetId: result.lastInsertRowid,
+        detail: { username, role: finalRole, vip_until: vipUntil, company: company || '' },
+      })
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw txErr
+    }
 
     const user = db.prepare('SELECT id, username, email, role, vip_until, company, created_at FROM users WHERE id = ?').get(result.lastInsertRowid)
 
@@ -504,9 +540,13 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
         // 记录配额变更历史（用于累计配额统计）
         try {
           db.prepare(`
-            INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action)
-            VALUES (?, ?, ?, ?, ?)
-          `).run(userId, currentUserQuota, newQuota, quotaDiff, quotaDiff >= 0 ? 'increase' : 'decrease')
+            INSERT INTO quota_history (user_id, old_quota, new_quota, change_amount, action, operator_id, operator_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            userId, currentUserQuota, newQuota, quotaDiff,
+            quotaDiff >= 0 ? 'increase' : 'decrease',
+            req.user?.id ?? null, req.user?.username ?? null
+          )
         } catch (e) {
           console.error('写入配额历史失败:', e)
         }
@@ -524,6 +564,29 @@ router.put('/:id', authenticate, requireAdmin, (req, res) => {
           )
         }
       }
+      // v1.13.320 审计：谁改了谁、改了什么。
+      // ⚠️ 密码只记「改过」，⛔ 绝不记值/哈希（审计表长期留存）。
+      // ⚠️ 用 diffFields 只收录真变了的字段 —— 编辑弹窗会把整行原值一起提交，
+      //    全记下来会让真正变动的那一项被 10 个没变的字段淹没。
+      const auditDetail = diffFields(
+        existingUser,
+        {
+          role: finalRole,
+          quota: quotaChanged ? newQuota : existingUser.quota,
+          email: email || existingUser.email,
+          company: company !== undefined ? company : existingUser.company,
+        },
+        ['role', 'quota', 'email', 'company']
+      )
+      if (password) auditDetail.password = { changed: true }
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.USER_UPDATE,
+        targetType: 'user',
+        targetId: userId,
+        detail: auditDetail,
+      })
+
       db.commitTx()   // 内含统一落盘
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
@@ -619,16 +682,33 @@ router.patch('/:id/status', authenticate, requireAdmin, (req, res) => {
       }
 
       // SQL 的 SET 赋值全部取**行更新前**的值 ⇒ 同一条里先记 prev 再改名是安全的
-      db.prepare(`
-        UPDATE users
-           SET disabled_at = ?,
-               disabled_prev_username = username,
-               disabled_prev_email = email,
-               username = ?,
-               email = ?,
-               token_version = COALESCE(token_version, 0) + 1
-         WHERE id = ?
-      `).run(new Date().toISOString(), `__disabled_${user.id}`, `__disabled_${user.id}@disabled.invalid`, user.id)
+      // v1.13.320：停用 + 审计 = 两次写 ⇒ 包事务（本库非事务态每次写都要整库落盘 ~166MB）
+      const disabledAt = new Date().toISOString()
+      db.beginTx()
+      try {
+        db.prepare(`
+          UPDATE users
+             SET disabled_at = ?,
+                 disabled_prev_username = username,
+                 disabled_prev_email = email,
+                 username = ?,
+                 email = ?,
+                 token_version = COALESCE(token_version, 0) + 1
+           WHERE id = ?
+        `).run(disabledAt, `__disabled_${user.id}`, `__disabled_${user.id}@disabled.invalid`, user.id)
+
+        writeAudit({
+          req, db,
+          action: AUDIT_ACTIONS.USER_DISABLE,
+          targetType: 'user',
+          targetId: user.id,
+          detail: { username: user.username, email: user.email, role: user.role, disabled_at: disabledAt },
+        })
+        db.commitTx()
+      } catch (txErr) {
+        try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+        throw txErr
+      }
 
       return res.json({
         message: `已停用「${user.username}」：该账号无法再登录，原有登录状态已全部失效（数据保留，可随时恢复）`,
@@ -656,15 +736,31 @@ router.patch('/:id/status', authenticate, requireAdmin, (req, res) => {
       })
     }
 
-    db.prepare(`
-      UPDATE users
-         SET username = disabled_prev_username,
-             email = disabled_prev_email,
-             disabled_prev_username = NULL,
-             disabled_prev_email = NULL,
-             disabled_at = NULL
-       WHERE id = ?
-    `).run(user.id)
+    // v1.13.320：恢复 + 审计 = 两次写 ⇒ 包事务
+    db.beginTx()
+    try {
+      db.prepare(`
+        UPDATE users
+           SET username = disabled_prev_username,
+               email = disabled_prev_email,
+               disabled_prev_username = NULL,
+               disabled_prev_email = NULL,
+               disabled_at = NULL
+         WHERE id = ?
+      `).run(user.id)
+
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.USER_ENABLE,
+        targetType: 'user',
+        targetId: user.id,
+        detail: { username: prevName, email: prevMail, role: user.role },
+      })
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw txErr
+    }
 
     return res.json({
       message: `已恢复「${prevName}」：该账号可重新登录（需重新登录取新会话）`,
@@ -737,7 +833,31 @@ router.delete('/:id', authenticate, requireAdmin, (req, res) => {
     }
 
     // 删除用户
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+    // v1.13.320：删除 + 审计 = 两次写 ⇒ 包事务。
+    // 🔴 这里必须把**被删账号的关键信息抄进 detail** —— 删完 users 行就没了，
+    //    审计表是唯一还能回答「删的是谁、什么角色、还剩多少配额」的地方。
+    db.beginTx()
+    try {
+      db.prepare('DELETE FROM users WHERE id = ?').run(userId)
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.USER_DELETE,
+        targetType: 'user',
+        targetId: userId,
+        detail: {
+          username: existingUser.username,
+          email: existingUser.email,
+          role: existingUser.role,
+          quota: existingUser.quota,
+          vip_until: existingUser.vip_until,
+          disabled_at: existingUser.disabled_at,
+        },
+      })
+      db.commitTx()
+    } catch (txErr) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw txErr
+    }
 
     res.json({ message: '用户删除成功' })
   } catch (error) {
@@ -833,6 +953,20 @@ router.post('/:id/reset-password', authenticate, requireAdmin, (req, res) => {
     try {
       db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, userId)
       bumpTokenVersion(db, userId)
+      // v1.13.320 审计：管理员重置他人密码是高危动作（等同拿到该账号）
+      // ⚠️ 不记密码值，只记「被重置 + 会话已撤销」
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.USER_RESET_PASSWORD,
+        targetType: 'user',
+        targetId: userId,
+        detail: {
+          username: existingUser.username,
+          role: existingUser.role,
+          resetTo: '默认密码',
+          sessionsRevoked: true,
+        },
+      })
       db.commitTx()
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }

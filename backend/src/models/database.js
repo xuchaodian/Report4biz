@@ -328,6 +328,41 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quota_purchases_created ON quota_purchases(created_at DESC)`)
 
+  // 敏感操作审计日志（v1.13.320）
+  //
+  // 由来（2026-11-06 安全审计）：admin 改配额 / 改角色 / 停用 / 删号 / 重置密码
+  // 全站只有 2 处 `console.log('[audit]')`（且都在 store-sales），**没有任何落库**。
+  // ⇒ 内部人滥用或 admin 账号被盗后，pm2 日志一轮转就完全无法追溯。
+  //
+  // 与 quota_history 的分工（⛔ 别混用）：
+  //   · quota_history   只记「某账号的配额怎么变的」（业务台账，被 purchase.js 当累计值用）
+  //   · quota_purchases 只记「池级采购」（向联通买了多少次）
+  //   · audit_log       记「**谁**在什么时间对什么做了什么」（安全审计，append-only，谁都不读它算业务）
+  //   ⚠️ 三者互不替代：quota_history 回答"变了多少"，audit_log 回答"谁改的"。
+  //
+  // 🔴 actor_name / actor_role 是**快照**，不是外键关联的实时值：
+  //    操作人被改名/降权/停用后，仍要看得出「当时是谁、当时是不是 admin」。
+  // 🔴 本库**未开** PRAGMA foreign_keys ⇒ FOREIGN KEY 只是文档，删除用户不会级联，
+  //    actor_id 会悬空 —— 这正是必须存 actor_name 快照的原因。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_id INTEGER,                  -- 操作人 users.id；系统自动写入为 NULL
+      actor_name TEXT,                   -- 操作人用户名快照（防改名/停用后查不到）
+      actor_role TEXT,                   -- 操作时角色快照（降权后仍能看出当时是 admin）
+      action TEXT NOT NULL,              -- 动作码，见 utils/auditLog.js 的 AUDIT_ACTIONS
+      target_type TEXT,                  -- user / org / city_data / store ...
+      target_id TEXT,                    -- 目标标识（TEXT：兼容数字 id 与字符串键）
+      detail TEXT,                       -- JSON：变更前后的关键字段（已截断）
+      ip TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (actor_id) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_audit_log_target ON audit_log(target_type, target_id)`)
+
   // 密码重置令牌表（v1.13.130）—— 支撑「忘记密码」邮件自助重置
   // ⚠️ 只存令牌的 sha256 哈希，明文令牌仅存在于邮件链接里；即使本表泄露也无法直接使用。
   // ⚠️ expires_at 用 epoch 毫秒（INTEGER）而非 DATETIME：
@@ -470,6 +505,15 @@ export async function initDatabase() {
   // 既有 quota_history 加来源列（§3.7 F2 / 规则 23）
   //   新 action 取值：'org_grant'（集团分配）、'member_deleted_release'（删除成员释放）
   try { db.run(`ALTER TABLE quota_history ADD COLUMN source_user_id INTEGER`) } catch (e) { /* 列已存在 */ }
+
+  // v1.13.320：补「操作人」两列（安全审计）
+  //   由来：quota_history 只回答「某账号的配额变了多少」，**从不记是谁改的** ——
+  //   池级 quota_purchases 反而有 created_by，两处不对称（2026-11-06 审计发现）。
+  //   ⇒ admin 把某账号配额从 100 改成 100000，台账上只有「变多了」，追不到人。
+  // ⚠️ 存**快照**而非外键实时值：操作人被改名/删除后仍要能看出当时是谁。
+  // ⚠️ 老记录这两列为 NULL —— 不要回填成某个"默认管理员"，那等于伪造审计。
+  try { db.run(`ALTER TABLE quota_history ADD COLUMN operator_id INTEGER`) } catch (e) { /* 列已存在 */ }
+  try { db.run(`ALTER TABLE quota_history ADD COLUMN operator_name TEXT`) } catch (e) { /* 列已存在 */ }
 
   // 创建点位表 - 门店管理
   db.run(`
