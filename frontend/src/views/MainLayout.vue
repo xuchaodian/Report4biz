@@ -772,18 +772,19 @@ const doExport = async (type) => {
 
 /* 全屏切换按钮：常驻可见 —— 收起后顶栏里的「我的账户/退出登录」全都不可达，
    这是唯一能回去的入口，⛔ 不能藏进任何菜单。
-   🔴 v1.13.323：定位从「右上角」改为「底边居中」。
-   右上角 top:10 那一整条被四个地图面板排满了（地图工具箱 right:15 / POI 搜索 right:150 /
-   门店工具 right:285 / 商圈工具 right:420，均 z-index 1001）；原先按钮 top 按 --header-height
-   算，落在同一水平带 ⇒ 页面里有新手引导条时紧贴工具箱上沿，引导条一关就直接盖住工具箱。
-   左上角有地址搜索框（320px 宽，z1400）与 AI 按钮；右侧中部会被展开后的工具箱覆盖；
-   右下有图层切换/缩放/色阶图例 ⇒ 只有底边中段（x≈86~1090）是真空的。
-   ⚠️ 用 bottom 锚定而不是 top：不再依赖顶栏高度，也就不受页面内其它横幅影响。 */
+   🔴 v1.13.324：定位改为「地址搜索框右侧」。
+   右上角 top:10 那一整条被四个地图面板排满（地图工具箱 right:15 / POI 搜索 right:150 /
+   门店工具 right:285 / 商圈工具 right:420，均 z-index 1001）⇒ 根本插不进去。
+   323 曾放到「底边居中」，实测位置在 [583,535]（视口 577 高）—— 功能正常但**太不显眼**，
+   业主反馈「没看到按钮」：宽屏上它贴在屏幕最下沿，视线根本不会落到那里。
+   现在放在地址搜索框（left:10 + width:320 ⇒ 右边缘 330）右侧 10px，
+   与「商圈工具/门店工具/地图工具箱」同一水平带 ⇒ 一眼可见，且完全不压任何控件。
+   收起时 header 归零，按钮同步上移到 y=10（仍与搜索框同一带、x 不变）。
+   ⚠️ 窄屏（<1160）工具面板左移会压过来 ⇒ 退回底边居中兜底。 */
 .nav-toggle-fab {
   position: fixed;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(var(--header-height) + 10px);
+  left: 340px;            /* 搜索框右边缘 330 + 10 间距 */
   z-index: 1100;          /* 高于 Leaflet 控件（1000） */
   display: inline-flex;
   align-items: center;
@@ -799,7 +800,7 @@ const doExport = async (type) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: top 0.18s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
     background: #f5f7fa;
@@ -810,9 +811,19 @@ const doExport = async (type) => {
     outline-offset: 2px;
   }
 }
-/* 收起后按钮位置不变（底边居中）—— 位置稳定反而更好找；
-   收起的视觉反馈交给按钮文案/图标（显示导航 ↔ 全屏地图）。 */
-
+.main-layout.nav-collapsed .nav-toggle-fab {
+  top: 10px;
+}
+/* 窄屏：右上的工具面板会左移压到 340px 这一带 ⇒ 退回底边居中（那里实测是真空的） */
+@media (max-width: 1160px) {
+  .nav-toggle-fab,
+  .main-layout.nav-collapsed .nav-toggle-fab {
+    top: auto;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
 /* 快捷键提示：触摸设备上没有键盘，别给误导 */
 .nav-toggle-kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
