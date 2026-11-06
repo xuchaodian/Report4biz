@@ -1874,6 +1874,8 @@ import { useCompetitorStore } from '@/stores/competitor'
 import { useBrandIconStore } from '@/stores/brandIcon'
 import { useBrandStoreStore } from '@/stores/brandStore'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
+// v1.13.322：地图页「收起顶部导航」状态（MainLayout 切换，本页据此重算容器尺寸）
+import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { currentUidOr } from '@/utils/currentUser.js'
 import { authHeaders } from '@/utils/authHeaders.js'
@@ -1981,6 +1983,21 @@ const brandIconMap = computed(() => {
 
 // 地图实例
 let map = null
+
+// ── 顶部导航收起 ⇒ 容器变大 ⇒ 必须让 Leaflet 重算（v1.13.322）─────────────
+// 🔴 顶栏有 180ms 的 height 过渡，这期间容器尺寸一直在变。
+//    只调一次 invalidateSize 会留下「地图右/下边缘一条空白」或瓦片错位 ——
+//    Leaflet 的经典症状。所以分几次调（0/100/220/340ms），覆盖整个过渡。
+// ⚠️ `pan:false` 必须带：默认会为了保持中心点而平移，全屏切换时地图会"自己动一下"。
+const uiStore = useUiStore()
+watch(
+  () => uiStore.navCollapsed,
+  () => {
+    ;[0, 100, 220, 340].forEach((delay) => {
+      setTimeout(() => { if (map) map.invalidateSize({ pan: false }) }, delay)
+    })
+  }
+)
 let tileLayer = null
 let businessLayer = null
 let competitorLayer = null  // 竞品门店图层

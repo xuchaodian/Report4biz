@@ -17,7 +17,12 @@ export default {
     users: '用户管理',
     apiOpen: 'API开放',
     dashboard: '数据大屏',
-    account: '账号'
+    account: '账号',
+    // 地图页全屏切换（v1.13.322）
+    fullscreenMap: '全屏地图',
+    showNav: '显示导航',
+    fullscreenHint: '收起顶部导航，让地图占满整个屏幕（快捷键 F）',
+    showNavHint: '重新显示顶部导航（快捷键 F）'
   },
   // ===== 登录页 =====
   login: {

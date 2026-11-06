@@ -1,5 +1,5 @@
 <template>
-  <div class="main-layout">
+  <div class="main-layout" :class="{ 'nav-collapsed': navCollapsed }">
     <!-- L9（v1.13.175 A 档）跳到主内容：键盘/读屏用户按 Tab 的首个焦点即命中，
          一跳跳过顶栏全部导航直达 <main id="main-content">。
          ⛔ 必须是最外层第一个可聚焦元素，插在 <header> 之前 -->
@@ -156,6 +156,26 @@
       <router-view />
     </main>
 
+    <!-- 地图页「收起导航」切换（v1.13.322）
+         ⚠️ 刻意用 position:fixed 而不是挂在 .main-content 里：
+            .main-content 是所有页面共用的，给它加 position:relative 会让其它页面里
+            原本相对视口定位的绝对定位元素整体移位（改动面不可控）。
+            fixed 相对视口，与父级无关，零副作用。
+         ⚠️ 收起后顶栏没了，「我的账户/退出登录/用户管理」全都不可达
+            ⇒ 这个按钮必须常驻可见，⛔ 不能藏进任何菜单里。 -->
+    <button
+      v-if="isMapPage"
+      type="button"
+      class="nav-toggle-fab"
+      :aria-pressed="navCollapsed"
+      :title="navCollapsed ? $t('nav.showNavHint') : $t('nav.fullscreenHint')"
+      @click="toggleNav"
+    >
+      <el-icon><FullScreen /></el-icon>
+      <span>{{ navCollapsed ? $t('nav.showNav') : $t('nav.fullscreenMap') }}</span>
+      <kbd class="nav-toggle-kbd">F</kbd>
+    </button>
+
     <!-- 上传模板对话框 -->
     <el-dialog v-model="templateDialogVisible" title="上传Excel报表模板" width="500px">
       <div class="template-upload-tips">
@@ -284,19 +304,64 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
-import { useRouter } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound } from '@element-plus/icons-vue'
+import { useRouter, useRoute } from 'vue-router'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, FullScreen } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
+// v1.13.322：地图页「收起导航、全屏看地图」的个人偏好
+import { useUiStore } from '@/stores/ui'
 import OnboardingGuide from '@/components/guide/OnboardingGuide.vue'
 import FeedbackDialog from '@/components/FeedbackDialog.vue'
 import axios from 'axios'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
+const uiStore = useUiStore()
+
+// ── 地图页「收起导航」（v1.13.322）────────────────────────────────────────────
+//
+// 只有地图页（/）允许收起：表格/管理页收起后只剩一张表，返回入口都没了。
+const isMapPage = computed(() => route.path === '/')
+
+/**
+ * 实际是否收起 = 「在地图页」AND「偏好为收起」。
+ * ⚠️ 两个条件缺一不可：只看偏好会在表格页也收起导航（用户明确要求只在地图页）。
+ */
+const navCollapsed = computed(() => isMapPage.value && uiStore.navCollapsed)
+
+const toggleNav = () => uiStore.toggleNav()
+
+/**
+ * F 键切换全屏。
+ * ⚠️ 三个排除：
+ *   ① 非地图页不响应（别在输入框里按个 f 就把导航收了）
+ *   ② 输入框/可编辑区不响应
+ *   ③ 带 Ctrl/Cmd/Alt 不响应 —— 地图页已占用 Ctrl+F（聚焦搜索），不能抢
+ *   ④ `e.isComposing`：中文输入法候选期间按 f 不该触发
+ */
+const handleGlobalKey = (e) => {
+  if (!isMapPage.value) return
+  if (e.isComposing) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (e.key === 'f' || e.key === 'F') {
+    e.preventDefault()
+    uiStore.toggleNav()
+  }
+}
+
+// 偏好按 uid 存 ⇒ 必须等 user 就绪后再读，否则读到的是 `_anon` 键
+// （表现：切账号后全屏设置不跟着变）
+watch(
+  () => userStore.user?.id,
+  (id) => { if (id) uiStore.loadNavPref() },
+  { immediate: true }
+)
 
 // 配额显示
 const quotaLoading = ref(false)
@@ -437,6 +502,7 @@ const handleVisibilityForVip = () => {
 }
 
 onMounted(() => {
+  document.addEventListener('keydown', handleGlobalKey)
   userStore.fetchUser().then(fetchPendingCounts)
   // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
   userStore.fetchOrgRole()
@@ -449,6 +515,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleGlobalKey)
   if (vipPendingTimer) {
     clearInterval(vipPendingTimer)
     vipPendingTimer = null
@@ -680,6 +747,80 @@ const doExport = async (type) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+/* ── 地图页「收起导航」（v1.13.322）──────────────────────────────────────
+   做法：顶栏高度压到 0（不是 display:none）。
+   为什么不用 display:none：没有过渡、是硬跳变，而且 Leaflet 在容器尺寸突变时
+   更容易出现半帧错位；高度过渡更平滑，地图侧的 invalidateSize 由 MapView 自己跟。
+   🔴 overflow:hidden 必须加 —— 否则高度 0 时 logo/导航会溢出盖到地图上。
+   🔴 min-height:0 必须加 —— flex 子项默认 min-height:auto，光写 height:0 压不下去。 */
+.header {
+  transition: height 0.18s ease, padding 0.18s ease, border-bottom-color 0.18s ease, border-bottom-width 0.18s ease;
+}
+.main-layout.nav-collapsed .header {
+  height: 0;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  /* 🔴 border-bottom-width 必须归 0：只设 color:transparent 的话边框仍在，
+     收起后 header 实测还有 1px（地图就少 1px，量出来 535 而不是 536）。 */
+  border-bottom-width: 0;
+  overflow: hidden;
+}
+
+/* 全屏切换按钮：常驻可见 —— 收起后顶栏里的「我的账户/退出登录」全都不可达，
+   这是唯一能回去的入口，⛔ 不能藏进任何菜单。 */
+.nav-toggle-fab {
+  position: fixed;
+  top: calc(var(--header-height) + 10px);
+  right: 10px;
+  z-index: 1100;          /* 高于 Leaflet 控件（1000） */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #303133;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: top 0.18s ease, background 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: #f5f7fa;
+    border-color: #c0c4cc;
+  }
+  &:focus-visible {
+    outline: 2px solid #409eff;
+    outline-offset: 2px;
+  }
+}
+.main-layout.nav-collapsed .nav-toggle-fab {
+  top: 10px;
+}
+
+/* 快捷键提示：触摸设备上没有键盘，别给误导 */
+.nav-toggle-kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  border: 1px solid #dcdfe6;
+  border-radius: 3px;
+  color: #909399;
+  background: #fafafa;
+}
+@media (hover: none) {
+  .nav-toggle-kbd {
+    display: none;
+  }
 }
 
 .header {

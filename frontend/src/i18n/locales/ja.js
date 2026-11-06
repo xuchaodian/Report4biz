@@ -17,7 +17,12 @@ export default {
     users: 'ユーザー管理',
     apiOpen: 'API開放',
     dashboard: 'ダッシュボード',
-    account: 'アカウント'
+    account: 'アカウント',
+    // 地図全画面切り替え（v1.13.322）
+    fullscreenMap: '全画面地図',
+    showNav: 'ナビを表示',
+    fullscreenHint: '上部ナビを隠して地図を全画面表示（ショートカット F）',
+    showNavHint: '上部ナビを再表示（ショートカット F）'
   },
   // ===== ログインページ =====
   login: {

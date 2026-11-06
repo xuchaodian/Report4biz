@@ -17,7 +17,12 @@ export default {
     users: 'Users',
     apiOpen: 'API Access',
     dashboard: 'Dashboard',
-    account: 'Account'
+    account: 'Account',
+    // Map fullscreen toggle (v1.13.322)
+    fullscreenMap: 'Fullscreen map',
+    showNav: 'Show navigation',
+    fullscreenHint: 'Hide the top navigation so the map fills the screen (shortcut: F)',
+    showNavHint: 'Show the top navigation again (shortcut: F)'
   },
   // ===== Login =====
   login: {
