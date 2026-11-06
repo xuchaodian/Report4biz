@@ -156,25 +156,13 @@
       <router-view />
     </main>
 
-    <!-- 地图页「收起导航」切换（v1.13.322）
-         ⚠️ 刻意用 position:fixed 而不是挂在 .main-content 里：
-            .main-content 是所有页面共用的，给它加 position:relative 会让其它页面里
-            原本相对视口定位的绝对定位元素整体移位（改动面不可控）。
-            fixed 相对视口，与父级无关，零副作用。
-         ⚠️ 收起后顶栏没了，「我的账户/退出登录/用户管理」全都不可达
-            ⇒ 这个按钮必须常驻可见，⛔ 不能藏进任何菜单里。 -->
-    <button
-      v-if="isMapPage"
-      type="button"
-      class="nav-toggle-fab"
-      :aria-pressed="navCollapsed"
-      :title="navCollapsed ? $t('nav.showNavHint') : $t('nav.fullscreenHint')"
-      @click="toggleNav"
-    >
-      <el-icon><FullScreen /></el-icon>
-      <span>{{ navCollapsed ? $t('nav.showNav') : $t('nav.fullscreenMap') }}</span>
-      <kbd class="nav-toggle-kbd">F</kbd>
-    </button>
+    <!-- 地图页「收起导航」切换按钮 v1.13.325 起**不在这里**了。
+         🔴 移到 `MapView.vue` 的 `.map-toolbar-rail`（地图工具箱正下方）：
+            它必须和工具箱在同一个 flex 列里，工具箱展开（42 → 199）时按钮才能自动跟着下移。
+            放在 MainLayout 里只能靠固定 top，面板一展开就被压住。
+         🔴 但「收起后顶栏里的我的账户/退出登录/用户管理全都不可达」这条没变
+            ⇒ 按钮必须常驻可见，⛔ 不能藏进任何菜单。
+         🔴 F 键与状态仍由这里管（stores/ui.js + 全局 keydown），按钮只是触发器。 -->
 
     <!-- 上传模板对话框 -->
     <el-dialog v-model="templateDialogVisible" title="上传Excel报表模板" width="500px">
@@ -307,7 +295,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter, useRoute } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, FullScreen } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -770,76 +758,10 @@ const doExport = async (type) => {
   overflow: hidden;
 }
 
-/* 全屏切换按钮：常驻可见 —— 收起后顶栏里的「我的账户/退出登录」全都不可达，
-   这是唯一能回去的入口，⛔ 不能藏进任何菜单。
-   🔴 v1.13.324：定位改为「地址搜索框右侧」。
-   右上角 top:10 那一整条被四个地图面板排满（地图工具箱 right:15 / POI 搜索 right:150 /
-   门店工具 right:285 / 商圈工具 right:420，均 z-index 1001）⇒ 根本插不进去。
-   323 曾放到「底边居中」，实测位置在 [583,535]（视口 577 高）—— 功能正常但**太不显眼**，
-   业主反馈「没看到按钮」：宽屏上它贴在屏幕最下沿，视线根本不会落到那里。
-   现在放在地址搜索框（left:10 + width:320 ⇒ 右边缘 330）右侧 10px，
-   与「商圈工具/门店工具/地图工具箱」同一水平带 ⇒ 一眼可见，且完全不压任何控件。
-   收起时 header 归零，按钮同步上移到 y=10（仍与搜索框同一带、x 不变）。
-   ⚠️ 窄屏（<1160）工具面板左移会压过来 ⇒ 退回底边居中兜底。 */
-.nav-toggle-fab {
-  position: fixed;
-  top: calc(var(--header-height) + 10px);
-  left: 340px;            /* 搜索框右边缘 330 + 10 间距 */
-  z-index: 1100;          /* 高于 Leaflet 控件（1000） */
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 12px;
-  font-family: inherit;
-  color: #303133;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: top 0.18s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+/* 全屏切换按钮 v1.13.325 起搬到 `MapView.vue`（.rail-nav-toggle），
+   与「地图工具箱」同在一个 flex 列 ⇒ 工具箱展开时按钮自动下移。
+   这里不再保留任何 .nav-toggle-fab 样式，避免两套定位各自漂移。 */
 
-  &:hover {
-    background: #f5f7fa;
-    border-color: #c0c4cc;
-  }
-  &:focus-visible {
-    outline: 2px solid #409eff;
-    outline-offset: 2px;
-  }
-}
-.main-layout.nav-collapsed .nav-toggle-fab {
-  top: 10px;
-}
-/* 窄屏：右上的工具面板会左移压到 340px 这一带 ⇒ 退回底边居中（那里实测是真空的） */
-@media (max-width: 1160px) {
-  .nav-toggle-fab,
-  .main-layout.nav-collapsed .nav-toggle-fab {
-    top: auto;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-}
-/* 快捷键提示：触摸设备上没有键盘，别给误导 */
-.nav-toggle-kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  line-height: 1;
-  padding: 2px 4px;
-  border: 1px solid #dcdfe6;
-  border-radius: 3px;
-  color: #909399;
-  background: #fafafa;
-}
-@media (hover: none) {
-  .nav-toggle-kbd {
-    display: none;
-  }
-}
 
 .header {
   height: var(--header-height);

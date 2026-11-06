@@ -64,16 +64,36 @@
       @toggle-cluster="toggleCluster"
     />
 
-    <!-- 工具栏 - 右上角收起/展开 -->
-    <MapToolbar
-      v-model:expanded="toolbarExpanded"
-      :active-tool="activeTool"
-      :city-trade-area-layer-active="cityTradeAreaLayer !== null"
-      :measurement-result="measurementResult"
-      @set-tool="setTool"
-      @open-city-trade-area="openCityTradeArea"
-      @clear-drawings="clearDrawings"
-    />
+    <!-- 右上角纵向栏：地图工具箱 + 全屏切换（v1.13.325）
+         🔴 两者必须在**同一个 flex 列**里：工具箱展开时高度 42 → 199，
+            按钮若用固定 top 就会被面板压住或留一大块空隙。
+             外层 absolute 定位 + flex column ⇒ 按钮永远紧贴面板下方。
+         ⚠️ 这一栏占的就是原 `.toolbar` 的位置（top:10 right:15），
+            MapToolbar 用 rail-mode 交出定位权，不改其它面板的 right 值。 -->
+    <div class="map-toolbar-rail">
+      <MapToolbar
+        rail-mode
+        v-model:expanded="toolbarExpanded"
+        :active-tool="activeTool"
+        :city-trade-area-layer-active="cityTradeAreaLayer !== null"
+        :measurement-result="measurementResult"
+        @set-tool="setTool"
+        @open-city-trade-area="openCityTradeArea"
+        @clear-drawings="clearDrawings"
+      />
+      <!-- 全屏切换：常驻可见（收起后顶栏里的「我的账户/退出登录」全都不可达，
+           这是唯一能回去的入口，⛔ 不能藏进任何菜单） -->
+      <button
+        class="rail-nav-toggle"
+        type="button"
+        :aria-pressed="uiStore.navCollapsed"
+        :title="(uiStore.navCollapsed ? $t('nav.showNavHint') : $t('nav.fullscreenHint')) + '（快捷键 F）'"
+        @click="uiStore.toggleNav()"
+      >
+        <el-icon><FullScreen /></el-icon>
+        <span>{{ uiStore.navCollapsed ? $t('nav.showNav') : $t('nav.fullscreenMap') }}</span>
+      </button>
+    </div>
 
     <!-- 场景引导（v1.13.256）：数据就绪后才出现 ⇒ 与 OnboardingGuide（数据准备向导）天然互斥 -->
     <SceneGuide
@@ -12654,6 +12674,54 @@ function getHeatmapCellStyle(nums, idx) {
   80%  { transform: translateY(-3px) scale(0.97); }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
+/* ===== 右上角纵向栏：地图工具箱 + 全屏切换（v1.13.325）=====
+   🔴 两者的父子关系就是为了「按钮跟着面板高度走」：
+      工具箱展开 42 → 199，按钮自动下移，不需要任何 JS 监听高度。
+   ⚠️ 这栏占据原 `.toolbar` 的坐标（top:10 right:15），其它面板仍用各自的 right 值，
+      ⛔ 不要因为加了这一层就去调 POI/门店/商圈面板的 right。 */
+.map-toolbar-rail {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  /* 宽度由最宽子元素撑开（工具箱 111px），按钮 stretch 后与面板等宽 */
+}
+.rail-nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  color: #303133;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.rail-nav-toggle:hover {
+  background: #f5f7fa;
+  border-color: #c0c4cc;
+}
+.rail-nav-toggle:focus-visible {
+  outline: 2px solid #409eff;
+  outline-offset: 2px;
+}
+.rail-nav-toggle .el-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 /* ===== 整城网格分级图例（v1.13.266）===== */
 .grid-legend {
   position: absolute;
