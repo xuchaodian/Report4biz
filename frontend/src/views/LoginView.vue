@@ -22,6 +22,7 @@
 
     <AuthCard :title="$t('login.title')" :subtitle="$t('login.subtitle')">
       <el-form
+        v-if="!needTotp"
         ref="formRef"
         :model="form"
         :rules="rules"
@@ -84,6 +85,38 @@
         </el-form-item>
       </el-form>
 
+      <!-- 两步验证第二步（v1.13.321）
+           ⚠️ v-if / v-else 必须**紧邻**：中间插任何元素都会让 v-else 失配。 -->
+      <el-form v-else class="login-form" @submit.prevent="handleTotp">
+        <p class="totp-hint">{{ $t('login.totpHint') }}</p>
+        <el-form-item>
+          <el-input
+            v-model="totpCode"
+            size="large"
+            maxlength="10"
+            :placeholder="$t('login.totpPlaceholder')"
+            :aria-label="$t('login.totpLabel')"
+            autocomplete="one-time-code"
+            :prefix-icon="Key"
+            @keyup.enter="handleTotp"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            size="large"
+            :loading="userStore.loading"
+            class="auth-submit"
+            @click="handleTotp"
+          >
+            {{ $t('login.totpSubmit') }}
+          </el-button>
+        </el-form-item>
+        <div class="totp-back">
+          <el-button link @click="backToPassword">{{ $t('login.totpBack') }}</el-button>
+        </div>
+      </el-form>
+
       <template #footer>
         <span>{{ $t('login.noAccount') }}</span>
         <router-link to="/register">{{ $t('login.register') }}</router-link>
@@ -97,7 +130,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { User, Lock, ChatLineRound } from '@element-plus/icons-vue'
+import { User, Lock, ChatLineRound, Key } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { setAppLocale } from '@/i18n'
 import AuthBackground from '@/components/AuthBackground.vue'
@@ -132,6 +165,13 @@ const form = reactive({
 
 // 背景轮播逻辑已抽到 components/AuthBackground.vue（v1.13.151），四页共用
 
+// 两步验证第二步（v1.13.321）
+// needTotp 为真时密码已验过，但**还没登录**（后端只发了 5 分钟票据）
+const needTotp = ref(false)
+const totpCode = ref('')
+const totpTicket = ref('')
+const totpUsername = ref('')
+
 const handleLogin = async () => {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
@@ -141,9 +181,50 @@ const handleLogin = async () => {
     ElMessage.success(t('login.success'))
     // 管理员账号定位为运维入口（用户管理），登录后直接落地「用户管理」
     router.push(userStore.isAdmin ? '/users' : '/')
-  } else {
-    ElMessage.error(result.message)
+    return
   }
+  // 🔴 开了两步验证：不是失败，是「还差一步」。绝不能在这里提示"登录失败"把人劝退。
+  if (result.needTotp) {
+    totpTicket.value = result.ticket
+    totpUsername.value = result.username || form.username
+    totpCode.value = ''
+    needTotp.value = true
+    return
+  }
+  ElMessage.error(result.message)
+}
+
+const handleTotp = async () => {
+  const code = totpCode.value.trim()
+  if (!code) {
+    ElMessage.warning(t('login.totpPlaceholder'))
+    return
+  }
+
+  const result = await userStore.loginTotp(totpTicket.value, code)
+  if (result.success) {
+    ElMessage.success(result.message || t('login.success'))
+    // 用恢复码登录 ⇒ 提醒立刻补一组（这是 Telegram/Google 一致的提示口径）
+    if (result.usedRecovery) {
+      ElMessage.warning(`该恢复码已作废，还剩 ${result.remainingRecoveryCodes ?? 0} 张，建议尽快重新生成`)
+    }
+    router.push(userStore.isAdmin ? '/users' : '/')
+    return
+  }
+  // 票据过期（5 分钟）⇒ 退回第一步，让用户重新输密码换票
+  if (/超时|重新登录/.test(result.message || '')) {
+    needTotp.value = false
+    totpCode.value = ''
+    ElMessage.warning(result.message)
+    return
+  }
+  ElMessage.error(result.message)
+}
+
+const backToPassword = () => {
+  needTotp.value = false
+  totpCode.value = ''
+  totpTicket.value = ''
 }
 </script>
 
@@ -172,6 +253,22 @@ const handleLogin = async () => {
 .login-lang-trigger:hover {
   background: rgba(0, 0, 0, 0.4);
   border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* 两步验证（v1.13.321）：提示文案要压在验证码输入框上方，说明"为什么突然要输码" */
+.totp-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #5a6b80;
+  background: #f2f7fd;
+  border-left: 3px solid #409eff;
+  border-radius: 4px;
+  padding: 9px 12px;
+}
+.totp-back {
+  text-align: center;
+  margin-top: -6px;
 }
 
 .login-forgot {

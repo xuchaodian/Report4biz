@@ -97,6 +97,10 @@
               <el-dropdown-item v-if="userStore.isAdmin" command="resale" class="dd-admin-item">
                 <el-icon><Key /></el-icon>{{ $t('nav.apiOpen') }}
               </el-dropdown-item>
+              <!-- v1.13.321：操作审计（谁改了配额/角色/删了号） -->
+              <el-dropdown-item v-if="userStore.isAdmin" command="audit" class="dd-admin-item">
+                <el-icon><Reading /></el-icon>操作审计
+              </el-dropdown-item>
               <el-dropdown-item command="profile" :divided="userStore.isAdmin">
                 <el-icon><User /></el-icon>个人中心
               </el-dropdown-item>
@@ -459,6 +463,8 @@ const handleCommand = async (command) => {
     router.push('/users')
   } else if (command === 'resale') {
     router.push('/resale')
+  } else if (command === 'audit') {
+    router.push('/audit-log')
   } else if (command === 'profile') {
     router.push('/account')
   } else if (command === 'brands') {

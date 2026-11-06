@@ -30,7 +30,9 @@ router.get('/', authenticate, requireAdmin, (req, res) => {
     
     // v1.13.216：补 disabled_at / disabled_prev_username —— 前端据此给已停用账号
     // 显示「已停用」徽章并回显**原用户名**（而不是 __disabled_<id>）
-    let sql = `SELECT id, username, email, role, vip_until, company, quota, created_at, disabled_at, disabled_prev_username, disabled_prev_email FROM users`
+    // v1.13.321：带 totp_enabled，用户管理页要显示「是否开启两步验证」
+    //   ⛔ 绝不 SELECT totp_secret —— 它一旦离开后端，2FA 就等于多一个泄露面
+    let sql = `SELECT id, username, email, role, vip_until, company, quota, created_at, disabled_at, disabled_prev_username, disabled_prev_email, totp_enabled FROM users`
     const params = []
     
     if (company) {
@@ -977,6 +979,51 @@ router.post('/:id/reset-password', authenticate, requireAdmin, (req, res) => {
   } catch (error) {
     console.error('重置密码错误:', error)
     res.status(500).json({ message: '重置密码失败' })
+  }
+})
+
+// 重置他人的两步验证（v1.13.321）
+//
+// 🔴 为什么必须有这条：手机丢了 / 换机没导出 / 连恢复码也丢了 ⇒ 该账号**永久进不来**。
+//    管理员重置密码也救不了（密码对了还要 6 位码）。
+// 🔴 也正因为它等于「绕过第二因子」的钥匙，所以：
+//    · 只给 admin；· 必须留审计（action=auth.totp_reset）；· 重置后要提醒客户立刻重开。
+// ⚠️ 重置后该账号恢复成「只用密码」，这期间是**弱于原来**的，
+//    所以响应文案必须把这句话说清楚，不能只回"已重置"。
+router.post('/:id/reset-2fa', authenticate, requireAdmin, (req, res) => {
+  try {
+    const userId = req.params.id
+    const db = getDb()
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!target) return res.status(404).json({ message: '用户不存在' })
+    if (!target.totp_enabled && !target.totp_secret) {
+      return res.status(400).json({ message: '该账号未开启两步验证' })
+    }
+
+    db.beginTx()
+    try {
+      db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(userId)
+      db.prepare('DELETE FROM totp_recovery_codes WHERE user_id = ?').run(userId)
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.AUTH_TOTP_RESET,
+        targetType: 'user',
+        targetId: userId,
+        detail: { username: target.username, wasEnabled: !!target.totp_enabled },
+      })
+      db.commitTx()
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 事务已结束等情况忽略 */ }
+      throw e
+    }
+
+    res.json({
+      message: `已重置「${target.username}」的两步验证。该账号现在**只需密码**即可登录，`
+        + `安全强度低于原来，请提醒其尽快重新开启。`,
+    })
+  } catch (error) {
+    console.error('重置两步验证错误:', error)
+    res.status(500).json({ message: '重置两步验证失败' })
   }
 })
 

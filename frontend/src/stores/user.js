@@ -78,15 +78,18 @@ export const useUserStore = defineStore('user', {
       this.loading = true
       try {
         const { data } = await axios.post(`${API_URL}/auth/login`, { username, password })
-        this.token = data.token
-        this.user = data.user
-        sessionStorage.setItem('token', data.token)
-        // 🔴 v1.13.198：userId 存 **sessionStorage**（按标签页隔离）。
-        //    存 localStorage 是全局共享的 ⇒ 多标签页登不同账号时后者覆盖前者，
-        //    导致所有「按 uid 命名」的本地数据读写到别人的命名空间（串档事故）。
-        sessionStorage.setItem('userId', String(data.user.id ?? ''))
-        localStorage.removeItem('userId')   // 清历史脏数据，防止旧值继续被误读
-        axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
+        // 🔴🔴 v1.13.321：账号开了两步验证时，后端**不发 token**，只发一张 5 分钟票据。
+        //   这里必须提前返回 —— 若继续往下走，会把 undefined 写进 sessionStorage，
+        //   表现为「提示登录成功、实际没登录」，而拦截器随后 401 又会把人踢回登录页。
+        if (data?.needTotp) {
+          return {
+            success: false,
+            needTotp: true,
+            ticket: data.ticket,
+            username: data.username || username,
+          }
+        }
+        this.applyLoginState(data)
         // 登录后获取配额
         await this.fetchQuota()
         return { success: true }
@@ -95,6 +98,43 @@ export const useUserStore = defineStore('user', {
       } finally {
         this.loading = false
       }
+    },
+
+    /**
+     * 两步验证：第二步 —— 用票据 + 6 位验证码（或恢复码）换正式 token。
+     */
+    async loginTotp(ticket, code) {
+      this.loading = true
+      try {
+        const { data } = await axios.post(`${API_URL}/auth/login/totp`, { ticket, code })
+        this.applyLoginState(data)
+        await this.fetchQuota()
+        return {
+          success: true,
+          usedRecovery: !!data.usedRecovery,
+          remainingRecoveryCodes: data.remainingRecoveryCodes,
+          message: data.message,
+        }
+      } catch (error) {
+        return { success: false, message: error.response?.data?.message || '验证失败' }
+      } finally {
+        this.loading = false
+      }
+    },
+
+    /**
+     * 落登录态（/login 与 /login/totp 共用同一份，⛔ 不要各写一遍）。
+     */
+    applyLoginState(data) {
+      this.token = data.token
+      this.user = data.user
+      sessionStorage.setItem('token', data.token)
+      // 🔴 v1.13.198：userId 存 **sessionStorage**（按标签页隔离）。
+      //    存 localStorage 是全局共享的 ⇒ 多标签页登不同账号时后者覆盖前者，
+      //    导致所有「按 uid 命名」的本地数据读写到别人的命名空间（串档事故）。
+      sessionStorage.setItem('userId', String(data.user.id ?? ''))
+      localStorage.removeItem('userId')   // 清历史脏数据，防止旧值继续被误读
+      axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     },
     
     // v1.13.149：extra = { ticket, hp_note }（注册防护票据 + 蜜罐，见 utils/registerGuard.js）

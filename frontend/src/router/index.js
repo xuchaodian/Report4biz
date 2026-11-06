@@ -89,6 +89,13 @@ const routes = [
         meta: { requiresAdmin: true }
       },
       {
+        // 操作审计（v1.13.321）—— 仅 admin；后端 /api/audit-log 也是组级 requireAdmin
+        path: 'audit-log',
+        name: 'AuditLog',
+        component: () => import('@/views/AuditLogView.vue'),
+        meta: { requiresAdmin: true }
+      },
+      {
         path: 'resale',
         name: 'Resale',
         component: () => import('@/views/ResaleView.vue'),

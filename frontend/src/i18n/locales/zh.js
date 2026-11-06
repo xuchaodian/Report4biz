@@ -33,7 +33,13 @@ export default {
     // 无障碍标签（aria-label 用；与 placeholder 分开，读屏不会念成「请输入用户名」）
     usernameLabel: '用户名',
     passwordLabel: '密码',
-    lang: '语言'
+    lang: '语言',
+    // 两步验证（v1.13.321）
+    totpHint: '该账号已开启两步验证，请输入身份验证器中的 6 位验证码',
+    totpPlaceholder: '6 位验证码或恢复码',
+    totpSubmit: '验证并登录',
+    totpBack: '返回重新登录',
+    totpLabel: '两步验证码'
   },
   // ===== 城市洞察 =====
   cityInsight: {

@@ -59,11 +59,41 @@ export function signToken(user, tokenVersion) {
 }
 
 /**
+ * 签发「两步验证第二步」的临时票据（v1.13.321）。
+ *
+ * 场景：密码校验通过、但该账号开了 2FA ⇒ 先不发正式 token，
+ * 发一张 5 分钟的一次性票据，前端拿它 + 6 位验证码换正式 token。
+ *
+ * 🔴🔴 **这张票不能当 token 用**，两道保险：
+ *   ① 载荷里**没有 role** ⇒ 任何 requireAdmin 的端点直接 403；
+ *   ② `verifyTokenPayload` 显式拒绝带 `purpose` 的载荷 ⇒ `authenticate` 一律 401。
+ *   ⛔ 别为了"省事"给它加上 role/tv —— 那等于把绕过 2FA 的钥匙发出去。
+ */
+export function signTotpTicket(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      purpose: 'totp',                 // 🔴 verifyTokenPayload 见它即拒
+      jti: crypto.randomUUID()
+    },
+    JWT_SECRET,
+    { expiresIn: '5m' }
+  )
+}
+
+/**
  * 校验已解码的 payload 是否仍然有效（jwt.verify 之外的业务层校验）。
  * @returns {{ ok: boolean, reason?: 'invalid'|'revoked'|'user_gone'|'stale'|'disabled' }}
  */
 export function verifyTokenPayload(decoded, db) {
   if (!decoded || decoded.id === undefined || decoded.id === null) {
+    return { ok: false, reason: 'invalid' }
+  }
+
+  // 🔴 v1.13.321：带 purpose 的载荷是**用途受限的临时票据**（如两步验证的第二步），
+  //   绝不能当登录态使用 —— 否则「密码 + 票据」就绕过了 6 位验证码。
+  //   ⛔ 不要删这段，也不要在 authenticate 里"顺手放行"。
+  if (decoded.purpose) {
     return { ok: false, reason: 'invalid' }
   }
 

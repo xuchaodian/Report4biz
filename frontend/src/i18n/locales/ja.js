@@ -33,7 +33,13 @@ export default {
     // アクセシビリティ用ラベル（aria-label 用）
     usernameLabel: 'ユーザー名',
     passwordLabel: 'パスワード',
-    lang: '言語'
+    lang: '言語',
+    // 2段階認証（v1.13.321）
+    totpHint: 'このアカウントは2段階認証が有効です。認証アプリの6桁コードを入力してください',
+    totpPlaceholder: '6桁コードまたはリカバリーコード',
+    totpSubmit: '確認してログイン',
+    totpBack: 'パスワード入力に戻る',
+    totpLabel: '2段階認証コード'
   },
   // ===== 都市インサイト =====
   cityInsight: {

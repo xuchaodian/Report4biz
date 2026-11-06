@@ -173,6 +173,46 @@ export async function initDatabase() {
     // 字段已存在，忽略
   }
 
+  // 两步验证（TOTP）—— v1.13.321
+  //
+  // 由来（2026-11-06 安全审计遗留 🟠）：admin 账号只有密码一层，
+  // 且密码最低 6 位。一旦密码泄露/复用，直接拿到后台（改配额、改角色、删号）。
+  //
+  // 🔴 totp_secret 是 base32 明文存储，**不加密**：
+  //    本项目的威胁模型是「外部攻击者 + 内部人误操作」，不是「拿到磁盘的人」——
+  //    后者能直接改 users.role，加密 secret 毫无意义。
+  //    若将来要做静态加密，注意备份恢复后旧密钥会全失效。
+  // ⚠️ totp_secret 非空但 totp_enabled=0 表示「已生成但还没验证启用」
+  //    （setup 与 enable 两步之间），这种状态**登录时不要求验证码**。
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN totp_secret TEXT`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+  try {
+    db.run(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0`)
+  } catch (e) {
+    // 字段已存在，忽略
+  }
+
+  // 2FA 恢复码（v1.13.321）
+  //
+  // 手机丢了/换机没导出 = 永久进不来后台。恢复码是唯一的自救通道，
+  // 同时也是 admin 重置之外的第二条路。
+  // 🔴 只存 sha256 哈希：与密码同思路，库泄露也不能直接拿去登录。
+  // 🔴 used_at 非空 = 已用过，**不删除**（审计上要看得出「用过哪几张」）。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS totp_recovery_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code_hash TEXT NOT NULL,
+      used_at TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_totp_recovery_user ON totp_recovery_codes(user_id)`)
+
   // 创建管理员总配额表
   db.run(`
     CREATE TABLE IF NOT EXISTS admin_quota (

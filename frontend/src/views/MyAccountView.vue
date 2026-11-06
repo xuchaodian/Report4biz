@@ -120,6 +120,9 @@
       </el-form>
     </el-card>
 
+    <!-- 两步验证（v1.13.321）—— 独立组件，不把 5000 行文件撑得更大 -->
+    <TwoFactorCard />
+
     <!-- 剩余次数卡片 -->
     <el-card class="quota-card">
       <template #header>
@@ -763,6 +766,8 @@ import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
 import QuotaPurchaseDialog from '@/components/QuotaPurchaseDialog.vue'
+// v1.13.321：两步验证设置卡片
+import TwoFactorCard from '@/components/TwoFactorCard.vue'
 import { QUOTA_WARN_THRESHOLD } from '@/utils/quotaContact'
 // v1.13.166 多订单对比看板：解析器抽成单一权威模块（原先内联在本文件，新看板与图表必须同口径）
 import { extractApiResult, extractPopSums, extractFlowData, extractConsumeData } from '@/utils/smartstepsExtract'

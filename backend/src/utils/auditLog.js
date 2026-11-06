@@ -46,6 +46,11 @@ export const AUDIT_ACTIONS = {
   CITYDATA_IMPORT: 'citydata.import',
   CITYDATA_UPSERT: 'citydata.upsert',
   CITYDATA_UPDATE: 'citydata.update',
+  // 两步验证（v1.13.321）—— 开启/关闭/被重置都是安全敏感动作
+  AUTH_TOTP_ENABLE: 'auth.totp_enable',
+  AUTH_TOTP_DISABLE: 'auth.totp_disable',
+  AUTH_TOTP_FAIL: 'auth.totp_fail',
+  AUTH_TOTP_RESET: 'auth.totp_reset',
 }
 
 /** detail JSON 的上限（字符）。超长截断并标注，避免一条日志把整库撑大。 */

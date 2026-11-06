@@ -7,9 +7,17 @@ import { JWT_SECRET, APP_BASE_URL } from '../config.js'
 import { sendPasswordResetMail, isMailEnabled } from '../utils/mailer.js'
 import { overLimit, peekLimit } from '../utils/rateLimit.js'
 import {
-  signToken, verifyTokenPayload, revokeToken, bumpTokenVersion, currentTokenVersion,
+  signToken, signTotpTicket, verifyTokenPayload, revokeToken, bumpTokenVersion, currentTokenVersion,
   SESSION_EXPIRED_MESSAGE
 } from '../utils/tokenAuth.js'
+// v1.13.321：两步验证（零依赖 TOTP，见 utils/totp.js）
+import {
+  generateSecret, verifyTotp, otpauthUri,
+  generateRecoveryCodes, hashRecoveryCode, normalizeRecoveryCode,
+} from '../utils/totp.js'
+import { writeAudit, AUDIT_ACTIONS } from '../utils/auditLog.js'
+// v1.13.321：2FA 的管理端点必须要求已登录（登录/注册那几个刻意不挂）
+import { authenticate } from '../middleware/auth.js'
 import {
   issueRegisterTicket, verifyRegisterTicket, clientIpOf,
   REG_WINDOW_MS, REG_MAX_PER_IP, REG_MIN_FILL_MS, REG_HONEYPOT_FIELD, REG_TICKET_MESSAGES
@@ -205,6 +213,18 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ message: '用户名或密码错误' })
     }
 
+    // 🔴🔴 v1.13.321：开了两步验证 ⇒ **先不发正式 token**，只发一张 5 分钟票据。
+    //   密码通过 ≠ 身份确认完毕。此时若直接发 token，2FA 等于没开。
+    //   票据本身不能调任何 API（verifyTokenPayload 见 purpose 即拒），只能换 token。
+    if (user.totp_enabled) {
+      return res.json({
+        message: '请输入身份验证器中的 6 位验证码',
+        needTotp: true,
+        ticket: signTotpTicket(user),
+        username: user.username,
+      })
+    }
+
     // 生成JWT（v1.13.150：内嵌 jti + 账号版本快照 tv，便于服务端撤销，见 utils/tokenAuth.js）
     const token = signToken(user, user.token_version)
 
@@ -231,6 +251,289 @@ router.post('/login', (req, res) => {
   } catch (error) {
     console.error('登录错误:', error)
     res.status(500).json({ message: '登录失败' })
+  }
+})
+
+/**
+ * 登录成功时返回给前端的用户对象 —— 与 /login 里的内联结构**逐字一致**。
+ * ⚠️ 必须带 `vip_until`：前端 `userStore.isVipActive` 依赖它判有效期，
+ *    漏了会退回「长期有效」而静默放行 VIP 门禁（v1.13.213 踩过）。
+ * ⛔ 绝不能带 `password` / `totp_secret` / `token_version`。
+ */
+function publicUser(db, user) {
+  const logoInfo = resolveLogo(db, user)
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    vip_until: user.vip_until || null,
+    company: user.company,
+    logo: user.logo || null,
+    ...logoInfo,
+    quota: user.quota,
+  }
+}
+
+// ============================================================================
+// 两步验证（TOTP）—— v1.13.321
+//
+// 起因（2026-11-06 安全审计遗留 🟠）：admin 账号只有密码一层、密码最低 6 位，
+// 一旦泄露/复用就直接拿到后台（改配额、改角色、删号）。
+//
+// 🔒 五条设计铁律（改这块前先读）：
+//   ① 登录时「密码通过 ≠ 身份确认完毕」：开了 2FA 只发 5 分钟**票据**，不发 token。
+//      票据没有 role、且 verifyTokenPayload 见 `purpose` 即拒 ⇒ 调不了任何 API。
+//   ② 票据**一次性**：换到 token 时立刻 revokeToken(burned)，防止同一张票反复试码。
+//   ③ 验证码失败**计入与密码同一个限流桶**（账号 5 次 / IP 20 次 / 15min）——
+//      否则 2FA 就变成「6 位数字的免费暴力破解靶子」。
+//   ④ 恢复码**只存 sha256**、用过即标记 used_at（不删除，审计要看得出用过哪几张）。
+//      恢复码登录成功后要提示用户重新生成一组（剩几张会显示）。
+//   ⑤ 关闭 2FA 必须**同时**验密码 + 验证码：只验其一，等于「拿到 token 就能永久关掉
+//      第二因子」，2FA 形同虚设。
+// ============================================================================
+
+/**
+ * 第二步：票据 + 6 位验证码（或恢复码）换正式 token。
+ * 刻意不挂 authenticate —— 此时用户还没有登录态，只有票据。
+ */
+router.post('/login/totp', (req, res) => {
+  try {
+    const { ticket, code } = req.body || {}
+    if (!ticket || !code) {
+      return res.status(400).json({ message: '缺少票据或验证码' })
+    }
+
+    let decoded
+    try {
+      decoded = jwt.verify(ticket, JWT_SECRET)
+    } catch (e) {
+      // 过期/伪造统一文案，不区分（避免探测）
+      return res.status(401).json({ message: '验证已超时，请重新登录' })
+    }
+    if (decoded?.purpose !== 'totp' || !decoded?.id) {
+      // 🔴 拿正式 token 来换 token 也要拒绝（防「用有效 token 绕过第二步」）
+      return res.status(401).json({ message: '验证已超时，请重新登录' })
+    }
+
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id)
+    if (!user || user.disabled_at) {
+      return res.status(401).json({ message: '账号不可用，请重新登录' })
+    }
+
+    // 期间被管理员关掉了 2FA ⇒ 密码已验过，直接放行（没有任何降级风险）
+    if (!user.totp_enabled || !user.totp_secret) {
+      const t = signToken(user, user.token_version)
+      return res.json({ message: '登录成功', token: t, twoFactorDisabled: true, user: publicUser(db, user) })
+    }
+
+    const ip = clientIpOf(req)
+    const acctKey = `totp:u:${user.id}`
+    const ipKey = `totp:ip:${ip}`
+    if (peekLimit(acctKey, LOGIN_MAX_PER_ACCOUNT, LOGIN_WINDOW_MS) ||
+        peekLimit(ipKey, LOGIN_MAX_PER_IP, LOGIN_WINDOW_MS)) {
+      console.warn('[auth][totp] 限流命中:', ip, user.username)
+      res.set('Retry-After', String(Math.ceil(LOGIN_WINDOW_MS / 1000)))
+      return res.status(429).json({ message: '验证码尝试过于频繁，请 15 分钟后再试' })
+    }
+
+    const input = String(code).trim()
+    let ok = false
+    let usedRecovery = false
+    let remainingRecovery = null
+
+    // ① 先按 TOTP 验（6 位纯数字）
+    if (/^\d{6}$/.test(input.replace(/[\s-]/g, ''))) {
+      ok = verifyTotp(input, user.totp_secret)
+    }
+
+    // ② 再按恢复码验（10 位字母数字）
+    if (!ok) {
+      const hash = hashRecoveryCode(normalizeRecoveryCode(input))
+      const row = db
+        .prepare('SELECT id FROM totp_recovery_codes WHERE user_id = ? AND code_hash = ? AND used_at IS NULL')
+        .get(user.id, hash)
+      if (row) {
+        ok = true
+        usedRecovery = true
+        db.prepare('UPDATE totp_recovery_codes SET used_at = ? WHERE id = ?').run(new Date().toISOString(), row.id)
+        remainingRecovery = db
+          .prepare('SELECT COUNT(*) AS c FROM totp_recovery_codes WHERE user_id = ? AND used_at IS NULL')
+          .get(user.id)?.c ?? 0
+      }
+    }
+
+    if (!ok) {
+      // ③ 失败计入密码同款限流桶（见文件头 ③）
+      overLimit(acctKey, LOGIN_MAX_PER_ACCOUNT, LOGIN_WINDOW_MS)
+      overLimit(ipKey, LOGIN_MAX_PER_IP, LOGIN_WINDOW_MS)
+      writeAudit({
+        req,
+        action: AUDIT_ACTIONS.AUTH_TOTP_FAIL,
+        targetType: 'user',
+        targetId: user.id,
+        detail: { username: user.username, ip },
+      })
+      return res.status(401).json({ message: '验证码不正确' })
+    }
+
+    // ② 票据一次性：换到 token 立刻烧掉
+    try { revokeToken(decoded, db) } catch (e) { console.error('[auth][totp] 票据作废失败:', e.message) }
+
+    const token = signToken(user, user.token_version)
+    res.json({
+      message: usedRecovery
+        ? `恢复码校验通过（该码已作废，还剩 ${remainingRecovery} 张）`
+        : '登录成功',
+      token,
+      usedRecovery,
+      remainingRecoveryCodes: remainingRecovery,
+      user: publicUser(db, user),
+    })
+  } catch (error) {
+    console.error('[auth][totp] 第二步校验失败:', error)
+    res.status(500).json({ message: '验证失败，请重试' })
+  }
+})
+
+/** 当前账号的 2FA 状态（不返回 secret —— 已启用后连自己也不该再看到） */
+router.get('/2fa/status', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const user = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id)
+    if (!user) return res.status(404).json({ message: '用户不存在' })
+    const remaining = db
+      .prepare('SELECT COUNT(*) AS c FROM totp_recovery_codes WHERE user_id = ? AND used_at IS NULL')
+      .get(req.user.id)?.c ?? 0
+    res.json({ enabled: !!user.totp_enabled, remainingRecoveryCodes: remaining })
+  } catch (error) {
+    console.error('[auth][2fa] 查询状态失败:', error)
+    res.status(500).json({ message: '查询失败' })
+  }
+})
+
+/**
+ * 第一步：生成密钥（**不启用**）。
+ * 前端展示 secret + otpauth URI，用户在 Authenticator 里手动添加，
+ * 然后调 /2fa/enable 提交一次验证码来证明「确实加上了」。
+ * ⚠️ 这个 secret 会写进 users.totp_secret，但 totp_enabled 仍为 0 ⇒ 登录不要求验证码。
+ */
+router.post('/2fa/setup', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+    if (!user) return res.status(404).json({ message: '用户不存在' })
+    if (user.totp_enabled) {
+      return res.status(400).json({ message: '两步验证已开启。如需更换设备，请先关闭再重新开启' })
+    }
+
+    const secret = generateSecret()
+    db.prepare('UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE id = ?').run(secret, user.id)
+
+    res.json({
+      message: '已生成密钥，请在身份验证器中添加后再输入验证码完成开启',
+      secret,
+      // 分组显示，便于手动抄写（4 位一组）
+      secretGrouped: secret.replace(/(.{4})/g, '$1 ').trim(),
+      otpauthUri: otpauthUri(secret, user.email || user.username),
+      issuer: '选址赢家Online',
+    })
+  } catch (error) {
+    console.error('[auth][2fa] 生成密钥失败:', error)
+    res.status(500).json({ message: '生成密钥失败' })
+  }
+})
+
+/** 第二步：提交一次验证码 → 真正启用，并返回一次性恢复码 */
+router.post('/2fa/enable', authenticate, (req, res) => {
+  try {
+    const { code } = req.body || {}
+    if (!code) return res.status(400).json({ message: '请输入验证码' })
+
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+    if (!user) return res.status(404).json({ message: '用户不存在' })
+    if (user.totp_enabled) return res.status(400).json({ message: '两步验证已开启' })
+    if (!user.totp_secret) return res.status(400).json({ message: '请先生成密钥' })
+
+    if (!verifyTotp(code, user.totp_secret)) {
+      return res.status(401).json({ message: '验证码不正确，请确认手机时间是否准确' })
+    }
+
+    const codes = generateRecoveryCodes(8)
+    db.beginTx()
+    try {
+      db.prepare('UPDATE users SET totp_enabled = 1 WHERE id = ?').run(user.id)
+      // 旧恢复码作废（重新开启时不该留着上一轮的）
+      db.prepare('DELETE FROM totp_recovery_codes WHERE user_id = ?').run(user.id)
+      const ins = db.prepare('INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (?, ?)')
+      for (const c of codes) ins.run(user.id, hashRecoveryCode(c))
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.AUTH_TOTP_ENABLE,
+        targetType: 'user',
+        targetId: user.id,
+        detail: { username: user.username, recoveryCodes: codes.length },
+      })
+      db.commitTx()
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 忽略 */ }
+      throw e
+    }
+
+    res.json({
+      message: '两步验证已开启。请立刻保存恢复码 —— 它们只显示这一次',
+      recoveryCodes: codes,
+    })
+  } catch (error) {
+    console.error('[auth][2fa] 开启失败:', error)
+    res.status(500).json({ message: '开启失败' })
+  }
+})
+
+/** 关闭：必须同时验密码 + 验证码（见文件头 ⑤） */
+router.post('/2fa/disable', authenticate, (req, res) => {
+  try {
+    const { password, code } = req.body || {}
+    if (!password || !code) {
+      return res.status(400).json({ message: '请输入密码和验证码' })
+    }
+
+    const db = getDb()
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+    if (!user) return res.status(404).json({ message: '用户不存在' })
+    if (!user.totp_enabled) return res.status(400).json({ message: '两步验证未开启' })
+
+    if (!bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ message: '密码不正确' })
+    }
+    if (!verifyTotp(code, user.totp_secret)) {
+      return res.status(401).json({ message: '验证码不正确' })
+    }
+
+    db.beginTx()
+    try {
+      db.prepare('UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id)
+      db.prepare('DELETE FROM totp_recovery_codes WHERE user_id = ?').run(user.id)
+      writeAudit({
+        req, db,
+        action: AUDIT_ACTIONS.AUTH_TOTP_DISABLE,
+        targetType: 'user',
+        targetId: user.id,
+        detail: { username: user.username },
+      })
+      db.commitTx()
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 忽略 */ }
+      throw e
+    }
+
+    const token = signToken(user, currentTokenVersion(db, user.id))
+    res.json({ message: '两步验证已关闭', token })
+  } catch (error) {
+    console.error('[auth][2fa] 关闭失败:', error)
+    res.status(500).json({ message: '关闭失败' })
   }
 })
 

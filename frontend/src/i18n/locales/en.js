@@ -33,7 +33,13 @@ export default {
     // Accessibility labels for aria-label (kept separate from placeholder)
     usernameLabel: 'Username',
     passwordLabel: 'Password',
-    lang: 'Language'
+    lang: 'Language',
+    // Two-factor authentication (v1.13.321)
+    totpHint: 'Two-factor authentication is enabled for this account. Enter the 6-digit code from your authenticator app.',
+    totpPlaceholder: '6-digit code or recovery code',
+    totpSubmit: 'Verify and sign in',
+    totpBack: 'Back to password',
+    totpLabel: 'Two-factor code'
   },
   // ===== City Insight =====
   cityInsight: {

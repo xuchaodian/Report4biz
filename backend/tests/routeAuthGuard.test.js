@@ -43,11 +43,14 @@ const AUTH_MIDDLEWARES = ['authenticate', 'requireApiKey', 'requireOrgOwner', 'r
  */
 const PUBLIC_WRITE_WHITELIST = {
   'auth.js': {
-    paths: ['/register', '/login', '/logout', '/forgot-password', '/reset-password'],
+    paths: ['/register', '/login', '/logout', '/forgot-password', '/reset-password', '/login/totp'],
     reason:
       '认证前置接口：登录/注册/找回密码必须在**未登录**时可调。' +
       'logout 刻意不挂 authenticate（文件头有说明）：它按 token 自身的 jti 撤销，' +
-      '必须幂等，多标签页重复点击时若先被 401 挡下，前端拦截器会跳登录页 + 弹「登录已过期」。',
+      '必须幂等，多标签页重复点击时若先被 401 挡下，前端拦截器会跳登录页 + 弹「登录已过期」。' +
+      '`/login/totp`（v1.13.321）同理不能挂 authenticate —— 此刻用户**还没有登录态**' +
+      '（密码刚过、第二步没过），它自带鉴权：必须持有 5 分钟内、purpose=totp 的票据，' +
+      '而该类票据被 verifyTokenPayload 显式拒绝用于任何其它接口 ⇒ 既不是裸奔，也无法被复用。',
   },
   'smartsteps.js': {
     paths: ['/convert'],
