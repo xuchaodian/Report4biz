@@ -64,36 +64,33 @@
       @toggle-cluster="toggleCluster"
     />
 
-    <!-- 右上角纵向栏：地图工具箱 + 全屏切换（v1.13.325）
-         🔴 两者必须在**同一个 flex 列**里：工具箱展开时高度 42 → 199，
-            按钮若用固定 top 就会被面板压住或留一大块空隙。
-             外层 absolute 定位 + flex column ⇒ 按钮永远紧贴面板下方。
-         ⚠️ 这一栏占的就是原 `.toolbar` 的位置（top:10 right:15），
-            MapToolbar 用 rail-mode 交出定位权，不改其它面板的 right 值。 -->
-    <div class="map-toolbar-rail">
-      <MapToolbar
-        rail-mode
-        v-model:expanded="toolbarExpanded"
-        :active-tool="activeTool"
-        :city-trade-area-layer-active="cityTradeAreaLayer !== null"
-        :measurement-result="measurementResult"
-        @set-tool="setTool"
-        @open-city-trade-area="openCityTradeArea"
-        @clear-drawings="clearDrawings"
-      />
-      <!-- 全屏切换：常驻可见（收起后顶栏里的「我的账户/退出登录」全都不可达，
-           这是唯一能回去的入口，⛔ 不能藏进任何菜单） -->
-      <button
-        class="rail-nav-toggle"
-        type="button"
-        :aria-pressed="uiStore.navCollapsed"
-        :title="(uiStore.navCollapsed ? $t('nav.showNavHint') : $t('nav.fullscreenHint')) + '（快捷键 F）'"
-        @click="uiStore.toggleNav()"
-      >
-        <el-icon><FullScreen /></el-icon>
-        <span>{{ uiStore.navCollapsed ? $t('nav.showNav') : $t('nav.fullscreenMap') }}</span>
-      </button>
-    </div>
+    <!-- 工具栏 - 右上角收起/展开 -->
+    <MapToolbar
+      v-model:expanded="toolbarExpanded"
+      :active-tool="activeTool"
+      :city-trade-area-layer-active="cityTradeAreaLayer !== null"
+      :measurement-result="measurementResult"
+      @set-tool="setTool"
+      @open-city-trade-area="openCityTradeArea"
+      @clear-drawings="clearDrawings"
+    />
+
+    <!-- 全屏切换（v1.13.326）：右下角、缩放控件「+ −」正上方
+         🔴 与缩放/图层切换共用同一个坐标参考系（.map-view 是 relative）⇒
+            用 absolute + bottom 定位，顶栏收起（地图变高）时它自动跟着往上贴，
+            ⛔ 不能改回 fixed（fixed 只认视口，会脱离右下这一列）。
+         常驻可见：收起后顶栏里的「我的账户/退出登录」全都不可达，
+         这是唯一能回去的入口，⛔ 不能藏进任何菜单。 -->
+    <button
+      class="map-nav-toggle"
+      type="button"
+      :aria-pressed="uiStore.navCollapsed"
+      :title="(uiStore.navCollapsed ? $t('nav.showNavHint') : $t('nav.fullscreenHint')) + '（快捷键 F）'"
+      @click="uiStore.toggleNav()"
+    >
+      <el-icon><FullScreen /></el-icon>
+      <span>{{ uiStore.navCollapsed ? $t('nav.showNav') : $t('nav.fullscreenMap') }}</span>
+    </button>
 
     <!-- 场景引导（v1.13.256）：数据就绪后才出现 ⇒ 与 OnboardingGuide（数据准备向导）天然互斥 -->
     <SceneGuide
@@ -12674,51 +12671,53 @@ function getHeatmapCellStyle(nums, idx) {
   80%  { transform: translateY(-3px) scale(0.97); }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
-/* ===== 右上角纵向栏：地图工具箱 + 全屏切换（v1.13.325）=====
-   🔴 两者的父子关系就是为了「按钮跟着面板高度走」：
-      工具箱展开 42 → 199，按钮自动下移，不需要任何 JS 监听高度。
-   ⚠️ 这栏占据原 `.toolbar` 的坐标（top:10 right:15），其它面板仍用各自的 right 值，
-      ⛔ 不要因为加了这一层就去调 POI/门店/商圈面板的 right。 */
-.map-toolbar-rail {
+/* ===== 全屏切换：右下角、缩放控件「+ −」正上方（v1.13.326）=====
+   🔴 必须用 absolute + bottom，**不是 fixed**：
+      与 `.zoom-control-container`(bottom:110) / `.layer-switcher`(bottom:10)
+      共用同一个坐标参考系（.map-view 是 relative）。顶栏收起时容器变高，
+      按钮自动跟着往上走，永远贴着缩放控件；fixed 只认视口，会脱离这一列。
+   ⚠️ 数值推导：缩放 bottom:110 + 高 65 + 间距 8 = **183**。
+      以后改缩放控件的高度/位置，这一行要同步改，否则按钮会压住「+ −」。 */
+.map-nav-toggle {
   position: absolute;
-  top: 10px;
-  right: 15px;
-  z-index: 1001;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  /* 宽度由最宽子元素撑开（工具箱 111px），按钮 stretch 后与面板等宽 */
-}
-.rail-nav-toggle {
+  right: 10px;
+  bottom: 183px;
+  z-index: 1001;          /* 与缩放同级；高于 .grid-legend(1000) */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 8px;
-  font-size: 11px;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
   font-family: inherit;
   line-height: 1;
-  color: #303133;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  color: #fff;
+  /* 与「地图工具箱」同一套蓝 ⇒ 视觉上是一族；在白色面板群里足够突出 */
+  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(64, 158, 255, 0.45);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
-.rail-nav-toggle:hover {
-  background: #f5f7fa;
-  border-color: #c0c4cc;
+.map-nav-toggle:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 6px 18px rgba(64, 158, 255, 0.55);
+  transform: translateY(-1px);
 }
-.rail-nav-toggle:focus-visible {
+.map-nav-toggle:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+.map-nav-toggle:focus-visible {
   outline: 2px solid #409eff;
   outline-offset: 2px;
 }
-.rail-nav-toggle .el-icon {
-  font-size: 13px;
+.map-nav-toggle .el-icon {
+  font-size: 15px;
   flex-shrink: 0;
 }
 

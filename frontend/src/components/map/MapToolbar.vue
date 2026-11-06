@@ -1,9 +1,6 @@
 <template>
   <!-- 工具栏 - 右上角收起/展开 -->
-  <!-- rail-mode（v1.13.325）：位置交给外层 `.map-toolbar-rail` 的 flex 列控制，
-       本组件不再自己 absolute 定位 —— 好让「全屏」按钮紧跟在面板下方，
-       并在面板展开（高度 42 → 199）时自动跟着下移，不会互相压住。 -->
-  <div class="toolbar" :class="{ 'rail-mode': railMode }">
+  <div class="toolbar">
     <div class="toolbar-header" @click="$emit('update:expanded', !expanded)">
       <span class="toolbar-title">地图工具箱</span>
       <el-icon class="toolbar-arrow" :class="{ expanded: expanded }">
@@ -65,11 +62,6 @@ defineProps({
   measurementResult: {
     type: String,
     default: ''
-  },
-  // v1.13.325：由外层 flex 列（.map-toolbar-rail）统一排布时置 true
-  railMode: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -87,13 +79,6 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
   z-index: 1001;
   overflow: hidden;
   border: 2px solid #409eff;
-}
-
-/* rail-mode：定位交给外层 .map-toolbar-rail 的 flex 列 */
-.toolbar.rail-mode {
-  position: static;
-  top: auto;
-  right: auto;
 }
 
 .toolbar-header {
