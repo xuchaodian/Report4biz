@@ -108,6 +108,7 @@
             <el-upload
               v-if="userStore.isAdmin"
               action="/api/city-data/import"
+              :headers="cityDataUploadHeaders"
               accept=".csv"
               :show-file-list="false"
               :on-success="onCityDataImportSuccess"
@@ -249,11 +250,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 // 图标只保留本文件模板实际用到的：检索 / 重命名图标已随表格移入 ShapefileTierList
 import { UploadFilled, Delete, Plus, InfoFilled, MapLocation } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+// v1.13.319：/api/city-data/import 已收紧为「仅管理员 + 必须登录」
+//   el-upload 自己发请求、不走 fetch ⇒ 必须用 :headers 注入 token
+import { authHeaders } from '@/utils/authHeaders.js'
 import ShapefileTierList from '@/components/shapefile/ShapefileTierList.vue'
 
 const router = useRouter()
 const baseURL = import.meta.env.VITE_API_BASE_URL || ''
 const userStore = useUserStore()
+const cityDataUploadHeaders = authHeaders()
 
 // Tab 切换
 const activeTab = ref('population')

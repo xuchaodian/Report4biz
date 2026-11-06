@@ -8,6 +8,7 @@
           <el-upload
             v-if="userStore.isAdmin"
             action="/api/city-data/import"
+            :headers="uploadHeaders"
             accept=".csv"
             :show-file-list="false"
             :on-success="onImportSuccess"
@@ -105,8 +106,14 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Upload, Delete, Edit, MapLocation, Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+// v1.13.319：/api/city-data 的**写接口**已收紧为「仅管理员 + 必须登录」，
+//   本页三处裸 fetch / el-upload 必须自带 Authorization，否则一挂就 401。
+//   ⛔ 别手写 'Bearer ' + ...，统一走 authHeaders（token 取 sessionStorage.token）。
+import { authHeaders } from '@/utils/authHeaders.js'
 
 const userStore = useUserStore()
+// el-upload 的 action 是组件自己发的请求，不走 fetch ⇒ 必须用 :headers 注入 token
+const uploadHeaders = authHeaders()
 const cityData = ref([])
 const loading = ref(false)
 const editVisible = ref(false)
@@ -145,7 +152,7 @@ const handleClear = async () => {
     await ElMessageBox.confirm('确定要清除所有城市宏观数据吗？此操作不可撤销！', '警告', {
       confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
     })
-    const res = await fetch('/api/city-data', { method: 'DELETE' })
+    const res = await fetch('/api/city-data', { method: 'DELETE', headers: authHeaders() })
     const d = await res.json()
     if (d.success) { ElMessage.success('已清除所有数据'); loadData() }
     else { ElMessage.error(d.message || '清除失败') }
@@ -168,7 +175,7 @@ const saveEdit = async () => {
     const url = isAddMode.value ? '/api/city-data' : `/api/city-data/${encodeURIComponent(editForm.value['城市'])}`
     const res = await fetch(url, {
       method: isAddMode.value ? 'POST' : 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(editForm.value)
     })
     const d = await res.json()

@@ -5,6 +5,7 @@ import multer from 'multer'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { getCityData, getCityDataArray, invalidateCityData } from '../utils/cityData.js'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -13,6 +14,30 @@ const router = express.Router()
 const upload = multer({ dest: '/tmp/uploads/' })
 
 const dataPath = path.join(__dirname, '../data/city_data.json')
+
+// ============================================================================
+// 🔴 鉴权口径（v1.13.319）
+//
+// 本文件原先是**整个文件零鉴权**——4 个写接口谁都能调：
+//   POST /            新增/覆盖任一城市      POST /import   上传 CSV 覆盖
+//   PUT  /:city       改任一城市              DELETE /       清空全部（写成 []）
+// 其中 DELETE 的注释一直写着「仅管理员调用」，但**没有任何校验**。
+// 实测（无 token）：PUT 不存在的城市返回 404「未找到该城市」、POST 空 body 返回
+// 400「城市名不能为空」——若挂了鉴权，应当先返回 401「请先登录」。
+// ⇒ 任何人不登录、一条 curl 即可清空或篡改 51 个城市的宏观数据。
+// ⚠️ city_data.json 是**文件不是数据库**，不在 webgis.db 的备份链里，
+//    被清空后库快照救不回来。
+//
+// 现在的口径：
+//   · GET / 与 GET /:city **保持公开** —— 地图页 MapView.vue 在用 `/api/city-data/:city`
+//     读城市宏观数据，加鉴权会让未登录访客的地图页直接失效。
+//   · 四个写接口一律 `authenticate, requireAdmin`。
+//   ⛔ 不要图省事写 `router.use(authenticate)` 组级挂载：那会把两个 GET 也一起关掉。
+//
+// ⚠️ `/import` 的鉴权必须排在 `upload.single('file')` **之前**：
+//    multer 是先落盘再进 handler，排在后面等于「未授权的请求也能往 /tmp 写文件」，
+//    可被用来填盘。顺序写反了功能看起来一样，但攻击面完全不同。
+// ============================================================================
 
 // GET /api/city-data - 获取城市宏观数据（M6：模块级缓存，不再每请求读盘解析）
 router.get('/', (req, res) => {
@@ -36,8 +61,8 @@ router.get('/:city', (req, res) => {
   }
 })
 
-// POST /api/city-data - 手动添加城市数据
-router.post('/', (req, res) => {
+// POST /api/city-data - 手动添加城市数据（🔴 写接口 ⇒ 仅管理员）
+router.post('/', authenticate, requireAdmin, (req, res) => {
   try {
     const body = req.body
     if (!body['城市']) return res.status(400).json({ success: false, message: '城市名不能为空' })
@@ -56,8 +81,8 @@ router.post('/', (req, res) => {
   }
 })
 
-// POST /api/city-data/import - 导入 CSV
-router.post('/import', upload.single('file'), (req, res) => {
+// POST /api/city-data/import - 导入 CSV（🔴 鉴权必须在 upload 之前，否则未授权也能落盘 /tmp）
+router.post('/import', authenticate, requireAdmin, upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: '请上传 CSV 文件' })
     const csvPath = req.file.path
@@ -116,8 +141,8 @@ router.post('/import', upload.single('file'), (req, res) => {
   }
 })
 
-// PUT /api/city-data/:city - 更新单个城市数据
-router.put('/:city', (req, res) => {
+// PUT /api/city-data/:city - 更新单个城市数据（🔴 写接口 ⇒ 仅管理员）
+router.put('/:city', authenticate, requireAdmin, (req, res) => {
   try {
     const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'))
     const idx = data.findIndex(d => d['城市'] === req.params.city)
@@ -132,8 +157,10 @@ router.put('/:city', (req, res) => {
   }
 })
 
-// DELETE /api/city-data - 清除所有城市数据（仅管理员调用）
-router.delete('/', (req, res) => {
+// DELETE /api/city-data - 清除所有城市数据（🔴 仅管理员）
+// ⚠️ 原注释就写着「仅管理员调用」，但**代码里一直没有校验**（v1.13.319 才补上）。
+//    这句注释曾让审计时误以为已受保护 —— 注释不等于防护，判据永远看中间件链。
+router.delete('/', authenticate, requireAdmin, (req, res) => {
   try {
     fs.writeFileSync(dataPath, JSON.stringify([], null, 2))
     invalidateCityData()
