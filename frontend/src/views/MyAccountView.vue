@@ -1,5 +1,15 @@
 <template>
   <div class="account-container">
+    <!-- 两步验证（v1.13.321）—— 独立组件，不把 5000 行文件撑得更大
+         v1.13.327：**仅管理员可见**。
+         这张卡片原本无条件渲染，普通客户进个人中心也会看到，而卡片文案写的是
+         「保护**管理后台**最有效的一道防线」—— 那是给管理员场景写的，出现在客户页面上是错位
+         （业主 2026-11-07 提出）。后端 4 个 /auth/2fa/* 端点同批加了 requireAdmin。
+         ⚠️ `userStore.user &&` 一并要求：user 未就位时 isAdmin 暂为 false，
+            否则管理员会先看不到、再"跳出来"一下。
+         v1.13.328：按业主要求移到**页面最上方**（原先排在账户信息卡之后）。 -->
+    <TwoFactorCard v-if="userStore.user && isAdmin" />
+
     <el-card class="account-card" :class="{ 'card-vip': showVipSkin }">
       <template #header>
         <!-- id 供地图页「申请开通 VIP」按钮跳转后滚动定位（v1.13.309） -->
@@ -120,14 +130,7 @@
       </el-form>
     </el-card>
 
-    <!-- 两步验证（v1.13.321）—— 独立组件，不把 5000 行文件撑得更大
-         v1.13.327：**仅管理员可见**。
-         这张卡片原本无条件渲染，普通客户进个人中心也会看到，而卡片文案写的是
-         「保护**管理后台**最有效的一道防线」—— 那是给管理员场景写的，出现在客户页面上是错位
-         （业主 2026-11-07 提出）。后端 4 个 /auth/2fa/* 端点同批加了 requireAdmin。
-         ⚠️ `userStore.user &&` 一并要求：user 未就位时 isAdmin 暂为 false，
-            否则管理员会先看不到、再"跳出来"一下。 -->
-    <TwoFactorCard v-if="userStore.user && isAdmin" />
+    <!-- 两步验证已上移到页面最上方（v1.13.328），此处不再重复渲染 -->
 
     <!-- 剩余次数卡片 -->
     <el-card class="quota-card">

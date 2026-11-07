@@ -274,7 +274,12 @@ onMounted(loadStatus)
 
 <style scoped>
 .twofa-card {
-  margin-bottom: 16px;
+  /* v1.13.328：与账户页其它卡片对齐。
+     原先只有 margin-bottom ⇒ 这张卡撑满内容区（实测 1234px），而 account-card / quota-card
+     都是 max-width:600px 居中 ⇒ 一排卡里它宽出一倍，很突兀。
+     ⚠️ 数值要与 MyAccountView 的 `.account-card` 保持一致，改一处要改两处。 */
+  max-width: 600px;
+  margin: 0 auto 20px auto;
 }
 .twofa-head {
   display: flex;
