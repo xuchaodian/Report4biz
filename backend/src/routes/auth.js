@@ -17,7 +17,7 @@ import {
 } from '../utils/totp.js'
 import { writeAudit, AUDIT_ACTIONS } from '../utils/auditLog.js'
 // v1.13.321：2FA 的管理端点必须要求已登录（登录/注册那几个刻意不挂）
-import { authenticate } from '../middleware/auth.js'
+import { authenticate, requireAdmin } from '../middleware/auth.js'
 import {
   issueRegisterTicket, verifyRegisterTicket, clientIpOf,
   REG_WINDOW_MS, REG_MAX_PER_IP, REG_MIN_FILL_MS, REG_HONEYPOT_FIELD, REG_TICKET_MESSAGES
@@ -397,8 +397,19 @@ router.post('/login/totp', (req, res) => {
   }
 })
 
+/**
+ * ⚠️ 以下 4 个「2FA 设置」端点 **仅管理员可用**（v1.13.327）。
+ * 原先只要求 authenticate ⇒ 普通客户也能自行开启，而产品口径是「两步验证用于保护管理后台」
+ * （业主 2026-11-07 确认）。前端 `MyAccountView` 已同步改为仅管理员渲染卡片。
+ * 🔴 **登录链路的两个端点不受影响**：`POST /login`（返回 needTotp）与 `POST /login/totp`
+ *    ——它们在登录前调用，不可能有管理员身份，加 requireAdmin 会直接锁死所有 2FA 账号。
+ * ⚠️ 收紧前提：本次收紧时库内 43 个账号 totp_enabled 全为 0（无人已开启）。
+ *    若将来有普通账号已开启 2FA，收紧后他将无法自行关闭 —— 需管理员走
+ *    `POST /users/:id/reset-2fa` 解除。
+ */
+
 /** 当前账号的 2FA 状态（不返回 secret —— 已启用后连自己也不该再看到） */
-router.get('/2fa/status', authenticate, (req, res) => {
+router.get('/2fa/status', authenticate, requireAdmin, (req, res) => {
   try {
     const db = getDb()
     const user = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id)
@@ -419,7 +430,7 @@ router.get('/2fa/status', authenticate, (req, res) => {
  * 然后调 /2fa/enable 提交一次验证码来证明「确实加上了」。
  * ⚠️ 这个 secret 会写进 users.totp_secret，但 totp_enabled 仍为 0 ⇒ 登录不要求验证码。
  */
-router.post('/2fa/setup', authenticate, (req, res) => {
+router.post('/2fa/setup', authenticate, requireAdmin, (req, res) => {
   try {
     const db = getDb()
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
@@ -446,7 +457,7 @@ router.post('/2fa/setup', authenticate, (req, res) => {
 })
 
 /** 第二步：提交一次验证码 → 真正启用，并返回一次性恢复码 */
-router.post('/2fa/enable', authenticate, (req, res) => {
+router.post('/2fa/enable', authenticate, requireAdmin, (req, res) => {
   try {
     const { code } = req.body || {}
     if (!code) return res.status(400).json({ message: '请输入验证码' })
@@ -493,7 +504,7 @@ router.post('/2fa/enable', authenticate, (req, res) => {
 })
 
 /** 关闭：必须同时验密码 + 验证码（见文件头 ⑤） */
-router.post('/2fa/disable', authenticate, (req, res) => {
+router.post('/2fa/disable', authenticate, requireAdmin, (req, res) => {
   try {
     const { password, code } = req.body || {}
     if (!password || !code) {

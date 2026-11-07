@@ -269,3 +269,51 @@ describe('H. 管理侧', () => {
     expect(auditRouteSrc).toMatch(/MAX_PAGE_SIZE\s*=\s*200/)
   })
 })
+
+/**
+ * F. 2FA 设置仅管理员可用 —— v1.13.327
+ *
+ * 起因（业主 2026-11-07）：「非管理员账户的个人中心页面里为什么会出现『两步验证』提示？」
+ * 321 把 TwoFactorCard 无条件渲染在 /account，卡片文案却是「保护**管理后台**最有效的一道防线」
+ * ⇒ 普通客户看到会困惑。产品口径确认为：2FA 只用于保护管理后台。
+ *
+ * 这三条一起改才成立，缺一条都会露出口子：
+ *   ① 前端卡片只给管理员渲染（普通用户根本看不到入口）
+ *   ② 4 个设置端点 requireAdmin（绕过前端直接调也拿不到）
+ *   ③ 登录链路 2 个端点**不得**加 requireAdmin（登录前没有身份，加了会锁死所有 2FA 账号）
+ */
+describe('F. 2FA 设置仅管理员可用', () => {
+  const code = stripComments(authSrc)
+  const accountVue = fs.readFileSync(
+    path.resolve(HERE, '..', '..', 'frontend', 'src', 'views', 'MyAccountView.vue'),
+    'utf8'
+  )
+
+  it('4 个 2FA 设置端点都挂了 requireAdmin', () => {
+    const expected = [
+      "router.get('/2fa/status', authenticate, requireAdmin",
+      "router.post('/2fa/setup', authenticate, requireAdmin",
+      "router.post('/2fa/enable', authenticate, requireAdmin",
+      "router.post('/2fa/disable', authenticate, requireAdmin",
+    ]
+    for (const line of expected) {
+      expect(code, `缺少 requireAdmin：${line.split(',')[0]}`).toContain(line)
+    }
+  })
+
+  it('🔴 登录链路的 2 个端点⛔不得加 requireAdmin（会锁死所有已开 2FA 的账号）', () => {
+    for (const p of ["'/login'", "'/login/totp'"]) {
+      const m = code.match(new RegExp(`router\\.post\\(\\s*${p}[^\\n]*`))
+      expect(m, `找不到 ${p}`).toBeTruthy()
+      expect(m[0], `${p} 不该要求管理员 —— 它俩在登录前调用，不可能有管理员身份`)
+        .not.toContain('requireAdmin')
+    }
+  })
+
+  it('前端个人中心的 TwoFactorCard 仅管理员渲染', () => {
+    const m = accountVue.match(/<TwoFactorCard[^>]*/)
+    expect(m, '找不到 TwoFactorCard 引用').toBeTruthy()
+    expect(m[0], 'TwoFactorCard 没有角色判断 —— 普通客户会看到「保护管理后台」这张卡')
+      .toMatch(/v-if="[^"]*isAdmin/)
+  })
+})
