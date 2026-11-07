@@ -295,6 +295,10 @@ import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { parseP0S1001, get1001Dict, pick1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
+// v1.13.329：品牌→业态解析统一走 utils/storeBrand.js（原先本组件与 MyAccountView.vue
+// 各内联一份，改一处会漂移）。未收录品牌会先弹框让用户补业态，避免让模型瞎猜还照扣 Token。
+import { resolveBrandCategory } from '@/utils/storeBrand.js'
+import { promptCategoryIfUnmapped } from '@/utils/storeBrandPrompt.js'
 
 const userStore = useUserStore()
 // VIP 用户（管理员视为 VIP；VIP 试用 trial 同权）
@@ -384,55 +388,10 @@ const aiAdvice = ref('')
 const aiAdviceLoading = ref(false)
 const aiAdviceBrand = ref('')
 const aiAdviceCategory = ref('')
-// 常见餐饮/零售品牌 → 业态映射（不在表内则 AI 自行判断）
-const BRAND_CATEGORY_MAP = {
-  '食其家': '日式牛肉盖饭快餐',
-  '吉野家': '日式快餐（牛肉饭/丼饭）',
-  '松屋': '日式快餐（牛肉饭）',
-  '老乡鸡': '中式快餐（以鸡肉为主的炖菜快餐）',
-  '大米先生': '中式快餐（现炒小碗菜）',
-  '米村拌饭': '韩式拌饭快餐',
-  '西塔老太太': '韩式烤肉（正餐）',
-  '谷田稻香': '中式快餐（瓦锅饭）',
-  '杨国福': '麻辣烫快餐',
-  '张亮麻辣烫': '麻辣烫快餐',
-  '海底捞': '火锅正餐',
-  '呷哺呷哺': '小火锅快餐',
-  '肯德基': '西式快餐（炸鸡汉堡）',
-  '麦当劳': '西式快餐（汉堡）',
-  '汉堡王': '西式快餐（汉堡）',
-  '必胜客': '西式休闲餐饮（披萨）',
-  '瑞幸咖啡': '咖啡饮品（快取式）',
-  '星巴克': '咖啡饮品（第三空间）',
-  '蜜雪冰城': '平价茶饮',
-  '喜茶': '新式茶饮',
-  '奈雪的茶': '新式茶饮',
-  '茶百道': '新式茶饮',
-  '沪上阿姨': '新式茶饮',
-  '书亦烧仙草': '新式茶饮',
-  '霸王茶姬': '新中式茶饮',
-  '古茗': '新式茶饮',
-  '屈臣氏': '个人护理零售',
-  '名创优品': '生活百货零售',
-  '优衣库': '快时尚服饰零售',
-  '7-11': '便利店',
-  '罗森': '便利店',
-  '全家': '便利店',
-  '永辉超市': '生鲜超市',
-  '盒马鲜生': '生鲜超市（新零售）'
-}
-// 提取品牌名（门店名去掉括号后缀，如"食其家(上海XX店)" → "食其家"）
-function extractBrand(storeName) {
-  if (!storeName) return ''
-  let name = String(storeName)
-  // 去掉括号及后缀
-  name = name.replace(/[（(].*?[）)]/g, '').replace(/[-—–]\d+号?店$/, '').replace(/店$/, '')
-  // 先精确匹配映射表（最长优先）
-  const keys = Object.keys(BRAND_CATEGORY_MAP).sort((a, b) => b.length - a.length)
-  const hit = keys.find(k => name.includes(k) || storeName.includes(k))
-  if (hit) return hit
-  return name.trim()
-}
+// 品牌 → 业态 的映射表与提取函数已抽到 utils/storeBrand.js（v1.13.329）
+// 🔴 原先这里与 MyAccountView.vue 各有一份、内容重复 ⇒ 改一处会漂移。
+//    业务口径：按**门店品牌**识别业态，⛔ 不读账户公司名（同公司可有不同业态的品牌）。
+
 // 提炼联通数据摘要（供 AI 分析，避免传原始 JSON 浪费 token）
 function buildDataSummary(data) {
   const lines = []
@@ -544,6 +503,22 @@ const handleAiAdvice = async () => {
     return
   }
   if (!(await ensureAiEgressConsent())) return
+
+  // ① 品牌与业态（v1.13.329）—— 与购买履历详情弹窗共用同一份解析逻辑（utils/storeBrand.js）
+  //    **按门店品牌识别，⛔ 不用账户公司名**（同公司可能经营业态完全不同的品牌）。
+  //    白名单未命中 ⇒ 先让用户补业态；取消就中止、不扣 AI 额度。
+  //    ⚠️ 必须在 `aiAdviceLoading = true` 之前：确认弹框阻塞时会一直转圈。
+  const storeName = props.store?.name || currentDetail.value?.store_name || ''
+  const city = currentDetail.value?.city || props.store?.city || ''
+  const { brand, category, mapped } = resolveBrandCategory(storeName, city)
+  let finalCategory = category
+  if (!mapped) {
+    finalCategory = await promptCategoryIfUnmapped(brand)
+    if (!finalCategory) return
+  }
+  aiAdviceBrand.value = brand
+  aiAdviceCategory.value = finalCategory
+
   aiAdviceLoading.value = true
   aiAdvice.value = ''
   try {
@@ -554,16 +529,9 @@ const handleAiAdvice = async () => {
       ElMessage.warning('暂无足够数据进行分析')
       return
     }
-    // 品牌与业态
-    const storeName = props.store?.name || currentDetail.value?.store_name || ''
-    const brand = extractBrand(storeName)
-    const category = BRAND_CATEGORY_MAP[brand] || ''
-    aiAdviceBrand.value = brand
-    aiAdviceCategory.value = category || '业态未映射（AI 自行判断）'
     // 数据摘要
     const summary = buildDataSummary(data)
     const radiusText = currentDetail.value?.radii?.length ? currentDetail.value.radii.join('米, ') + '米' : props.store?.radius || ''
-    const city = currentDetail.value?.city || props.store?.city || ''
     // 周边环境要素：查询中心坐标 + 半径（供后端统计竞品/购物中心/我的门店/地铁站）
     const centerLat = currentDetail.value?.center_lat ?? props.store?.latitude
     const centerLng = currentDetail.value?.center_lng ?? props.store?.longitude
@@ -575,7 +543,7 @@ const handleAiAdvice = async () => {
     const res = await fetch('/api/ai/site-advice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ storeName, brand, category, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius, radii, stream: true })
+      body: JSON.stringify({ storeName, brand, category: finalCategory, city, radius: radiusText, dataSummary: summary, lat: centerLat, lng: centerLng, radiusMeters: firstRadius, radii, stream: true })
     })
     if (!res.ok) {
       const j = await res.json().catch(() => ({}))
