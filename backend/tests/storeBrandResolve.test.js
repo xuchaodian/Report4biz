@@ -80,6 +80,82 @@ describe('A. 品牌提取（运行时：真实函数，不是复制逻辑）', (
   })
 })
 
+describe('A2. 白名单扩表守卫（v1.13.330：34 → 117 个品牌）', () => {
+  /** 业主 2026-11-08 给的候选清单 —— 这批必须全部命中，漏一个就说明 key 写法退化了 */
+  const BATCH_20261108 = [
+    '肯德基（中国）', '麦当劳（中国）', '必胜客（中国）', '华莱士', '达美乐比萨（中国）', '萨莉亚（中国）',
+    '王品牛排', '豪客来牛排', '蜜雪冰城', '瑞幸咖啡', '星巴克（中国）', '古茗', '沪上阿姨', '茶百道',
+    '霸王茶姬', '喜茶', '奈雪的茶', '茶颜悦色', 'CoCo 都可', '库迪咖啡', '幸运咖', '老乡鸡', '乡村基',
+    '大米先生', '塔斯汀', '袁记云饺', '米村拌饭', '南城香', '超意兴・把子肉', '和府捞面', '遇见小面',
+    '阿香米线', '蒙自源', '味千拉面', '李先生牛肉面', '喜家德虾仁水饺', '吉祥馄饨', '巴比', '三津汤包',
+    '紫燕百味鸡', '绝味鸭脖', '周黑鸭', '正新鸡排', '张亮麻辣烫', '杨国福麻辣烫', '永和大王', '尊宝比萨',
+    '小菜园', '西贝', '新荣记', '绿茶餐厅', '外婆家', '南京大排档', '广州酒家', '陶陶居酒家', '点都德',
+    '廣順興', '客语', '费大厨辣椒炒肉', '徐记海鲜', '兰湘子・湘菜小炒', '全聚德', '紫光园', '大董',
+    '云海肴', '外婆味道', '同庆楼', '西安饭庄', '眉州东坡', '醉得意', '甬府', '茄子恰恰', '农耕记',
+    '海底捞', '呷哺呷哺', '巴奴毛肚火锅', '小龙坎火锅', '季季红火锅', '珮姐重庆火锅', '黄记煌三汁焖锅',
+    '七欣天', '朱光玉火锅馆', '熊喵来了火锅', '许府牛', '太二酸菜鱼', '鱼你在一起', '半天妖烤鱼',
+    '探鱼烤鱼', '烤匠麻辣烤鱼', '鱼酷活鱼烤鱼', '蛙来哒', '胖哥俩肉蟹煲', '很久以前羊肉串', '木屋烧烤',
+    '西塔老太太泥炉烤肉', 'Helens 海伦司', '豪德亨牛排自助餐厅'
+  ]
+
+  it('候选清单里的品牌全部命中（门店名原样 + 去掉括号内容两种写法都要过）', () => {
+    const missed = []
+    for (const name of BATCH_20261108) {
+      const bare = name.replace(/[（(][^）)]*[）)]/g, '').trim()
+      if (!resolveBrandCategory(name).mapped && !resolveBrandCategory(bare).mapped) missed.push(name)
+    }
+    expect(missed, `这些品牌没命中白名单（漏 ⇒ 每家门店铺都要问用户一次业态）：${missed.join('、')}`)
+      .toEqual([])
+  })
+
+  it('🔴 不同业态的 key ⛔ 不得互为子串（否则短 key 会抢走长品牌的业态）', () => {
+    const keys = Object.keys(BRAND_CATEGORY_MAP)
+    const conflicts = []
+    for (const a of keys) {
+      for (const b of keys) {
+        if (a === b) continue
+        if (b.toLowerCase().includes(a.toLowerCase()) && BRAND_CATEGORY_MAP[a] !== BRAND_CATEGORY_MAP[b]) {
+          conflicts.push(`「${a}」⊂「${b}」(${BRAND_CATEGORY_MAP[a]} vs ${BRAND_CATEGORY_MAP[b]})`)
+        }
+      }
+    }
+    expect(conflicts, `子串冲突会被「最长优先」掩盖，一旦长 key 被删就串味：\n${conflicts.join('\n')}`)
+      .toEqual([])
+  })
+
+  it('key 长度必须 ≥ 2（单字 key 会命中一大片无关门店）', () => {
+    expect(Object.keys(BRAND_CATEGORY_MAP).filter((k) => k.length < 2)).toEqual([])
+  })
+
+  it('英文品牌大小写无关（Helens / HELENS / helens 都算命中）', () => {
+    for (const n of ['Helens(上海静安店)', 'HELENS 海伦司', 'helens']) {
+      expect(resolveBrandCategory(n).mapped, `${n} 应命中（大小写不该影响结果）`).toBe(true)
+    }
+  })
+
+  it('业态文案不为空、不超过 30 字（前端直接展示，超长会撑破弹窗）', () => {
+    for (const [k, v] of Object.entries(BRAND_CATEGORY_MAP)) {
+      expect(typeof v, `${k} 的业态必须是字符串`).toBe('string')
+      expect(v.trim().length, `${k} 的业态为空`).toBeGreaterThan(0)
+      expect(v.length, `${k} 的业态太长`).toBeLessThanOrEqual(30)
+    }
+  })
+
+  it('品牌主体名做 key：「XX火锅 / XX烤鱼」缩写也要能命中', () => {
+    const cases = [
+      ['巴奴(北京三里屯店)', '巴奴'],
+      ['小龙坎(成都春熙路店)', '小龙坎'],
+      ['太二(上海南京西路店)', '太二'],
+      ['探鱼(深圳福田店)', '探鱼'],
+      ['很久以前(杭州湖滨店)', '很久以前'],
+      ['CoCo都可(南京西路店)', 'CoCo都可']
+    ]
+    for (const [store, want] of cases) {
+      expect(extractBrand(store, ''), `${store} 应提取为 ${want}`).toBe(want)
+    }
+  })
+})
+
 describe('B. 单一来源：两个弹窗都必须引用 utils/storeBrand.js', () => {
   for (const [name, src] of [['MyAccountView.vue', ACCOUNT], ['StoreSmartstepsDialog.vue', STORE_DLG]]) {
     it(`${name} 引用统一模块`, () => {
