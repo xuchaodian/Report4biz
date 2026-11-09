@@ -276,6 +276,9 @@ const remarkLoading = ref(false)
 const dialog = ref(false)
 const editingId = ref(null)
 const form = ref(emptyForm())
+// 入口来源：manual（页面内新建）/ map（地图右键选点）—— **必须在清 query 之前捕获**，
+// 否则 router.replace 之后 route.query.source 就没了，来源全落成 manual（踩过）
+const entrySource = ref('manual')
 
 /** 最近点过的阶段：只用来驱动说明框的 placeholder（「放弃」要强制写原因） */
 const lastClickedStage = ref('')
@@ -411,7 +414,7 @@ async function save() {
       if (detail.value?.id === editingId.value) await openDetail({ id: editingId.value })
       await reload()
     } else {
-      const { data } = await axios.post('/api/candidates', { ...payload, source: route.query.source || 'manual' })
+      const { data } = await axios.post('/api/candidates', { ...payload, source: entrySource.value })
       ElMessage.success('已创建')
       dialog.value = false
       await reload()
@@ -459,6 +462,7 @@ onMounted(() => {
   // 深链预填：地图页右键「加入候选点位」会带 lat / lng / source=map 过来（v1.13.335）
   const q = route.query
   if (q.lat && q.lng) {
+    entrySource.value = String(q.source || 'map')
     form.value = {
       ...emptyForm(),
       latitude: String(q.lat),

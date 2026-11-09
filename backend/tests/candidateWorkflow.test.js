@@ -219,6 +219,18 @@ describe('G. 地图选点入口（v1.13.335）', () => {
     expect(block).toContain("router.replace({ path: '/candidates' })")
   })
 
+  it('🔴 来源必须在清 query 之前捕获（踩过：先 replace 再读 query ⇒ source 全落 manual）', () => {
+    // 提交时用 entrySource，⛔ 不再实时读 route.query
+    expect(VIEW).toContain("source: entrySource.value")
+    expect(VIEW).not.toContain("route.query.source")
+    // 捕获必须发生在 router.replace 之前
+    const iCap = VIEW.indexOf('entrySource.value = String(q.source')
+    const iReplace = VIEW.indexOf("router.replace({ path: '/candidates' })")
+    expect(iCap).toBeGreaterThan(-1)
+    expect(iReplace).toBeGreaterThan(-1)
+    expect(iCap, '先清 query 再捕获来源 ⇒ 永远读不到 map').toBeLessThan(iReplace)
+  })
+
   it('地图选点会给一个默认点位名（必填项不空着进去）', () => {
     expect(VIEW).toContain('defaultMapName()')
     expect(VIEW).toContain('地图选点')
