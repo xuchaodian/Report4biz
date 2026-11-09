@@ -228,7 +228,11 @@ router.patch('/:id', authenticate, (req, res) => {
     if (!sets.length) return res.status(400).json({ message: '没有要更新的字段' })
     params.push(c.id, req.user.id)
     // updated_at 必须显式刷新：sql.js 不会自动维护 ON UPDATE
-    db.prepare(`UPDATE store_candidates SET ${sets.join(', ')}, updated_at = datetime('now','localtime') WHERE id = ? AND user_id = ?`)
+    // 🔴 用 CURRENT_TIMESTAMP（UTC）而非 datetime('now','localtime')：
+    //    created_at 走 SQLite 默认 CURRENT_TIMESTAMP（UTC），同一张表混两种时区
+    //    会让「最近更新」比「创建时间」凭空多 8 小时。项目口径＝存 UTC、前端补 Z 转本地
+    //    （见 frontend/src/utils/datetime.js 与 UsersView 的 formatDateTime）
+    db.prepare(`UPDATE store_candidates SET ${sets.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
       .run(...params)
     db.saveNow()
     res.json({ success: true, candidate: db.prepare('SELECT * FROM store_candidates WHERE id = ?').get(c.id) })
@@ -264,7 +268,7 @@ router.patch('/:id/stage', authenticate, (req, res) => {
     db.beginTx()
     try {
       db.prepare(
-        `UPDATE store_candidates SET stage = ?, drop_reason = ?, updated_at = datetime('now','localtime')
+        `UPDATE store_candidates SET stage = ?, drop_reason = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND user_id = ?`
       ).run(to, to === '放弃' ? (dropReason || note) : '', c.id, req.user.id)
 
@@ -301,7 +305,7 @@ router.post('/:id/notes', authenticate, (req, res) => {
     db.prepare('INSERT INTO candidate_notes (candidate_id, user_id, from_stage, to_stage, note) VALUES (?, ?, ?, ?, ?)')
       .run(c.id, req.user.id, '', '', note)
     // 备注也算"动过"，让列表排序跟得上
-    db.prepare(`UPDATE store_candidates SET updated_at = datetime('now','localtime') WHERE id = ?`).run(c.id)
+    db.prepare(`UPDATE store_candidates SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(c.id)
     db.saveNow()
     res.json({ success: true, notes: notesOf(db, c.id) })
   } catch (e) {

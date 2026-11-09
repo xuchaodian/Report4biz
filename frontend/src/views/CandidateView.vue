@@ -252,6 +252,7 @@ import axios from 'axios'
 import { ArrowLeft, Plus, Search, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { STAGES, stageMeta } from '@/utils/candidateStage.js'
+import { formatUtcDateTime } from '@/utils/datetime.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -283,10 +284,8 @@ function emptyForm() {
   return { name: '', brand: '', city: '', district: '', address: '', latitude: '', longitude: '', radius: 1000, area: '', rent: '' }
 }
 
-function fmt(t) {
-  if (!t) return '—'
-  return String(t).replace('T', ' ').slice(0, 16)
-}
+/** 库里是 UTC（SQLite CURRENT_TIMESTAMP），统一走 utils/datetime.js 转本地 */
+const fmt = formatUtcDateTime
 
 function goBack() {
   router.push('/')

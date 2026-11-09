@@ -161,3 +161,32 @@ describe('E. 前端不另写一套（防两份常量漂移）', () => {
     }
   })
 })
+
+describe('F. 时间口径：库里存 UTC，展示转本地', () => {
+  it('★ 不带时区的 "YYYY-MM-DD HH:MM:SS" 必须按 UTC 解析（⛔ 不能当本地时间）', async () => {
+    const { parseUtc } = await import('../../frontend/src/utils/datetime.js')
+    const d = parseUtc('2026-11-09 06:57:00')
+    // 用 getUTC* 断言 ⇒ 与运行机器的时区无关
+    expect(d.getUTCFullYear()).toBe(2026)
+    expect(d.getUTCHours()).toBe(6)
+    expect(d.getUTCMinutes()).toBe(57)
+  })
+
+  it('已带 Z / 偏移量的串不重复补 Z', async () => {
+    const { parseUtc } = await import('../../frontend/src/utils/datetime.js')
+    expect(parseUtc('2026-11-09T06:57:00Z').getUTCHours()).toBe(6)
+    expect(parseUtc('2026-11-09T06:57:00+08:00').getUTCHours()).toBe(22) // 前一天 22:57 UTC
+  })
+
+  it('空值给 —，脏值退回原串前 16 位（⛔ 不显示 Invalid Date）', async () => {
+    const { formatUtcDateTime } = await import('../../frontend/src/utils/datetime.js')
+    expect(formatUtcDateTime(null)).toBe('—')
+    expect(formatUtcDateTime('')).toBe('—')
+    expect(formatUtcDateTime('not-a-date-0123456789')).toBe('not-a-date-01234')
+  })
+
+  it('🔴 后端不许再写 localtime 到 updated_at（否则同表两种时区，显示多 8 小时）', () => {
+    expect(ROUTE).not.toMatch(/updated_at\s*=\s*datetime\('now',\s*'localtime'\)/)
+    expect(ROUTE).toContain('updated_at = CURRENT_TIMESTAMP')
+  })
+})
