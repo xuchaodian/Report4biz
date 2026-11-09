@@ -193,6 +193,15 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
     expect(COMP).toContain("typeof res.toDataURL === 'function'")
   })
 
+  it('🔴 PDF 必须严格 A4 纵向，超高就等比缩小（业主 2026-11-09 定，⛔ 不许回到自定义纸张）', () => {
+    expect(COMP).toContain('A4_H = 297')
+    expect(COMP).toMatch(/format: \[A4_W, A4_H\]/)
+    // 旧写法：按内容高度出纸 ⇒ 一张超长页
+    expect(COMP).not.toMatch(/format: \[imgWidth, imgHeight/)
+    // 必须有"超高则缩放"的分支
+    expect(COMP).toMatch(/availH \/ rawH/)
+  })
+
   it('导出走 html2canvas + jsPDF 动态 import（不把 pdf 库拖进首屏）', () => {
     expect(COMP).toContain("await import('html2canvas')")
     expect(COMP).toContain("await import('jspdf')")

@@ -312,10 +312,23 @@ async function exportPdf() {
       logging: false
     })
     const imgData = canvas.toDataURL('image/jpeg', 0.72)
-    const imgWidth = 210
-    const imgHeight = (canvas.height * imgWidth) / canvas.width
-    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: [imgWidth, imgHeight + 12] })
-    pdf.addImage(imgData, 'JPEG', 0, 6, imgWidth, imgHeight)
+    // 🔴 严格 A4 纵向（210×297），内容超高就**等比缩小**塞进一页 —— 业主 2026-11-09 定
+    //    ⛔ 不再用「按内容高度自定义纸张」（那会产出一张超长页，打印/翻阅都别扭）
+    const A4_W = 210
+    const A4_H = 297
+    const PAD = 6                       // 上下留白（mm）
+    const availH = A4_H - PAD * 2
+    const rawH = (canvas.height * A4_W) / canvas.width
+    const scale = rawH > availH ? availH / rawH : 1
+    const drawW = A4_W * scale
+    const drawH = rawH * scale
+    const drawX = (A4_W - drawW) / 2    // 缩小后居中，左右对称留白
+    // 缩得太多等于白缩：低于 72% 时明确告诉用户为什么字变小了（多半是勾了 AI 建议）
+    if (scale < 0.72) {
+      ElMessage.warning(`内容较多，已自动缩小到约 ${Math.round(scale * 100)}% 才装进一页 A4 —— 想要更清晰可取消 AI 建议`)
+    }
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: [A4_W, A4_H] })
+    pdf.addImage(imgData, 'JPEG', drawX, PAD, drawW, drawH)
     const safe = String(model.value.projectName || '点位').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)
     const d = new Date()
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
@@ -350,60 +363,60 @@ watch(() => props.modelValue, (v) => {
 
 /* A4 纸张：794px ≈ 210mm @96dpi */
 .rp-paper {
-  width: 794px; margin: 0 auto; background: #fff; padding: 40px 44px 32px;
+  width: 794px; margin: 0 auto; background: #fff; padding: 26px 34px 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .08);
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: #1f2329;
 }
-.rp-hd { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px solid #1f2329; padding-bottom: 14px; }
-.rp-hd-kicker { font-size: 12px; letter-spacing: .12em; color: #646a73; margin-bottom: 6px; }
-.rp-hd h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -.01em; }
+.rp-hd { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px solid #1f2329; padding-bottom: 10px; }
+.rp-hd-kicker { font-size: 11px; letter-spacing: .12em; color: #646a73; margin-bottom: 4px; }
+.rp-hd h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
 .rp-hd-sub { display: flex; gap: 14px; font-size: 12px; color: #646a73; flex-wrap: wrap; }
 .rp-badge { border: 1px solid #1f2329; border-radius: 4px; padding: 4px 10px; font-size: 12px; letter-spacing: .1em; }
 
-.rp-sec { margin-top: 22px; }
-.rp-sec-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-.rp-sec-hd h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.rp-sec { margin-top: 13px; }
+.rp-sec-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+.rp-sec-hd h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .rp-sec-note { font-size: 12px; color: #8a9099; }
 
-.rp-stars { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-.rp-stars-num { font-size: 30px; font-weight: 600; line-height: 1; }
+.rp-stars { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.rp-stars-num { font-size: 26px; font-weight: 600; line-height: 1; }
 .rp-stars-icons { font-size: 17px; letter-spacing: 2px; color: #d8dbe0; }
 .rp-stars-icons i { font-style: normal; }
 .rp-stars-icons i.on, .rp-stars-icons i.half { color: #f0a020; }
 .rp-stars-icons i.half { opacity: .55; }
 .rp-stars-note { font-size: 12px; color: #8a9099; }
 
-.rp-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; }
+.rp-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 14px; }
 .rp-kv dt { font-size: 11px; color: #8a9099; margin-bottom: 3px; }
-.rp-kv dd { margin: 0; font-size: 13px; }
+.rp-kv dd { margin: 0; font-size: 12.5px; }
 
-.rp-income { margin-top: 14px; }
+.rp-income { margin-top: 8px; }
 .rp-income-t { font-size: 12px; color: #646a73; margin-bottom: 6px; }
-.rp-income-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rp-income-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
 .rp-income-l { width: 62px; font-size: 11px; color: #646a73; flex: none; }
 .rp-income-bar { flex: 1; height: 8px; background: #eef0f3; border-radius: 4px; overflow: hidden; }
 .rp-income-bar i { display: block; height: 100%; background: #5b8def; }
 .rp-income-v { width: 48px; text-align: right; font-size: 11px; color: #646a73; flex: none; }
 
 .rp-map { border: 1px solid #e6e8eb; border-radius: 6px; overflow: hidden; background: #fafbfc; }
-.rp-map img { display: block; width: 100%; height: auto; }
+.rp-map img { display: block; width: 100%; height: auto; max-height: 330px; object-fit: cover; }
 .rp-map-ph { padding: 28px 12px; text-align: center; font-size: 12px; color: #a0a5ad; }
 
 .rp-table { width: 100%; border-collapse: collapse; }
-.rp-table th { width: 128px; text-align: left; font-weight: 500; font-size: 12px; color: #646a73; padding: 7px 0; vertical-align: top; border-bottom: 1px solid #f0f1f3; }
-.rp-table td { padding: 7px 0; font-size: 13px; border-bottom: 1px solid #f0f1f3; }
+.rp-table th { width: 120px; text-align: left; font-weight: 500; font-size: 12px; color: #646a73; padding: 5px 0; vertical-align: top; border-bottom: 1px solid #f0f1f3; }
+.rp-table td { padding: 5px 0; font-size: 12.5px; border-bottom: 1px solid #f0f1f3; }
 .rp-table-v { font-weight: 500; }
 .rp-table-n { display: block; font-size: 11px; color: #8a9099; margin-top: 2px; }
 
 .rp-risks { margin: 0; padding-left: 18px; }
-.rp-risks li { font-size: 13px; line-height: 1.7; margin-bottom: 4px; color: #1f2329; }
+.rp-risks li { font-size: 12.5px; line-height: 1.55; margin-bottom: 3px; color: #1f2329; }
 
-.rp-ai .rp-ai-body { font-size: 13px; line-height: 1.85; white-space: pre-wrap; background: #f7f9fc; border-left: 3px solid #5b8def; padding: 12px 14px; border-radius: 0 6px 6px 0; }
+.rp-ai .rp-ai-body { font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; background: #f7f9fc; border-left: 3px solid #5b8def; padding: 9px 11px; border-radius: 0 6px 6px 0; }
 
-.rp-foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid #dcdfe6; }
-.rp-foot-t { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
-.rp-foot-r { font-size: 11px; color: #646a73; line-height: 1.7; }
+.rp-foot { margin-top: 14px; padding-top: 9px; border-top: 1px solid #dcdfe6; }
+.rp-foot-t { font-size: 11px; font-weight: 600; margin-bottom: 4px; }
+.rp-foot-r { font-size: 10px; color: #646a73; line-height: 1.6; }
 .rp-foot-r b { display: inline-block; width: 34px; color: #1f2329; }
-.rp-foot-x { margin-top: 8px; font-size: 10px; color: #a0a5ad; line-height: 1.6; }
+.rp-foot-x { margin-top: 6px; font-size: 9.5px; color: #a0a5ad; line-height: 1.5; }
 </style>
