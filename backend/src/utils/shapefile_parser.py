@@ -273,19 +273,23 @@ def parse_shapefile_from_zip(zip_path, out_path=None):
 
             total = len(sf)   # .shx 里直接可读，不必遍历几何
 
+            # v1.13.308：整份文件的 bbox（minLng, minLat, maxLng, maxLat）。
+            # 用途：calculate-population 不传 shapefileId 时按 category 取全部文件，
+            # 26 个人口文件 313MB / 32.8 万要素，逐个 getGeoObject 解析单档就要 4 秒。
+            # 有了 bbox 就能在 SQL 里先筛掉「不相交的城市」，只解析真正用得到的那 1~2 个。
+            # 🔴 必须用**转换后**的坐标（GCJ-02）：落库几何是 GCJ-02，用 WGS84 会偏 300~500m。
+            # 🔴🔴 v1.13.330：必须定义在 emit() **外面** —— 它既要被 emit 里的 grow() 累加，
+            #    又要在 return 里回传。原实现写在 emit 内部 ⇒ 走 out_path 分支时
+            #    NameError: name 'bbox' is not defined ⇒ /api/shapefiles/upload 直接 500。
+            #    （306~329 一直没被发现，只是因为这段时间没人再上传过 shapefile。）
+            bbox = [None, None, None, None]
+
             def emit(write):
                 """把整个 FeatureCollection 逐要素写给 write() —— 唯一实现，两种落地共用。
 
                 逐要素写入而非「先堆 features 再整体 dumps」，是为了不把 10 万条
                 feature 同时留在内存里（那正是 Python 侧 734MB 峰值的主要来源）。
                 """
-                # v1.13.308：顺带累积整份文件的 bbox（minLng, minLat, maxLng, maxLat）。
-                # 用途：calculate-population 不传 shapefileId 时按 category 取全部文件，
-                # 26 个人口文件 313MB / 32.8 万要素，逐个 getGeoObject 解析单档就要 4 秒。
-                # 有了 bbox 就能在 SQL 里先筛掉「不相交的城市」，只解析真正用得到的那 1~2 个。
-                # 🔴 必须用**转换后**的坐标（GCJ-02）：落库几何是 GCJ-02，用 WGS84 会偏 300~500m。
-                bbox = [None, None, None, None]
-
                 def grow(x, y):
                     if bbox[0] is None or x < bbox[0]:
                         bbox[0] = x
