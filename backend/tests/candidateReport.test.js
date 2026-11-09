@@ -193,13 +193,52 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
     expect(COMP).toContain("typeof res.toDataURL === 'function'")
   })
 
-  it('🔴 PDF 必须严格 A4 纵向，超高就等比缩小（业主 2026-11-09 定，⛔ 不许回到自定义纸张）', () => {
+  it('🔴 PDF 必须严格 A4 纵向（⛔ 不许回到按内容高度自定义纸张）', () => {
     expect(COMP).toContain('A4_H = 297')
     expect(COMP).toMatch(/format: \[A4_W, A4_H\]/)
     // 旧写法：按内容高度出纸 ⇒ 一张超长页
     expect(COMP).not.toMatch(/format: \[imgWidth, imgHeight/)
-    // 必须有"超高则缩放"的分支
     expect(COMP).toMatch(/availH \/ rawH/)
+  })
+
+  it('🔴 缩放不下就分页，⛔ 不许一路缩到 4~5pt（业主 2026-11-09 定「含 AI 出两页」）', () => {
+    // 可读阈值必须存在且为 0.72（低于此正文字号 ≈4~5pt）
+    expect(COMP).toMatch(/MIN_READABLE = 0\.72/)
+    expect(COMP).toContain('MIN_READABLE')
+    // 必须真的有分页：addPage + 切点找空白行
+    expect(COMP).toContain('pdf.addPage')
+    expect(COMP).toContain('findCutY')
+    // 分页必须走「均分缩放」，⛔ 不是把一张缩到很小的图查成 N 页
+    expect(COMP).toMatch(/\(rawH \/ pages\) \/ availH/)
+    // 页数要有兜底上限（防止异常高度出几十页）
+    expect(COMP).toContain('MAX_PAGES')
+  })
+
+  it('🔴 地图图必须固定 height 才能用 object-fit（否则高度被压、宽度不变 ⇒ 圆变椭圆）', () => {
+    // 2026-11-09 真机：半径 1km 的正圆在报告里显示成横向椭圆
+    const m = COMP.match(/\.rp-map img \{[^}]*\}/)
+    expect(m).toBeTruthy()
+    const rule = m[0]
+    expect(rule).toContain('object-fit: cover')
+    // 固定高度（不是 height:auto + max-height 那种假裁切）
+    expect(rule).toMatch(/height:\s*\d+px/)
+    expect(rule).not.toMatch(/height:\s*auto/)
+    expect(rule).not.toContain('max-height')
+  })
+
+
+  it('🔴 切点候选必须是区块级（⛔ 不许把标题留在上页、正文翻到下页）', () => {
+    // 实测踩到：候选里收了 `.rp-ai-body` ⇒ 切点落在「AI 选址建议」标题与正文之间
+    const fn = COMP.slice(COMP.indexOf('function collectCutCandidates'), COMP.indexOf('function pickCutY'))
+    expect(fn).toBeTruthy()
+    const sel = fn.match(/querySelectorAll\('([^']+)'\)/)
+    expect(sel).toBeTruthy()
+    expect(sel[1]).toContain('.rp-sec')
+    expect(sel[1]).toContain('.rp-table tr')
+    expect(sel[1]).not.toContain('.rp-ai-body')
+    // 调色板：DOM 边界优先于像素扫描
+    expect(COMP).toContain('pickCutY')
+    expect(COMP).toMatch(/cuts\.filter/)
   })
 
   it('导出走 html2canvas + jsPDF 动态 import（不把 pdf 库拖进首屏）', () => {

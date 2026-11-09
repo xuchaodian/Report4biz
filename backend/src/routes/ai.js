@@ -9,6 +9,7 @@ import { checkAiBudget, loadAiUser, isVipActive, truncateMessages, slimContext, 
 import { cacheKey, getCached, setCached } from '../utils/aiResponseCache.js'
 import { logAiQuestion } from '../utils/aiQuestionLog.js'
 import { dedupeToolCalls } from '../utils/toolCallGuard.js'
+import { readableUserIds, placeholders } from '../utils/visibleScope.js'
 
 const router = express.Router()
 
@@ -528,7 +529,19 @@ async function executeCalculatePotential(args) {
 // ===== 品牌选址建议（数据洞察 → AI）=====
 // 读取门店品牌 + 业态映射 + 联通智慧足迹数据摘要，调用豆包给出是否符合品牌定位的选址建议
 // 周边环境要素：半径内竞品/购物中心/我的门店（DB 距离计算）+ 地铁站（高德周边搜索）
-async function buildSurroundingContext(lat, lng, radii, userId, isAdmin) {
+// 🔴🔴 门店/竞品计数**必须按可见域**（v1.13.339 修）
+// ----------------------------------------------------------------------------
+// 旧写法：`isAdmin ? 全量 : WHERE user_id = ?` —— 这是 v1.13.277 **之前**的口径。
+//   277 已把 `/api/markers`、商圈计数统一改成 `readableUserIds()`（admin **刻意不放大**，
+//   只放大未解散集团 owner），但这段 AI 周边要素没跟着改 ⇒ 两个后果：
+//     ① **同一个页面两个数**：报告里「商圈内自家门店 0 家」（商圈面口径，不放大），
+//        AI 却说「1km 内已有 15 家自家门店」（全平台口径，放大到 2886 家）。
+//        实测五角场 1km 内确有 19 家门店，但分属 7 个账号，admin 自己名下 0 家。
+//     ② 把**别人家的门店当成"我的"**喂给模型 ⇒ 蚕食风险被严重夸大，建议直接跑偏。
+//   ⇒ 现与 markers.js / districts.js 完全同源：`readableUserIds()` + `IN (...)`。
+//   ⚠️ 空集合必须返「0 家」而不是「全部」——`placeholders()` 对 0 会退化成 `?`，
+//      所以先判空直接给 0，⛔ 不要靠 SQL 兜底。
+async function buildSurroundingContext(lat, lng, radii, userId) {
   // 归一化半径数组：数字、去重、升序；无则默认 1000 米
   let rs = Array.isArray(radii) ? radii.map(Number).filter(n => n > 0) : []
   rs = [...new Set(rs)].sort((a, b) => a - b)
@@ -545,15 +558,26 @@ async function buildSurroundingContext(lat, lng, radii, userId, isAdmin) {
   const lines = []
   try {
     const db = getDb()
-    const comps = db.prepare(
-      isAdmin ? `SELECT brand, longitude, latitude FROM competitors WHERE longitude IS NOT NULL AND latitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
-              : `SELECT brand, longitude, latitude FROM competitors WHERE user_id = ? AND longitude IS NOT NULL AND latitude IS NOT NULL AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
-    ).all(...(isAdmin ? [] : [userId]))
+    // 可见域：本账号 + 未解散集团里允许拉取的成员（admin 不放大，与 /api/markers 同口径）
+    const scopeIds = readableUserIds(db, userId)
+    const ph = placeholders(scopeIds.length)
+    const comps = scopeIds.length
+      ? db.prepare(
+          `SELECT brand, longitude, latitude FROM competitors
+            WHERE user_id IN (${ph})
+              AND longitude IS NOT NULL AND latitude IS NOT NULL
+              AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+        ).all(...scopeIds)
+      : []
     const centers = db.prepare('SELECT longitude, latitude FROM shopping_centers WHERE latitude IS NOT NULL AND latitude != 0 AND longitude IS NOT NULL AND longitude != 0').all()
-    const myStores = db.prepare(
-      isAdmin ? `SELECT longitude, latitude FROM markers WHERE merged_into IS NULL AND longitude IS NOT NULL AND latitude IS NOT NULL`
-              : `SELECT longitude, latitude FROM markers WHERE user_id = ? AND merged_into IS NULL AND longitude IS NOT NULL AND latitude IS NOT NULL`
-    ).all(...(isAdmin ? [] : [userId]))
+    const myStores = scopeIds.length
+      ? db.prepare(
+          `SELECT longitude, latitude FROM markers
+            WHERE user_id IN (${ph})
+              AND merged_into IS NULL
+              AND longitude IS NOT NULL AND latitude IS NOT NULL`
+        ).all(...scopeIds)
+      : []
     // 逐半径统计：竞品/购物中心/我的门店
     const compCounts = [], centerCounts = [], myCounts = []
     for (const r of rs) {
@@ -638,7 +662,7 @@ router.post('/site-advice', authenticate, async (req, res) => {
     // 周边环境要素：竞品/购物中心/我的门店（DB）+ 地铁站（高德周边搜索）
     let surroundings = ''
     try {
-      surroundings = await buildSurroundingContext(lat, lng, radii || (radiusMeters ? [radiusMeters] : null), req.user.id, req.user.role === 'admin')
+      surroundings = await buildSurroundingContext(lat, lng, radii || (radiusMeters ? [radiusMeters] : null), req.user.id)
       console.log('[site-advice] surroundings:', surroundings)
     } catch (e) {
       console.error('[site-advice] 周边要素获取失败:', e.message)
