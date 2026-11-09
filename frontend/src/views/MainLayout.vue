@@ -256,6 +256,10 @@
         <el-table-column label="门店名称" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span style="white-space:nowrap;">{{ row.store_name || '-' }}</span>
+            <!-- v1.13.342：报告取数只有 1001 人口服务，导出的门店商圈报表其余指标为空 -->
+            <el-tooltip v-if="row.is_report" :content="row.source_note" placement="top">
+              <el-tag size="small" type="warning" effect="plain" style="margin-left:4px;">报告取数</el-tag>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column label="购买时间" width="110">
@@ -281,6 +285,9 @@
       </el-table>
       <div style="margin-top:10px;font-size:12px;color:#606266;">
         已选 <b style="color:#409eff;">{{ exportSelected.length }}</b> 条记录
+        <span v-if="exportList.some(r => r.is_report)" style="margin-left:8px;">
+          · 标「报告取数」的记录仅含联通 1001 人口服务，导出的其余指标为空属正常
+        </span>
       </div>
       <template #footer>
         <el-button @click="exportDialogVisible = false">取消</el-button>

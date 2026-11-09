@@ -84,16 +84,16 @@
           </div>
         </div>
 
-        <!-- 商圈画像：有就展示，没有就明说 -->
+        <!-- 商圈画像：有就展示，没有就明说。
+             🔴 v1.13.342 起**只放商圈面基线**（评分 / 竞品 / 自家门店），⛔ 不掺人口：
+             人口是「点位 + 半径圆」口径，与商圈面无关，已独立成下面的人口区块。 -->
         <div v-if="model.district" class="rp-sec">
           <div class="rp-sec-hd">
             <h2>商圈画像</h2>
             <span class="rp-sec-note">
               {{ model.district.name }}
               <template v-if="!model.district.contained">（最近商圈，直线约 {{ fmtM(model.district.distanceM) }}）</template>
-              <template v-if="model.district.hasPop">
-                · 人口＝点位半径 {{ radiusText(model.district.popRadius) }} 内（联通智慧足迹 1001<template v-if="model.district.popMonth">，期次 {{ model.district.popMonth }}</template>）
-              </template>
+              · 商圈面基线口径
             </span>
           </div>
           <div class="rp-stars">
@@ -103,14 +103,28 @@
             </span>
             <span class="rp-stars-note">商圈面综合评分（满分 100）· 非该点位自身评分</span>
           </div>
-          <!-- 人口：只认联通 1001（按次配额）；没取到就如实说，⛔ 不拿商圈面属性顶上 -->
-          <div v-if="model.district.hasPop" class="rp-kv">
-            <div><dt>{{ radiusText(model.district.popRadius) }} 内居住</dt><dd>{{ num(model.district.population) }}</dd></div>
-            <div><dt>{{ radiusText(model.district.popRadius) }} 内工作</dt><dd>{{ num(model.district.work) }}</dd></div>
-            <div><dt>{{ radiusText(model.district.popRadius) }} 内到访</dt><dd>{{ numVisit(model.district.visit) }}</dd></div>
+          <div class="rp-kv">
             <div><dt>客群 / 能级</dt><dd>{{ [model.district.crowd, model.district.level].filter(Boolean).join(' · ') || '无标签' }}</dd></div>
             <div><dt>商圈内竞品</dt><dd>{{ model.district.competitorCount }} 家</dd></div>
             <div><dt>商圈内自家门店</dt><dd>{{ model.district.myStoreCount }} 家</dd></div>
+          </div>
+        </div>
+
+        <!-- 人口数据（点位 + 半径圆，联通 1001）：**不依赖商圈面**（v1.13.342 解耦）。
+             ⛔ 这个块不能包在 v-if="model.district" 里：城市没有商圈面数据时，
+             买了联通人口也必须能在纸面看到。用 .rp-sec 起头 ⇒ 自动纳入安全切页点。 -->
+        <div class="rp-sec rp-pop">
+          <div class="rp-sec-hd">
+            <h2>人口数据（点位半径）</h2>
+            <span class="rp-sec-note">
+              联通智慧足迹 1001 · 半径 {{ radiusText(model.population.popRadius) }} 内
+              <template v-if="model.population.popMonth"> · 期次 {{ model.population.popMonth }}</template>
+            </span>
+          </div>
+          <div v-if="model.population.hasPop" class="rp-kv">
+            <div><dt>{{ radiusText(model.population.popRadius) }} 内居住</dt><dd>{{ num(model.population.population) }}</dd></div>
+            <div><dt>{{ radiusText(model.population.popRadius) }} 内工作</dt><dd>{{ num(model.population.work) }}</dd></div>
+            <div><dt>{{ radiusText(model.population.popRadius) }} 内到访</dt><dd>{{ numVisit(model.population.visit) }}</dd></div>
           </div>
           <div v-else class="rp-pop-empty">
             <b>尚未获取联通人口数据</b>

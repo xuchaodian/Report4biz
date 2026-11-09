@@ -11,6 +11,7 @@ import { UNICOM_SUMMARY_COLS } from '../utils/unicomSummaryCols.js'
 import { mapWithConcurrency } from '../utils/concurrency.js'
 import { PURCHASE_SHARE_SECRET } from '../config.js'
 import { visibleScope, readableUserIds, sourceLabels, placeholders, scopeSummary } from '../utils/visibleScope.js'
+import { STORE_ONLY_SQL, isReportPurchase, storeTypeLabel, REPORT_SOURCE_NOTE, storedServiceCodes } from '../utils/purchaseScope.js'
 import NodeCache from 'node-cache'
 import * as XLSX from 'xlsx'
 
@@ -229,8 +230,8 @@ router.get('/history', authenticate, (req, res) => {
         p.city_month,
         p.quota_used,
         p.created_at,
-        m.city,
-        m.district,
+        COALESCE(m.city, sc.city) as city,
+        COALESCE(m.district, sc.district) as district,
         m.store_code,
         substr(p.created_at, 1, 10) as order_date,
         (SELECT COUNT(*) FROM purchases p2
@@ -239,6 +240,11 @@ router.get('/history', authenticate, (req, res) => {
             AND p2.id <= p.id) as day_seq
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      LEFT JOIN store_candidates sc ON sc.id = (
+        SELECT c2.id FROM store_candidates c2
+         WHERE c2.user_id = p.user_id AND c2.name = p.store_name
+         ORDER BY c2.updated_at DESC LIMIT 1
+      )
       WHERE p.user_id IN (${placeholders(ids.length)}) AND p.status = 'active'
       ORDER BY p.created_at DESC
       LIMIT 500
@@ -258,13 +264,19 @@ router.get('/history', authenticate, (req, res) => {
       // 订单编号 = 门店编号 + 日期(YYYYMMDD) + 当日流水(3位)
       const dateStr = String(p.order_date || '').replace(/-/g, '')
       const seqStr = String(p.day_seq || 0).padStart(3, '0')
-      const order_no = `${p.store_code || p.store_name || 'XXXX'}${dateStr}${seqStr}`
+      // 🔴 v1.13.342：report 型没有门店编号 ⇒ 固定 RPT 前缀，别把候选点位名当编号
+      const order_no = isReportPurchase(p.store_type)
+        ? `RPT${dateStr}${seqStr}`
+        : `${p.store_code || p.store_name || 'XXXX'}${dateStr}${seqStr}`
       const label = labels.get(Number(p.user_id)) || { name: `#${p.user_id}`, isSelf: false }
       return {
         id: p.id,
         order_no,
         store_name: p.store_name || '-',
         store_type: p.store_type || '-',
+        store_type_label: storeTypeLabel(p.store_type),
+        is_report: isReportPurchase(p.store_type),
+        source_note: isReportPurchase(p.store_type) ? REPORT_SOURCE_NOTE : '',
         center_lng: p.center_lng,
         center_lat: p.center_lat,
         radius: p.radius,
@@ -326,8 +338,9 @@ router.get('/store-counts', authenticate, (req, res) => {
         store_name,
         COUNT(*) as count,
         MAX(city_month) as latest_city_month
-      FROM purchases
+      FROM purchases p
       WHERE user_id IN (${placeholders(ids.length)}) AND status = 'active' AND store_name IS NOT NULL AND store_name != ''
+        AND ${STORE_ONLY_SQL}
       GROUP BY store_name
     `).all(...ids)
 
@@ -375,6 +388,7 @@ router.get('/by-store/:storeName', authenticate, (req, res) => {
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
       WHERE p.user_id IN (${placeholders(ids.length)}) AND p.store_name = ? AND p.status = 'active'
+        AND ${STORE_ONLY_SQL}
       ORDER BY p.created_at DESC
     `).all(...ids, storeName)
 
@@ -547,10 +561,15 @@ router.get('/:id', authenticate, (req, res) => {
     const purchase = db.prepare(`
       SELECT
         p.*,
-        m.city,
-        m.district
+        COALESCE(m.city, sc.city) as city,
+        COALESCE(m.district, sc.district) as district
       FROM purchases p
       LEFT JOIN markers m ON m.name = p.store_name AND m.user_id = p.user_id
+      LEFT JOIN store_candidates sc ON sc.id = (
+        SELECT c2.id FROM store_candidates c2
+         WHERE c2.user_id = p.user_id AND c2.name = p.store_name
+         ORDER BY c2.updated_at DESC LIMIT 1
+      )
       WHERE p.id = ? AND p.user_id IN (${placeholders(vis.ids.length)}) AND p.status = 'active'
     `).get(id, ...vis.ids)
 
@@ -596,6 +615,10 @@ router.get('/:id', authenticate, (req, res) => {
       id: purchase.id,
       store_name: purchase.store_name,
       store_type: purchase.store_type,
+      store_type_label: storeTypeLabel(purchase.store_type),
+      is_report: isReportPurchase(purchase.store_type),
+      services: storedServiceCodes(purchase.result_data),
+      source_note: isReportPurchase(purchase.store_type) ? REPORT_SOURCE_NOTE : '',
       center_lng: purchase.center_lng,
       center_lat: purchase.center_lat,
       radii: radii,
@@ -1037,8 +1060,9 @@ router.post('/export-merged', authenticate, (req, res) => {
       if (!name) continue
       const purchases = db.prepare(`
         SELECT id, user_id, store_name, center_lng, center_lat, radius, city_month, created_at, result_data
-        FROM purchases
+        FROM purchases p
         WHERE user_id IN (${placeholders(vis.ids.length)}) AND store_name = ? AND status = 'active'
+          AND ${STORE_ONLY_SQL}
         ORDER BY created_at DESC
       `).all(...vis.ids, name)
 

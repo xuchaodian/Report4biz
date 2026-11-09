@@ -197,7 +197,31 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     note: c.address || ''
   })
 
-  // ── 商圈画像（可能没有）────────────────────────────────
+  // ── 人口（点位 + 半径圆，联通 1001）—— 🔴 v1.13.342 与商圈面**完全解耦** ──
+  //    337 首版把人口三项塞在 `districtBlock` 里，而 `districtBlock` 只在匹配到商圈面时才创建：
+  //    ⇒ 该城市没有商圈面数据时，即使花配额买到了联通人口，报告纸面也看不到人口。
+  //    340 换了数据源、341 换了半径口径，都没拆这个容器。人口口径本来就是「点 + 半径圆」，
+  //    与任何商圈面无关 ⇒ 必须独立成块、**恒存在**，`hasPop` 只反映「有没有取到联通数据」。
+  const populationBlock = {
+    hasPop: !!pop,
+    population: pop ? Number(pop.live) || 0 : null,
+    work: pop ? Number(pop.work) || 0 : null,
+    visit: pop ? Number(pop.visit) || 0 : null,
+    popTotal: pop ? Number(pop.total) || 0 : null,
+    popMonth,
+    popRadius,
+    gender: pop
+      ? {
+          liveMale: Number(pop.male?.live) || 0,
+          liveFemale: Number(pop.female?.live) || 0
+        }
+      : null,
+    topAges: pop ? topSeries(pop.ages?.live, 3) : [],
+    topArpu: pop ? topSeries(pop.arpu?.live, 3) : []
+  }
+
+  // ── 商圈画像（商圈面基线；可能没有）─────────────────────
+  //    ⛔ 这里只放商圈面字段，**人口不进这个块**（否则又会随商圈面有无而消失）
   let districtBlock = null
   if (d) {
     districtBlock = {
@@ -206,23 +230,6 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
       distanceM: contained ? 0 : hit.distanceM,
       score: Number(d.score) || 0,
       stars: scoreToStars(d.score),
-      // 🔴 人口三项只认联通（未取到就是 null，模板据此显示「未获取」）
-      hasPop: !!pop,
-      population: pop ? Number(pop.live) || 0 : null,
-      work: pop ? Number(pop.work) || 0 : null,
-      visit: pop ? Number(pop.visit) || 0 : null,
-      popTotal: pop ? Number(pop.total) || 0 : null,
-      popMonth,
-      popRadius,
-      gender: pop
-        ? {
-            liveMale: Number(pop.male?.live) || 0,
-            liveFemale: Number(pop.female?.live) || 0
-          }
-        : null,
-      topAges: pop ? topSeries(pop.ages?.live, 3) : [],
-      topArpu: pop ? topSeries(pop.arpu?.live, 3) : [],
-      // 以下来自商圈面基线（不是人口数）
       crowd: d.crowd || '',
       level: d.level || '',
       resident: d.resident || '',
@@ -235,63 +242,71 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
       note: contained ? '点位落在该商圈面内' : `点位不在任何商圈面内，此处为最近的商圈（直线约 ${fmtM(hit.distanceM)}）`
     })
   } else {
-    facts.push({ label: '所在商圈', value: '未匹配到商圈', note: '该公司城市暂无商圈面数据，人口与竞争画像不可用' })
-    risks.push('该点位未匹配到商圈面 —— 人口、竞争两项无数据支撑，结论仅限「登记信息」层面。')
+    // 🔴 人口与商圈面无关 ⇒ 这里只能说「竞争画像不可用」，⛔ 不许说人口不可用
+    facts.push({
+      label: '所在商圈',
+      value: '未匹配到商圈',
+      note: '该公司城市暂无商圈面数据，竞争画像（评分 / 竞品 / 自家门店）不可用'
+    })
+    risks.push('该点位未匹配到商圈面 —— 竞争一项无数据支撑；人口按点位半径独立取数，不受影响。')
   }
 
-  // ── 结论（只陈述事实 + 有出处的比较）──────────────────
+  // ── 人口结论（独立于商圈面：无商圈面也要照常出）──────────
+  if (populationBlock.hasPop) {
+    const b = populationBlock
+    // 联通 1001 三件套：到访 / 居住 / 工作（⚠️ 到访是**人次**，与另两项不同量纲）
+    // 🔴 标签必须带「半径」，因为这是 point+radius 口径，不是商圈面口径（v1.13.341）
+    const rTxt = radiusText(b.popRadius)
+    const rPrefix = rTxt ? `半径 ${rTxt} 内` : '半径内'
+    const srcNote = `联通智慧足迹${b.popMonth ? ' ' + b.popMonth : ''} · 点位半径口径（圆）`
+    facts.push({
+      label: `${rPrefix}居住人口`,
+      value: `${b.population.toLocaleString('zh-CN')} 人`,
+      note: `${srcNote} · ${populationNote(b.population)}`
+    })
+    facts.push({ label: `${rPrefix}工作人口`, value: `${b.work.toLocaleString('zh-CN')} 人`, note: srcNote })
+    facts.push({
+      label: `${rPrefix}到访人次`,
+      value: `${b.visit.toLocaleString('zh-CN')} 人次`,
+      note: '统计期内累计到访次数，⛔ 不等于人数，不可与居住/工作相加'
+    })
+    if (b.gender && (b.gender.liveMale || b.gender.liveFemale)) {
+      const m = b.gender.liveMale
+      const f = b.gender.liveFemale
+      const t = m + f
+      facts.push({
+        label: '居住性别比',
+        value: t ? `男 ${((m / t) * 100).toFixed(1)}% · 女 ${((f / t) * 100).toFixed(1)}%` : '无数据',
+        note: '联通智慧足迹 · 居住人口口径'
+      })
+    }
+    if (b.topAges.length) {
+      facts.push({
+        label: '主要年龄段',
+        value: b.topAges.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
+        note: '联通智慧足迹 · 居住人口前 3 段'
+      })
+    }
+    if (b.topArpu.length) {
+      facts.push({
+        label: '主要月话费档',
+        value: b.topArpu.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
+        note: '联通智慧足迹 · 话费档可作消费能力代理，非实际客单价'
+      })
+    }
+  } else {
+    // 没买/没取到就如实说，⛔ 不拿商圈面属性顶上
+    facts.push({
+      label: '半径内人口',
+      value: '未获取',
+      note: '需购买联通人口配额后按「点位 + 半径」取数（若该位置已购买过则自动复用、不重复扣费）'
+    })
+    risks.push('本报告尚未获取联通人口数据 —— 人口规模、性别、年龄与消费档位均缺失，人口相关结论不成立。')
+  }
+
+  // ── 商圈面基线结论（只在有商圈面时才有）──────────────────
   if (districtBlock) {
     const b = districtBlock
-    if (b.hasPop) {
-      // 联通 1001 三件套：到访 / 居住 / 工作（⚠️ 到访是**人次**，与另两项不同量纲）
-      // 🔴 标签必须带「半径」，因为这是 point+radius 口径，不是商圈面口径（v1.13.341）
-      const rTxt = radiusText(b.popRadius)
-      const rPrefix = rTxt ? `半径 ${rTxt} 内` : '半径内'
-      const srcNote = `联通智慧足迹${b.popMonth ? ' ' + b.popMonth : ''} · 点位半径口径（圆）`
-      facts.push({
-        label: `${rPrefix}居住人口`,
-        value: `${b.population.toLocaleString('zh-CN')} 人`,
-        note: `${srcNote} · ${populationNote(b.population)}`
-      })
-      facts.push({ label: `${rPrefix}工作人口`, value: `${b.work.toLocaleString('zh-CN')} 人`, note: srcNote })
-      facts.push({
-        label: `${rPrefix}到访人次`,
-        value: `${b.visit.toLocaleString('zh-CN')} 人次`,
-        note: '统计期内累计到访次数，⛔ 不等于人数，不可与居住/工作相加'
-      })
-      if (b.gender && (b.gender.liveMale || b.gender.liveFemale)) {
-        const m = b.gender.liveMale
-        const f = b.gender.liveFemale
-        const t = m + f
-        facts.push({
-          label: '居住性别比',
-          value: t ? `男 ${((m / t) * 100).toFixed(1)}% · 女 ${((f / t) * 100).toFixed(1)}%` : '无数据',
-          note: '联通智慧足迹 · 居住人口口径'
-        })
-      }
-      if (b.topAges.length) {
-        facts.push({
-          label: '主要年龄段',
-          value: b.topAges.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
-          note: '联通智慧足迹 · 居住人口前 3 段'
-        })
-      }
-      if (b.topArpu.length) {
-        facts.push({
-          label: '主要月话费档',
-          value: b.topArpu.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
-          note: '联通智慧足迹 · 话费档可作消费能力代理，非实际客单价'
-        })
-      }
-    } else {
-      // 没买/没取到就如实说，⛔ 不拿商圈面属性顶上
-      facts.push({
-        label: '半径内人口',
-        value: '未获取',
-        note: '需购买联通人口配额后按「点位 + 半径」取数（若该位置已购买过则自动复用、不重复扣费）'
-      })
-      risks.push('本报告尚未获取联通人口数据 —— 人口规模、性别、年龄与消费档位均缺失，人口相关结论不成立。')
-    }
     facts.push({
       label: '客群 / 能级',
       value: [b.crowd, b.level].filter(Boolean).join(' · ') || '无标签',
@@ -347,19 +362,20 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     },
     facts,
     district: districtBlock,
+    population: populationBlock,
     risks,
     completeness,
     /** 报告里必须明写的口径（模板直接渲染，⛔ 不要另写一份） */
     provenance: {
-      source: districtBlock?.hasPop
+      source: populationBlock.hasPop
         // 人口与商圈面**分属两个来源、两套口径**，必须分开写，⛔ 不能糊成一句"联通数据"
-        ? `人口：联通智慧足迹 1001（点位半径${districtBlock.popRadius ? ' ' + radiusText(districtBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
+        ? `人口：联通智慧足迹 1001（点位半径${populationBlock.popRadius ? ' ' + radiusText(populationBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
         : '人口未获取（需购买联通人口配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记',
-      period: districtBlock?.hasPop
+      period: populationBlock.hasPop
         ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')
         : '人口无期次（未取数）；商圈基线未标注数据期次',
-      sample: districtBlock?.hasPop
-        ? `人口为点位半径${radiusText(districtBlock.popRadius) || ''} 内的圆口径，⛔ 非商圈面口径；评分与竞争计数为商圈面（${districtBlock.name}）口径`
+      sample: populationBlock.hasPop
+        ? `人口为点位半径${radiusText(populationBlock.popRadius) || ''} 内的圆口径，⛔ 非商圈面口径；评分与竞争计数为商圈面（${districtBlock?.name || '未匹配商圈面'}）口径`
         : '人口未取数 ⇒ 无人口样本；评分与竞争为商圈面口径',
       confidence: '本报告不含销售预测；人口与竞争为存量数据，不代表实时客流'
     }

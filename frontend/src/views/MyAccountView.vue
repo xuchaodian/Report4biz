@@ -245,6 +245,7 @@
           <el-option label="已开业" value="已开业" />
           <el-option label="重点候选" value="重点候选" />
           <el-option label="一般候选" value="一般候选" />
+          <el-option label="报告取数" value="报告取数" />
         </el-select>
         <el-select v-model="filterCity" placeholder="城市" aria-label="按城市筛选" style="width: 120px" clearable @change="handleFilterChange">
           <el-option v-for="city in cityOptions" :key="city" :label="city" :value="city" />
@@ -328,9 +329,13 @@
             <span>{{ row.store_name || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="门店类型" width="75" align="center">
+        <el-table-column label="门店类型" width="90" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.store_type" size="small">{{ row.store_type }}</el-tag>
+            <!-- v1.13.342：报告取数不是门店购买，明确标出来源；否则会自动显示英文 'report' 且筛不到 -->
+            <el-tooltip v-if="row.is_report" :content="row.source_note" placement="top">
+              <el-tag size="small" type="warning" effect="plain">{{ row.store_type_label || '报告取数' }}</el-tag>
+            </el-tooltip>
+            <el-tag v-else-if="row.store_type" size="small">{{ row.store_type }}</el-tag>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -598,6 +603,18 @@
           </div>
         </div>
       </template>
+      <!-- v1.13.342：报告取数的 result_data 只有 1001 人口服务 ⇒
+           详情图表 / 343 指标 / 对比看板大面积空白属正常，先说清楚，别让用户以为报表坏了。
+           ⚠️ 独立 v-if（不打断下方 detailLoading → v-else-if 链），也不进 pdfContentRef。 -->
+      <el-alert
+        v-if="currentDetail?.is_report && !detailLoading"
+        type="info"
+        :closable="false"
+        show-icon
+        :title="`立项报告人口取数 · 服务码 ${currentDetail.services?.join('、') || '1001'}`"
+        :description="currentDetail.source_note"
+        style="margin-bottom:10px;"
+      />
       <div v-if="detailLoading" class="detail-loading">
         <el-icon class="is-loading"><Loading /></el-icon>
         <span>加载中...</span>
@@ -1035,7 +1052,7 @@ const filteredHistoryList = computed(() => {
       return false
     }
     // 门店类型
-    if (filterStoreType.value && h.store_type !== filterStoreType.value) {
+    if (filterStoreType.value && (h.store_type_label || h.store_type) !== filterStoreType.value) {
       return false
     }
     // 城市

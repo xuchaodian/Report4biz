@@ -114,8 +114,8 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     expect(m.district.name).toBe('五角场')
     expect(m.district.contained).toBe(true)
     // 🔴 v1.13.340：人口只认联通配额数据 —— 商圈面上的 population 不许回落到报告
-    expect(m.district.hasPop).toBe(false)
-    expect(m.district.population).toBeNull()
+    expect(m.population.hasPop).toBe(false)
+    expect(m.population.population).toBeNull()
     const labels = m.facts.map((f) => f.label)
     expect(labels).toContain('半径内人口')
     expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
@@ -276,10 +276,10 @@ describe('G. 人口只认联通配额，且与「我的门店」打通（点位+
   it('🔴 没取联通数据时，不许拿商圈面的 population 顶上去', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
     const m = buildReportModel(cand, hit)
-    expect(m.district.hasPop).toBe(false)
-    expect(m.district.population).toBeNull()
-    expect(m.district.work).toBeNull()
-    expect(m.district.visit).toBeNull()
+    expect(m.population.hasPop).toBe(false)
+    expect(m.population.population).toBeNull()
+    expect(m.population.work).toBeNull()
+    expect(m.population.visit).toBeNull()
     expect(JSON.stringify(m)).not.toContain('196440')
     expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
     expect(m.risks.join('|')).toMatch(/尚未获取联通人口数据/)
@@ -288,9 +288,9 @@ describe('G. 人口只认联通配额，且与「我的门店」打通（点位+
   it('★ 取到联通数据 ⇒ 三项 + 期次 + **半径口径标签**', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
     const m = buildReportModel(cand, hit, { population: pop, popMonth: '202510', popRadius: 1000 })
-    expect(m.district.hasPop).toBe(true)
-    expect(m.district.population).toBe(399275)
-    expect(m.district.popRadius).toBe(1000)
+    expect(m.population.hasPop).toBe(true)
+    expect(m.population.population).toBe(399275)
+    expect(m.population.popRadius).toBe(1000)
     expect(JSON.stringify(m)).not.toContain('196440')   // 商圈面那条仍未出现
     expect(m.provenance.period).toContain('202510')
 
@@ -477,5 +477,84 @@ describe('J. 341 收尾：守卫不许在改写中丢失', () => {
 
   it('🔴 探测要有序号防竞态（切半径后旧请求不许回填）', () => {
     expect(COMP2).toContain('seq !== probeSeq')
+  })
+})
+
+
+/**
+ * K. v1.13.342：人口与商圈面**解耦**
+ *
+ * 337 首版把人口三项放在 `districtBlock` 里，而 `districtBlock` 只在匹配到商圈面时创建。
+ * ⇒ 该城市没有商圈面数据（上海商圈面仅覆盖约 24% 陆域）时，即使花配额买到联通人口，
+ *   报告纸面也**看不到人口**。340 换了数据源、341 换了半径口径，都没拆这个容器。
+ * 这里钉死：人口是「点位 + 半径」口径，**与商圈面无关**，必须独立成块。
+ */
+describe('K. 人口与商圈面解耦（v1.13.342）', () => {
+  const cand = {
+    name: '五角场万达 3F 中庭', brand: '食其家', city: '上海', district: '杨浦区',
+    address: '邯郸路 600 号', latitude: 31.30, longitude: 121.51, radius: 1000,
+    area: 120, rent: 45000
+  }
+  const pop = {
+    visit: 39073425, live: 399275, work: 335771, total: 410000,
+    male: { live: 195000, work: 170000 }, female: { live: 204275, work: 165771 },
+    ages: { live: [{ label: '19-24岁', value: 90000 }], work: [] },
+    arpu: { live: [{ label: '50元以下', value: 5000 }], work: [] }
+  }
+  const noHit = { district: null, contained: false, distanceM: null }
+
+  it('🔴🔴 无商圈面 + 有联通数据 ⇒ 人口照常出（本批次要修的真 bug）', () => {
+    const m = buildReportModel(cand, noHit, { population: pop, popMonth: '202510', popRadius: 1000 })
+    expect(m.district).toBeNull()
+    expect(m.population.hasPop).toBe(true)
+    expect(m.population.population).toBe(399275)
+    expect(m.population.popRadius).toBe(1000)
+    const labels = m.facts.map((f) => f.label)
+    expect(labels).toContain('半径 1km 内居住人口')
+    expect(labels).toContain('半径 1km 内工作人口')
+    expect(labels).toContain('半径 1km 内到访人次')
+    // ⛔ 不许再写「人口不可用」—— 人口明明已经取到了，那句话是撒谎
+    expect(m.risks.join('|')).not.toMatch(/人口、竞争两项无数据支撑/)
+    expect(m.provenance.source).toContain('点位半径 1km')
+  })
+
+  it('🔴 无商圈面 + 没取数 ⇒ 人口如实说「未获取」，但不许说「人口不可用」', () => {
+    const m = buildReportModel(cand, noHit)
+    expect(m.district).toBeNull()
+    expect(m.population.hasPop).toBe(false)
+    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
+    expect(m.facts.find((f) => f.label === '所在商圈').note).not.toContain('人口')
+  })
+
+  it('⭐ populationBlock 与 districtBlock 互不嵌套（运行时：商圈块里不许留人口字段）', () => {
+    const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
+    const m = buildReportModel(cand, hit, { population: pop, popRadius: 3000 })
+    expect(m.population).toBeTruthy()
+    expect(m.district).toBeTruthy()
+    for (const k of ['hasPop', 'population', 'work', 'visit', 'popRadius', 'popMonth']) {
+      expect(Object.prototype.hasOwnProperty.call(m.district, k), `districtBlock 不该含 ${k}`).toBe(false)
+    }
+  })
+
+  it('🔴 provenance 不许再从 districtBlock 判人口（源码守卫）', () => {
+    const SRC = read('frontend/src/utils/candidateReport.js')
+    expect(SRC).not.toContain('districtBlock?.hasPop')
+    expect(SRC).toContain('populationBlock.hasPop')
+  })
+
+  it('🔴 模板人口区必须是独立 .rp-sec，⛔ 不包在商圈画像块内', () => {
+    const COMP = read('frontend/src/components/CandidateReport.vue')
+    const tpl = COMP.slice(0, COMP.indexOf('<script setup>'))
+    expect(tpl).toContain('class="rp-sec rp-pop"')
+    expect(tpl).toContain('model.population.hasPop')
+    // 商圈画像块里不许再渲染人口三项
+    const dStart = tpl.indexOf('v-if="model.district" class="rp-sec"')
+    const pStart = tpl.indexOf('<!-- 人口数据')
+    expect(dStart).toBeGreaterThan(-1)
+    expect(pStart).toBeGreaterThan(dStart)
+    const dSec = tpl.slice(dStart, pStart)
+    expect(dSec).not.toContain('model.district.hasPop')
+    expect(dSec).not.toContain('内居住')
+    expect(dSec).not.toContain('rp-pop-empty')
   })
 })
