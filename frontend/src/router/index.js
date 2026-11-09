@@ -105,7 +105,10 @@ const routes = [
         path: 'candidates',
         name: 'Candidates',
         // v1.13.333（P1-6 轻量工作流）：候选点位独立于门店台账，⛔ 不是 markers 的视图
-        component: () => import('@/views/CandidateView.vue')
+        // v1.13.343：业主「还没想好」⇒ 收紧为仅管理员可进，全局守卫 next('/') 弹回首页。
+        //   ⛔ 只挡 UI 深链；后端 /api/candidates 未加 requireAdmin（见 candidateAdminOnly.test.js 文件头）。
+        component: () => import('@/views/CandidateView.vue'),
+        meta: { requiresAdmin: true }
       },
       {
         path: 'market-map',
