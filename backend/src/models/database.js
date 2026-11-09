@@ -1238,6 +1238,60 @@ export async function initDatabase() {
   // 🔴 同一账号同时只能有 1 条 pending（存储层兜底；路由会先行返回 400 友好提示）
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS ux_quota_req_pending ON quota_purchase_requests(user_id) WHERE status = 'pending'`)
 
+  // ===== 候选点位 + 推进流水（v1.13.333 · P1-6 轻量工作流）=====
+  // 定位：选址流程里「还没开、正在推」的点。⛔ 不是门店 —— 不进 markers 表。
+  // 🔴🔴 为什么不塞进 markers（业主 2026-11-09 拍板「独立表」）：
+  //   markers 被门店体检 / 销售预测 / 台账去重 / 集团同步 / 各类统计**全都在读**，
+  //   往里塞候选点等于把「读路径铁律」逐条重改一遍（每条统计都要再加一个"非候选"条件），
+  //   成本与风险远大于收益。候选点独立成表、地图上单独一层，计算时**复用函数不复用表**。
+  // 🔴 `markers.status` 是**经营状态**（正常/关注/暂停/关闭），与推进阶段是两套语义，⛔ 不复用。
+  // 四档（业主 2026-11-09 定）：待评估 / 已勘踏 / 立项 / 放弃
+  // ⚠️ 这四个字符串是**落库值**，改动要同步改 routes/candidates.js 的 STAGES 与前端 candidateStage.js
+  //    （守卫 tests/candidateWorkflow.test.js 会对比三处，改一处就红）。
+  // 幂等零迁移：CREATE TABLE IF NOT EXISTS —— 生产重启即建表，无需手工 ALTER。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS store_candidates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,              -- 归属：只本人可见（与 /api/markers 同口径，admin 也不放大）
+      name TEXT NOT NULL,                    -- 点位名（如"五角场万达 3F 铺位"）
+      brand TEXT DEFAULT '',                 -- 拟入驻品牌
+      city TEXT DEFAULT '',
+      district TEXT DEFAULT '',
+      address TEXT DEFAULT '',
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      radius INTEGER DEFAULT 1000,           -- 评估半径（米）
+      area REAL,                             -- 铺位面积（㎡）
+      rent REAL,                             -- 月租金（元）
+      stage TEXT NOT NULL DEFAULT '待评估',   -- 待评估/已勘踏/立项/放弃
+      source TEXT DEFAULT '',                -- manual / map / import（来源留痕）
+      drop_reason TEXT DEFAULT '',           -- 放弃原因（仅 stage='放弃' 时有值）
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  // 列表默认按「本人 + 阶段」筛、更新时间倒序 ⇒ (user_id, stage, updated_at) 覆盖
+  db.run(`CREATE INDEX IF NOT EXISTS idx_cand_user_stage ON store_candidates(user_id, stage, updated_at DESC)`)
+  // 地图图层按城市取全部候选点
+  db.run(`CREATE INDEX IF NOT EXISTS idx_cand_user_city ON store_candidates(user_id, city)`)
+
+  // 推进流水：一条 = 一次「谁在什么时候把状态从哪改到哪 + 一句说明」
+  // 🔴 备注**只追加不改写**（⛔ 不做可编辑的备注框：选址推进过程要能回溯，改了就失真）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS candidate_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidate_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,              -- 写下这条的人
+      from_stage TEXT DEFAULT '',            -- 流转前阶段（纯备注时为空）
+      to_stage TEXT DEFAULT '',              -- 流转后阶段（纯备注时为空）
+      note TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (candidate_id) REFERENCES store_candidates(id)
+    )
+  `)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_cand_note_cand ON candidate_notes(candidate_id, created_at)`)
+
   // 保存数据库
   saveDatabase()
 

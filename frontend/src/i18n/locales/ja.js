@@ -14,6 +14,7 @@ export default {
     cityInsight: '都市インサイト',
     districtInsight: '商圏インサイト',
     salesForecast: '売上予測',
+    candidates: '候補物件',
     users: 'ユーザー管理',
     apiOpen: 'API開放',
     dashboard: 'ダッシュボード',

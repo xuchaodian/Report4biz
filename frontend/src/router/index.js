@@ -102,6 +102,12 @@ const routes = [
         meta: { requiresAdmin: true }
       },
       {
+        path: 'candidates',
+        name: 'Candidates',
+        // v1.13.333（P1-6 轻量工作流）：候选点位独立于门店台账，⛔ 不是 markers 的视图
+        component: () => import('@/views/CandidateView.vue')
+      },
+      {
         path: 'market-map',
         name: 'MarketMap',
         component: () => import('@/views/MarketMapView.vue')

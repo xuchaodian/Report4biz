@@ -18,6 +18,7 @@ import vipApplicationRoutes from './routes/vipApplications.js'
 import quotaRequestRoutes from './routes/quotaRequests.js'
 import feedbackRoutes from './routes/feedbacks.js'
 import sceneEventRoutes from './routes/sceneEvents.js'
+import candidateRoutes from './routes/candidates.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
@@ -116,6 +117,8 @@ async function start() {
     app.use('/api/quota-requests', quotaRequestRoutes)
     app.use('/api/feedbacks', feedbackRoutes)
     app.use('/api/scene-events', sceneEventRoutes)
+    // 候选点位（v1.13.333）：独立表，⛔ 与 /api/markers 无共表关系（见 routes/candidates.js 头注释）
+    app.use('/api/candidates', candidateRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)

@@ -53,6 +53,10 @@
               <el-dropdown-item :class="{ 'dd-active': $route.path === '/district-insight' }" @click="$router.push('/district-insight')">
                 <el-icon><Shop /></el-icon>{{ $t('nav.districtInsight') }}
               </el-dropdown-item>
+              <!-- v1.13.333：候选点位（P1-6）。全免费、只本人可见，⛔ 不挂 VIP 角标 -->
+              <el-dropdown-item :class="{ 'dd-active': $route.path === '/candidates' }" @click="$router.push('/candidates')">
+                <el-icon><Flag /></el-icon>{{ $t('nav.candidates') }}
+              </el-dropdown-item>
               <!-- v1.13.209：销售预测升为 VIP 专属。非 VIP 显示 🔒VIP 角标
                    （判据与「AI 选址建议 / 开店余地 / 网点优化」共用 userStore.isVipActive，
                     切勿就地写 role 判等 —— backend/tests/vipGateGuard.test.js 会判红） -->
@@ -295,7 +299,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter, useRoute } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, Flag } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'

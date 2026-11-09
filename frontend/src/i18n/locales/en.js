@@ -14,6 +14,7 @@ export default {
     cityInsight: 'City Insight',
     districtInsight: 'District Insight',
     salesForecast: 'Sales Forecast',
+    candidates: 'Candidate Sites',
     users: 'Users',
     apiOpen: 'API Access',
     dashboard: 'Dashboard',
