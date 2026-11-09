@@ -65,7 +65,7 @@
       </template>
       <template v-else>
         <p>还没有候选点位。</p>
-        <p class="cd-empty-hint">在地图上物色到位置后，点「新建点位」把手上的点位存进来。</p>
+        <p class="cd-empty-hint">在地图页<b>右键</b>物色到的位置 →「加入候选点位」，或者点下面的「新建点位」手填。</p>
         <el-button type="primary" @click="openCreate">新建第一个点位</el-button>
       </template>
     </div>
@@ -447,13 +447,27 @@ async function remove(row) {
   }
 }
 
+/** 地图右键选点的默认点位名：带日期时间，免得用户面对一个必填空格 */
+function defaultMapName() {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `地图选点 ${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 onMounted(() => {
   reload()
-  // 深链预填：/candidates?lat=&lng=&name=（为「地图上选点 → 加入候选」预留，地图侧暂未接）
+  // 深链预填：地图页右键「加入候选点位」会带 lat / lng / source=map 过来（v1.13.335）
   const q = route.query
   if (q.lat && q.lng) {
-    form.value = { ...emptyForm(), latitude: String(q.lat), longitude: String(q.lng), name: String(q.name || '') }
+    form.value = {
+      ...emptyForm(),
+      latitude: String(q.lat),
+      longitude: String(q.lng),
+      name: String(q.name || defaultMapName())
+    }
     dialog.value = true
+    // 🔴 预填后立刻清掉 query：否则关掉弹窗一刷新又弹一次（同 DataView 认 ?sale=1 的处理）
+    router.replace({ path: '/candidates' })
   }
 })
 </script>

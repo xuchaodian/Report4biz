@@ -190,3 +190,37 @@ describe('F. 时间口径：库里存 UTC，展示转本地', () => {
     expect(ROUTE).toContain('updated_at = CURRENT_TIMESTAMP')
   })
 })
+
+describe('G. 地图选点入口（v1.13.335）', () => {
+  const MAP_RAW = read('frontend/src/views/MapView.vue')
+  const MAP = strip(MAP_RAW)
+
+  it('右键菜单里有「加入候选点位」，并接到 addCandidateFromMap', () => {
+    expect(MAP_RAW).toContain("contextMenuAction('candidate')")
+    expect(MAP_RAW).toContain('加入候选点位')
+    expect(MAP).toContain('case \'candidate\': addCandidateFromMap()')
+  })
+
+  it('跳转带 lat / lng / source=map（坐标按 6 位小数收敛，⛔ 不传 20 位双精度）', () => {
+    const block = MAP.slice(MAP.indexOf('const addCandidateFromMap'), MAP.indexOf('const addCandidateFromMap') + 600)
+    expect(block).toContain("path: '/candidates'")
+    expect(block).toContain('toFixed(6)')
+    expect(block).toContain("source: 'map'")
+  })
+
+  it('🔴 MapView 只做跳转，⛔ 不复制一份新建表单/接口调用（校验与流水必须只有一处）', () => {
+    expect(MAP).not.toContain('/api/candidates')
+    expect(MAP).not.toContain('store_candidates')
+  })
+
+  it('🔴 预填后必须清 query（否则关掉弹窗一刷新又弹一次）', () => {
+    const i = VIEW.indexOf('const q = route.query')
+    const block = VIEW.slice(i, i + 600)
+    expect(block).toContain("router.replace({ path: '/candidates' })")
+  })
+
+  it('地图选点会给一个默认点位名（必填项不空着进去）', () => {
+    expect(VIEW).toContain('defaultMapName()')
+    expect(VIEW).toContain('地图选点')
+  })
+})

@@ -1058,6 +1058,10 @@
         <el-icon><Location /></el-icon>
         <span>添加门店</span>
       </div>
+      <div class="map-context-menu-item" @click="contextMenuAction('candidate')">
+        <el-icon><Flag /></el-icon>
+        <span>加入候选点位</span>
+      </div>
       <div class="map-context-menu-item" @click="contextMenuAction('locate')">
         <el-icon><Search /></el-icon>
         <span>定位门店</span>
@@ -3076,6 +3080,7 @@ const contextMenuAction = (action) => {
   hideContextMenu()
   switch (action) {
     case 'addstore': setTool('marker'); break  // 与门店工具面板「添加门店」一致：进入选点模式
+    case 'candidate': addCandidateFromMap(); break  // v1.13.335：右键点 → 建候选点位（预填坐标）
     case 'locate': storeSearchVisible.value = !storeSearchVisible.value; break  // 与门店工具面板「定位门店」一致：切换定位门店搜索面板
     case 'clear': clearDrawings(); break
     case 'circle': setTool('circle'); break
@@ -3085,6 +3090,21 @@ const contextMenuAction = (action) => {
     case 'smartsteps': smartstepsVisible.value = !smartstepsVisible.value; break
     case 'lockmap': toggleMapLock(); break
   }
+}
+
+/**
+ * 「加入候选点位」（v1.13.335）
+ * 只把右键那一点带到候选点位页并**预填坐标**，新建动作在那边完成 ——
+ * ⛔ 不在 MapView 里再写一套新建表单（那会把「候选点位」的校验/流水逻辑复制到第二处）。
+ * 🔴 坐标用 toFixed(6)（约 0.1m）：Leaflet 给的是双精度，直接传会出现 20 位小数。
+ */
+const addCandidateFromMap = () => {
+  const ll = contextMenu.latlng
+  if (!ll) return
+  router.push({
+    path: '/candidates',
+    query: { lat: ll.lat.toFixed(6), lng: ll.lng.toFixed(6), source: 'map' }
+  })
 }
 
 // POI位置选择模式（用户需点击地图）
