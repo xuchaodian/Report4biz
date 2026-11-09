@@ -54,6 +54,22 @@
         </template>
       </el-alert>
 
+      <!-- v1.13.332 / P0 ②：数据口径卡，进页即显示（不依赖是否出过预测结果）。
+           文案统一来自 utils/dataProvenance.js，与商圈洞察页同结构。 -->
+      <div class="fc-prov">
+        <div class="prov-hd">
+          <span class="prov-title">数据口径</span>
+          <span class="prov-sub">预测值建立在什么数据上</span>
+        </div>
+        <dl class="prov-grid">
+          <div v-for="it in forecastProv.items" :key="it.label" class="prov-item">
+            <dt>{{ it.label }}</dt>
+            <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
+          </div>
+        </dl>
+        <p class="prov-note">{{ forecastProv.note }}</p>
+      </div>
+
       <!-- 候选门店选择 -->
       <div class="fc-toolbar">
         <el-input v-model="keyword" placeholder="搜索候选门店" aria-label="搜索候选门店" style="width: 220px" clearable>
@@ -214,6 +230,7 @@ import { Search, ArrowRight, DataAnalysis, CircleCheck, TrendCharts, Tools, Warn
 import AppIcon from '@/components/AppIcon.vue'
 import ImportGuideDialog from '@/components/ImportGuideDialog.vue'
 import { downloadSalesTemplate } from '@/utils/importTemplates.js'
+import { forecastProvenance as buildForecastProvenance } from '@/utils/dataProvenance'
 import { useUserStore } from '@/stores/user'
 import { useRouter } from 'vue-router'
 
@@ -303,6 +320,8 @@ const loadStats = async () => {
     if (d && d.success) stats.value = d
   } catch (e) { /* 忽略统计失败 */ }
 }
+// v1.13.332 / P0 ②：口径卡随 stats / result 实时变化，⛔ 不写死样本量。
+const forecastProv = computed(() => buildForecastProvenance({ stats: stats.value, result: result.value }))
 const loadCandidates = async () => {
   loading.value = true
   try {
@@ -570,4 +589,18 @@ onMounted(() => {
 .fc-locked .el-button {
   margin-top: 14px;
 }
+.fc-prov{margin:0 0 12px;padding:10px 14px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc}
+
+/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
+.prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.prov-title{font-size:13px;font-weight:700;color:#303133}
+.prov-sub{font-size:11.5px;color:#909399}
+.prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
+.prov-item{min-width:0}
+.prov-item dt{font-size:11.5px;color:#909399;margin-bottom:2px}
+.prov-item dd{margin:0;font-size:12.5px;color:#303133;line-height:1.45;word-break:break-word}
+.prov-item dd.prov-warn{color:#b88230}
+.prov-item dd.prov-ok{color:#1d9e75}
+.prov-note{margin:8px 0 0;font-size:11.5px;line-height:1.6;color:#6b7280;border-top:1px dashed #e4e7ed;padding-top:7px}
+@media (max-width:900px){.prov-grid{grid-template-columns:repeat(2,1fr)}}
 </style>

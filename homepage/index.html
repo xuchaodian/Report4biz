@@ -15,6 +15,11 @@
      ④ 演示第 4 步：截图是「按次调用的联通人口报告」，不是每次分析都会自动生成的通用报告 ⇒ 副文案与图片 alt 改名
      ⑤ 人口期次：只有购买报告标数据年月，商圈洞察基线无期次 ⇒ 不再写「系统里能直接看到」
      ⚠️ FAQPage 结构化数据与可见 details 必须逐条一致，改任一处两边同改。 -->
+<!-- v1.13.332（2026-11-09）P0 ③：补齐「已实现但官网未宣传」的能力。
+     新增 #enterprise 8 张卡，措辞逐条对照代码核过：审计覆盖 15 类敏感动作、2FA 仅管理员、
+     回滚按批次类型有边界、竞品快照需人工逐期上传、API 仅 1 个付费端点、AI 20 工具 / 2 流程 10 步、
+     250 米网格仅管理员导入。能力区品牌映射数字按 storeBrand.js 实计更新为 117 个品牌业态库。
+     ⚠️ 本批不新增 FAQ 条目，只扩写「多人协作」答案 ⇒ JSON-LD 与可见 details 仍须两边同改。 -->
 <title>选址赢家Online - 用数据看清每一平方公里</title>
 <meta name="description" content="选址赢家Online 是 WebGIS 商业智能分析平台：1km 网格商圈人口分析、驾车/步行可达范围、竞品追踪与门店体检、销售预测与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变成「看数据」。">
 <link rel="canonical" href="https://www.mka-online.cn/">
@@ -76,7 +81,7 @@
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web Browser (Windows / macOS)",
       "inLanguage": "zh-CN",
-      "description": "商圈与整城的人口分析、竞品追踪、门店体检、驾车与步行可达范围、销售预测、AI 选址建议与数据大屏，把开店决策从凭经验变为看数据。",
+      "description": "商圈与整城的人口分析、竞品追踪、门店体检、驾车与步行可达范围、销售预测、AI 选址建议与数据大屏，把开店决策从凭经验变为看数据。支持集团与子公司分层同步、操作审计、管理员两步验证与开放 API。",
       "publisher": { "@id": "https://mka-online.cn/#organization" }
     },
     {
@@ -116,7 +121,7 @@
         {
           "@type": "Question",
           "name": "多人协作和集团多子公司支持吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总；同步批次可预览与回滚。管理员还能查操作审计日志（含操作人、时间与 IP），并为自己的账号开启 TOTP 两步验证。" }
         },
         {
           "@type": "Question",
@@ -630,7 +635,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <div class="card">
         <div class="ci"><img src="assets/icons/cpu.svg" alt="" width="21" height="21"></div>
         <h3>AI 选址建议</h3>
-        <p>30+ 品牌映射，输出结论、客群匹配与风险提示。</p>
+        <p>内置 117 个品牌业态库，输出结论、客群匹配与风险提示；未收录品牌先请用户确认业态。</p>
       </div>
       <div class="card">
         <div class="ci"><img src="assets/icons/office-building.svg" alt="" width="21" height="21"></div>
@@ -818,6 +823,51 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   </div>
 </section>
 
+<!-- ================= 企业级能力（2026-11-09 新增：已实现但此前未宣传） ================= -->
+<section class="sec sec-soft" id="enterprise">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">企业级能力</span>
+      <h2>多账号、可追溯、能集成</h2>
+      <p>演示视频里放不下的部分：权限、留痕、数据治理与对外接口，都已经在系统里。</p>
+    </div>
+    <div class="caps rv">
+      <div class="card">
+        <h3>操作审计日志</h3>
+        <p>管理员可按操作人、动作、日期筛选审计记录，覆盖账号、配额、城市数据与两步验证等敏感操作，含时间、IP 与变更详情。</p>
+      </div>
+      <div class="card">
+        <h3>管理员两步验证</h3>
+        <p>管理员账号可开启基于 TOTP 的两步验证，兼容标准验证器 App，并配 8 张一次性恢复码；必要时可由管理员重置。</p>
+      </div>
+      <div class="card">
+        <h3>集团 / 子公司同步</h3>
+        <p>按子公司分层管理门店与配额，同步前先预览、逐行留痕。成功批次可回滚：辖区划拨可回退归属与销售记录，普通同步可撤回本批新增的镜像副本。</p>
+      </div>
+      <div class="card">
+        <h3>竞品期次快照</h3>
+        <p>按月或季导入竞品门店快照，按门店 ID 对齐两期在营门店，自动算出新开店、闭店与状态变化，可导出变更明细。快照需人工逐期上传。</p>
+      </div>
+      <div class="card">
+        <h3>API 开放</h3>
+        <p>面向合作客户提供联通人口数据接口，凭 API Key 调用、按次计费；管理员在后台管理客户、余额与用量明细。</p>
+      </div>
+      <div class="card">
+        <h3>AI 操作助手</h3>
+        <p>内置 20 个 Function Calling 工具，覆盖筛选、统计、POI 检索与人口对比；另有 2 条场景引导共 10 步（网点规划 6 步、单店评估 4 步）。</p>
+      </div>
+      <div class="card">
+        <h3>城市洞察 / 商圈洞察</h3>
+        <p>城市机会评分按市场规模、竞争强度、品牌空白与消费潜力加权，权重可调；商圈综合评分拆解为人口规模、消费能力、竞争宽松度与客流活跃四维。</p>
+      </div>
+      <div class="card">
+        <h3>人口网格与色阶</h3>
+        <p>1km 网格之外还提供 250 米高精人口网格（管理员导入）；色阶图例与网格上色同源，支持等值均分与分位分档，网格数字标签可随时开关。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ================= 常见问题 ================= -->
 <section class="sec" id="faq" style="padding-top:96px;padding-bottom:86px">
   <div class="wrap">
@@ -852,7 +902,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       </details>
       <details>
         <summary>多人协作和集团多子公司支持吗？</summary>
-        <p>支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总。</p>
+        <p>支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总；同步批次可预览与回滚。管理员还能查操作审计日志（含操作人、时间与 IP），并为自己的账号开启 TOTP 两步验证。</p>
       </details>
       <details>
         <summary>只有几家店，用得上吗？</summary>

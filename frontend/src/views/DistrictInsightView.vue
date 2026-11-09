@@ -15,6 +15,22 @@
       </div>
     </div>
 
+    <!-- v1.13.332 / P0 ②：数据口径卡。文案统一来自 utils/dataProvenance.js，
+         与销售预测页同结构；⛔ 不臆造期次、不把「未标注」写成有月份。 -->
+    <div class="dv-prov">
+      <div class="prov-hd">
+        <span class="prov-title">数据口径</span>
+        <span class="prov-sub">看懂这个分数建立在什么数据上</span>
+      </div>
+      <dl class="prov-grid">
+        <div v-for="it in prov.items" :key="it.label" class="prov-item">
+          <dt>{{ it.label }}</dt>
+          <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
+        </div>
+      </dl>
+      <p class="prov-note">{{ prov.note }}</p>
+    </div>
+
     <div class="dv-body">
       <!-- 左：城市 + 商圈列表 -->
       <div class="dv-side">
@@ -223,6 +239,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, OfficeBuilding, DataAnalysis, Close } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
+import { districtProvenance as buildDistrictProvenance } from '@/utils/dataProvenance'
 
 const mapRef = ref(null)
 let map = null
@@ -235,6 +252,14 @@ const cities = ref([])
 const selectedCity = ref('')
 const districts = ref([])
 const selectedDistrict = ref(null)
+// v1.13.332 / P0 ②：口径卡文案由 utils/dataProvenance.js 统一生成。
+// 刷新后只有被刷新的那条商圈带 dataMonth ⇒ 扫一遍列表，只要有当期数据就显示期次。
+const prov = computed(() => {
+  const month = selectedDistrict.value?.dataMonth
+    || districts.value.find(d => d.dataMonth)?.dataMonth
+    || ''
+  return buildDistrictProvenance({ dataMonth: month, districtCount: districts.value.length })
+})
 const compareList = ref([])
 const compareVisible = ref(false)
 const selectAll = ref(false)
@@ -874,4 +899,18 @@ async function refreshDistrict() {
   padding: 1px 5px;
   display: inline-block;
 }
+.dv-prov{margin:0 0 12px;padding:10px 14px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc}
+
+/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
+.prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.prov-title{font-size:13px;font-weight:700;color:#303133}
+.prov-sub{font-size:11.5px;color:#909399}
+.prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
+.prov-item{min-width:0}
+.prov-item dt{font-size:11.5px;color:#909399;margin-bottom:2px}
+.prov-item dd{margin:0;font-size:12.5px;color:#303133;line-height:1.45;word-break:break-word}
+.prov-item dd.prov-warn{color:#b88230}
+.prov-item dd.prov-ok{color:#1d9e75}
+.prov-note{margin:8px 0 0;font-size:11.5px;line-height:1.6;color:#6b7280;border-top:1px dashed #e4e7ed;padding-top:7px}
+@media (max-width:900px){.prov-grid{grid-template-columns:repeat(2,1fr)}}
 </style>

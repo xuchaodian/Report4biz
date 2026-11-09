@@ -152,11 +152,15 @@ export default defineConfig({
           //    分组到 app-shared 后恢复正常（入口不含 app-shared 静态依赖 ⇒ 无回边、不成环）。
           //    判据：任何「被 ≥2 个路由 chunk 共用 + 依赖入口侧模块（router/stores）」的新 util
           //    都必须登记在此。
+          //    v1.13.332：dataProvenance.js 不依赖入口侧模块，但被商圈洞察 / 销售预测
+          //    两个路由共用；不显式分组时 Rollup 会把它塞进某个地图相关动态 chunk，
+          //    让无地图的页面反向拖入地图依赖。统一放 app-shared，入口不含它的静态边。
           if (
             id.includes('/src/utils/smartsteps1001') ||
             id.includes('/src/utils/smartstepsMonths') ||
             id.includes('/src/utils/sanitizeHtml') ||
-            id.includes('/src/utils/vipGate')
+            id.includes('/src/utils/vipGate') ||
+            id.includes('/src/utils/dataProvenance')
           ) {
             return 'app-shared'
           }
