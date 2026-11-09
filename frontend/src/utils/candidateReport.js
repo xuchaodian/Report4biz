@@ -130,6 +130,18 @@ function populationNote(pop) {
   return '居住密度很低'
 }
 
+/** 取序列里占比最高的前 n 项（用于报告里"主要年龄段/主要消费档"） */
+function topSeries(series, n = 3) {
+  const list = Array.isArray(series) ? series.filter((x) => Number(x.value) > 0) : []
+  if (!list.length) return []
+  const total = list.reduce((s, x) => s + Number(x.value), 0)
+  return list
+    .slice()
+    .sort((a, b) => Number(b.value) - Number(a.value))
+    .slice(0, n)
+    .map((x) => ({ label: x.label, value: Number(x.value), pct: total ? (Number(x.value) / total) * 100 : 0 }))
+}
+
 /** 评分 → 星级（0~5，半星取整到 0.5） */
 export function scoreToStars(score) {
   const s = Number(score)
@@ -140,13 +152,23 @@ export function scoreToStars(score) {
 /**
  * 组装报告模型 —— 报告里展示什么，全由这里决定（模板只负责排版）。
  *
+ * 🔴🔴 v1.13.340：**人口数据一律来自联通的按次配额（1001）**，⛔ 不再用商圈边界面的属性。
+ *   业主 2026-11-09 定：「人口数据不要用商圈边界面数据，原则上用收费的联通人口配额，
+ *   相应的可以放入报告中的人口字段也根据请求的联通人口字段来添加」。
+ *   ⇒ 没取到就是 `hasPop=false`，报告如实写「未获取（需购买联通人口配额）」，
+ *     **绝不回落到商圈面的 pop/work/visit** —— 否则又是一份"看着有数、其实来源不明"的报告。
+ *   ⚠️ 商圈面仍然负责：评分、竞品计数、自家门店计数、客群/能级标签（这些不是人口数）。
+ *
  * @param {object} candidate store_candidates 一行
  * @param {{district:object|null, contained:boolean, distanceM:number|null}} hit pickDistrictForPoint 的结果
+ * @param {{population?:object|null, popMonth?:string}} opts 联通 1001 解析结果与期次
  */
-export function buildReportModel(candidate, hit = {}) {
+export function buildReportModel(candidate, hit = {}, opts = {}) {
   const c = candidate || {}
   const d = hit.district || null
   const contained = !!hit.contained && !!d
+  const pop = opts.population || null      // 联通 1001：{ visit, live, work, total, male, female, ages, arpu }
+  const popMonth = opts.popMonth || ''
 
   const facts = []
   const risks = []
@@ -167,15 +189,27 @@ export function buildReportModel(candidate, hit = {}) {
       distanceM: contained ? 0 : hit.distanceM,
       score: Number(d.score) || 0,
       stars: scoreToStars(d.score),
-      population: Number(d.population) || 0,
-      work: Number(d.work) || 0,
-      visit: Number(d.visit) || 0,
+      // 🔴 人口三项只认联通（未取到就是 null，模板据此显示「未获取」）
+      hasPop: !!pop,
+      population: pop ? Number(pop.live) || 0 : null,
+      work: pop ? Number(pop.work) || 0 : null,
+      visit: pop ? Number(pop.visit) || 0 : null,
+      popTotal: pop ? Number(pop.total) || 0 : null,
+      popMonth,
+      gender: pop
+        ? {
+            liveMale: Number(pop.male?.live) || 0,
+            liveFemale: Number(pop.female?.live) || 0
+          }
+        : null,
+      topAges: pop ? topSeries(pop.ages?.live, 3) : [],
+      topArpu: pop ? topSeries(pop.arpu?.live, 3) : [],
+      // 以下来自商圈面基线（不是人口数）
       crowd: d.crowd || '',
       level: d.level || '',
       resident: d.resident || '',
       competitorCount: Number(d.competitorCount) || 0,
-      myStoreCount: Number(d.myStoreCount) || 0,
-      income: d.income || null
+      myStoreCount: Number(d.myStoreCount) || 0
     }
     facts.push({
       label: '所在商圈',
@@ -190,12 +224,52 @@ export function buildReportModel(candidate, hit = {}) {
   // ── 结论（只陈述事实 + 有出处的比较）──────────────────
   if (districtBlock) {
     const b = districtBlock
-    facts.push({ label: '商圈居住人口', value: b.population ? b.population.toLocaleString('zh-CN') + ' 人' : '无数据', note: populationNote(b.population) })
-    facts.push({ label: '商圈工作人口', value: b.work ? b.work.toLocaleString('zh-CN') + ' 人' : '无数据', note: '' })
+    if (b.hasPop) {
+      // 联通 1001 三件套：到访 / 居住 / 工作（⚠️ 到访是**人次**，与另两项不同量纲）
+      facts.push({
+        label: '商圈居住人口',
+        value: `${b.population.toLocaleString('zh-CN')} 人`,
+        note: `联通智慧足迹${b.popMonth ? ' ' + b.popMonth : ''} · ${populationNote(b.population)}`
+      })
+      facts.push({ label: '商圈工作人口', value: `${b.work.toLocaleString('zh-CN')} 人`, note: '联通智慧足迹' })
+      facts.push({
+        label: '商圈到访人次',
+        value: `${b.visit.toLocaleString('zh-CN')} 人次`,
+        note: '统计期内累计到访次数，⛔ 不等于人数，不可与居住/工作相加'
+      })
+      if (b.gender && (b.gender.liveMale || b.gender.liveFemale)) {
+        const m = b.gender.liveMale
+        const f = b.gender.liveFemale
+        const t = m + f
+        facts.push({
+          label: '居住性别比',
+          value: t ? `男 ${((m / t) * 100).toFixed(1)}% · 女 ${((f / t) * 100).toFixed(1)}%` : '无数据',
+          note: '联通智慧足迹 · 居住人口口径'
+        })
+      }
+      if (b.topAges.length) {
+        facts.push({
+          label: '主要年龄段',
+          value: b.topAges.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
+          note: '联通智慧足迹 · 居住人口前 3 段'
+        })
+      }
+      if (b.topArpu.length) {
+        facts.push({
+          label: '主要月话费档',
+          value: b.topArpu.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
+          note: '联通智慧足迹 · 话费档可作消费能力代理，非实际客单价'
+        })
+      }
+    } else {
+      // 没买/没取到就如实说，⛔ 不拿商圈面属性顶上
+      facts.push({ label: '商圈人口', value: '未获取', note: '需购买联通人口配额后按商圈面取数' })
+      risks.push('本报告尚未获取联通人口数据 —— 人口规模、性别、年龄与消费档位均缺失，人口相关结论不成立。')
+    }
     facts.push({
       label: '客群 / 能级',
       value: [b.crowd, b.level].filter(Boolean).join(' · ') || '无标签',
-      note: b.resident || ''
+      note: [b.resident, '商圈面基线标签'].filter(Boolean).join(' · ')
     })
     facts.push({ label: '商圈竞争评分', value: `${b.score} / 100`, note: '商圈面评分，非该点位自身评分' })
 
@@ -251,9 +325,16 @@ export function buildReportModel(candidate, hit = {}) {
     completeness,
     /** 报告里必须明写的口径（模板直接渲染，⛔ 不要另写一份） */
     provenance: {
-      source: '商圈边界：联通人口版（系统内已导入的城市商圈面）；点位与租金：用户登记',
-      period: '商圈基线未标注数据期次（只有刷新过「最新数据」的商圈才有月份）',
-      sample: districtBlock ? `人口为商圈面口径（${districtBlock.name}）` : '无商圈面 ⇒ 无人口样本',
+      source: districtBlock?.hasPop
+        // 人口与商圈面**分属两个来源**，必须分开写，⛔ 不能糊成一句"联通数据"
+        ? '人口：联通智慧足迹 1001（按次配额取数）；商圈评分/竞争：商圈面基线；点位与租金：用户登记'
+        : '人口未获取（需购买联通人口配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记',
+      period: districtBlock?.hasPop
+        ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')
+        : '人口无期次（未取数）；商圈基线未标注数据期次',
+      sample: districtBlock
+        ? `人口为商圈面口径（${districtBlock.name}），非点位半径内人口`
+        : '无商圈面 ⇒ 无人口样本',
       confidence: '本报告不含销售预测；人口与竞争为存量数据，不代表实时客流'
     }
   }

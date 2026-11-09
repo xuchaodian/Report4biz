@@ -6,6 +6,7 @@ import { fetchWithTimeout, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
+import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { readableUserIds } from '../utils/visibleScope.js'
 // v1.13.297：几何判定抽到 utils/geoPoint.js（门店体检落圈要同一套算法，⛔ 不许复制第二份射线法）
 import { pointInFeature, geometryBBox } from '../utils/geoPoint.js'
@@ -200,6 +201,71 @@ function extractPopulation(data) {
 }
 
 /**
+ * 按「城市 + 商圈名」定位商圈面，算出联通查询要用的 WKT 与缓存 key。
+ *
+ * 🔴🔴 v1.13.340：这里原先直接写 `ft.properties['名称'] === name`，
+ *    而 v1.13.276「联通人口版」起属性键叫**商圈名** ⇒ 换版的城市（如上海 331 换完）
+ *    **「刷新最新数据」必 404**，且 404 发生在配额检查之前（不扣费）⇒ 静默坏掉没人发现。
+ *    现统一先过 normalizeDistrictProps() 判等（与 /detail 同口径）。
+ *
+ * @returns {{feature:object, wkt:string, polygonKey:string, cityMonth:string} | null}
+ */
+function resolveBoundary(db, city, name, res) {
+  const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`)
+    .all(`%${String(city).replace(/市$/, '')}%`)
+  let feature = null
+  for (const f of files) {
+    const geojson = getGeojson(f.id)
+    if (!geojson || !geojson.features) continue
+    feature = geojson.features.find((ft) => {
+      const p = normalizeDistrictProps(ft.properties || {})
+      return (p['名称'] || '') === name
+    })
+    if (feature) break
+  }
+  if (!feature) return null
+  // 外扩（面积 < 0.3 km² → 放大）
+  const expanded = expandToMinArea(feature.geometry)
+  const wkt = buildPolygonWkt(expanded)
+  if (!wkt) return null
+  const cityMonth = getLatestCityMonth()
+  const polygonKey = crypto.createHash('md5').update(wkt).digest('hex')
+  return { feature, wkt, polygonKey, cityMonth }
+}
+
+/**
+ * 只读：该商圈**已缓存的**联通人口（免费，不扣配额、不调上游）。
+ * GET /api/districts/population?city=&name=
+ *
+ * 用途：立项报告打开时先探一次 —— 缓存命中就直接展示，未命中让用户**明确点按钮**再花钱，
+ * ⛔ 绝不因为「打开报告」就自动扣一次联通配额。
+ */
+router.get('/population', authenticate, (req, res) => {
+  try {
+    const { city, name } = req.query
+    if (!city || !name) return res.status(400).json({ message: '缺少参数' })
+    const db = getDb()
+    initDistrictCacheTable(db)
+    const bound = resolveBoundary(db, city, name, res)
+    if (!bound) return res.status(404).json({ message: '商圈不存在' })
+    const cached = db.prepare(`SELECT result_data, city_month FROM district_cache WHERE polygon_key = ? AND city_month = ?`)
+      .get(bound.polygonKey, bound.cityMonth)
+    if (!cached) {
+      return res.json({ success: true, cached: false, dataMonth: bound.cityMonth, population: null })
+    }
+    res.json({
+      success: true,
+      cached: true,
+      dataMonth: cached.city_month || bound.cityMonth,
+      population: parsePopulation1001(cached.result_data)
+    })
+  } catch (e) {
+    console.error('[Districts] 读取缓存人口失败:', e)
+    res.status(500).json({ message: '读取人口数据失败' })
+  }
+})
+
+/**
  * 刷新单个商圈的最新联通数据（含外扩逻辑 + 缓存 + 配额）
  * POST /api/districts/refresh  { city, name }
  */
@@ -210,31 +276,21 @@ router.post('/refresh', authenticate, async (req, res) => {
     const db = getDb()
     initDistrictCacheTable(db)
 
-    // 找商圈
-    const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
-    let feature = null
-    for (const f of files) {
-      const geojson = getGeojson(f.id)
-      if (!geojson || !geojson.features) continue
-      feature = geojson.features.find(ft => (ft.properties || {})['名称'] === name)
-      if (feature) break
-    }
-    if (!feature) return res.status(404).json({ message: '商圈不存在' })
-
-    // 外扩（面积 < 0.3 km² → 放大）
-    const expanded = expandToMinArea(feature.geometry)
-    // 转 WKT（WGS-84）
-    const wkt = buildPolygonWkt(expanded)
-    if (!wkt) return res.status(500).json({ message: '边界格式不支持' })
-
-    // 缓存 key
-    const cityMonth = getLatestCityMonth()
-    const polygonKey = crypto.createHash('md5').update(wkt).digest('hex')
+    const bound = resolveBoundary(db, city, name, res)
+    if (!bound) return res.status(404).json({ message: '商圈不存在' })
+    const { wkt, polygonKey, cityMonth } = bound
 
     // 1. 查缓存（同 WKT + 月份命中 → 免费）
     const cached = db.prepare(`SELECT result_data FROM district_cache WHERE polygon_key = ? AND city_month = ?`).get(polygonKey, cityMonth)
     if (cached) {
-      return res.json({ success: true, fromCache: true, quotaUsed: 0, dataMonth: cityMonth, totalPopulation: extractPopulation(JSON.parse(cached.result_data)) })
+      return res.json({
+        success: true,
+        fromCache: true,
+        quotaUsed: 0,
+        dataMonth: cityMonth,
+        totalPopulation: extractPopulation(JSON.parse(cached.result_data)),
+        population: parsePopulation1001(cached.result_data)
+      })
     }
 
     // 2. 配额检查（v0.9 P0：统一走授权闸门 —— 物理池 + 成员授权额度；每商圈 1 点）
@@ -275,7 +331,8 @@ router.post('/refresh', authenticate, async (req, res) => {
       quotaUsed: 1,
       remainingQuota: available - 1,
       dataMonth: cityMonth,
-      totalPopulation: extractPopulation(result)
+      totalPopulation: extractPopulation(result),
+      population: parsePopulation1001(result)
     })
   } catch (e) {
     console.error('[Districts] 刷新商圈失败:', e)

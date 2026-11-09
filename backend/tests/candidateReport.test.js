@@ -108,14 +108,17 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     area: 120, rent: 45000, stage: '已勘踏'
   }
 
-  it('有商圈时：商圈画像、人口、评分、竞争齐全', () => {
+  it('有商圈时：商圈名/评分/竞争齐全，但人口**未取联通就为空**', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
     const m = buildReportModel(cand, hit)
     expect(m.district.name).toBe('五角场')
     expect(m.district.contained).toBe(true)
-    expect(m.district.population).toBe(196440)
+    // 🔴 v1.13.340：人口只认联通配额数据 —— 商圈面上的 population 不许回落到报告
+    expect(m.district.hasPop).toBe(false)
+    expect(m.district.population).toBeNull()
     const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('商圈居住人口')
+    expect(labels).toContain('商圈人口')
+    expect(m.facts.find((f) => f.label === '商圈人口').value).toBe('未获取')
     expect(labels).toContain('商圈竞争评分')
     expect(labels).toContain('租金水平')
     // 租金单价 = 45000 / 120 = 375.0
@@ -245,4 +248,149 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
     expect(COMP).toContain("await import('html2canvas')")
     expect(COMP).toContain("await import('jspdf')")
   })
+})
+
+/**
+ * G. 🔴🔴 报告人口必须来自**联通按次配额**（v1.13.340，业主 2026-11-09 定）
+ *
+ * 原来人口取的是商圈边界面的属性（`居住/工作/到访` 三列）。业主否掉了：
+ * 「人口数据不要用商圈边界面数据，原则上用收费的联通人口配额」。
+ * 这里钉三件事：
+ *   ① 没取到联通数据 ⇒ hasPop=false，**⛔ 不回落到商圈面的 population**
+ *   ② 取到了 ⇒ 只用联通的值（哪怕商圈面另有数值）
+ *   ③ 打开报告**不许**自动扣配额（只有用户点按钮才能 POST /refresh）
+ */
+describe('G. 人口数据只认联通配额口径', () => {
+  const cand = {
+    name: '五角场万达 3F 中庭', brand: '食其家', city: '上海', district: '杨浦区',
+    address: '邯郸路 600 号', latitude: 31.30, longitude: 121.51, radius: 1000,
+    area: 120, rent: 45000
+  }
+  const pop = {
+    visit: 39073425, live: 399275, work: 335771, total: 410000,
+    male: { live: 195000, work: 170000 }, female: { live: 204275, work: 165771 },
+    ages: { live: [{ label: '19-24岁', value: 90000 }, { label: '25-29岁', value: 70000 }, { label: '30-34岁', value: 50000 }], work: [] },
+    arpu: { live: [['50元以下', 5000], ['50-100元', 15000], ['100-150元', 9000], ['150-200元', 3000], ['200-250元', 1000], ['250元以上', 500]].map(([label, value]) => ({ label, value })), work: [] }
+  }
+
+  it('🔴 没取联通数据时，不许拿商圈面的 population 顶上去', () => {
+    const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
+    // 商圈面 fixture 里 population=196440，⛔ 不许出现在报告里
+    const m = buildReportModel(cand, hit)
+    expect(m.district.hasPop).toBe(false)
+    expect(m.district.population).toBeNull()
+    expect(m.district.work).toBeNull()
+    expect(m.district.visit).toBeNull()
+    expect(JSON.stringify(m)).not.toContain('196440')
+    expect(m.facts.find((f) => f.label === '商圈人口').value).toBe('未获取')
+    expect(m.risks.join('|')).toMatch(/尚未获取联通人口数据/)
+  })
+
+  it('★ 取到联通数据 ⇒ 三项与期次都来自联通，且写到 facts', () => {
+    const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
+    const m = buildReportModel(cand, hit, { population: pop, popMonth: '202510' })
+    expect(m.district.hasPop).toBe(true)
+    expect(m.district.population).toBe(399275)
+    expect(m.district.work).toBe(335771)
+    expect(m.district.visit).toBe(39073425)
+    expect(JSON.stringify(m)).not.toContain('196440')   // 商圈面那条仍未出现
+    expect(m.provenance.period).toContain('202510')
+
+    const visitFact = m.facts.find((f) => f.label === '商圈到访人次')
+    expect(visitFact.value).toContain('39,073,425')
+    // 🔴 到访是"人次"，必须写明不可与人数相加（历史上最容易混的一处）
+    expect(visitFact.note).toMatch(/人次|人数/)
+    expect(m.facts.find((f) => f.label === '主要年龄段').value).toContain('19-24岁')
+  })
+
+  it('到访口径必须写"人次"而不是"人"', () => {
+    const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
+    const m = buildReportModel(cand, hit, { population: pop })
+    const f = m.facts.find((x) => x.label === '商圈到访人次')
+    expect(f.value.endsWith('人次')).toBe(true)
+  })
+
+  it('🔴 打开报告不许自动扣配额：onOpened 只查缓存，扣费只走用户点击', () => {
+    const comp = read('frontend/src/components/CandidateReport.vue')
+    const i = comp.indexOf('async function onOpened')
+    expect(i).toBeGreaterThan(-1)
+    const body = comp.slice(i, comp.indexOf('async function renderMap', i) > 0
+      ? comp.indexOf('async function renderMap', i)
+      : i + 1600)
+    expect(body).toContain('loadCachedPopulation')            // 免费查缓存
+    expect(body).not.toContain('/api/districts/refresh')      // ⛔ 打开即扣费
+    expect(body).not.toContain('fetchPopulation')
+
+    // 缓存查询必须是 GET /population（免费）
+    const lp = comp.indexOf('async function loadCachedPopulation')
+    expect(lp).toBeGreaterThan(-1)
+    const lpBody = comp.slice(lp, comp.indexOf('async function loadQuota', lp))
+    expect(lpBody).toContain("axios.get('/api/districts/population'")
+    expect(lpBody).not.toContain('refresh')
+
+    // 扣费接口只应出现在 fetchPopulation 里
+    const fp = comp.indexOf('async function fetchPopulation')
+    expect(fp).toBeGreaterThan(-1)
+    expect(comp.slice(fp, fp + 2400)).toContain('/api/districts/refresh')
+  })
+
+  it('配额不足走统一引导出口（⛔ 不就地写联系方式）', () => {
+    const comp = read('frontend/src/components/CandidateReport.vue')
+    expect(comp).toContain('requireQuota')
+    expect(comp).toContain('QUOTA_REASON')
+    // 联系方式只能在 utils/quotaContact.js 里
+    expect(comp).not.toMatch(/138\s*1779\s*1741/)
+    expect(comp).not.toContain('jyo@youshi-tech.com')
+  })
+
+  it('AI 勾选必须拦住非 VIP 并给出申请路径（⛔ 不能只把 checkbox 禁用）', () => {
+    const comp = read('frontend/src/components/CandidateReport.vue')
+    expect(comp).toContain('onWantAiChange')
+    expect(comp).toContain('VIP 专属')
+    expect(comp).toContain("/account")
+    // 不许再对 checkbox 直接 disabled=!isVip（那样点不动、用户看不到原因）
+    expect(comp).not.toMatch(/:disabled="!isVip\s*\|\|/)
+  })
+
+  it('🔴 后端 /population 必须登录且**免费**（⛔ 不许在这条路上扣配额或调上游）', () => {
+    const route = read('backend/src/routes/districts.js')
+    const i = route.indexOf("router.get('/population'")
+    expect(i).toBeGreaterThan(-1)
+    const body = route.slice(i, route.indexOf("router.post('/refresh'", i))
+    expect(body).toContain('authenticate')
+    // 只读缓存：不许出现闸门与上游调用
+    expect(body).not.toContain('checkQuota')
+    expect(body).not.toContain('queryUnicomPolygon')
+    expect(body).not.toContain('admin_quota')
+    expect(body).toContain('district_cache')
+  })
+
+  it('★ refresh 必须把完整 1001 人口一起返回（缓存命中与未命中两条路）', () => {
+    const route = read('backend/src/routes/districts.js')
+    const i = route.indexOf("router.post('/refresh'")
+    const body = route.slice(i, i + 4000)
+    const hits = (body.match(/population: parsePopulation1001\(/g) || []).length
+    expect(hits, 'refresh 的两条返回分支都要带 population').toBeGreaterThanOrEqual(2)
+  })
+
+  it('🔴 商圈定位必须先归一化字段名（否则换版城市「刷新最新数据」必 404）', () => {
+    const route = read('backend/src/routes/districts.js')
+    const i = route.indexOf('function resolveBoundary')
+    expect(i).toBeGreaterThan(-1)
+    const body = route.slice(i, i + 900)
+    expect(body).toContain('normalizeDistrictProps')
+    // ⛔ 不许再直接读原始键（联通人口版里叫「商圈名」）
+    expect(body).not.toContain("(ft.properties || {})['名称']")
+  })
+
+
+  it('🔴 配额预检必须分清「自己没额度」与「平台池空」（池空 ⛔ 不引导采购）', () => {
+    const comp = read('frontend/src/components/CandidateReport.vue')
+    const i = comp.indexOf('async function fetchPopulation')
+    const body = comp.slice(i, i + 1600)
+    expect(body).toContain('QUOTA_REASON.POOL')
+    expect(body).toContain('QUOTA_REASON.OWN')
+    expect(body).toContain('remaining')      // 按平台池剩余分流
+  })
+
 })

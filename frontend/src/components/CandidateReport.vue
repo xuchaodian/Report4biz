@@ -10,11 +10,13 @@
   >
     <div class="rp-bar">
       <div class="rp-bar-l">
-        <el-checkbox v-model="wantAi" :disabled="!isVip || aiLoading">
+        <!-- 🔴 不做 disabled：禁用的勾选框点不动，用户根本看不到「为什么」。
+             现在允许点击，点了再明确告诉他「仅限 VIP + 怎么申请」（业主 2026-11-09 要求）。 -->
+        <el-checkbox :model-value="wantAi" :disabled="aiLoading" @change="onWantAiChange">
           加入 AI 选址建议
         </el-checkbox>
         <span class="rp-hint">
-          <template v-if="!isVip">🔒 AI 选址建议为 VIP 功能，报告仍可正常导出</template>
+          <template v-if="!isVip">🔒 仅限 VIP 用户 · 点击勾选可查看申请方式</template>
           <template v-else>勾选后消耗 1 次 AI 调用（约 ¥0.02），需额外等待十几秒；默认不包含</template>
         </span>
       </div>
@@ -26,6 +28,26 @@
         @click="genAi"
       >{{ aiLoading ? 'AI 生成中…' : '生成 AI 建议' }}</el-button>
       <el-button v-else-if="aiText" size="small" :loading="aiLoading" @click="genAi">重新生成</el-button>
+    </div>
+
+    <!-- 人口取数条（**纸外**，不会进 PDF）：报告人口用联通按次配额，先查缓存、要花钱得用户点 -->
+    <div v-if="districtName" class="rp-popbar">
+      <span class="rp-popbar-l">
+        <b>人口数据</b>
+        <template v-if="popData">
+          <span class="rp-popbar-ok">已获取<template v-if="popMonth"> · 期次 {{ popMonth }}</template></span>
+        </template>
+        <template v-else>
+          <span class="rp-popbar-miss">尚未获取</span>
+          <span class="rp-popbar-note">联通智慧足迹 · 按商圈面取数</span>
+        </template>
+      </span>
+      <span class="rp-popbar-r">
+        <el-button v-if="!popData" size="small" type="primary" plain :loading="popLoading" @click="fetchPopulation">
+          获取联通人口数据（消耗 1 次 · 剩余 {{ quotaInfo.available }} 次）
+        </el-button>
+        <el-button v-else size="small" :loading="popLoading" @click="fetchPopulation">刷新人口数据</el-button>
+      </span>
     </div>
 
     <!-- AI 业态未知时先问一句（⛔ 不让模型猜业态，与 AI 选址建议同口径） -->
@@ -59,6 +81,9 @@
             <span class="rp-sec-note">
               {{ model.district.name }}
               <template v-if="!model.district.contained">（最近商圈，直线约 {{ fmtM(model.district.distanceM) }}）</template>
+              <template v-if="model.district.hasPop">
+                · 人口来自联通智慧足迹 1001<template v-if="model.district.popMonth">（期次 {{ model.district.popMonth }}）</template>
+              </template>
             </span>
           </div>
           <div class="rp-stars">
@@ -68,19 +93,24 @@
             </span>
             <span class="rp-stars-note">商圈面综合评分（满分 100）· 非该点位自身评分</span>
           </div>
-          <div class="rp-kv">
+          <!-- 人口：只认联通 1001（按次配额）；没取到就如实说，⛔ 不拿商圈面属性顶上 -->
+          <div v-if="model.district.hasPop" class="rp-kv">
             <div><dt>居住人口</dt><dd>{{ num(model.district.population) }}</dd></div>
             <div><dt>工作人口</dt><dd>{{ num(model.district.work) }}</dd></div>
-            <div><dt>到访人次</dt><dd>{{ num(model.district.visit) }}</dd></div>
+            <div><dt>到访人次</dt><dd>{{ numVisit(model.district.visit) }}</dd></div>
             <div><dt>客群 / 能级</dt><dd>{{ [model.district.crowd, model.district.level].filter(Boolean).join(' · ') || '无标签' }}</dd></div>
             <div><dt>商圈内竞品</dt><dd>{{ model.district.competitorCount }} 家</dd></div>
             <div><dt>商圈内自家门店</dt><dd>{{ model.district.myStoreCount }} 家</dd></div>
           </div>
+          <div v-else class="rp-pop-empty">
+            <b>尚未获取联通人口数据</b>
+            <span>人口规模、性别、年龄与消费档位均为空。点上方「获取联通人口数据」按商圈面向联通取数（消耗 1 次联通人口配额）。</span>
+          </div>
 
-          <!-- 收入结构：纯 CSS 条，不引 echarts -->
-          <div v-if="incomeRows.length" class="rp-income">
-            <div class="rp-income-t">收入结构（商圈面占比）</div>
-            <div v-for="r in incomeRows" :key="r.label" class="rp-income-row">
+          <!-- 月话费档：联通话费档位，只作**消费能力代理**，⛔ 不是客单价 -->
+          <div v-if="arpuRows.length" class="rp-income">
+            <div class="rp-income-t">月话费档分布（居住人口 · 消费能力代理，非客单价）</div>
+            <div v-for="r in arpuRows" :key="r.label" class="rp-income-row">
               <span class="rp-income-l">{{ r.label }}</span>
               <span class="rp-income-bar"><i :style="{ width: r.pct + '%' }"></i></span>
               <span class="rp-income-v">{{ r.pct.toFixed(1) }}%</span>
@@ -158,12 +188,14 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { pickDistrictForPoint, buildReportModel, fmtM } from '@/utils/candidateReport.js'
 import { resolveBrandCategory } from '@/utils/storeBrand.js'
 import { captureMapOnlyCanvas } from '@/utils/mapCapture'
+import { requireQuota, QUOTA_REASON } from '@/utils/quotaContact.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -172,12 +204,21 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const userStore = useUserStore()
+const router = useRouter()
 
 const loading = ref(false)
 const exporting = ref(false)
 const paper = ref(null)
 const districts = ref([])
 const mapImg = ref('')
+
+// ── 联通人口（1001）────────────────────────────────────────
+// 🔴 业主 2026-11-09 定：报告人口**不再用商圈边界面属性**，改用按次计费的联通人口配额。
+//    ⇒ 打开报告只「查缓存」（免费），要花钱必须用户点按钮明确确认。
+const popData = ref(null)                       // 联通 1001 解析结果
+const popMonth = ref('')                        // 期次，如 202510
+const popLoading = ref(false)
+const quotaInfo = ref({ available: 0, remaining: 0, loaded: false })
 
 const wantAi = ref(false)      // 🔴 默认 false：不勾就不花钱（业主 2026-11-09 定）
 const aiText = ref('')
@@ -187,10 +228,19 @@ const categoryInput = ref('')
 const isVip = computed(() => !!userStore.isVipActive)
 const username = computed(() => userStore.user?.username || '—')
 
+/** 点位命中的商圈（供取数用；模板里也用得到商圈名） */
+const hitInfo = computed(() => {
+  const c = props.candidate || {}
+  return pickDistrictForPoint(districts.value, Number(c.latitude), Number(c.longitude))
+})
+const districtName = computed(() => hitInfo.value.district?.name || '')
+
 const model = computed(() => {
   const c = props.candidate || {}
-  const hit = pickDistrictForPoint(districts.value, Number(c.latitude), Number(c.longitude))
-  return buildReportModel(c, hit)
+  return buildReportModel(c, hitInfo.value, {
+    population: popData.value,
+    popMonth: popMonth.value
+  })
 })
 
 /** 业态：白名单能命中就用，命中不了要用户填（⛔ 不让模型猜） */
@@ -200,16 +250,16 @@ const resolvedCat = computed(() => {
 })
 const needCategory = computed(() => !resolvedCat.value.mapped && !categoryInput.value.trim())
 
-const incomeRows = computed(() => {
-  const inc = model.value.district?.income
-  if (!inc) return []
-  const rows = [
-    ['低收入', inc.low], ['中等偏下', inc.midLow], ['小康', inc.wellOff],
-    ['中产', inc.mid], ['富裕', inc.affluent], ['富人', inc.rich]
-  ].map(([label, v]) => [label, Number(v) || 0])
-  const total = rows.reduce((s, r) => s + r[1], 0)
+/**
+ * 月话费档分布（联通 1001 · 居住人口）。
+ * ⚠️ 只是**消费能力代理**，⛔ 不是客单价、不能反推营业额 —— 报告页脚已写明。
+ */
+const arpuRows = computed(() => {
+  const s = popData.value?.arpu?.live
+  if (!Array.isArray(s) || !s.length) return []
+  const total = s.reduce((a, x) => a + (Number(x.value) || 0), 0)
   if (!total) return []
-  return rows.map(([label, v]) => ({ label, pct: (v / total) * 100 }))
+  return s.map((x) => ({ label: x.label, pct: ((Number(x.value) || 0) / total) * 100 }))
 })
 
 function num(v) {
@@ -217,11 +267,148 @@ function num(v) {
   return n ? n.toLocaleString('zh-CN') + ' 人' : '无数据'
 }
 
+/** 到访是**人次**，与居住/工作不同量纲 —— ⛔ 别复用 num() 让人误读成"人" */
+function numVisit(v) {
+  const n = Number(v) || 0
+  return n ? n.toLocaleString('zh-CN') + ' 人次' : '无数据'
+}
+
+/**
+ * AI 勾选拦截：非 VIP 时**不允许勾上**，并把「仅限 VIP + 去哪申请」说清楚。
+ * ⚠️ 不用 `:disabled`：禁用的勾选框点不动，用户只看到灰色框，不知道原因也没有出路。
+ */
+async function onWantAiChange(val) {
+  if (!val) { wantAi.value = false; return }
+  if (isVip.value) { wantAi.value = true; return }
+
+  wantAi.value = false   // 非 VIP 一律勾不上
+  let go = false
+  try {
+    await ElMessageBox.confirm(
+      '「AI 选址建议」为 VIP 专属功能，当前账号未开通。\n\n' +
+      '可在「我的账户」页提交 VIP 申请，通过后即可使用。报告不含 AI 建议也可正常导出。',
+      'VIP 专属功能',
+      { confirmButtonText: '去我的账户申请', cancelButtonText: '暂不需要', type: 'warning' }
+    )
+    go = true
+  } catch {
+    return
+  }
+  if (go) {
+    try {
+      router.push('/account')
+    } catch {
+      window.location.href = '/account'
+    }
+  }
+}
+
 function fmtTime(d) {
   const t = d instanceof Date ? d : new Date(d)
   if (isNaN(t.getTime())) return ''
   const p = (n) => String(n).padStart(2, '0')
   return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`
+}
+
+/**
+ * 读取「已缓存的」联通人口（免费）+ 剩余配额。
+ * 🔴 打开报告**绝不自动扣配额** —— 只查缓存；要花钱必须用户点按钮（v1.13.340）。
+ */
+async function loadCachedPopulation() {
+  popData.value = null
+  popMonth.value = ''
+  const city = String(props.candidate?.city || '').replace(/市$/, '')
+  const name = districtName.value
+  if (!city || !name) return
+  try {
+    const { data } = await axios.get('/api/districts/population', { params: { city, name } })
+    if (data?.cached && data.population) {
+      popData.value = data.population
+      popMonth.value = data.dataMonth || ''
+    }
+  } catch (e) {
+    // 404 = 该商圈没有面数据 / 未取过，属正常，不打扰用户
+    if (e?.response?.status !== 404) console.warn('[立项报告] 读取缓存人口失败:', e?.message || e)
+  }
+}
+
+/** 剩余配额（用于「消耗 1 次 / 剩余 N 次」的明示，⛔ 不做成隐藏成本） */
+async function loadQuota() {
+  try {
+    const { data } = await axios.get('/api/purchase/quota')
+    quotaInfo.value = {
+      available: Number(data?.available) || 0,
+      remaining: Number(data?.remainingQuota) || 0,
+      loaded: true
+    }
+  } catch {
+    quotaInfo.value = { available: 0, remaining: 0, loaded: false }
+  }
+}
+
+/**
+ * 取联通人口数据（**消耗 1 次配额**）。
+ * 先弹确认把「消耗 X / 剩余 Y」摆明，再调 `POST /api/districts/refresh`；
+ * 该端点若命中缓存则免费（quotaUsed=0），由后端判定。
+ */
+async function fetchPopulation() {
+  if (popLoading.value) return
+  const name = districtName.value
+  const city = String(props.candidate?.city || '').replace(/市$/, '')
+  if (!city || !name) return ElMessage.warning('该点位未匹配到商圈，无法取人口数据')
+
+  if (quotaInfo.value.loaded && quotaInfo.value.available < 1) {
+    // 🔴 必须分清「自己没额度」和「平台池空」：
+    //    · 自己没额度 ⇒ 可采购（给采购引导）
+    //    · 平台池空   ⇒ 买了也调不动上游 ⇒ **⛔ 绝不能引导采购**（否则用户白跑一趟还怀疑系统坏了）
+    //    `remainingQuota` 是平台池剩余，来自 /api/purchase/quota 的同一个响应。
+    const reason = quotaInfo.value.remaining < 1 ? QUOTA_REASON.POOL : QUOTA_REASON.OWN
+    await requireQuota(reason, {
+      need: 1,
+      own: quotaInfo.value.available,
+      pool: quotaInfo.value.remaining
+    })
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `将按「${name}」商圈面向联通取人口数据。\n` +
+      `本次消耗 1 次联通人口配额（当前剩余 ${quotaInfo.value.available} 次）；` +
+      '若该商圈近期已取过，则命中缓存、不扣次数。',
+      '确认取数',
+      { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
+    )
+  } catch {
+    return   // 用户取消
+  }
+
+  popLoading.value = true
+  try {
+    const { data } = await axios.post('/api/districts/refresh', { city, name })
+    if (data?.population) {
+      popData.value = data.population
+      popMonth.value = data.dataMonth || ''
+      ElMessage.success(data.fromCache ? '已读取缓存，本次未消耗配额' : '已获取联通人口数据（消耗 1 次）')
+      loadQuota()
+    } else {
+      ElMessage.warning('联通未返回可用人口数据，请稍后重试')
+    }
+  } catch (e) {
+    const code = e?.response?.data?.code
+    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
+      // 统一走配额引导出口（内含联系方式，⛔ 不在这里另写文案）
+      await requireQuota(code, {
+        need: e.response.data.need || 1,
+        own: e.response.data.own,
+        pool: e.response.data.pool
+      })
+    } else {
+      ElMessage.error(e?.response?.data?.message || '获取人口数据失败，请稍后重试')
+    }
+  } finally {
+    popLoading.value = false
+  }
 }
 
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */
@@ -243,6 +430,8 @@ async function onOpened() {
   } finally {
     loading.value = false
   }
+  // 商圈定位完才能按商圈名查缓存人口
+  await Promise.all([loadCachedPopulation(), loadQuota()])
   renderMap()
 }
 
@@ -264,7 +453,11 @@ async function renderMap() {
 
 /** 生成 AI 建议（可选，默认不调 —— 调一次花一次钱） */
 async function genAi() {
-  if (!isVip.value) return ElMessage.warning('AI 选址建议为 VIP 功能')
+  if (!isVip.value) return ElMessage.warning('AI 选址建议仅限 VIP 用户，请在「我的账户」申请开通')
+  if (!popData.value) {
+    // 不阻断（用户可能就想要竞争/地铁维度的建议），但必须说清楚少了一半依据
+    ElMessage.warning('尚未获取联通人口数据 —— AI 建议将缺少人口依据，可先点上方「获取联通人口数据」')
+  }
   const cat = resolvedCat.value.mapped ? resolvedCat.value.category : categoryInput.value.trim()
   if (!cat) return ElMessage.warning('该品牌未收录业态，请先填写业态')
 
@@ -459,12 +652,14 @@ async function exportPdf() {
   }
 }
 
-// 关掉弹窗时清掉 AI 文本，避免下次打开看到上一个点位的建议
+// 关掉弹窗时清掉 AI 文本与人口缓存，避免下次打开看到上一个点位的数据
 watch(() => props.modelValue, (v) => {
   if (!v) {
     aiText.value = ''
     wantAi.value = false
     categoryInput.value = ''
+    popData.value = null
+    popMonth.value = ''
   }
 })
 </script>
@@ -473,6 +668,27 @@ watch(() => props.modelValue, (v) => {
 .rp-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .rp-bar-l { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .rp-hint { font-size: 12px; color: #909399; line-height: 1.5; }
+
+/* 人口取数条：在**纸外**（不进 PDF），只做操作与状态提示 */
+.rp-popbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; margin-bottom: 10px;
+  background: #f4f8ff; border: 1px solid #d9e6fb; border-radius: 6px; font-size: 13px;
+}
+.rp-popbar-l { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.rp-popbar-ok { color: #16794a; }
+.rp-popbar-miss { color: #b26a00; font-weight: 600; }
+.rp-popbar-note { color: #8a9099; font-size: 12px; }
+.rp-popbar-r { display: flex; align-items: center; gap: 8px; }
+
+/* 纸内「人口未获取」提示：导出后也要能看见，所以写在报告里而不是弹提示 */
+.rp-pop-empty {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px; margin-top: 6px;
+  background: #fff8e6; border: 1px dashed #e8c07d; border-radius: 6px;
+  font-size: 12px; line-height: 1.6; color: #7a5b1e;
+}
+.rp-pop-empty b { font-size: 13px; color: #a15c00; }
 .rp-cat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #606266; margin-bottom: 10px; }
 .rp-scroll { max-height: 62vh; overflow: auto; background: #f2f3f5; padding: 16px; }
 
