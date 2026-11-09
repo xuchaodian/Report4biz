@@ -8,6 +8,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- build: v1.13.314 | 2026-11-03 | 首页改版：一屏叙事 + 真实界面操作演示（聚光灯引导），文案压缩约 78% -->
 <meta name="build-version" content="v1.13.314">
+<!-- v1.13.331（2026-11-09）P0 官网口径校正：4 处与代码不符 + 1 处期次表述。
+     ① 移动端：只有零散 CSS 断点、无移动端产品 ⇒ operatingSystem 与两条 FAQ 改为 PC 浏览器口径
+     ② KPI「实时统计」⇒ 实为每小时自动刷新（dashboard 按请求汇总）
+     ③ 可达范围：高德没有驾车等时圈接口，走径向耗时探测 ⇒ 不再写「按真实路网」
+     ④ 演示第 4 步：截图是「按次调用的联通人口报告」，不是每次分析都会自动生成的通用报告 ⇒ 副文案与图片 alt 改名
+     ⑤ 人口期次：只有购买报告标数据年月，商圈洞察基线无期次 ⇒ 不再写「系统里能直接看到」
+     ⚠️ FAQPage 结构化数据与可见 details 必须逐条一致，改任一处两边同改。 -->
 <title>选址赢家Online - 用数据看清每一平方公里</title>
 <meta name="description" content="选址赢家Online 是 WebGIS 商业智能分析平台：1km 网格商圈人口分析、驾车/步行可达范围、竞品追踪与门店体检、销售预测与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变成「看数据」。">
 <link rel="canonical" href="https://www.mka-online.cn/">
@@ -67,7 +74,7 @@
       "name": "选址赢家Online",
       "url": "https://www.mka-online.cn/",
       "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web Browser (Windows / macOS / 移动端)",
+      "operatingSystem": "Web Browser (Windows / macOS)",
       "inLanguage": "zh-CN",
       "description": "商圈与整城的人口分析、竞品追踪、门店体检、驾车与步行可达范围、销售预测、AI 选址建议与数据大屏，把开店决策从凭经验变为看数据。",
       "publisher": { "@id": "https://mka-online.cn/#organization" }
@@ -79,7 +86,7 @@
         {
           "@type": "Question",
           "name": "需要安装软件吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "不需要。浏览器打开就能用，Windows、macOS 与移动端都支持，无需安装任何客户端。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "不需要。浏览器打开就能用，Windows 与 macOS 的桌面浏览器都支持，无需安装任何客户端。目前完整功能按电脑端设计。" }
         },
         {
           "@type": "Question",
@@ -99,7 +106,7 @@
         {
           "@type": "Question",
           "name": "人口数据多久更新一次？",
-          "acceptedAnswer": { "@type": "Answer", "text": "按月更新，期次精确到月份，在系统里能直接看到当前使用的数据期次。人口是慢变量，月度更新足以支撑选址判断。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "按月更新，购买的人口数据报告会标明所用的数据年月。人口是慢变量，月度更新足以支撑选址判断。" }
         },
         {
           "@type": "Question",
@@ -124,12 +131,12 @@
         {
           "@type": "Question",
           "name": "分析报表能直接用于汇报吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "可以。购买记录与门店体检结果都能导出 Excel / PDF，含统计明细与地图截图，可直接用于内部汇报或客户提案。" }
         },
         {
           "@type": "Question",
           "name": "手机上能用吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "能。浏览器直接打开即可，手机上适合看门店分布、商圈人口和体检结果；批量导入和深度分析建议在电脑上做。" }
+          "acceptedAnswer": { "@type": "Answer", "text": "能打开，但系统目前按电脑端设计。地图叠图层、批量导入和深度分析请在桌面浏览器上完成；手机上适合浏览已分享的分析结论。" }
         }
       ]
     }
@@ -561,7 +568,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         </button>
         <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="3">
           <span class="n">04</span>
-          <span class="t"><b>得出结论</b><em>评分、洞察、图表，一页成稿可导出</em></span>
+          <span class="t"><b>得出结论</b><em>评分、洞察、图表，报告可导出</em></span>
           <span class="prog" aria-hidden="true"><i></i></span>
         </button>
         <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="4">
@@ -576,7 +583,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
           <img class="shot is-on" src="assets/screen-sitefinder.webp" alt="地图工作台：右上角展开「商圈工具」菜单，可选商圈内点位、周边商业配套、常住人口分布与开店余地" width="1200" height="750" loading="lazy" decoding="async">
           <img class="shot" src="assets/screen-population.webp" alt="常住人口分布：以上海五角场万达广场为圆心、半径 3 公里的圆形范围，按 1km 网格分档着色（6 档，颜色越暖人口越密），右侧面板汇总常住人口 72.2 万及各年龄段" width="1200" height="750" loading="lazy" decoding="async">
           <img class="shot" src="assets/screen-competitor.webp" alt="竞品门店追踪：上海地图以粉色追踪圈标出竞品分布范围，左上图例说明追踪口径，配合品牌图标区分自家与竞品门店" width="1200" height="750" loading="lazy" decoding="async">
-          <img class="shot" src="assets/screen-report.webp" alt="商圈分析报告：五个维度星级评分、逐条数据洞察结论，以及人口结构、年龄分布、到访趋势等图表" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="assets/screen-report.webp" alt="人口数据分析报告（按次调用）：商圈五维星级评分、逐条数据洞察，以及人口结构、年龄分布、到访趋势等图表" width="1200" height="750" loading="lazy" decoding="async">
           <img class="shot" src="assets/screen-dashboard.webp" alt="数据大屏：在营门店与竞品门店数量、覆盖城市与省份、全国门店分布地图、门店城市 TOP10 与竞品品牌 TOP10 排行" width="1200" height="750" loading="lazy" decoding="async">
           <div class="spot" id="spot" aria-hidden="true"><span class="spot-tip" id="spotTip">商圈工具</span></div>
         </div>
@@ -603,7 +610,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <div class="card">
         <div class="ci"><img src="assets/icons/position.svg" alt="" width="21" height="21"></div>
         <h3>驾车 / 步行可达</h3>
-        <p>按真实路网算 N 分钟能到哪，不再是半径圆，边界可微调。</p>
+        <p>按各方向行驶耗时估算 N 分钟可达边界，比半径圆更贴近路网；常规路况，边界可微调。</p>
       </div>
       <div class="card">
         <div class="ci"><img src="assets/icons/compass.svg" alt="" width="21" height="21"></div>
@@ -628,7 +635,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <div class="card">
         <div class="ci"><img src="assets/icons/office-building.svg" alt="" width="21" height="21"></div>
         <h3>数据大屏</h3>
-        <p>门店与竞品全国分布一屏投出，KPI 实时统计。</p>
+        <p>门店与竞品全国分布一屏投出，KPI 每小时自动刷新。</p>
       </div>
       <div class="card">
         <div class="ci"><img src="assets/icons/refresh.svg" alt="" width="21" height="21"></div>
@@ -821,7 +828,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
     <div class="faq rv">
       <details>
         <summary>需要安装软件吗？</summary>
-        <p>不需要。浏览器打开就能用，Windows、macOS 与移动端都支持，无需安装任何客户端。</p>
+        <p>不需要。浏览器打开就能用，Windows 与 macOS 的桌面浏览器都支持，无需安装任何客户端。目前完整功能按电脑端设计。</p>
       </details>
       <details>
         <summary>支持哪些城市？</summary>
@@ -837,7 +844,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       </details>
       <details>
         <summary>人口数据多久更新一次？</summary>
-        <p>按月更新，期次精确到月份，在系统里能直接看到当前使用的数据期次。人口是慢变量，月度更新足以支撑选址判断。</p>
+        <p>按月更新，购买的人口数据报告会标明所用的数据年月。人口是慢变量，月度更新足以支撑选址判断。</p>
       </details>
       <details>
         <summary>我的门店数据是私有的吗？</summary>
@@ -857,11 +864,11 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       </details>
       <details>
         <summary>分析报表能直接用于汇报吗？</summary>
-        <p>可以。按统一模板导出 Excel / PDF，包含统计图表与地图截图，格式专业，可直接用于内部汇报或客户提案。</p>
+        <p>可以。购买记录与门店体检结果都能导出 Excel / PDF，含统计明细与地图截图，可直接用于内部汇报或客户提案。</p>
       </details>
       <details>
         <summary>手机上能用吗？</summary>
-        <p>能。浏览器直接打开即可，手机上适合看门店分布、商圈人口和体检结果；批量导入和深度分析建议在电脑上做。</p>
+        <p>能打开，但系统目前按电脑端设计。地图叠图层、批量导入和深度分析请在桌面浏览器上完成；手机上适合浏览已分享的分析结论。</p>
       </details>
     </div>
   </div>
