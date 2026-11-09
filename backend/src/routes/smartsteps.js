@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth.js'
 import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
+import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 
 const router = express.Router()
 
@@ -613,6 +614,241 @@ router.post('/convert', (req, res) => {
   res.json({
     input: { lng, lat, coord: 'GCJ-02' },
     output: { ...wgs, coord: 'WGS84' }
+  })
+})
+
+
+// ============================================================================
+// 报告用：按「点位 + 半径」取 1001 人口，**优先复用已购买数据**（v1.13.341）
+// ----------------------------------------------------------------------------
+// 业主 2026-11-09 定：报告人口改用收费的联通配额，且要与「我的门店」打通 ——
+//   已为某个门店买过联通人口时，给同址点位做立项报告**不该重复付费**。
+//
+// ⚠️ 口径必须与「我的门店」一致：`point(lng lat)` + `radius`（圆），**不是**商圈面多边形。
+//   两者 result_data 结构相同（都是 getData 返回的 `{ apiResult: { '1001': … } }`），
+//   但覆盖范围完全不同 ⇒ ⛔ 绝不许拿半径数据冒充商圈面人口（报告里那栏叫"商圈人口"）。
+//
+// 取数优先级（①② 都 0 费用）：
+//   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001
+//   ② smartsteps_cache —— 同坐标（5 位小数）+ 同半径 + services 含 1001
+//   ③ 都没有 → 配额闸门 → 调联通（扣 1 次）→ 同事务写 purchases + cache
+//
+// 🔴 复用**不要求同月份**：已购数据就是那个月的事实，把 `dataMonth` 如实回传让用户自己判断
+//   要不要刷新。强行要求同月等于"过期就重新收费"，那是坑用户。
+// ============================================================================
+const REPORT_RADII = [1000, 3000, 5000]   // 报告只开放这三档：面积 3.1/28.3/78.5 km²（联通限制 0.3~80）
+const REUSE_TOL_M = 10                    // 坐标容差 —— 业主 2026-11-09 定为 10m
+
+/** 球面距离（米） */
+function distMeters(lng1, lat1, lng2, lat2) {
+  const R = 6371000
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+/**
+ * purchases.radius 存的是 **JSON 字符串**（`"[1000]"` 或 `"[1000,3000]"`，见 /query 落库），
+ * 也可能是裸数字/裸字符串。这里统一判断「是否包含目标半径」。
+ */
+function radiusIncludes(raw, want) {
+  if (raw === null || raw === undefined || raw === '') return false
+  let v = raw
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v) } catch { v = Number(raw) }
+  }
+  if (typeof v === 'number') return Number(v) === Number(want)
+  if (Array.isArray(v)) return v.map(Number).includes(Number(want))
+  return false
+}
+
+/** 本地推算最新数据月份（兜底用；前端一般会先调免费的 /months 传进来） */
+function latestMonthLocal() {
+  const now = new Date()
+  let m = now.getMonth()      // 0-based，减 1 得"上个月"
+  let y = now.getFullYear()
+  m -= 1
+  if (m < 0) { m += 12; y -= 1 }
+  return `${y}${String(m + 1).padStart(2, '0')}`
+}
+
+/**
+ * 报告取人口主端点。
+ * POST /api/smartsteps/population  { lng, lat, radius, cityMonth?, storeName? }
+ */
+router.post('/population', authenticate, async (req, res) => {
+  const body = req.body || {}
+  const gLng = Number(body.lng)
+  const gLat = Number(body.lat)
+  const radius = Number(body.radius)
+  const storeName = String(body.storeName || '').slice(0, 100)
+
+  if (!Number.isFinite(gLng) || !Number.isFinite(gLat) || !gLng || !gLat) {
+    return res.status(400).json({ message: '缺少有效坐标' })
+  }
+  if (!REPORT_RADII.includes(radius)) {
+    return res.status(400).json({ message: `半径只支持 ${REPORT_RADII.map((r) => r / 1000 + 'km').join(' / ')}` })
+  }
+
+  const db = getDb()
+  initCacheTable(db)
+
+  // ── ① 复用已购买：同账号 + 同半径 + 10m 内 + 含 1001 ──────────────────
+  try {
+    const box = 0.0003   // ≈33m 粗筛（1e-4 度≈11m），精确判定交给 haversine
+    const rows = db.prepare(`
+      SELECT id, store_name, radius, city_month, result_data, created_at, center_lng, center_lat
+        FROM purchases
+       WHERE user_id = ? AND status = 'active' AND result_data IS NOT NULL
+         AND center_lat BETWEEN ? AND ? AND center_lng BETWEEN ? AND ?
+       ORDER BY city_month DESC, id DESC
+       LIMIT 200
+    `).all(req.user.id, gLat - box, gLat + box, gLng - box, gLng + box)
+
+    for (const row of rows) {
+      if (!radiusIncludes(row.radius, radius)) continue
+      // 坐标必须再精判一次 —— SQL 只做了矩形粗筛（±0.0003°）
+      const lat2 = Number(row.center_lat)
+      const lng2 = Number(row.center_lng)
+      if (!Number.isFinite(lat2) || !Number.isFinite(lng2)) continue
+      if (distMeters(gLng, gLat, lng2, lat2) > REUSE_TOL_M) continue
+
+      const pop = parsePopulation1001(row.result_data)
+      if (!pop) continue          // 那笔购买里没有 1001（只买了 1005 之类）⇒ 不算命中
+      return res.json({
+        success: true,
+        source: 'purchase',
+        radius,
+        population: pop,
+        dataMonth: row.city_month || '',
+        reused: {
+          purchaseId: row.id,
+          storeName: row.store_name || '',
+          purchasedAt: row.created_at || ''
+        },
+        quotaUsed: 0,
+        message: '已复用该位置购买过的联通人口数据，本次未消耗配额'
+      })
+    }
+  } catch (e) {
+    console.error('[ReportPopulation] 查询已购数据失败:', e.message)
+  }
+
+  // ── ② 复用共享缓存（同坐标 5 位小数 + 同半径 + services 含 1001）──────
+  try {
+    const precision = 100000      // 与 findCache/saveToCache 同规则
+    const lngKey = Math.round(gLng * precision) / precision
+    const latKey = Math.round(gLat * precision) / precision
+    const cached = db.prepare(`
+      SELECT result_data, city_month FROM smartsteps_cache
+       WHERE center_lng = ? AND center_lat = ? AND radius = ?
+         AND services LIKE '%1001%'
+       ORDER BY city_month DESC
+       LIMIT 1
+    `).get(lngKey, latKey, radius)
+    if (cached) {
+      const pop = parsePopulation1001(cached.result_data)
+      if (pop) {
+        return res.json({
+          success: true,
+          source: 'cache',
+          radius,
+          population: pop,
+          dataMonth: cached.city_month || '',
+          reused: { storeName: '', purchasedAt: '' },
+          quotaUsed: 0,
+          message: '已命中同位置缓存，本次未消耗配额'
+        })
+      }
+    }
+  } catch (e) {
+    console.error('[ReportPopulation] 查询缓存失败:', e.message)
+  }
+
+  // 只探测：报告一打开就调这里（免费），命中就展示，没命中让用户自己点按钮
+  if (body.probeOnly) {
+    return res.json({
+      success: true,
+      source: 'none',
+      radius,
+      population: null,
+      dataMonth: '',
+      reused: null,
+      quotaUsed: 0
+    })
+  }
+
+  // ── ③ 都没有：配额闸门 → 调联通（扣 1 次）───────────────────────────
+  const gate = checkQuota(db, req.user?.id, 1, { role: req.user?.role })
+  if (!gate.ok) {
+    const err = buildGateError(gate)
+    return res.status(err.status).json(err.body)
+  }
+
+  const cityMonth = String(body.cityMonth || '') || latestMonthLocal()
+  let result
+  try {
+    const token = await getAuthorization()
+    const response = await fetchWithTimeout(`${SMARTSTEPS_CONFIG.baseUrl}/server/openApi/getData`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: token },
+      body: JSON.stringify({
+        codes: '1001',
+        cityMonth,
+        radius,
+        polygons: buildCircleWkt(gLng, gLat, radius)
+      })
+    }, SLOW_HTTP_TIMEOUT_MS)
+    if (!response.ok) throw new Error(`联通 API 调用失败: ${response.status}`)
+    const api = await response.json()
+    if (api.code !== 200 || !api.data) throw new Error(`联通返回错误: ${api.message || api.info || api.code}`)
+    result = api.data
+  } catch (e) {
+    console.error('[ReportPopulation] 联通取数失败:', e.message)
+    return res.status(502).json({ message: '人口数据服务暂不可用，请稍后重试' })
+  }
+
+  const pop = parsePopulation1001(result)
+  if (!pop) {
+    // 上游成功但没数据 ⇒ **不扣费**（与 /query 的"空数据返还配额"同口径）
+    return res.status(502).json({ message: '联通未返回可用人口数据（本次未消耗配额）' })
+  }
+
+  // 扣费 + 写 purchases + 写 cache，同一事务
+  const remaining = Number(gate.pool) - 1
+  db.beginTx()
+  try {
+    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+    db.prepare(`
+      INSERT INTO purchases (user_id, store_name, store_type, center_lng, center_lat, radius,
+                             city_month, quota_used, status, result_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?)
+    `).run(
+      req.user.id, storeName, 'report',
+      gLng, gLat, JSON.stringify([radius]),
+      cityMonth,
+      JSON.stringify({ querySuccess: true, apiResult: result, refunded: false })
+    )
+    saveToCache(db, gLng, gLat, radius, cityMonth, '1001', result)
+    db.commitTx()
+  } catch (txErr) {
+    try { db.rollbackTx() } catch { /* 忽略 */ }
+    console.error('[ReportPopulation] 落库失败:', txErr.message)
+    return res.status(500).json({ message: '人口数据已取到但落库失败，请重试' })
+  }
+
+  res.json({
+    success: true,
+    source: 'fresh',
+    radius,
+    population: pop,
+    dataMonth: cityMonth,
+    reused: null,
+    quotaUsed: 1,
+    remainingQuota: remaining,
+    message: '已从联通获取人口数据（消耗 1 次配额）'
   })
 })
 

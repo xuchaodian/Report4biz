@@ -234,38 +234,6 @@ function resolveBoundary(db, city, name, res) {
 }
 
 /**
- * 只读：该商圈**已缓存的**联通人口（免费，不扣配额、不调上游）。
- * GET /api/districts/population?city=&name=
- *
- * 用途：立项报告打开时先探一次 —— 缓存命中就直接展示，未命中让用户**明确点按钮**再花钱，
- * ⛔ 绝不因为「打开报告」就自动扣一次联通配额。
- */
-router.get('/population', authenticate, (req, res) => {
-  try {
-    const { city, name } = req.query
-    if (!city || !name) return res.status(400).json({ message: '缺少参数' })
-    const db = getDb()
-    initDistrictCacheTable(db)
-    const bound = resolveBoundary(db, city, name, res)
-    if (!bound) return res.status(404).json({ message: '商圈不存在' })
-    const cached = db.prepare(`SELECT result_data, city_month FROM district_cache WHERE polygon_key = ? AND city_month = ?`)
-      .get(bound.polygonKey, bound.cityMonth)
-    if (!cached) {
-      return res.json({ success: true, cached: false, dataMonth: bound.cityMonth, population: null })
-    }
-    res.json({
-      success: true,
-      cached: true,
-      dataMonth: cached.city_month || bound.cityMonth,
-      population: parsePopulation1001(cached.result_data)
-    })
-  } catch (e) {
-    console.error('[Districts] 读取缓存人口失败:', e)
-    res.status(500).json({ message: '读取人口数据失败' })
-  }
-})
-
-/**
  * 刷新单个商圈的最新联通数据（含外扩逻辑 + 缓存 + 配额）
  * POST /api/districts/refresh  { city, name }
  */

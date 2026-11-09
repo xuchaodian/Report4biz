@@ -30,23 +30,33 @@
       <el-button v-else-if="aiText" size="small" :loading="aiLoading" @click="genAi">重新生成</el-button>
     </div>
 
-    <!-- 人口取数条（**纸外**，不会进 PDF）：报告人口用联通按次配额，先查缓存、要花钱得用户点 -->
-    <div v-if="districtName" class="rp-popbar">
+    <!-- 人口取数条（**纸外**，不会进 PDF）：按「点位 + 半径」取联通 1001，可复用「我的门店」已购数据 -->
+    <div v-if="candidate" class="rp-popbar">
       <span class="rp-popbar-l">
         <b>人口数据</b>
+        <el-select v-model="popRadius" size="small" style="width: 108px" :disabled="popLoading" @change="onRadiusChange">
+          <el-option v-for="r in RADIUS_OPTIONS" :key="r" :value="r" :label="`半径 ${radiusText(r)}`" />
+        </el-select>
         <template v-if="popData">
-          <span class="rp-popbar-ok">已获取<template v-if="popMonth"> · 期次 {{ popMonth }}</template></span>
+          <span class="rp-popbar-ok">
+            <template v-if="popSource === 'purchase'">已复用「我的门店」已购数据</template>
+            <template v-else-if="popSource === 'cache'">命中同位置缓存</template>
+            <template v-else>已获取联通数据</template>
+            <template v-if="popMonth"> · 期次 {{ popMonth }}</template>
+            · 本次未消耗配额
+          </span>
+          <span v-if="popReused && popReused.storeName" class="rp-popbar-note">（{{ popReused.storeName }}）</span>
         </template>
         <template v-else>
           <span class="rp-popbar-miss">尚未获取</span>
-          <span class="rp-popbar-note">联通智慧足迹 · 按商圈面取数</span>
+          <span class="rp-popbar-note">联通智慧足迹 · 点位半径口径 · 已购数据自动复用</span>
         </template>
       </span>
       <span class="rp-popbar-r">
         <el-button v-if="!popData" size="small" type="primary" plain :loading="popLoading" @click="fetchPopulation">
-          获取联通人口数据（消耗 1 次 · 剩余 {{ quotaInfo.available }} 次）
+          获取人口数据（剩余 {{ quotaInfo.available }} 次）
         </el-button>
-        <el-button v-else size="small" :loading="popLoading" @click="fetchPopulation">刷新人口数据</el-button>
+        <el-button v-else size="small" :loading="popLoading" @click="fetchPopulation">刷新</el-button>
       </span>
     </div>
 
@@ -82,7 +92,7 @@
               {{ model.district.name }}
               <template v-if="!model.district.contained">（最近商圈，直线约 {{ fmtM(model.district.distanceM) }}）</template>
               <template v-if="model.district.hasPop">
-                · 人口来自联通智慧足迹 1001<template v-if="model.district.popMonth">（期次 {{ model.district.popMonth }}）</template>
+                · 人口＝点位半径 {{ radiusText(model.district.popRadius) }} 内（联通智慧足迹 1001<template v-if="model.district.popMonth">，期次 {{ model.district.popMonth }}</template>）
               </template>
             </span>
           </div>
@@ -95,16 +105,16 @@
           </div>
           <!-- 人口：只认联通 1001（按次配额）；没取到就如实说，⛔ 不拿商圈面属性顶上 -->
           <div v-if="model.district.hasPop" class="rp-kv">
-            <div><dt>居住人口</dt><dd>{{ num(model.district.population) }}</dd></div>
-            <div><dt>工作人口</dt><dd>{{ num(model.district.work) }}</dd></div>
-            <div><dt>到访人次</dt><dd>{{ numVisit(model.district.visit) }}</dd></div>
+            <div><dt>{{ radiusText(model.district.popRadius) }} 内居住</dt><dd>{{ num(model.district.population) }}</dd></div>
+            <div><dt>{{ radiusText(model.district.popRadius) }} 内工作</dt><dd>{{ num(model.district.work) }}</dd></div>
+            <div><dt>{{ radiusText(model.district.popRadius) }} 内到访</dt><dd>{{ numVisit(model.district.visit) }}</dd></div>
             <div><dt>客群 / 能级</dt><dd>{{ [model.district.crowd, model.district.level].filter(Boolean).join(' · ') || '无标签' }}</dd></div>
             <div><dt>商圈内竞品</dt><dd>{{ model.district.competitorCount }} 家</dd></div>
             <div><dt>商圈内自家门店</dt><dd>{{ model.district.myStoreCount }} 家</dd></div>
           </div>
           <div v-else class="rp-pop-empty">
             <b>尚未获取联通人口数据</b>
-            <span>人口规模、性别、年龄与消费档位均为空。点上方「获取联通人口数据」按商圈面向联通取数（消耗 1 次联通人口配额）。</span>
+            <span>人口规模、性别、年龄与消费档位均为空。点上方「获取人口数据」按点位半径向联通取数 —— 若该位置在「我的门店」里买过，会自动复用、不重复扣费。</span>
           </div>
 
           <!-- 月话费档：联通话费档位，只作**消费能力代理**，⛔ 不是客单价 -->
@@ -187,12 +197,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
-import { pickDistrictForPoint, buildReportModel, fmtM } from '@/utils/candidateReport.js'
+import { pickDistrictForPoint, buildReportModel, fmtM, radiusText } from '@/utils/candidateReport.js'
 import { resolveBrandCategory } from '@/utils/storeBrand.js'
 import { captureMapOnlyCanvas } from '@/utils/mapCapture'
 import { requireQuota, QUOTA_REASON } from '@/utils/quotaContact.js'
@@ -218,7 +228,19 @@ const mapImg = ref('')
 const popData = ref(null)                       // 联通 1001 解析结果
 const popMonth = ref('')                        // 期次，如 202510
 const popLoading = ref(false)
+const popSource = ref('')                       // purchase | cache | fresh
+const popReused = ref(null)                     // { storeName, purchasedAt }
 const quotaInfo = ref({ available: 0, remaining: 0, loaded: false })
+
+/** 报告里可选的三档半径（与后端 REPORT_RADII 一致） */
+const RADIUS_OPTIONS = [1000, 3000, 5000]
+/** 把候选点位自带的半径归到最接近的一档（它可能是 800/1500 之类） */
+function nearestRadius(m) {
+  const n = Number(m) || 1000
+  return RADIUS_OPTIONS.reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a))
+}
+const popRadius = ref(1000)
+// ⭐ radiusText 只用 utils/candidateReport.js 那一份（⛔ 组件里不许另写，否则标签与纸面口径会分叉）
 
 const wantAi = ref(false)      // 🔴 默认 false：不勾就不花钱（业主 2026-11-09 定）
 const aiText = ref('')
@@ -239,7 +261,8 @@ const model = computed(() => {
   const c = props.candidate || {}
   return buildReportModel(c, hitInfo.value, {
     population: popData.value,
-    popMonth: popMonth.value
+    popMonth: popMonth.value,
+    popRadius: popRadius.value
   })
 })
 
@@ -314,22 +337,49 @@ function fmtTime(d) {
  * 读取「已缓存的」联通人口（免费）+ 剩余配额。
  * 🔴 打开报告**绝不自动扣配额** —— 只查缓存；要花钱必须用户点按钮（v1.13.340）。
  */
-async function loadCachedPopulation() {
+/**
+ * 探测「该位置是否已有可复用的人口数据」—— 打开报告就调，**免费**。
+ * 走 `probeOnly`：后端只查 purchases / smartsteps_cache，⛔ 不查闸门、不调上游、不扣费。
+ * （原先调的是商圈面端点，v1.13.341 改为半径口径后才能与「我的门店」打通）
+ */
+let probeSeq = 0
+async function probePopulation() {
+  const seq = ++probeSeq
   popData.value = null
   popMonth.value = ''
-  const city = String(props.candidate?.city || '').replace(/市$/, '')
-  const name = districtName.value
-  if (!city || !name) return
+  popSource.value = ''
+  popReused.value = null
+  const c = props.candidate
+  if (!c || !Number(c.latitude) || !Number(c.longitude)) return
   try {
-    const { data } = await axios.get('/api/districts/population', { params: { city, name } })
-    if (data?.cached && data.population) {
+    const { data } = await axios.post('/api/smartsteps/population', {
+      lng: Number(c.longitude),
+      lat: Number(c.latitude),
+      radius: popRadius.value,
+      probeOnly: true
+    })
+    if (seq !== probeSeq) return        // 半径已改 ⇒ 丢弃旧请求的结果
+    if (data?.population) {
       popData.value = data.population
       popMonth.value = data.dataMonth || ''
+      popSource.value = data.source
+      popReused.value = data.reused
     }
   } catch (e) {
-    // 404 = 该商圈没有面数据 / 未取过，属正常，不打扰用户
-    if (e?.response?.status !== 404) console.warn('[立项报告] 读取缓存人口失败:', e?.message || e)
+    console.warn('[立项报告] 探测人口数据失败:', e?.message || e)
   }
+}
+
+/**
+ * 用户换了半径 ⇒ 旧数据作废（watch 已清空），并**免费**重新探测一次。
+ * 🔴 这一步是「已购数据自动复用」的关键：不重探的话，明明 3km 买过也要用户再点一次
+ *    「确认取数」，甚至误以为要重新付费。probeOnly 不查闸门、不调上游、零费用。
+ * ⚠️ 等 nextTick：el-select 的 change 早于 v-model 的 watch(flush:'pre')，
+ *    先让清空跑完再发请求，否则旧请求回来会把清空后的状态又填回去。
+ */
+async function onRadiusChange() {
+  await nextTick()
+  probePopulation()
 }
 
 /** 剩余配额（用于「消耗 1 次 / 剩余 N 次」的明示，⛔ 不做成隐藏成本） */
@@ -347,35 +397,35 @@ async function loadQuota() {
 }
 
 /**
- * 取联通人口数据（**消耗 1 次配额**）。
- * 先弹确认把「消耗 X / 剩余 Y」摆明，再调 `POST /api/districts/refresh`；
- * 该端点若命中缓存则免费（quotaUsed=0），由后端判定。
+ * 取联通人口数据（按「点位 + 半径」，**可能免费**）。
+ *
+ * 🔴 这里**不做前端配额预检**：已购复用与同位置缓存都是 0 费用的，
+ *   一旦先拦「剩余 0 次」，用户明明能免费拿到数据也点不了。
+ *   闸门交给后端：先查复用 → 再查缓存 → 最后才判配额。
  */
 async function fetchPopulation() {
   if (popLoading.value) return
-  const name = districtName.value
-  const city = String(props.candidate?.city || '').replace(/市$/, '')
-  if (!city || !name) return ElMessage.warning('该点位未匹配到商圈，无法取人口数据')
+  const c = props.candidate
+  if (!c) return
+  const lng = Number(c.longitude)
+  const lat = Number(c.latitude)
+  if (!lng || !lat) return ElMessage.warning('该点位缺少有效坐标，无法取人口数据')
 
-  if (quotaInfo.value.loaded && quotaInfo.value.available < 1) {
-    // 🔴 必须分清「自己没额度」和「平台池空」：
-    //    · 自己没额度 ⇒ 可采购（给采购引导）
-    //    · 平台池空   ⇒ 买了也调不动上游 ⇒ **⛔ 绝不能引导采购**（否则用户白跑一趟还怀疑系统坏了）
-    //    `remainingQuota` 是平台池剩余，来自 /api/purchase/quota 的同一个响应。
-    const reason = quotaInfo.value.remaining < 1 ? QUOTA_REASON.POOL : QUOTA_REASON.OWN
-    await requireQuota(reason, {
-      need: 1,
-      own: quotaInfo.value.available,
-      pool: quotaInfo.value.remaining
-    })
-    return
-  }
+  // 先拿最新可用月份（免费接口）—— 避免选到无数据月份换来一次无效的付费调用
+  let cityMonth = ''
+  let monthLabel = ''
+  try {
+    const { data } = await axios.get('/api/smartsteps/months')
+    cityMonth = data?.months?.[0]?.value || ''
+    monthLabel = data?.months?.[0]?.label || ''
+  } catch { /* 拿不到就不传，后端用本地推算兜底 */ }
 
   try {
     await ElMessageBox.confirm(
-      `将按「${name}」商圈面向联通取人口数据。\n` +
-      `本次消耗 1 次联通人口配额（当前剩余 ${quotaInfo.value.available} 次）；` +
-      '若该商圈近期已取过，则命中缓存、不扣次数。',
+      `将按「点位半径 ${radiusText(popRadius.value)}」向联通取人口数据` +
+      `${monthLabel ? '（期次 ' + monthLabel + '）' : ''}。\n\n` +
+      `· 若该位置在「我的门店」里买过、或命中同位置缓存 ⇒ 不消耗配额，直接复用\n` +
+      `· 否则消耗 1 次联通人口配额（当前剩余 ${quotaInfo.value.available} 次）`,
       '确认取数',
       { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
     )
@@ -385,11 +435,19 @@ async function fetchPopulation() {
 
   popLoading.value = true
   try {
-    const { data } = await axios.post('/api/districts/refresh', { city, name })
+    const { data } = await axios.post('/api/smartsteps/population', {
+      lng,
+      lat,
+      radius: popRadius.value,
+      cityMonth,
+      storeName: String(c.name || '').slice(0, 100)
+    })
     if (data?.population) {
       popData.value = data.population
       popMonth.value = data.dataMonth || ''
-      ElMessage.success(data.fromCache ? '已读取缓存，本次未消耗配额' : '已获取联通人口数据（消耗 1 次）')
+      popSource.value = data.source
+      popReused.value = data.reused
+      ElMessage.success(data.message || '已获取联通人口数据')
       loadQuota()
     } else {
       ElMessage.warning('联通未返回可用人口数据，请稍后重试')
@@ -414,6 +472,8 @@ async function fetchPopulation() {
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */
 async function onOpened() {
   if (!props.candidate) return
+  // 半径默认取候选点位自带的（归到 1/3/5km 三档），用户可在弹窗里改
+  popRadius.value = nearestRadius(props.candidate.radius)
   loading.value = true
   mapImg.value = ''
   try {
@@ -430,8 +490,8 @@ async function onOpened() {
   } finally {
     loading.value = false
   }
-  // 商圈定位完才能按商圈名查缓存人口
-  await Promise.all([loadCachedPopulation(), loadQuota()])
+  // 免费探测一次「有没有可复用的已购数据」，有就直接显示
+  await Promise.all([probePopulation(), loadQuota()])
   renderMap()
 }
 
@@ -653,6 +713,14 @@ async function exportPdf() {
 }
 
 // 关掉弹窗时清掉 AI 文本与人口缓存，避免下次打开看到上一个点位的数据
+/** 换半径 ⇒ 之前取的那份就作废（⛔ 不许把 1km 的数据挂在 3km 标签下） */
+watch(popRadius, () => {
+  popData.value = null
+  popMonth.value = ''
+  popSource.value = ''
+  popReused.value = null
+})
+
 watch(() => props.modelValue, (v) => {
   if (!v) {
     aiText.value = ''
@@ -660,6 +728,8 @@ watch(() => props.modelValue, (v) => {
     categoryInput.value = ''
     popData.value = null
     popMonth.value = ''
+    popSource.value = ''
+    popReused.value = null
   }
 })
 </script>

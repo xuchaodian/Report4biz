@@ -13,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   pointInRing, pointInGeometry, distanceToRingM,
-  pickDistrictForPoint, scoreToStars, buildReportModel, fmtM
+  pickDistrictForPoint, scoreToStars, buildReportModel, fmtM, radiusText
 } from '../../frontend/src/utils/candidateReport.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -117,8 +117,8 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     expect(m.district.hasPop).toBe(false)
     expect(m.district.population).toBeNull()
     const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('商圈人口')
-    expect(m.facts.find((f) => f.label === '商圈人口').value).toBe('未获取')
+    expect(labels).toContain('半径内人口')
+    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
     expect(labels).toContain('商圈竞争评分')
     expect(labels).toContain('租金水平')
     // 租金单价 = 45000 / 120 = 375.0
@@ -136,7 +136,7 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     expect(m.district).toBeNull()
     expect(m.facts.find((f) => f.label === '所在商圈').value).toBe('未匹配到商圈')
     expect(m.risks.join('|')).toMatch(/未匹配到商圈面/)
-    expect(m.provenance.sample).toContain('无商圈面')
+    expect(m.provenance.sample).toContain('无人口样本')
   })
 
   it('缺面积/租金 ⇒ 进风险清单，且不编租金单价', () => {
@@ -258,9 +258,9 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
  * 这里钉三件事：
  *   ① 没取到联通数据 ⇒ hasPop=false，**⛔ 不回落到商圈面的 population**
  *   ② 取到了 ⇒ 只用联通的值（哪怕商圈面另有数值）
- *   ③ 打开报告**不许**自动扣配额（只有用户点按钮才能 POST /refresh）
+ *   ③ 打开报告**不许**自动扣配额（只有用户点按钮才能 POST /smartsteps/population）
  */
-describe('G. 人口数据只认联通配额口径', () => {
+describe('G. 人口只认联通配额，且与「我的门店」打通（点位+半径口径）', () => {
   const cand = {
     name: '五角场万达 3F 中庭', brand: '食其家', city: '上海', district: '杨浦区',
     address: '邯郸路 600 号', latitude: 31.30, longitude: 121.51, radius: 1000,
@@ -275,122 +275,207 @@ describe('G. 人口数据只认联通配额口径', () => {
 
   it('🔴 没取联通数据时，不许拿商圈面的 population 顶上去', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
-    // 商圈面 fixture 里 population=196440，⛔ 不许出现在报告里
     const m = buildReportModel(cand, hit)
     expect(m.district.hasPop).toBe(false)
     expect(m.district.population).toBeNull()
     expect(m.district.work).toBeNull()
     expect(m.district.visit).toBeNull()
     expect(JSON.stringify(m)).not.toContain('196440')
-    expect(m.facts.find((f) => f.label === '商圈人口').value).toBe('未获取')
+    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
     expect(m.risks.join('|')).toMatch(/尚未获取联通人口数据/)
   })
 
-  it('★ 取到联通数据 ⇒ 三项与期次都来自联通，且写到 facts', () => {
+  it('★ 取到联通数据 ⇒ 三项 + 期次 + **半径口径标签**', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
-    const m = buildReportModel(cand, hit, { population: pop, popMonth: '202510' })
+    const m = buildReportModel(cand, hit, { population: pop, popMonth: '202510', popRadius: 1000 })
     expect(m.district.hasPop).toBe(true)
     expect(m.district.population).toBe(399275)
-    expect(m.district.work).toBe(335771)
-    expect(m.district.visit).toBe(39073425)
+    expect(m.district.popRadius).toBe(1000)
     expect(JSON.stringify(m)).not.toContain('196440')   // 商圈面那条仍未出现
     expect(m.provenance.period).toContain('202510')
 
-    const visitFact = m.facts.find((f) => f.label === '商圈到访人次')
-    expect(visitFact.value).toContain('39,073,425')
-    // 🔴 到访是"人次"，必须写明不可与人数相加（历史上最容易混的一处）
-    expect(visitFact.note).toMatch(/人次|人数/)
-    expect(m.facts.find((f) => f.label === '主要年龄段').value).toContain('19-24岁')
+    // 🔴 标签必须写清「半径」，⛔ 不许写「商圈居住人口」（那是另一套口径）
+    const labels = m.facts.map((f) => f.label)
+    expect(labels).toContain('半径 1km 内居住人口')
+    expect(labels).toContain('半径 1km 内工作人口')
+    expect(labels).toContain('半径 1km 内到访人次')
+    expect(labels).not.toContain('商圈居住人口')
+    expect(m.facts.find((f) => f.label === '半径 1km 内到访人次').note).toMatch(/人次|人数/)
   })
 
-  it('到访口径必须写"人次"而不是"人"', () => {
+  it('半径文案：1km / 3km / 500m', () => {
+    expect(radiusText(1000)).toBe('1km')
+    expect(radiusText(3000)).toBe('3km')
+    expect(radiusText(1500)).toBe('1.5km')
+    expect(radiusText(500)).toBe('500m')
+    expect(radiusText(null)).toBe('')
+  })
+
+  it('口径页脚必须把「人口=半径」与「评分=商圈面」分开写', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
-    const m = buildReportModel(cand, hit, { population: pop })
-    const f = m.facts.find((x) => x.label === '商圈到访人次')
-    expect(f.value.endsWith('人次')).toBe(true)
+    const m = buildReportModel(cand, hit, { population: pop, popMonth: '202510', popRadius: 3000 })
+    expect(m.provenance.source).toContain('点位半径 3km')
+    expect(m.provenance.source).toContain('商圈面基线')
+    expect(m.provenance.sample).toMatch(/圆口径/)
+    expect(m.provenance.sample).toMatch(/非商圈面口径/)
+  })
+})
+
+describe('H. 打通「我的门店」已购数据（后端取数优先级）', () => {
+  const SS = read('backend/src/routes/smartsteps.js')
+
+  it('🔴 顺序必须是 purchases → cache → 配额闸门（复用优先，⛔ 先拦配额）', () => {
+    const i = SS.indexOf("router.post('/population'")
+    expect(i).toBeGreaterThan(-1)
+    const body = SS.slice(i, SS.indexOf('export default router', i))
+    const iP = body.indexOf('FROM purchases')
+    const iC = body.indexOf('smartsteps_cache')
+    const iG = body.indexOf('checkQuota(')
+    expect(iP).toBeGreaterThan(-1)
+    expect(iC).toBeGreaterThan(iP)
+    // 🔴 闸门必须在**两个复用都试过之后**才出现 —— 提前一步就会把"能免费复用"的用户挡在门外
+    expect(iG).toBeGreaterThan(iP)
+    expect(iG).toBeGreaterThan(iC)
   })
 
-  it('🔴 打开报告不许自动扣配额：onOpened 只查缓存，扣费只走用户点击', () => {
+  it('🔴 坐标容差 10m（业主 2026-11-09 定），SQL 只做矩形粗筛 + haversine 精判', () => {
+    expect(SS).toContain('REUSE_TOL_M = 10')
+    expect(SS).toContain('distMeters(')
+    // 粗筛框必须存在（否则全表拉 transactions 太慢）
+    expect(SS).toMatch(/center_lat BETWEEN \? AND \?/)
+  })
+
+  it('半径只开放 1/3/5km 三档（面积 3.1/28.3/78.5 km²，都在联通 0.3~80 限制内）', () => {
+    expect(SS).toContain('REPORT_RADII = [1000, 3000, 5000]')
+    // 前端选项必须与后端一致
     const comp = read('frontend/src/components/CandidateReport.vue')
-    const i = comp.indexOf('async function onOpened')
+    expect(comp).toContain('RADIUS_OPTIONS = [1000, 3000, 5000]')
+  })
+
+  it('purchases.radius 存的是 JSON 字符串，必须解析后比对（⛔ 用 LIKE 会误命中）', () => {
+    expect(SS).toContain('radiusIncludes')
+    expect(SS).toContain('JSON.parse')
+  })
+
+  it('🔴 probeOnly 必须只查复用 —— ⛔ 不碰闸门、不调上游', () => {
+    const i = SS.indexOf('if (body.probeOnly)')
     expect(i).toBeGreaterThan(-1)
-    const body = comp.slice(i, comp.indexOf('async function renderMap', i) > 0
-      ? comp.indexOf('async function renderMap', i)
-      : i + 1600)
-    expect(body).toContain('loadCachedPopulation')            // 免费查缓存
-    expect(body).not.toContain('/api/districts/refresh')      // ⛔ 打开即扣费
+    const body = SS.slice(i, SS.indexOf('// ── ③', i))
+    expect(body).toContain("source: 'none'")
+    expect(body).not.toContain('checkQuota')
+    expect(body).not.toContain('getData')
+  })
+
+  it('🔴 复用不要求同月份（过期就重新收费＝坑用户），但必须回传期次', () => {
+    const i = SS.indexOf("router.post('/population'")
+    const body = SS.slice(i, i + 6000)
+    expect(body).toContain('dataMonth: row.city_month')
+    expect(body).toContain('dataMonth: cached.city_month')
+    // 查已购时不许出现 city_month = ? 这种同月限制
+    const purchaseQuery = body.slice(body.indexOf('FROM purchases') - 400, body.indexOf('FROM purchases'))
+    expect(purchaseQuery).not.toMatch(/city_month\s*=\s*\?/)
+  })
+
+  it('取到数据必须同时写 purchases 与 cache（否则下次不能复用）', () => {
+    const i = SS.indexOf("router.post('/population'")
+    const body = SS.slice(i, i + 6000)
+    expect(body).toContain('INSERT INTO purchases')
+    expect(body).toContain('saveToCache')
+  })
+
+  it('上游成功但无数据 ⇒ 不扣费（与 /query 的空数据返还同口径）', () => {
+    const i = SS.indexOf("router.post('/population'")
+    const body = SS.slice(i, i + 6000)
+    expect(body).toMatch(/联通未返回可用人口数据（本次未消耗配额）/)
+  })
+})
+
+describe('I. 前端交互（探测免费 / 不预检配额 / VIP 拦截）', () => {
+  const COMP = read('frontend/src/components/CandidateReport.vue')
+
+  it('🔴 打开报告只做 probeOnly 探测，⛔ 不调会扣费的取数', () => {
+    const i = COMP.indexOf('async function onOpened')
+    const body = COMP.slice(i, COMP.indexOf('async function renderMap', i))
+    expect(body).toContain('probePopulation')
     expect(body).not.toContain('fetchPopulation')
+    const p = COMP.indexOf('async function probePopulation')
+    const pBody = COMP.slice(p, COMP.indexOf('async function onRadiusChange', p))
+    expect(pBody).toContain('probeOnly: true')
+    expect(pBody).not.toContain('checkQuota')
+  })
 
-    // 缓存查询必须是 GET /population（免费）
-    const lp = comp.indexOf('async function loadCachedPopulation')
-    expect(lp).toBeGreaterThan(-1)
-    const lpBody = comp.slice(lp, comp.indexOf('async function loadQuota', lp))
-    expect(lpBody).toContain("axios.get('/api/districts/population'")
-    expect(lpBody).not.toContain('refresh')
+  it('🔴 前端不许预检配额 —— 否则「能免费复用」也被拦掉', () => {
+    const i = COMP.indexOf('async function fetchPopulation')
+    const body = COMP.slice(i, i + 2600)
+    // 不能在弹确认之前就跑 available < 1 的分支
+    const confirmIdx = body.indexOf('ElMessageBox.confirm')
+    const precheckIdx = body.indexOf('available < 1')
+    expect(confirmIdx).toBeGreaterThan(-1)
+    expect(precheckIdx === -1 || precheckIdx > confirmIdx,
+      '配额预检不能挡在确认框之前：复用是免费的，池空时也可能取到数据').toBe(true)
+  })
 
-    // 扣费接口只应出现在 fetchPopulation 里
-    const fp = comp.indexOf('async function fetchPopulation')
-    expect(fp).toBeGreaterThan(-1)
-    expect(comp.slice(fp, fp + 2400)).toContain('/api/districts/refresh')
+  it('切换半径必须清空已取数据（⛔ 别把 1km 的数挂到 3km 标签下）', () => {
+    expect(COMP).toMatch(/watch\(popRadius/)
+    const i = COMP.indexOf('watch(popRadius')
+    const body = COMP.slice(i, i + 300)
+    expect(body).toContain('popData.value = null')
   })
 
   it('配额不足走统一引导出口（⛔ 不就地写联系方式）', () => {
-    const comp = read('frontend/src/components/CandidateReport.vue')
-    expect(comp).toContain('requireQuota')
-    expect(comp).toContain('QUOTA_REASON')
-    // 联系方式只能在 utils/quotaContact.js 里
-    expect(comp).not.toMatch(/138\s*1779\s*1741/)
-    expect(comp).not.toContain('jyo@youshi-tech.com')
+    expect(COMP).toContain('requireQuota')
+    expect(COMP).toContain('QUOTA_REASON')
+    expect(COMP).not.toMatch(/138\s*1779\s*1741/)
+    expect(COMP).not.toContain('jyo@youshi-tech.com')
   })
 
   it('AI 勾选必须拦住非 VIP 并给出申请路径（⛔ 不能只把 checkbox 禁用）', () => {
-    const comp = read('frontend/src/components/CandidateReport.vue')
-    expect(comp).toContain('onWantAiChange')
-    expect(comp).toContain('VIP 专属')
-    expect(comp).toContain("/account")
-    // 不许再对 checkbox 直接 disabled=!isVip（那样点不动、用户看不到原因）
-    expect(comp).not.toMatch(/:disabled="!isVip\s*\|\|/)
+    expect(COMP).toContain('onWantAiChange')
+    expect(COMP).toContain('VIP 专属')
+    expect(COMP).toContain('/account')
+    expect(COMP).not.toMatch(/:disabled="!isVip\s*\|\|/)
   })
+})
 
-  it('🔴 后端 /population 必须登录且**免费**（⛔ 不许在这条路上扣配额或调上游）', () => {
-    const route = read('backend/src/routes/districts.js')
-    const i = route.indexOf("router.get('/population'")
+
+/**
+ * J. 341 收尾：改写 G/H/I 组时曾把 340 的两条守卫一起删掉 ⇒ 这里补回并钉死。
+ *    ⚠️ 教训：换端点/换取数口径时，**只删「已不适用的」断言**，别把同文件里 unrelated 的守卫一起替换掉。
+ */
+describe('J. 341 收尾：守卫不许在改写中丢失', () => {
+  const DS = read('backend/src/routes/districts.js')
+  const COMP2 = read('frontend/src/components/CandidateReport.vue')
+
+  it('🔴 商圈定位必须先归一化字段名（340 修的真 bug：换版城市刷新必 404）', () => {
+    const i = DS.indexOf('function resolveBoundary')
     expect(i).toBeGreaterThan(-1)
-    const body = route.slice(i, route.indexOf("router.post('/refresh'", i))
-    expect(body).toContain('authenticate')
-    // 只读缓存：不许出现闸门与上游调用
-    expect(body).not.toContain('checkQuota')
-    expect(body).not.toContain('queryUnicomPolygon')
-    expect(body).not.toContain('admin_quota')
-    expect(body).toContain('district_cache')
-  })
-
-  it('★ refresh 必须把完整 1001 人口一起返回（缓存命中与未命中两条路）', () => {
-    const route = read('backend/src/routes/districts.js')
-    const i = route.indexOf("router.post('/refresh'")
-    const body = route.slice(i, i + 4000)
-    const hits = (body.match(/population: parsePopulation1001\(/g) || []).length
-    expect(hits, 'refresh 的两条返回分支都要带 population').toBeGreaterThanOrEqual(2)
-  })
-
-  it('🔴 商圈定位必须先归一化字段名（否则换版城市「刷新最新数据」必 404）', () => {
-    const route = read('backend/src/routes/districts.js')
-    const i = route.indexOf('function resolveBoundary')
-    expect(i).toBeGreaterThan(-1)
-    const body = route.slice(i, i + 900)
+    const body = DS.slice(i, i + 900)
     expect(body).toContain('normalizeDistrictProps')
-    // ⛔ 不许再直接读原始键（联通人口版里叫「商圈名」）
     expect(body).not.toContain("(ft.properties || {})['名称']")
   })
 
-
-  it('🔴 配额预检必须分清「自己没额度」与「平台池空」（池空 ⛔ 不引导采购）', () => {
-    const comp = read('frontend/src/components/CandidateReport.vue')
-    const i = comp.indexOf('async function fetchPopulation')
-    const body = comp.slice(i, i + 1600)
-    expect(body).toContain('QUOTA_REASON.POOL')
-    expect(body).toContain('QUOTA_REASON.OWN')
-    expect(body).toContain('remaining')      // 按平台池剩余分流
+  it('🔴 refresh 两条返回分支都要带完整 1001 人口', () => {
+    const i = DS.indexOf("router.post('/refresh'")
+    expect(i).toBeGreaterThan(-1)
+    const body = DS.slice(i, i + 4000)
+    expect((body.match(/population: parsePopulation1001\(/g) || []).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('⭐ radiusText 只有一份：组件必须 import，⛔ 不许本地再写一份（派生函数单一来源）', () => {
+    expect(COMP2).toContain('buildReportModel, fmtM, radiusText')
+    expect(COMP2).not.toMatch(/const radiusText\s*=/)
+  })
+
+  it('🔴 切换半径要自动免费重探（否则「已购数据自动复用」失效）', () => {
+    expect(COMP2).toContain('@change="onRadiusChange"')
+    const i = COMP2.indexOf('async function onRadiusChange')
+    expect(i).toBeGreaterThan(-1)
+    const body = COMP2.slice(i, i + 400)
+    expect(body).toContain('nextTick()')
+    expect(body).toContain('probePopulation()')
+  })
+
+  it('🔴 探测要有序号防竞态（切半径后旧请求不许回填）', () => {
+    expect(COMP2).toContain('seq !== probeSeq')
+  })
 })
