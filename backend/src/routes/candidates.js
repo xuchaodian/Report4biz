@@ -342,5 +342,30 @@ router.delete('/:id', authenticate, (req, res) => {
   }
 })
 
+/**
+ * 报告导出留痕 POST /api/candidates/:id/report  body: { withAi: boolean }
+ *
+ * 为什么留痕：立项报告里含**商圈人口与竞争画像**（联通口径数据），导出即离开系统。
+ * 记一条流水，事后能回答「谁在什么时候拿这个点位的数据出过报告、有没有带 AI 建议」。
+ *
+ * 🔴 只 INSERT 流水，⛔ 不改 stage / ⛔ 不动 updated_at —— 导出报告不是"推进了一步"，
+ *    不能让它把列表排序顶上去，也不能让"最近更新"变成"最后导出的时间"。
+ */
+router.post('/:id/report', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const c = ownCandidate(db, req.params.id, req.user.id)
+    if (!c) return res.status(404).json({ message: '未找到该候选点位' })
+    const withAi = !!req.body?.withAi
+    db.prepare('INSERT INTO candidate_notes (candidate_id, user_id, from_stage, to_stage, note) VALUES (?, ?, ?, ?, ?)')
+      .run(c.id, req.user.id, '', '', `导出立项报告（${withAi ? '含 AI 建议' : '不含 AI 建议'}）`)
+    db.saveNow()
+    res.json({ success: true })
+  } catch (e) {
+    console.error('[Candidates] 报告留痕失败:', e)
+    res.status(500).json({ message: '记录报告导出失败' })
+  }
+})
+
 export default router
 export { STAGES }

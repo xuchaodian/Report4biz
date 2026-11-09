@@ -195,6 +195,7 @@
         </div>
 
         <div class="cd-detail-actions">
+          <el-button type="primary" @click="reportVisible = true">生成立项报告</el-button>
           <el-button @click="openEdit">编辑信息</el-button>
           <el-button type="danger" plain @click="remove(detail)">删除点位</el-button>
         </div>
@@ -242,6 +243,9 @@
         <el-button type="primary" :loading="saving" @click="save">{{ editingId ? '保存' : '创建' }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 立项报告（P1-5）：默认不含 AI 建议，勾选后才调 AI -->
+    <CandidateReport v-model="reportVisible" :candidate="detail" />
   </div>
 </template>
 
@@ -253,6 +257,7 @@ import { ArrowLeft, Plus, Search, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { STAGES, stageMeta } from '@/utils/candidateStage.js'
 import { formatUtcDateTime } from '@/utils/datetime.js'
+import CandidateReport from '@/components/CandidateReport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -273,6 +278,7 @@ const stageNote = ref('')
 const remark = ref('')
 const remarkLoading = ref(false)
 
+const reportVisible = ref(false)
 const dialog = ref(false)
 const editingId = ref(null)
 const form = ref(emptyForm())

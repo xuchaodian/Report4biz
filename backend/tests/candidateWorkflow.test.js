@@ -68,7 +68,7 @@ describe('B. 鉴权：每个端点都必须登录，且只能碰自己的点位'
   const endpoints = [...ROUTE.matchAll(/router\.(get|post|patch|delete)\(\s*'([^']+)'\s*,\s*([A-Za-z]+)/g)]
 
   it('端点数量与预期一致（漏一个就说明有人加了没挂鉴权的接口）', () => {
-    expect(endpoints.length).toBe(7)
+    expect(endpoints.length).toBe(8)  // 7 业务 + 1 报告留痕
   })
 
   it('全部挂在 authenticate 之后', () => {
@@ -84,6 +84,15 @@ describe('B. 鉴权：每个端点都必须登录，且只能碰自己的点位'
     // ⛔ 不要顺手接集团可见域：候选点位是"我这批点位"的自我管理
     expect(ROUTE).not.toContain('visibleScope')
     expect(ROUTE).not.toContain('readableUserIds')
+  })
+
+  it('🔴 报告留痕只写流水，⛔ 不改 stage / 不动 updated_at（导出不是推进）', () => {
+    const i = ROUTE.indexOf("router.post('/:id/report'")
+    expect(i).toBeGreaterThan(-1)
+    const block = ROUTE.slice(i, i + 900)
+    expect(block).toContain('candidate_notes')
+    expect(block).not.toContain('stage =')
+    expect(block).not.toContain('updated_at')
   })
 
   it('删除与更新都带 user_id 二次兜底（防"取到就一定能改"）', () => {
