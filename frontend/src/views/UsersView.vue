@@ -293,10 +293,12 @@
         <el-form-item v-if="isEdit" label="剩余次数">
           <el-input-number v-model="form.remaining" :min="0" :max="9999" placeholder="输入用户新的剩余次数" style="width: 100%" />
           <div class="quota-tip">
-            <div>当前剩余次数: {{ form.remaining }}</div>
-            <div>已使用次数: {{ form.usedQuota }}</div>
+            <div>当前剩余次数: {{ form.remaining }}　｜　已使用次数: {{ form.usedQuota }}</div>
+            <div>当前授权额度（累计）: {{ form.quota }}</div>
             <div>系统剩余可分配(全池): {{ quotaInfo.poolAvailableQuota }} <span style="color:#909399;">（已扣除 API 开放页占用 {{ quotaInfo.apiAllocatedQuota }} 次）</span></div>
-            <div style="color: #67c23a; margin-top: 4px;">输入新的剩余次数，系统将自动换算为配额总数</div>
+            <!-- v1.13.332：原文案「自动换算为配额总数」与实现不符（实际是直接覆盖），
+                 且是 2026-07-24 那次误改的诱因。改为如实描述「按增减量调整授权额度」。 -->
+            <div style="color: #67c23a; margin-top: 4px;">按剩余次数的增减量调整授权额度；数字不变则额度与配额履历都不变</div>
           </div>
         </el-form-item>
       </el-form>
@@ -1368,8 +1370,18 @@ const handleSave = async () => {
   saving.value = true
   try {
     if (isEdit.value) {
-      // 将输入"剩余次数"作为配额总数提交（usedQuota已在purchases表中独立记录，不重复计算）
-      const totalQuota = (form.remaining || 0)
+      // 🔴🔴 配额口径（v1.13.332 修 2026-07-24 `5a2f6ba` 引入的回归）：
+      //    `users.quota` = **累计授权额度**；`remainingQuota = max(0, quota − used)`（users.js:69）。
+      //    弹窗里填的是「剩余次数」，⛔ 绝不能把它直接当「授权额度」写回 ——
+      //    那会让每次「只改邮箱/角色」都静默削掉一个已用量（diff=0 不弹确认、还写一条 decrease 履历），
+      //    而「增加配额」因 quotaDiff=0 变成彻底的空操作。
+      //    ⛔ 也不用 remaining + usedQuota：admin 行的 remainingQuota 是 null（弹窗填 0），
+      //       历史账号 quota<used 时 remaining 被 clamp 到 0，两者都会凭空「回补」额度并触发池校验。
+      //    ✅ 用「打开弹窗时的授权额度 + 本次增减量」：
+      //       不改数字 ⇒ diff=0 ⇒ 后端 quotaChanged=false（不写 users / quota_history / 审计）；
+      //       改 N 次 ⇒ quotaDiff=N，与确认框「本次增加/减少 N 次」逐字一致。
+      //       不依赖 usedQuota 快照，也不受并发消费影响。口径 A 见 utils/quotaPool.js:85。
+      const totalQuota = (form.quota || 0) + ((form.remaining || 0) - originalRemaining.value)
       const updateData = { email: form.email, role: form.role, company: form.company, quota: totalQuota }
       // VIP 到期时间由后端自动计算（设为 VIP → 自保存日起续期 1 年；改为非 VIP → 清除）
       if (form.password) {
