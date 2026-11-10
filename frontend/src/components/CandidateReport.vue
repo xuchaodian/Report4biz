@@ -234,6 +234,10 @@ const loading = ref(false)
 const exporting = ref(false)
 const paper = ref(null)
 const districts = ref([])
+// v1.13.346：`/api/districts?brand=` 返回的竞品品牌口径，用来在报告里写清「竞品数是怎么数出来的」。
+//   三态：null/undefined＝后端未返回（拿不到口径，注记按「未指定品牌」处理）；
+//        { configured:false }＝该自有品牌没配映射 ⇒ 全量；{ configured:true, brands:[…] }＝已收窄。
+const brandScope = ref(null)
 const mapImg = ref('')
 
 // ── 联通人口（1001）────────────────────────────────────────
@@ -276,7 +280,10 @@ const model = computed(() => {
   return buildReportModel(c, hitInfo.value, {
     population: popData.value,
     popMonth: popMonth.value,
-    popRadius: popRadius.value
+    popRadius: popRadius.value,
+    // v1.13.346：把后端返回的竞品口径一起交给报告 —— 否则报告只能说「N 家竞品」，
+    //   说不出这 N 家是「全量」还是「按本品牌映射收窄后」的，口径不可追溯。
+    brandScope: brandScope.value
   })
 })
 
@@ -493,13 +500,22 @@ async function onOpened() {
   try {
     const city = String(props.candidate.city || '').replace(/市$/, '')
     if (city) {
-      const { data } = await axios.get('/api/districts', { params: { city } })
+      // v1.13.346：把候选点位自己的品牌传下去，后端据此把「商圈内竞品」收窄到该品牌的竞品集合。
+      //   🔴 这个调用用的是**裸 axios**（不是 utils/api.js 的包装），响应**没有**被解包 ⇒ `const { data }` 是对的，
+      //      千万不要照 344 那个坑改成直接取 body。
+      //   brand 为空 ⇒ 传 undefined，axios 会省略该参数 ⇒ 后端回退全量（与 345 的三态语义一致）。
+      const { data } = await axios.get('/api/districts', {
+        params: { city, brand: props.candidate.brand || undefined }
+      })
       districts.value = data.districts || []
+      brandScope.value = data.brandScope || null
     } else {
       districts.value = []
+      brandScope.value = null
     }
   } catch (e) {
     districts.value = []
+    brandScope.value = null
     ElMessage.warning('商圈数据读取失败，报告将只包含登记信息')
   } finally {
     loading.value = false

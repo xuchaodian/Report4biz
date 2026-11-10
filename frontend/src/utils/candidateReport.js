@@ -177,7 +177,9 @@ export function scoreToStars(score) {
  *
  * @param {object} candidate store_candidates 一行
  * @param {{district:object|null, contained:boolean, distanceM:number|null}} hit pickDistrictForPoint 的结果
- * @param {{population?:object|null, popMonth?:string, popRadius?:number}} opts 联通 1001 解析结果、期次、半径（米）
+ * @param {{population?:object|null, popMonth?:string, popRadius?:number, brandScope?:object|null}} opts 联通 1001 解析结果、期次、半径（米）
+ *        · `brandScope`（v1.13.346）：`/api/districts` 返回的 `{ configured, brands }`，
+ *          决定「商圈内竞品」的注记怎么写 —— 未指定品牌 / 未配置映射 / 已按映射收窄，三态必须分开写。
  */
 export function buildReportModel(candidate, hit = {}, opts = {}) {
   const c = candidate || {}
@@ -307,6 +309,21 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
   // ── 商圈面基线结论（只在有商圈面时才有）──────────────────
   if (districtBlock) {
     const b = districtBlock
+    // v1.13.346：竞品口径注记 —— 「N 家竞品」这三个字必须说清是数了哪些品牌。
+    //   🔴 旧文案写死「计数含同业态全品牌」，一旦按品牌映射收窄，这句话就成了假话；
+    //      而立项报告是对外文档，口径写错比数字难看严重得多 ⇒ 必须按实际口径生成。
+    const bs = opts.brandScope || null
+    let compScopeNote
+    if (!c.brand) {
+      compScopeNote = '未指定自有品牌，竞品按全量统计（含全部竞品品牌）'
+    } else if (!bs || !bs.configured) {
+      compScopeNote = `自有品牌「${c.brand}」未配置竞品映射，竞品按全量统计（含全部竞品品牌）`
+    } else {
+      const list = (Array.isArray(bs.brands) ? bs.brands : []).filter(Boolean)
+      compScopeNote = list.length
+        ? `已按品牌映射收窄：仅统计 ${list.join(' / ')}（自有品牌「${c.brand}」）`
+        : `已按品牌映射收窄：自有品牌「${c.brand}」配置的竞品集合为空`
+    }
     facts.push({
       label: '客群 / 能级',
       value: [b.crowd, b.level].filter(Boolean).join(' · ') || '无标签',
@@ -316,9 +333,9 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
 
     // 竞争与自家蚕食：这是"风险"里最实的两条
     if (b.competitorCount > 0) {
-      risks.push(`该商圈内已有竞品门店 ${b.competitorCount} 家，进店客流需与既有竞品分流（计数含同业态全品牌）。`)
+      risks.push(`该商圈内已有竞品门店 ${b.competitorCount} 家，进店客流需与既有竞品分流（${compScopeNote}）。`)
     } else {
-      facts.push({ label: '商圈内竞品', value: '0 家', note: '按当前可见范围统计' })
+      facts.push({ label: '商圈内竞品', value: '0 家', note: compScopeNote })
     }
     if (b.myStoreCount > 0) {
       risks.push(`同商圈内已有自家门店 ${b.myStoreCount} 家 —— 存在自我蚕食风险，需与现有门店做商圈切分。`)

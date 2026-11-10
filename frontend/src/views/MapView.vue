@@ -774,6 +774,19 @@
             </el-select>
           </div>
         </el-form-item>
+        <el-form-item label="分析品牌">
+          <div style="width:100%">
+            <el-select v-model="potentialBrand" clearable placeholder="不限（全量竞品）" style="width:100%" filterable>
+              <el-option v-for="b in potentialAnalyzeBrandOptions" :key="b" :label="b" :value="b" />
+            </el-select>
+            <div style="font-size:12px;color:#909399;margin-top:4px;line-height:1.4;">
+              按该自有品牌的「品牌 → 竞品」映射统计竞品；不选或该品牌未配置映射＝全量
+            </div>
+            <div v-if="potentialScopeEmpty" style="font-size:12px;color:#e6a23c;margin-top:4px;line-height:1.4;">
+              该品牌配置的竞品集合为空 ⇒ 竞品数恒为 0，请先到「竞品门店」页检查映射配置
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="竞品门店数">
           <div style="display:flex;gap:8px;width:100%">
             <el-select v-model="potentialCompOp" placeholder="运算符" style="width:78px;flex-shrink:0">
@@ -1908,7 +1921,7 @@ import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { currentUidOr } from '@/utils/currentUser.js'
-import { scopeBrandsFor, groupByBrand, compPointsForBrand } from '@/utils/brandScope.js'
+import { scopeBrandsFor, groupByBrand, compPointsForBrand, normBrand } from '@/utils/brandScope.js'
 import { authHeaders } from '@/utils/authHeaders.js'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
@@ -2525,7 +2538,49 @@ const potentialCompVal = ref(1)
 const potentialMyBrands = ref([])
 const potentialCompBrands = ref([])
 const potentialMyBrandOptions = computed(() => [...new Set(markerStore.markers.map(m => m.brand).filter(Boolean))])
-const potentialCompBrandOptions = computed(() => [...new Set(competitorStore.activeCompetitors.map(c => c.brand).filter(Boolean))])
+
+// ── v1.13.346：「分析品牌」（自有）—— 决定竞品按哪套映射口径统计 ──────────
+//   为什么必须显式选：开店余地的圆心是网格、不是门店，没有「这家店自己的品牌」可继承；
+//   若隐式拿竞品页选中的品牌，换个页面回来结果就变了却不知道为什么（同机会区的既有约定）。
+//   ⛔ 不传 ⇒ 后端 resolveCompBrands 返回 null ⇒ 全量，老行为逐字节不变。
+const potentialBrand = ref('')
+const potentialAnalyzeBrandOptions = computed(() => {
+  const fromStore = competitorStore.myBrands || []
+  const fromMarkers = markerStore.markers.map(m => m.brand).filter(Boolean)
+  // 后端口径优先；为空（如尚未导入竞品）时回退到「我的门店」里出现过的品牌
+  return [...new Set(fromStore.length ? fromStore : fromMarkers)].sort()
+})
+
+// 竞争品牌选项：
+//   · 基础池取**全量** `competitorBrands`——⛔ 不能用 activeCompetitors：竞品页选了品牌后
+//     共享池会被收窄，这里选项就会缺品牌（与 345 修竞争追踪下拉是同一个坑）。
+//   · 选了「分析品牌」且该品牌已配映射 ⇒ 只列映射内的品牌。
+//     🔴 否则用户会勾到映射外的品牌，与后端 compBrandSql 取交集 ⇒ 网格内竞品恒 0，
+//        看起来像「这片区域没有竞品」——比报错更危险。
+const potentialCompBrandOptions = computed(() => {
+  const full = competitorStore.competitorBrands || []
+  const base = full.length
+    ? [...full].sort()
+    : [...new Set(competitorStore.activeCompetitors.map(c => c.brand).filter(Boolean))].sort()
+  const allowed = scopeBrandsFor(competitorStore.brandScopeMap || {}, potentialBrand.value)
+  if (allowed === null) return base
+  const keys = new Set(allowed.map(normBrand))
+  return base.filter(b => keys.has(normBrand(b)))
+})
+
+// 🔴 映射被配成「显式空集」时，竞争品牌下拉会是空的、后端统计恒为 0。
+//   用户看到「0 家竞品」极可能当成好消息（和信号灯空集不许变绿是同一类坑）⇒ 必须显式提示。
+const potentialScopeEmpty = computed(() => {
+  if (!potentialBrand.value) return false
+  const allowed = scopeBrandsFor(competitorStore.brandScopeMap || {}, potentialBrand.value)
+  return Array.isArray(allowed) && allowed.length === 0
+})
+
+// 切换「分析品牌」必须清空已勾选的竞争品牌：
+//   上一个品牌勾的竞品名会残留，而新品牌的映射里未必有它 ⇒ 交集恒 0 的静默错误。
+watch(potentialBrand, () => {
+  potentialCompBrands.value = []
+})
 // 其他品牌（v1.13.255：改查平台品牌库 brand_stores，不再走高德 —— 下拉按城市动态加载）
 const potentialBrandOptions = ref([])
 const potentialOther1Name = ref('')
@@ -9958,6 +10013,9 @@ const calculatePotential = async () => {
         competitorVal: compVal,
         myStoreBrands: potentialMyBrands.value,
         compBrands: potentialCompBrands.value,
+        // v1.13.346：自有品牌 → 后端 resolveCompBrands 把竞品集合收窄到映射内
+        //   （未选 / 未配置 ⇒ 后端返回 null ⇒ 全量，老行为不变）
+        myBrand: potentialBrand.value,
         otherBrand1: other1,
         otherBrand2: other2,
         conditions

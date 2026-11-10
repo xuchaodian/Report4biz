@@ -169,6 +169,55 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     const scoreFact = m.facts.find((f) => f.label === '商圈竞争评分')
     expect(scoreFact.note).toContain('非该点位自身评分')
   })
+
+  // ── v1.13.346：竞品口径注记（三态）────────────────────────────
+  //   「N 家竞品」是对外文档里最容易被引用的一句，必须说清数了哪些品牌。
+  //   旧文案写死「计数含同业态全品牌」⇒ 一旦按品牌映射收窄，这句就成了假话。
+  const hitFor = () => pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
+
+  it('C-新1 未指定自有品牌 ⇒ 注记必须写「未指定自有品牌」，且不再声称"全品牌"以外的口径', () => {
+    const m = buildReportModel({ ...cand, brand: '' }, hitFor())
+    const t = m.risks.join('|')
+    expect(t).toContain('未指定自有品牌')
+    expect(t).not.toContain('已按品牌映射收窄')
+  })
+
+  it('C-新2 有品牌但后端没返回/未配置映射 ⇒ 注记写「未配置竞品映射」，仍是全量', () => {
+    for (const bs of [null, { configured: false, brands: null }]) {
+      const m = buildReportModel(cand, hitFor(), { brandScope: bs })
+      expect(m.risks.join('|')).toContain('未配置竞品映射')
+    }
+  })
+
+  it('C-新3 已配置映射且有集合 ⇒ 注记必须列出竞品品牌，⛔ 不许再说"含同业态全品牌"', () => {
+    const m = buildReportModel(cand, hitFor(), {
+      brandScope: { configured: true, brands: ['老乡鸡', '大米先生'] }
+    })
+    const t = m.risks.join('|')
+    expect(t).toContain('已按品牌映射收窄')
+    expect(t).toContain('老乡鸡')
+    expect(t).toContain('大米先生')
+    // 🔴 这是本批修复的核心：收窄后还写"含同业态全品牌"＝对客户撒谎
+    expect(t).not.toContain('同业态全品牌')
+  })
+
+  it('C-新4 已配置但集合为空 ⇒ 注记说"集合为空"，⛔ 不许退化成全量口吻', () => {
+    const m = buildReportModel(cand, hitFor(), { brandScope: { configured: true, brands: [] } })
+    const t = m.risks.join('|')
+    expect(t).toContain('已按品牌映射收窄')
+    expect(t).toContain('集合为空')
+    expect(t).not.toContain('全量统计')
+  })
+
+  it('C-新5 竞品数为 0 时，facts 里的注记同样要带口径（不能只在有竞品时才说清）', () => {
+    const hit = pickDistrictForPoint(
+      [district('五角场', square, { competitorCount: 0 })], cand.latitude, cand.longitude
+    )
+    const m = buildReportModel(cand, hit, { brandScope: { configured: true, brands: ['老乡鸡'] } })
+    const f = m.facts.find((x) => x.label === '商圈内竞品')
+    expect(f).toBeTruthy()
+    expect(f.note).toContain('已按品牌映射收窄')
+  })
 })
 
 describe('D. 源码约束（报告组件不许自己另算一套）', () => {
