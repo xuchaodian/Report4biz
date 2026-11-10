@@ -101,6 +101,11 @@ const props = defineProps({
   competitorBrands: { type: Array, default: () => [] },
   /** 已有配置：{ 自有品牌: [竞品品牌...] }，配成 [] 也算已配置 */
   scopes: { type: Object, default: () => ({}) },
+  /**
+   * v1.13.351：集团侧的映射。集团配过的品牌算「已配置」⇒ 不会出现在本弹窗里。
+   * 透传它是为了判据**双保险**：某天后端不再合并继承时，子公司也不会被重复阻断。
+   */
+  inheritedScopes: { type: Object, default: () => ({}) },
   /** 本次导入的**竞品品牌**（competitors.brand），只用于预勾选 */
   justImportedBrand: { type: String, default: '' },
   /** 配置接口读取失败 ⇒ 允许关闭，⛔ 不得把用户锁死 */
@@ -127,6 +132,7 @@ function rebuild() {
   rows.value = buildRequiredMapDraft({
     myBrands: props.myBrands,
     scopes: props.scopes,
+    inheritedScopes: props.inheritedScopes,
     justImportedBrand: props.justImportedBrand
   })
 }

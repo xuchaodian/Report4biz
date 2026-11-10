@@ -313,6 +313,13 @@
         title="未配置＝按账号全量竞品统计；配置后按所选竞品品牌收窄"
         description="同一竞品品牌可同时配给多个自有品牌；一个都不选＝明确「该品牌无竞品」，判未评而非绿灯。"
       />
+      <!-- v1.13.351：继承自集团的映射 —— 回显的是集团口径，保存即转为本账号独立配置 -->
+      <el-alert
+        v-if="mapBrandSource === 'group'"
+        type="success" :closable="false" show-icon style="margin-bottom:12px"
+        :title="`当前沿用「${inheritName}」的集团映射（无需子公司重复配置）`"
+        description="这是继承来的口径：集团改映射，这里跟着变。点「保存」即转为当前账号的独立配置，之后不再跟随集团。"
+      />
       <el-form label-width="110px">
         <el-form-item label="自有品牌">
           <el-select v-model="mapMyBrand" placeholder="选择我的门店品牌" style="width:100%" @change="onMapBrandChange">
@@ -328,7 +335,7 @@
       </el-form>
       <template #footer>
         <el-button @click="mapDialogVisible = false">取消</el-button>
-        <el-button :disabled="!mapMyBrand || !scopeMetaLoaded" @click="resetMapScope">恢复全量</el-button>
+        <el-button :disabled="!mapMyBrand || !scopeMetaLoaded || mapBrandSource === 'group'" @click="resetMapScope">{{ resetMapLabel }}</el-button>
         <el-button type="primary" :loading="mapSaving" :disabled="!mapMyBrand || !scopeMetaLoaded" @click="saveMapScope">保存</el-button>
       </template>
     </el-dialog>
@@ -339,6 +346,7 @@
       :my-brands="scopeMeta.myBrands"
       :competitor-brands="scopeMeta.competitorBrands"
       :scopes="scopeMeta.scopes"
+      :inherited-scopes="scopeMeta.inheritedScopes"
       :just-imported-brand="lastImportedCompBrand"
       :degraded="requiredMapDegraded"
       @saved="onRequiredMapSaved"
@@ -370,7 +378,15 @@ const mapDialogVisible = ref(false)
 const mapSaving = ref(false)
 const mapMyBrand = ref('')
 const mapCompBrands = ref([])
-const scopeMeta = ref({ myBrands: [], competitorBrands: [], scopes: {} })
+const scopeMeta = ref({
+  myBrands: [],
+  competitorBrands: [],
+  scopes: {},              // 生效口径（自有优先，缺的由集团补）
+  ownScopes: {},           // 本账号显式配置
+  inheritedScopes: {},     // 集团侧的配置（限本账号门店里有的品牌）
+  inherit: { available: false, orgName: null },
+  source: 'none'           // 本次生效口径的来源：self | group | none
+})
 // 元数据读取失败时禁止保存：否则弹窗回显为空，一次「保存」就会把已有映射覆盖成空集
 const scopeMetaLoaded = ref(false)
 // v1.13.349：强制补映射弹窗（硬阻断）—— 声明必须早于 setup 级复查调用
@@ -379,6 +395,47 @@ const requiredMapDegraded = ref(false)
 const lastImportedCompBrand = ref('')
 const myBrands = computed(() => (scopeMeta.value.myBrands?.length ? scopeMeta.value.myBrands : competitorStore.myBrands) || [])
 const availableCompBrands = computed(() => (scopeMeta.value.competitorBrands?.length ? scopeMeta.value.competitorBrands : competitorStore.competitorBrands) || [])
+
+/**
+ * v1.13.351：映射元数据只有一个入口 —— 读 / 存 / 恢复三处 ⛔ 不许各写一份赋值。
+ * 原来三处各手写一遍 { myBrands, competitorBrands, scopes }，加字段时漏一处，
+ * 就会让「继承来的口径」在保存后被当成「自己配的」，进而把集团口径写进自己那行。
+ */
+function applyScopeMeta(data) {
+  const d = data || {}
+  scopeMeta.value = {
+    myBrands: d.myBrands || [],
+    competitorBrands: d.competitorBrands || [],
+    scopes: d.scopes || {},
+    ownScopes: d.ownScopes || {},
+    inheritedScopes: d.inheritedScopes || {},
+    inherit: d.inherit || { available: false, orgName: null },
+    source: d.brandScope?.source || 'none'
+  }
+}
+
+/** 在 { 品牌: [...] } 里按归一值取值；undefined＝没有这个 key（🔴 与「空数组」严格区分） */
+function pickScope(map, brand) {
+  const k = normBrand(brand)
+  if (!k) return undefined
+  const hit = Object.keys(map || {}).find(x => normBrand(x) === k)
+  return hit === undefined ? undefined : (map[hit] || [])
+}
+
+const inheritName = computed(() => scopeMeta.value.inherit?.orgName || '集团')
+/** 当前选中品牌的映射来源：self＝自己配的 / group＝继承集团 / none＝未配置（全量） */
+const mapBrandSource = computed(() => {
+  if (!mapMyBrand.value) return 'none'
+  if (pickScope(scopeMeta.value.ownScopes, mapMyBrand.value) !== undefined) return 'self'
+  if (pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined) return 'group'
+  return 'none'
+})
+/** 「恢复」按钮文案：删掉自有配置后到底回到集团口径还是全量，⛔ 不能一律写「恢复全量」 */
+const resetMapLabel = computed(() => {
+  if (mapBrandSource.value === 'group') return '已是集团口径'
+  if (pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined) return '恢复为集团口径'
+  return '恢复全量'
+})
 
 // 🔴 归一函数只有一份：utils/brandScope.js::normBrand（与后端 normalizeBrand 同规则）
 function myBrandsOf(compBrand) {
@@ -390,7 +447,7 @@ async function loadScopeMeta() {
   try {
     // utils/api.js 的响应拦截器已返回 response.data ⇒ 这里直接拿响应体，⛔ 不能再解一层 { data }
     const data = await api.get('/brand-competitor-map')
-    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    applyScopeMeta(data)
     scopeMetaLoaded.value = true
   } catch (e) { scopeMetaLoaded.value = false /* 配置接口不可用时静默降级为老行为 */ }
 }
@@ -400,18 +457,24 @@ async function openMapConfig() {
   onMapBrandChange()
   mapDialogVisible.value = true
 }
+// 回显三级：自己配的 → 继承集团的 → 空（未配置＝全量）
 function onMapBrandChange() {
-  const s = scopeMeta.value.scopes || {}
-  mapCompBrands.value = Object.prototype.hasOwnProperty.call(s, mapMyBrand.value) ? [...(s[mapMyBrand.value] || [])] : []
+  const own = pickScope(scopeMeta.value.ownScopes, mapMyBrand.value)
+  const inherited = pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value)
+  const v = own !== undefined ? own : (inherited !== undefined ? inherited : [])
+  mapCompBrands.value = [...(v || [])]
 }
 async function saveMapScope() {
   if (!scopeMetaLoaded.value) { ElMessage.error('配置读取失败，已阻止保存以免覆盖现有配置'); return }
+  const wasInherited = mapBrandSource.value === 'group'
   mapSaving.value = true
   try {
     const data = await api.put('/brand-competitor-map', { myBrand: mapMyBrand.value, competitorBrands: mapCompBrands.value })
-    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    applyScopeMeta(data)
     await competitorStore.fetchCompetitors(true)
-    ElMessage.success('已保存；该品牌的竞品统计按新集合收窄')
+    ElMessage.success(wasInherited
+      ? '已保存为本账号的独立配置，之后不再跟随集团'
+      : '已保存；该品牌的竞品统计按新集合收窄')
     mapDialogVisible.value = false
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '保存失败')
@@ -421,9 +484,12 @@ async function resetMapScope() {
   if (!scopeMetaLoaded.value) { ElMessage.error('配置读取失败，已阻止操作'); return }
   try {
     const data = await api.delete('/brand-competitor-map', { params: { myBrand: mapMyBrand.value } })
-    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    applyScopeMeta(data)
     await competitorStore.fetchCompetitors(true)
-    ElMessage.success('已恢复全量口径')
+    // 🔴 删掉自有配置后可能**回落到集团口径**而不是全量，提示必须按返回的 source 区分
+    ElMessage.success(scopeMeta.value.source === 'group'
+      ? `已恢复为「${inheritName.value}」的集团口径`
+      : '已恢复全量口径')
     mapDialogVisible.value = false
   } catch (e) { ElMessage.error(e?.response?.data?.message || '操作失败') }
 }
@@ -864,7 +930,9 @@ async function openRequiredBrandMap(justImportedBrand = '') {
     }
     const d = decideBrandMapPrompt({
       myBrands: scopeMeta.value.myBrands,
-      scopes: scopeMeta.value.scopes
+      scopes: scopeMeta.value.scopes,
+      // v1.13.351：集团配过的品牌算「已配置」，⛔ 不要让子公司再重复配一遍
+      inheritedScopes: scopeMeta.value.inheritedScopes
     })
     if (!d.required) return
     requiredMapDegraded.value = false
@@ -881,7 +949,9 @@ async function checkRequiredBrandMapOnEnter() {
     if (!scopeMetaLoaded.value) return
     const d = decideBrandMapPrompt({
       myBrands: scopeMeta.value.myBrands,
-      scopes: scopeMeta.value.scopes
+      scopes: scopeMeta.value.scopes,
+      // v1.13.351：集团配过的品牌算「已配置」，⛔ 不要让子公司再重复配一遍
+      inheritedScopes: scopeMeta.value.inheritedScopes
     })
     if (!d.required) return
     requiredMapDegraded.value = false

@@ -6,7 +6,7 @@ import { readCsvText } from '../utils/csvEncoding.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
-import { resolveCompBrands, competitorWhere, brandScopeMeta } from '../utils/competitorScope.js'
+import { resolveBrandScope, resolveCompBrands, competitorWhere, brandScopeMeta } from '../utils/competitorScope.js'
 // 只读锁（规则 4 写权唯一）：批次 E 起 competitors 也成为同步对象，
 // 同步来的竞品镜像是只读的 —— 与 markers 共用同一把锁，避免单写者模型被绕过。
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -29,7 +29,9 @@ router.get('/', authenticate, (req, res) => {
 
     // 每个用户只看自己的竞品门店数据
     // v1.13.344：按自有品牌收窄；未配置 brandSql='' ⇒ 老行为不变
-    const compBrands = resolveCompBrands(db, req.user.id, req.query.myBrand)
+    // v1.13.351：resolveBrandScope 带回 source，列表页据此说明「口径是自己配的还是继承集团的」
+    const brandScopeInfo = resolveBrandScope(db, req.user.id, req.query.myBrand)
+    const compBrands = brandScopeInfo.compBrands
     const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
     let sql = `SELECT * FROM competitors WHERE user_id = ?${brandSql} ORDER BY created_at DESC`
     const params = [req.user.id, ...brandParams]
@@ -43,7 +45,7 @@ router.get('/', authenticate, (req, res) => {
     if (wantTotal) {
       payload.total = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE user_id = ?${brandSql}`).get(req.user.id, ...brandParams)?.c || 0
     }
-    payload.brandScope = brandScopeMeta(db, req.user.id, compBrands)
+    payload.brandScope = brandScopeMeta(db, req.user.id, compBrands, brandScopeInfo)
     res.json(payload)
   } catch (error) {
     console.error('获取竞品列表错误:', error)

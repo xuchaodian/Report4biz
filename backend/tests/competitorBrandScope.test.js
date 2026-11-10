@@ -121,9 +121,13 @@ describe('B. P0 结论型读路径（未配置时必须与老口径一致）', (
 describe('C. P1 展示与导出读路径', () => {
   it('C1 /api/competitors 三个读端点支持 myBrand 并返回 brandScope', () => {
     const c = src(P.competitors)
-    expect((c.match(/resolveCompBrands\(/g) || []).length).toBeGreaterThanOrEqual(3)
+    // v1.13.351 起列表端点改用 resolveBrandScope（带 source 的完整版，内部复用同一份解析），
+    // 断言放宽到两个入口，但仍要求**三个读端点都必须走统一解析**（⛔ 不许各写一份）
+    expect((c.match(/resolve(?:CompBrands|BrandScope)\(/g) || []).length).toBeGreaterThanOrEqual(3)
     expect(c).toContain('myBrand')
     expect(c).toContain('brandScope')
+    // 反向扫描：⛔ 不许在路由里手写 `AND brand IN (...)`（344 的单一实现铁律）
+    expect(c).not.toMatch(/UPPER\(TRIM\(COALESCE\(brand/i)
   })
 
   it('C2 dashboard 缓存 key 含品牌，避免 A/B 互相命中', () => {

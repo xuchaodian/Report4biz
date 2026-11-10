@@ -35,11 +35,14 @@
 //      一并排除，与 visibleScope/orgs.js 同口径。
 //   4) 已解散集团不继承（`dissolved_at IS NULL`，与 `ownedOrg`/`findOrg` 同口径）。
 //
-// ★ 本模块**不 import 任何模块**（只收 db 参数），因此可在生产直接 `import()` 自检，
-//   不会把真库读进内存（同 visibleScope / scopeGuard / syncCore 的做法）。
+// ★ 本模块只 import `groupScope.js`（纯 db 工具，不 import database.js），因此可在
+//   生产直接 `import()` 自检，不会把真库读进内存（同 visibleScope / scopeGuard / syncCore）。
+//   v1.13.351 起「我属于哪家集团」的 SQL 收口到 groupScope.js::memberOrgOf —— 竞品映射
+//   继承复用同一份，⛔ 不要再在本文件另写一份 org_members JOIN。
 //
 // ★ 纯读保证：本模块**没有任何写操作**，也不修改传入的 user 对象。
 // ============================================================================
+import { memberOrgOf } from './groupScope.js'
 
 /** 归一：空白字符串等同「没传」，统一收敛为 null */
 const normLogo = (v) => (v && String(v).trim() ? v : null)
@@ -53,26 +56,11 @@ const normLogo = (v) => (v && String(v).trim() ? v : null)
  *          `logo` 为 null = 集团存在但还没上传品牌 Logo（调用方据此决定是否继承）
  */
 export function groupLogoFor(db, userId) {
-  const uid = Number(userId)
-  if (!uid) return null
-
-  const row = db.prepare(`
-    SELECT o.id                                                            AS orgId,
-           o.name                                                          AS orgName,
-           o.owner_user_id                                                 AS ownerUserId,
-           u.logo                                                          AS logo,
-           COALESCE(NULLIF(TRIM(u.company), ''), u.username, '#' || o.owner_user_id) AS ownerName
-      FROM org_members m
-      JOIN organizations o ON o.id = m.org_id AND o.dissolved_at IS NULL
-      LEFT JOIN users u    ON u.id = o.owner_user_id
-     WHERE m.user_id = ?
-       AND COALESCE(m.member_role, 'member') != 'owner'
-     ORDER BY m.id ASC
-     LIMIT 1
-  `).get(uid) || null
-
-  if (!row) return null
-  return { ...row, logo: normLogo(row.logo) }
+  // 集团归属判定只有一份实现（groupScope.js）—— 这里只补查「总部那张图」
+  const g = memberOrgOf(db, userId)
+  if (!g) return null
+  const owner = db.prepare(`SELECT logo FROM users WHERE id = ?`).get(g.ownerUserId) || {}
+  return { ...g, logo: normLogo(owner.logo) }
 }
 
 /**

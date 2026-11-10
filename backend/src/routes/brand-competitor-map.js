@@ -1,7 +1,7 @@
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
-import { resolveCompBrands, brandScopeMeta, normalizeMyBrand } from '../utils/competitorScope.js'
+import { resolveBrandScope, brandScopeMeta, normalizeMyBrand } from '../utils/competitorScope.js'
 // 归一函数只有一份实现，在 storeDedup.js（competitorScope.js 内部也是 import 它，未 re-export）
 import { normalizeBrand } from '../utils/storeDedup.js'
 
@@ -10,6 +10,13 @@ import { normalizeBrand } from '../utils/storeDedup.js'
  * ⛔ 独立前缀挂载：不能挂到 /api/competitors 下，会被 GET /:id 吞掉。
  * ⛔ 写接口必须挂 authenticate（routeAuthGuard 全局守卫会扫）。
  * ⛔ 只写本账号配置，不碰 competitors 表、不进集团同步。
+ *
+ * v1.13.351：**读**口径带上集团继承（写路径一字未动）。
+ *   · 子公司自己没配某品牌 ⇒ 回退读总部账号的映射（utils/competitorScope.js::resolveBrandScope）；
+ *   · 三个端点的返回体统一走 brandScopeMeta(..., resolveBrandScope(...))，
+ *     因此 `brandScope.source` 会如实告诉前端「这份口径是自己配的还是继承的」；
+ *   · ⚠️ DELETE（恢复）之后再解析一次：集团配过的话是**回落到继承**，不是回到全量 ——
+ *     前端文案据此切换，别一律写「已恢复全量」。
  */
 const router = express.Router()
 
@@ -19,12 +26,12 @@ function ownsBrand(db, userId, myBrand) {
   ).get(userId, normalizeBrand(myBrand))
 }
 
-// 读：账号自有品牌 / 可用竞品品牌 / 全量映射 / 本次生效口径
+// 读：账号自有品牌 / 可用竞品品牌 / 全量映射 / 本次生效口径（含继承来源）
 router.get('/', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const compBrands = resolveCompBrands(db, req.user.id, req.query.myBrand)
-    res.json(brandScopeMeta(db, req.user.id, compBrands))
+    const sc = resolveBrandScope(db, req.user.id, req.query.myBrand)
+    res.json(brandScopeMeta(db, req.user.id, sc.compBrands, sc))
   } catch (e) {
     console.error('[brand-competitor-map] 读取失败:', e.message)
     res.status(500).json({ message: '读取配置失败' })
@@ -60,14 +67,18 @@ router.put('/', authenticate, (req, res) => {
       try { db.rollbackTx() } catch (e) { /* 忽略 */ }
       throw txErr
     }
-    res.json({ success: true, ...brandScopeMeta(db, req.user.id, clean) })
+    // 保存后重新解析一次：本账号的 scope 行已存在 ⇒ source='self'（即便是空集）
+    const sc = resolveBrandScope(db, req.user.id, myBrand)
+    res.json({ success: true, ...brandScopeMeta(db, req.user.id, sc.compBrands, sc) })
   } catch (e) {
     console.error('[brand-competitor-map] 保存失败:', e.message)
     res.status(500).json({ message: '保存配置失败' })
   }
 })
 
-// 取消配置 ⇒ 退回全量（老口径）
+// 取消本账号配置 ⇒ 有集团映射时**回落到继承**，否则退回全量（老口径）
+// 🔴 前端文案必须按返回的 brandScope.source 区分「恢复为继承」与「恢复全量」，
+//    否则用户以为回到了全量，实际是按集团口径收窄 —— 这是最容易误导的一处。
 router.delete('/', authenticate, (req, res) => {
   try {
     const db = getDb()
@@ -83,7 +94,8 @@ router.delete('/', authenticate, (req, res) => {
       try { db.rollbackTx() } catch (e) { /* 忽略 */ }
       throw txErr
     }
-    res.json({ success: true, ...brandScopeMeta(db, req.user.id, null) })
+    const sc = resolveBrandScope(db, req.user.id, myBrand)
+    res.json({ success: true, ...brandScopeMeta(db, req.user.id, sc.compBrands, sc) })
   } catch (e) {
     console.error('[brand-competitor-map] 删除失败:', e.message)
     res.status(500).json({ message: '删除配置失败' })
