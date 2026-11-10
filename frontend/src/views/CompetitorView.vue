@@ -342,6 +342,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
 import { currentUidOr } from '@/utils/currentUser.js'
+import { normBrand } from '@/utils/brandScope.js'
+import { decideBrandMapPrompt, buildBrandMapPromptText } from '@/utils/brandMapPrompt.js'
 import api from '@/utils/api'
 import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
 import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.vue'
@@ -362,7 +364,7 @@ const scopeMetaLoaded = ref(false)
 const myBrands = computed(() => (scopeMeta.value.myBrands?.length ? scopeMeta.value.myBrands : competitorStore.myBrands) || [])
 const availableCompBrands = computed(() => (scopeMeta.value.competitorBrands?.length ? scopeMeta.value.competitorBrands : competitorStore.competitorBrands) || [])
 
-function normBrand(v) { return String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase() }
+// 🔴 归一函数只有一份：utils/brandScope.js::normBrand（与后端 normalizeBrand 同规则）
 function myBrandsOf(compBrand) {
   const k = normBrand(compBrand)
   const scopes = competitorStore.brandScopeMap || {}
@@ -815,6 +817,44 @@ const handleSnapshotImported = async (payload) => {
   await competitorStore.fetchCompetitors(true)
   // 列表已被新镜像替换 → 清掉本地筛选态，避免残留条件看不到新数据
   handleClearFilters()
+  // v1.13.348：刚灌进新品牌竞品的时刻，正是最可能顺手配置品牌竞品映射的时刻
+  await maybePromptBrandMap(payload)
+}
+
+/**
+ * v1.13.348：多品牌账号导入竞品后，提示去配置「品牌竞品映射」。
+ *
+ * 为什么在这里提示：344 起竞品按自有品牌分池统计，但**未配置映射的品牌会退回全量**。
+ *   「我的门店」有 2 个以上品牌时（生产实测：滨寿司 + 食其家），A 的竞品与 B 的竞品被加在
+ *   一起 ⇒ 竞争分、门店信号灯的判定一起偏红。用户此刻刚导入竞品，最可能顺手配掉。
+ *
+ * 判据全部在 utils/brandMapPrompt.js（单测钉死）；这里只负责「拉元数据 → 弹窗 → 预选品牌」。
+ * 🔴 配置接口读失败时必须静默跳过：⛔ 不能因为拉不到元数据就弹一个空对话框。
+ * 🔴 用户点「暂不设置」等同正常路径，⛔ 不许再弹错误提示打断他。
+ */
+async function maybePromptBrandMap(payload) {
+  try {
+    await loadScopeMeta() // 先拉最新映射：刚导入的竞品品牌会出现在 availableCompBrands 里
+    if (!scopeMetaLoaded.value) return
+    const d = decideBrandMapPrompt({
+      myBrands: scopeMeta.value.myBrands,
+      scopes: scopeMeta.value.scopes,
+      justImportedBrand: payload?.brand
+    })
+    if (!d.prompt) return
+    await ElMessageBox.confirm(buildBrandMapPromptText(d), '设置品牌竞品映射', {
+      confirmButtonText: '立即设置',
+      cancelButtonText: '暂不设置',
+      type: 'warning',
+      distinguishCancelAndClose: false // 关掉弹窗也当「暂不设置」，不额外报错
+    })
+    // 「立即设置」：把建议的品牌预选进既有映射对话框，用户只需勾竞品品牌
+    mapMyBrand.value = d.preferred
+    onMapBrandChange()
+    mapDialogVisible.value = true
+  } catch (e) {
+    /* 用户选「暂不设置」/关闭弹窗 ⇒ 走到这里，属正常分支，⛔ 不提示错误 */
+  }
 }
 // Tab2 删除期次后：若删到最新期（镜像被移除）则同步刷新竞品列表（强制绕过 H2 新鲜期）
 const handleSnapshotDeleted = async (payload) => {
