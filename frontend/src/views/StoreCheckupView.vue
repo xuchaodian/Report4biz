@@ -11,6 +11,9 @@
         </p>
       </div>
       <div class="ck-head-r">
+        <el-select v-model="analysisBrand" clearable placeholder="分析品牌（全量）" style="width:160px;margin-right:8px" @change="reload">
+          <el-option v-for="b in lightBrands" :key="b" :label="b" :value="b" />
+        </el-select>
         <span class="ck-label">复核阈值</span>
         <el-select v-model="nearM" size="default" style="width: 148px" @change="reload">
           <el-option :value="300" label="300m（默认）" />
@@ -590,11 +593,19 @@ function flagsText(flags) {
   return (flags || []).map(f => map[f] || f).join(' / ') || '未命中'
 }
 
+
+// ===== v1.13.344：门店体检按自有品牌收窄竞品（品牌选项来自信号灯返回）=====
+const analysisBrand = ref('')
+const lightBrands = computed(() => {
+  const set = new Set((lights.value?.lights || []).map(l => String(l.brand || '').trim()).filter(Boolean))
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh'))
+})
+
 async function loadLights() {
   lightsLoading.value = true
   lightsErrorMsg.value = ''
   try {
-    const { data: res } = await axios.get('/api/markers/checkup/lights', { params: { top: 200 } })
+    const { data: res } = await axios.get('/api/markers/checkup/lights', { params: { top: 200, brand: analysisBrand.value } })
     lights.value = res
   } catch (e) {
     // 信号灯失败不该拖垮整页几何体检 —— 单独降级
@@ -621,7 +632,7 @@ async function onExport(kind) {
   exporting.value = true
   try {
     const res = await axios.get('/api/markers/checkup/report', {
-      params: { nearM: nearM.value },
+      params: { nearM: nearM.value, brand: analysisBrand.value },
       responseType: 'blob'
     })
     const name = filenameFromDisposition(res.headers['content-disposition']) || '门店体检报告.xlsx'

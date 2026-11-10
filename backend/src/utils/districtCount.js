@@ -21,6 +21,7 @@
 import NodeCache from 'node-cache'
 import { getDb } from '../models/database.js'
 import { pointInFeature, geometryBBox } from './geoPoint.js'
+import { competitorWhere, scopeCacheKey } from './competitorScope.js'
 
 // H4（v1.13.106）：bbox 预筛后仅对少量候选跑射线，结果按 (bbox + 数据版本) 缓存 60s。
 const districtCountCache = new NodeCache({ stdTTL: 60, checkperiod: 30 })
@@ -46,19 +47,21 @@ export function scopeKeyOf(ids) {
 }
 
 /** 计算商圈内竞品数量（bbox SQL 预筛替代全表拉取 + 60s 缓存） */
-export function countCompetitorsInDistrict(geometry, ids) {
+export function countCompetitorsInDistrict(geometry, ids, compBrands = null) {
   if (!Array.isArray(ids) || ids.length === 0) return 0
   const bbox = geometryBBox(geometry)
   const db = getDb()
   const ver = storeDataVersion(db)
-  const cacheKey = 'comp|' + scopeKeyOf(ids) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
+  const cacheKey = 'comp|' + scopeKeyOf(ids) + '|' + scopeCacheKey(compBrands) + '|' + ver + '|' + (bbox ? bbox.join(',') : 'all')
   const cached = districtCountCache.get(cacheKey)
   if (cached !== undefined) return cached
 
   const ph = ids.map(() => '?').join(',')
+  // v1.13.344：品牌过滤拼在 user_id IN 之后；未配置 brandSql='' ⇒ SQL 与老口径逐字节一致
+  const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
   const rows = bbox
-    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, bbox[0], bbox[2], bbox[1], bbox[3])
-    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph}) AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(...ids)
+    ? db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph})${brandSql} AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业')) AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`).all(...ids, ...brandParams, bbox[0], bbox[2], bbox[1], bbox[3])
+    : db.prepare(`SELECT longitude, latitude FROM competitors WHERE user_id IN (${ph})${brandSql} AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(...ids, ...brandParams)
   let count = 0
   for (const c of rows) {
     if (c.longitude && c.latitude && pointInFeature([c.longitude, c.latitude], geometry)) {

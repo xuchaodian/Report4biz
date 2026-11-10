@@ -9,6 +9,10 @@
         </p>
       </div>
       <div class="dv-header-right">
+        <el-select v-model="analysisBrand" clearable placeholder="分析品牌（全量）" size="small"
+                   style="width:170px;margin-right:8px" @change="onAnalysisBrandChange">
+          <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
+        </el-select>
         <el-button size="small" :disabled="compareList.length < 2" @click="openCompare">
           <AppIcon class="icon-text"><DataAnalysis /></AppIcon>商圈对比{{ compareList.length > 0 ? ` (${compareList.length})` : '' }}
         </el-button>
@@ -240,6 +244,26 @@ import { Refresh, OfficeBuilding, DataAnalysis, Close } from '@element-plus/icon
 import AppIcon from '@/components/AppIcon.vue'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 import { districtProvenance as buildDistrictProvenance } from '@/utils/dataProvenance'
+import { currentUidOr } from '@/utils/currentUser.js'
+
+// ===== v1.13.344：页面级「分析品牌」上下文（商圈页无单店主体，必须让用户选）=====
+const DI_BRAND_KEY = () => `districtAnalysisBrand_${currentUidOr('anon')}`
+const analysisBrand = ref('')
+const myBrands = ref([])
+async function loadMyBrands() {
+  try {
+    // utils/api.js 拦截器已返回 response.data ⇒ 直接取响应体，⛔ 不能再解 { data }
+    const data = await api.get('/brand-competitor-map')
+    myBrands.value = data.myBrands || []
+  } catch (e) { /* 降级为不显示品牌选项，老行为不变 */ }
+}
+async function onAnalysisBrandChange() {
+  try { localStorage.setItem(DI_BRAND_KEY(), String(analysisBrand.value || '')) } catch (e) { /* 忽略 */ }
+  if (selectedCity.value) await loadDistricts(selectedCity.value)
+}
+try { analysisBrand.value = localStorage.getItem(DI_BRAND_KEY()) || '' } catch (e) { /* 忽略 */ }
+loadMyBrands()
+
 
 const mapRef = ref(null)
 let map = null
@@ -432,7 +456,7 @@ async function loadDistricts(city) {
   selectedDistrict.value = null
   compareList.value = []
   try {
-    const res = await api.get('/districts', { params: { city } })
+    const res = await api.get('/districts', { params: { city, brand: analysisBrand.value } })
     districts.value = res.districts || []
     renderDistricts()
     if (districts.value.length > 0) {
@@ -516,7 +540,7 @@ function selectDistrict(d) {
   // 同步 XHR 获取商圈内购物中心（语句序列，不会被 terser 编译成 IIFE pattern 而丢失执行）
   try {
     const xhr = new XMLHttpRequest()
-    xhr.open('GET', '/api/districts/detail?city=' + encodeURIComponent(d.city) + '&name=' + encodeURIComponent(d.name), false)
+    xhr.open('GET', '/api/districts/detail?city=' + encodeURIComponent(d.city) + '&name=' + encodeURIComponent(d.name) + '&brand=' + encodeURIComponent(analysisBrand.value || ''), false)
     xhr.setRequestHeader('Authorization', 'Bearer ' + (sessionStorage.getItem('token') || ''))
     xhr.send()
     if (xhr.status === 200) {

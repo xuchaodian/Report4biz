@@ -8,6 +8,8 @@ const API_URL = '/api'
 // v1.13.103 H2：会话内去重——60s 新鲜期内不重复拉全量（8941+ 竞品）；在途请求合并；force=true 强制刷新
 const FRESH_MS = 60 * 1000
 let competitorsInFlight = null
+// v1.13.344：品牌上下文必须进新鲜期判断，否则切换品牌会命中 60s 内的旧数组
+let lastMyBrand = ''
 
 export const useCompetitorStore = defineStore('competitor', {
   state: () => ({
@@ -19,13 +21,19 @@ export const useCompetitorStore = defineStore('competitor', {
     storeTypes: ['竞品', '其他'],
     // visibleIds: null = 显示全部；数组 = 仅显示这些ID
     visibleIds: null,
+    // v1.13.344：自有品牌 → 竞品品牌映射（由 GET /competitors 的 brandScope 下发）
+    brandScopeMap: {},
+    myBrands: [],
+    competitorBrands: [],
+    brandScope: { configured: false, brands: null },
     // 筛选条件（持久化，切换页面后保留）
     filters: {
       searchKeyword: '',
       filterCity: '',
       filterDistrict: '',
       filterTradingArea: '',
-      filterBrand: ''
+      filterBrand: '',
+      myBrand: ''
     }
   }),
 
@@ -37,7 +45,7 @@ export const useCompetitorStore = defineStore('competitor', {
   
   actions: {
     async fetchCompetitors(force = false) {
-      if (!force && this.loaded && this.loadedAt && Date.now() - this.loadedAt < FRESH_MS) return
+      if (!force && this.loaded && this.loadedAt && Date.now() - this.loadedAt < FRESH_MS && lastMyBrand === this.filters.myBrand) return
       if (competitorsInFlight) return competitorsInFlight
       this.loading = true
       competitorsInFlight = this._fetchCompetitors()
@@ -50,9 +58,15 @@ export const useCompetitorStore = defineStore('competitor', {
 
     async _fetchCompetitors() {
       try {
-        const { data } = await axios.get(`${API_URL}/competitors`)
+        const { data } = await axios.get(`${API_URL}/competitors`, { params: { myBrand: this.filters.myBrand } })
         console.log('API返回数据:', data)
         this.competitors = data.competitors || []
+        const meta = data.brandScope || {}
+        this.brandScopeMap = meta.scopes || {}
+        this.myBrands = meta.myBrands || []
+        this.competitorBrands = meta.competitorBrands || []
+        this.brandScope = meta.brandScope || { configured: false, brands: null }
+        lastMyBrand = this.filters.myBrand
         console.log('竞品列表已更新, 数量:', this.competitors.length)
         this.loaded = true
         this.loadedAt = Date.now()
@@ -65,6 +79,12 @@ export const useCompetitorStore = defineStore('competitor', {
       }
     },
     
+    // v1.13.344：切换分析品牌 ⇒ 强制重取（绕过 60s 新鲜期）
+    async setMyBrand(v) {
+      this.filters.myBrand = String(v || '')
+      return this.fetchCompetitors(true)
+    },
+
     async addCompetitor(competitor) {
       try {
         const { data } = await axios.post(`${API_URL}/competitors`, competitor)

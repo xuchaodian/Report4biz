@@ -4,6 +4,7 @@ import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { CITY_TO_PROVINCE } from '../data/city-provinces.js'
 import { getCityDataArray } from '../utils/cityData.js'
+import { resolveCompBrands, competitorWhereLiteral, scopeCacheKey } from '../utils/competitorScope.js'
 import { ABNORMAL_STORE_STATUS as ABNORMAL_STATUS, ABNORMAL_STATUS_SQL, OPEN_ONLY_SQL } from '../utils/storeStatus.js'
 
 const router = express.Router()
@@ -48,7 +49,9 @@ router.get('/summary', authenticate, async (req, res) => {
     const isAdmin = req.user.role === 'admin'
 
     // M6：命中缓存直接返回（key = 用户 + 角色 + 数据版本指纹）
-    const cacheKey = `dash:${userId}:${isAdmin ? 1 : 0}:${dashboardDataVersion(db)}`
+    // v1.13.344：品牌必须进缓存 key，否则 A 会命中 B 的大屏 KPI
+    const compBrands = resolveCompBrands(db, userId, req.query.brand)
+    const cacheKey = `dash:${userId}:${isAdmin ? 1 : 0}:${scopeCacheKey(compBrands)}:${dashboardDataVersion(db)}`
     const cachedPayload = dashboardCache.get(cacheKey)
     if (cachedPayload) {
       res.setHeader('X-Dashboard-Cache', 'HIT')
@@ -58,7 +61,7 @@ router.get('/summary', authenticate, async (req, res) => {
     // 异常经营状态（停业/歇业/关闭等，大屏聚合排除）：定义在 utils/storeStatus.js，与开店余地共用
 
     // 竞品有效口径：排除「店铺已关」「尚未营业」（competitors.status 文本列；NULL/未知/暂停营业 保留）
-    const COMP_ACTIVE_COND = `(status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
+    const COMP_ACTIVE_COND = `(status IS NULL OR status NOT IN ('店铺已关','尚未营业'))${competitorWhereLiteral(compBrands)}`
 
     // 城市→省份映射
     const toProvince = (city) => {

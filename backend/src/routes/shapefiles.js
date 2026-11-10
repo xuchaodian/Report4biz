@@ -7,6 +7,8 @@ import { dirname } from 'path'
 import { execFile } from 'child_process'
 import zlib from 'zlib'
 import { getDb } from '../models/database.js'
+import { readableUserIds } from '../utils/visibleScope.js'
+import { resolveCompBrands, competitorWhere } from '../utils/competitorScope.js'
 import { authenticate } from '../middleware/auth.js'
 import * as turf from '@turf/turf'
 import iconv from 'iconv-lite'
@@ -1551,7 +1553,13 @@ router.post('/calculate-potential', authenticate, async (req, res) => {
     const markers = db.prepare(
       `SELECT id, latitude, longitude, store_status, brand FROM markers WHERE user_id = ? AND merged_into IS NULL ${IN_BUSINESS_SQL}`
     ).all(req.user.id, ...IN_BUSINESS_PARAMS)
-    const comps = db.prepare("SELECT id, brand, latitude, longitude FROM competitors WHERE (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").all()
+    // v1.13.344：原为整表裸查询（连 user_id 都没有）⇒ 把全平台竞品算进本账号；补可见域 + 品牌映射
+    const scopeIds = readableUserIds(db, req.user.id)
+    const ph = scopeIds.map(() => '?').join(',')
+    const { sql: compBrandSql, params: compBrandParams } = competitorWhere(resolveCompBrands(db, req.user.id, req.body.myBrand))
+    const comps = scopeIds.length
+      ? db.prepare("SELECT id, brand, latitude, longitude FROM competitors WHERE user_id IN (" + ph + ")" + compBrandSql + " AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))").all(...scopeIds, ...compBrandParams)
+      : []
     // 品牌筛选（多选，空数组=不限品牌）
     const myBrands = Array.isArray(req.body.myStoreBrands) ? req.body.myStoreBrands.filter(Boolean) : []
     const compBrands = Array.isArray(req.body.compBrands) ? req.body.compBrands.filter(Boolean) : []

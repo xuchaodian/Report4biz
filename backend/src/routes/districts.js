@@ -11,6 +11,7 @@ import { readableUserIds } from '../utils/visibleScope.js'
 // v1.13.297：几何判定抽到 utils/geoPoint.js（门店体检落圈要同一套算法，⛔ 不许复制第二份射线法）
 import { pointInFeature, geometryBBox } from '../utils/geoPoint.js'
 import { countCompetitorsInDistrict, countMyStoresInDistrict } from '../utils/districtCount.js'
+import { resolveCompBrands } from '../utils/competitorScope.js'
 import { computeScore } from '../utils/districtScore.js'
 import crypto from 'crypto'
 
@@ -366,12 +367,15 @@ router.get('/cities', authenticate, (req, res) => {
  */
 router.get('/', authenticate, (req, res) => {
   try {
-    const { city } = req.query
+    const { city, brand } = req.query
     if (!city) return res.status(400).json({ message: '缺少城市参数' })
     const db = getDb()
     // v1.13.277：门店/竞品计数按「我可见的账号集合」统计（自己 + 集团允许拉取的子公司），
     // 整单算一次，逐商圈复用 —— ⛔ 不要放进循环里调（每个商圈一次多两跳查询）
     const scopeIds = readableUserIds(db, req.user.id)
+    // v1.13.344：按自有品牌收窄竞品集合；未配置 ⇒ null ⇒ 老口径全量
+    const compBrands = resolveCompBrands(db, req.user.id, brand)
+    const brandScope = { configured: Array.isArray(compBrands), brands: compBrands }
     const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     if (files.length === 0) return res.json({ districts: [] })
 
@@ -383,7 +387,7 @@ router.get('/', authenticate, (req, res) => {
         // v1.13.276：字段名整代更换，必须先归一再取数（否则评分/画像静默归零）
         const props = normalizeDistrictProps(feature.properties || {})
         const name = props['名称'] || props['name'] || '未命名商圈'
-        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds, compBrands)
         const myStoreCount = countMyStoresInDistrict(feature.geometry, scopeIds)
         const scores = computeScore(props, compCount, myStoreCount)
         districts.push({
@@ -415,7 +419,7 @@ router.get('/', authenticate, (req, res) => {
       }
     }
     districts.sort((a, b) => b.score - a.score)
-    res.json({ districts, total: districts.length })
+    res.json({ districts, total: districts.length, brandScope })
   } catch (e) {
     console.error('[Districts] 商圈列表失败:', e)
     res.status(500).json({ message: '获取商圈列表失败' })
@@ -428,11 +432,14 @@ router.get('/', authenticate, (req, res) => {
  */
 router.get('/detail', authenticate, (req, res) => {
   try {
-    const { city, name } = req.query
+    const { city, name, brand } = req.query
     if (!city || !name) return res.status(400).json({ message: '缺少参数' })
     const db = getDb()
     // v1.13.277：同列表接口 —— 计数按可见域（自己 + 集团允许拉取的子公司）
     const scopeIds = readableUserIds(db, req.user.id)
+    // v1.13.344：按自有品牌收窄竞品集合；未配置 ⇒ null ⇒ 老口径全量
+    const compBrands = resolveCompBrands(db, req.user.id, brand)
+    const brandScope = { configured: Array.isArray(compBrands), brands: compBrands }
     const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${String(city).replace(/市$/, '')}%`)
     for (const f of files) {
       const geojson = getGeojson(f.id)
@@ -444,7 +451,7 @@ router.get('/detail', authenticate, (req, res) => {
       })
       if (feature) {
         const props = normalizeDistrictProps(feature.properties || {})
-        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds)
+        const compCount = countCompetitorsInDistrict(feature.geometry, scopeIds, compBrands)
         const myStoreCount = countMyStoresInDistrict(feature.geometry, scopeIds)
         const scores = computeScore(props, compCount, myStoreCount)
         // 商圈内购物中心（bbox 预筛 + polygon 包含判定，取前 10；H4 免全表拉取）
@@ -460,6 +467,7 @@ router.get('/detail', authenticate, (req, res) => {
         }
         inDistrict.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh'))
         return res.json({
+          brandScope,
           district: {
             name,
             city: props['城市'] || city,

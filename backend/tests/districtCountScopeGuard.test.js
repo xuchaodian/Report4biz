@@ -61,7 +61,7 @@ describe('商圈内竞品计数：必须按可见域过滤', () => {
   it('函数存在且接收 ids（可见域）参数', () => {
     expect(body, '未找到 countCompetitorsInDistrict —— 断言失效，请更新守卫').toBeTruthy()
     expect(
-      countSrc.includes('export function countCompetitorsInDistrict(geometry, ids)'),
+      countSrc.includes('export function countCompetitorsInDistrict(geometry, ids, compBrands = null)'),
       '函数签名缺少 ids 参数 —— 计数无法按可见域收敛'
     ).toBe(true)
   })
@@ -129,7 +129,7 @@ describe('可见域的来源与传参', () => {
 
   it('列表与详情两个消费点都把 scopeIds 传下去', () => {
     expect(
-      src.includes('countCompetitorsInDistrict(feature.geometry, scopeIds)'),
+      src.includes('countCompetitorsInDistrict(feature.geometry, scopeIds, compBrands)'),
       '列表/详情调用未传 scopeIds'
     ).toBe(true)
     expect(

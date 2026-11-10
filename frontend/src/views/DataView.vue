@@ -2197,15 +2197,23 @@ function extractPopData(resultData) {
 }
 
 // 计算圆内门店数（排除当前门店）和竞品数
-function countStoresInCircle(centerLat, centerLng, radiusM, excludeStoreId) {
+function countStoresInCircle(centerLat, centerLng, radiusM, excludeStoreId, storeBrand) {
   const myCount = markerStore.markers.filter(s => {
     if (s.latitude == null || s.longitude == null) return false
     if (s.id === excludeStoreId) return false // 排除当前门店自身
     return calculateDistance(centerLat, centerLng, s.latitude, s.longitude) <= radiusM
   }).length
 
+  // v1.13.344：圆分析按「当前门店的自有品牌」取对应竞品集合；未配置 ⇒ 全量（老行为）
+  const scopes = competitorStore.brandScopeMap || {}
+  const allowed = Object.prototype.hasOwnProperty.call(scopes, String(storeBrand || '')) ? scopes[String(storeBrand || '')] : null
+  const norm = v => String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase()
   const compCount = competitorStore.activeCompetitors.filter(c => {
     if (c.latitude == null || c.longitude == null) return false
+    if (Array.isArray(allowed)) {
+      const k = norm(c.brand)
+      if (!(allowed || []).some(b => norm(b) === k)) return false
+    }
     return calculateDistance(centerLat, centerLng, c.latitude, c.longitude) <= radiusM
   }).length
 
@@ -2250,7 +2258,7 @@ const startStoreCompare = async () => {
       const result = { id: store.id, name: store.name, brand: store.brand || '-', exactRadiusMatch }
 
       // 不论是否有购买记录匹配，都先计算圆内门店/竞品数量（排除当前门店自身）
-      const counts = countStoresInCircle(store.latitude, store.longitude, radiusM, store.id)
+      const counts = countStoresInCircle(store.latitude, store.longitude, radiusM, store.id, store.brand)
       result.myStoreCount = counts.myCount
       result.compStoreCount = counts.compCount
 

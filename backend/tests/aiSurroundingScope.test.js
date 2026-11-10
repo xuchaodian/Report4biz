@@ -71,7 +71,7 @@ describe('AI 周边要素：门店/竞品计数必须按可见域（v1.13.339）
   })
 
   it('调用处不再传 isAdmin（签名已收敛为 4 参）', () => {
-    expect(AI).toMatch(/buildSurroundingContext\(lat, lng, radii \|\| \(radiusMeters \? \[radiusMeters\] : null\), req\.user\.id\)/)
+    expect(AI).toMatch(/buildSurroundingContext\(lat, lng, radii \|\| \(radiusMeters \? \[radiusMeters\] : null\), req\.user\.id, compBrands\)/)
   })
 
   it('与 markers.js 的口径保持一致（同一份可见域工具，别各写一套）', () => {

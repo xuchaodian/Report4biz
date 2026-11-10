@@ -6,6 +6,10 @@
         <div class="data-header">
           <h2>竞品管理</h2>
           <div class="header-actions">
+            <el-select v-model="analysisBrand" clearable placeholder="分析品牌（不限）" style="width:170px" @change="onAnalysisBrandChange">
+              <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
+            </el-select>
+            <el-button @click="openMapConfig">品牌竞品映射</el-button>
             <el-button type="primary" @click="showAddDialog">
               <el-icon><Plus /></el-icon>添加竞品
             </el-button>
@@ -85,6 +89,12 @@
         <el-table-column prop="brand" label="品牌" width="120">
           <template #default="{ row }">
             {{ row.brand }}
+          </template>
+        </el-table-column>
+        <el-table-column label="对应自有品牌" width="140">
+          <template #default="{ row }">
+            <el-tag v-for="b in myBrandsOf(row.brand)" :key="b" size="small" type="info" style="margin-right:4px">{{ b }}</el-tag>
+            <span v-if="!myBrandsOf(row.brand).length">—</span>
           </template>
         </el-table-column>
         <el-table-column prop="name" label="门店名称" min-width="220">
@@ -295,6 +305,33 @@
         <el-button type="primary" :loading="saving" @click="handleSave">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- v1.13.344：自有品牌 → 竞品品牌集合 配置 -->
+    <el-dialog v-model="mapDialogVisible" title="品牌竞品映射" width="560px">
+      <el-alert
+        type="info" :closable="false" show-icon style="margin-bottom:12px"
+        title="未配置＝按账号全量竞品统计；配置后按所选竞品品牌收窄"
+        description="同一竞品品牌可同时配给多个自有品牌；一个都不选＝明确「该品牌无竞品」，判未评而非绿灯。"
+      />
+      <el-form label-width="110px">
+        <el-form-item label="自有品牌">
+          <el-select v-model="mapMyBrand" placeholder="选择我的门店品牌" style="width:100%" @change="onMapBrandChange">
+            <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="竞品品牌">
+          <el-select v-model="mapCompBrands" multiple filterable allow-create clearable
+                     placeholder="可多选，也可输入新品牌" style="width:100%">
+            <el-option v-for="b in availableCompBrands" :key="b" :label="b" :value="b" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="mapDialogVisible = false">取消</el-button>
+        <el-button :disabled="!mapMyBrand || !scopeMetaLoaded" @click="resetMapScope">恢复全量</el-button>
+        <el-button type="primary" :loading="mapSaving" :disabled="!mapMyBrand || !scopeMetaLoaded" @click="saveMapScope">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -305,11 +342,81 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
 import { currentUidOr } from '@/utils/currentUser.js'
+import api from '@/utils/api'
 import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
 import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.vue'
 
 const router = useRouter()
 const competitorStore = useCompetitorStore()
+
+// ===== v1.13.344：分析品牌 + 品牌竞品映射 =====
+const BRAND_LS_KEY = () => `competitorAnalysisBrand_${currentUidOr('anon')}`
+const analysisBrand = ref('')
+const mapDialogVisible = ref(false)
+const mapSaving = ref(false)
+const mapMyBrand = ref('')
+const mapCompBrands = ref([])
+const scopeMeta = ref({ myBrands: [], competitorBrands: [], scopes: {} })
+// 元数据读取失败时禁止保存：否则弹窗回显为空，一次「保存」就会把已有映射覆盖成空集
+const scopeMetaLoaded = ref(false)
+const myBrands = computed(() => (scopeMeta.value.myBrands?.length ? scopeMeta.value.myBrands : competitorStore.myBrands) || [])
+const availableCompBrands = computed(() => (scopeMeta.value.competitorBrands?.length ? scopeMeta.value.competitorBrands : competitorStore.competitorBrands) || [])
+
+function normBrand(v) { return String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase() }
+function myBrandsOf(compBrand) {
+  const k = normBrand(compBrand)
+  const scopes = competitorStore.brandScopeMap || {}
+  return Object.keys(scopes).filter(b => (scopes[b] || []).some(x => normBrand(x) === k))
+}
+async function loadScopeMeta() {
+  try {
+    // utils/api.js 的响应拦截器已返回 response.data ⇒ 这里直接拿响应体，⛔ 不能再解一层 { data }
+    const data = await api.get('/brand-competitor-map')
+    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    scopeMetaLoaded.value = true
+  } catch (e) { scopeMetaLoaded.value = false /* 配置接口不可用时静默降级为老行为 */ }
+}
+async function openMapConfig() {
+  await loadScopeMeta() // 先拉到最新映射再回显，避免竞态把已有配置显示成空
+  mapMyBrand.value = analysisBrand.value || (myBrands.value[0] || '')
+  onMapBrandChange()
+  mapDialogVisible.value = true
+}
+function onMapBrandChange() {
+  const s = scopeMeta.value.scopes || {}
+  mapCompBrands.value = Object.prototype.hasOwnProperty.call(s, mapMyBrand.value) ? [...(s[mapMyBrand.value] || [])] : []
+}
+async function saveMapScope() {
+  if (!scopeMetaLoaded.value) { ElMessage.error('配置读取失败，已阻止保存以免覆盖现有配置'); return }
+  mapSaving.value = true
+  try {
+    const data = await api.put('/brand-competitor-map', { myBrand: mapMyBrand.value, competitorBrands: mapCompBrands.value })
+    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    await competitorStore.fetchCompetitors(true)
+    ElMessage.success('已保存；该品牌的竞品统计按新集合收窄')
+    mapDialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '保存失败')
+  } finally { mapSaving.value = false }
+}
+async function resetMapScope() {
+  if (!scopeMetaLoaded.value) { ElMessage.error('配置读取失败，已阻止操作'); return }
+  try {
+    const data = await api.delete('/brand-competitor-map', { params: { myBrand: mapMyBrand.value } })
+    scopeMeta.value = { myBrands: data.myBrands || [], competitorBrands: data.competitorBrands || [], scopes: data.scopes || {} }
+    await competitorStore.fetchCompetitors(true)
+    ElMessage.success('已恢复全量口径')
+    mapDialogVisible.value = false
+  } catch (e) { ElMessage.error(e?.response?.data?.message || '操作失败') }
+}
+async function onAnalysisBrandChange(v) {
+  try { localStorage.setItem(BRAND_LS_KEY(), String(v || '')) } catch (e) { /* 隐私模式降级 */ }
+  await competitorStore.setMyBrand(v || '')
+}
+// 恢复上次选择（按 uid 命名空间，⛔ 不共用 localStorage.userId）
+try { analysisBrand.value = localStorage.getItem(BRAND_LS_KEY()) || '' } catch (e) { /* 忽略 */ }
+competitorStore.filters.myBrand = analysisBrand.value
+loadScopeMeta()
 
 // 筛选和分页 - 使用 store 中的筛选条件（持久化）
 // 使用 ref 包装 store 中的 filters，确保响应式

@@ -15,6 +15,7 @@ import { buildReportSheets } from '../utils/checkupReport.js'
 import { getGeoObject } from '../models/geoStore.js'
 import { normalizeDistrictProps, dstr } from '../utils/districtProps.js'
 import { readableUserIds } from '../utils/visibleScope.js'
+import { competitorWhere, resolveCompBrands } from '../utils/competitorScope.js'
 import { fillCityFallback, loadCityReferencePool } from '../utils/syncCore.js'
 // 只读锁已抽到 utils/syncLock.js（批次 E 供 competitors 复用，避免两处漂移）
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -160,7 +161,7 @@ function computeCheckupCompletion(db, userId, stores, geo) {
  *   · 竞品点位 —— 按可见域取（与商圈洞察同一批点位），用于算「800m 内竞品数」
  *   · 竞品覆盖城市 —— 该城市一个竞品点都没有 ⇒ 竞争维度「不评」，⛔ 不能当成 0 家
  */
-function computeStoreLights(db, userId, stores) {
+function computeStoreLights(db, userId, stores, compBrands = null) {
   const files = db.prepare(`SELECT id, name FROM shapefiles WHERE category = 'other'`).all()
   const fileByCity = new Map()
   for (const f of files) {
@@ -202,11 +203,12 @@ function computeStoreLights(db, userId, stores) {
   let competitors = []
   if (Array.isArray(scopeIds) && scopeIds.length) {
     const ph = scopeIds.map(() => '?').join(',')
+    const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
     competitors = db.prepare(
       `SELECT latitude, longitude, city FROM competitors
-        WHERE user_id IN (${ph})
+        WHERE user_id IN (${ph})${brandSql}
           AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`
-    ).all(...scopeIds)
+    ).all(...scopeIds, ...brandParams)
   }
   const competitorCities = new Set()
   for (const c of competitors) {
@@ -286,7 +288,8 @@ router.get('/checkup/lights', authenticate, (req, res) => {
     const top = Math.min(Math.max(parseInt(req.query.top, 10) || 200, 10), 1000)
 
     const stores = loadCheckupStores(db, userId)
-    const { result, coveredCities, uncoveredCities, competitorCount } = computeStoreLights(db, userId, stores)
+    const compBrands = resolveCompBrands(db, userId, req.query.brand)
+    const { result, coveredCities, uncoveredCities, competitorCount } = computeStoreLights(db, userId, stores, compBrands)
 
     res.json({
       success: true,
@@ -333,11 +336,12 @@ router.get('/checkup/report', authenticate, (req, res) => {
     const nearM = Math.min(Math.max(Number(req.query.nearM) || 300, 10), 5000)
 
     const stores = loadCheckupStores(db, userId)
+    const compBrands = resolveCompBrands(db, userId, req.query.brand)
     if (!stores.length) return res.status(400).json({ message: '还没有门店，先导入门店再导出报告' })
 
     const geo = buildStoreCheckup(stores, { nearM })
     const completeness = computeCheckupCompletion(db, userId, stores, geo)
-    const { result: lights } = computeStoreLights(db, userId, stores)
+    const { result: lights } = computeStoreLights(db, userId, stores, compBrands)
 
     const generatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
     const sheets = buildReportSheets({ geo, lights, completeness, nearM, generatedAt })

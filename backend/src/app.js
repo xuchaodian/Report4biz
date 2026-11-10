@@ -20,6 +20,7 @@ import feedbackRoutes from './routes/feedbacks.js'
 import sceneEventRoutes from './routes/sceneEvents.js'
 import candidateRoutes from './routes/candidates.js'
 import brandIconRoutes from './routes/brand-icons.js'
+import brandCompetitorMapRoutes from './routes/brand-competitor-map.js'
 import brandStoreRoutes from './routes/brand-stores.js'
 import shapefileRoutes from './routes/shapefiles.js'
 import shoppingCenterRoutes from './routes/shopping-centers.js'
@@ -120,6 +121,7 @@ async function start() {
     // 候选点位（v1.13.333）：独立表，⛔ 与 /api/markers 无共表关系（见 routes/candidates.js 头注释）
     app.use('/api/candidates', candidateRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
+    app.use('/api/brand-competitor-map', brandCompetitorMapRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
     app.use('/api/shapefiles', shapefileRoutes)
     app.use('/api/shopping-centers', shoppingCenterRoutes)

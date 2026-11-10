@@ -780,6 +780,33 @@ export async function initDatabase() {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_csr_snapshot ON competitor_snapshot_rows(snapshot_id)`) } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_csr_key ON competitor_snapshot_rows(store_key)`) } catch (e) {}
 
+  // ===== 自有品牌 → 竞品品牌集合（v1.13.344）=====
+  // 🔴 头表必须独立：区分「未配置」与「已配置但明确没有竞品」。
+  //    只用一个明细表时，查不到行既可能是没配、也可能是真空集，
+  //    一退化成全量就会把「无竞品」错判成绿灯（§6.84：缺数据＝未评，⛔ 不变绿灯）。
+  // ⛔ 这两张表是「本地消费配置」，不进集团同步候选集（竞品快照是集团只下不上的资产）。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS brand_competitor_scope (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      my_brand TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, my_brand)
+    )
+  `)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS brand_competitor_map (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      my_brand TEXT NOT NULL,
+      competitor_brand TEXT NOT NULL,
+      UNIQUE(user_id, my_brand, competitor_brand)
+    )
+  `)
+  try {
+    db.run(`CREATE INDEX IF NOT EXISTS idx_bcm_user_brand ON brand_competitor_map(user_id, my_brand)`)
+  } catch (e) { /* 索引已存在 */ }
+
   // 创建品牌图标表
   db.run(`
     CREATE TABLE IF NOT EXISTS brand_icons (

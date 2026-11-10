@@ -6,6 +6,7 @@ import { readCsvText } from '../utils/csvEncoding.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { parsePaging } from '../utils/paging.js'
+import { resolveCompBrands, competitorWhere, brandScopeMeta } from '../utils/competitorScope.js'
 // 只读锁（规则 4 写权唯一）：批次 E 起 competitors 也成为同步对象，
 // 同步来的竞品镜像是只读的 —— 与 markers 共用同一把锁，避免单写者模型被绕过。
 import { blockedBySyncLock } from '../utils/syncLock.js'
@@ -27,8 +28,11 @@ router.get('/', authenticate, (req, res) => {
     const { limit, offset, wantTotal } = parsePaging(req.query)
 
     // 每个用户只看自己的竞品门店数据
-    let sql = `SELECT * FROM competitors WHERE user_id = ? ORDER BY created_at DESC`
-    const params = [req.user.id]
+    // v1.13.344：按自有品牌收窄；未配置 brandSql='' ⇒ 老行为不变
+    const compBrands = resolveCompBrands(db, req.user.id, req.query.myBrand)
+    const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
+    let sql = `SELECT * FROM competitors WHERE user_id = ?${brandSql} ORDER BY created_at DESC`
+    const params = [req.user.id, ...brandParams]
     if (limit) {
       sql += ` LIMIT ? OFFSET ?`
       params.push(limit, offset)
@@ -37,12 +41,56 @@ router.get('/', authenticate, (req, res) => {
 
     const payload = { competitors }
     if (wantTotal) {
-      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE user_id = ?`).get(req.user.id)?.c || 0
+      payload.total = db.prepare(`SELECT COUNT(*) AS c FROM competitors WHERE user_id = ?${brandSql}`).get(req.user.id, ...brandParams)?.c || 0
     }
+    payload.brandScope = brandScopeMeta(db, req.user.id, compBrands)
     res.json(payload)
   } catch (error) {
     console.error('获取竞品列表错误:', error)
     res.status(500).json({ message: '获取数据失败' })
+  }
+})
+
+// ⚠️ 静态子路径必须排在 GET /:id 之前，否则 '/export' 会被当成 id 返回 404（v1.13.344）
+
+// 导出竞品门店（按用户隔离 + 自有品牌口径）
+router.get('/export', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const compBrands = resolveCompBrands(db, req.user.id, req.query.myBrand)
+    const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
+    const competitors = db.prepare('SELECT * FROM competitors WHERE user_id = ?' + brandSql + ' ORDER BY created_at DESC').all(req.user.id, ...brandParams)
+
+    res.json(competitors)
+  } catch (error) {
+    console.error('导出错误:', error)
+    res.status(500).json({ message: '导出失败' })
+  }
+})
+
+// 空间查询 - 获取范围内的竞品门店
+router.get('/query/bounds', authenticate, (req, res) => {
+  try {
+    const { north, south, east, west } = req.query
+
+    if (!north || !south || !east || !west) {
+      return res.status(400).json({ message: '请提供范围参数' })
+    }
+
+    const db = getDb()
+    const compBrands = resolveCompBrands(db, req.user.id, req.query.myBrand)
+    const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
+    const competitors = db.prepare(`
+      SELECT * FROM competitors
+      WHERE user_id = ?${brandSql}
+      AND latitude BETWEEN ? AND ?
+      AND longitude BETWEEN ? AND ?
+    `).all(req.user.id, ...brandParams, south, north, west, east)
+
+    res.json({ competitors, count: competitors.length })
+  } catch (error) {
+    console.error('空间查询错误:', error)
+    res.status(500).json({ message: '查询失败' })
   }
 })
 
@@ -335,43 +383,6 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
   } catch (error) {
     console.error('导入错误:', error)
     res.status(500).json({ message: '导入失败' })
-  }
-})
-
-// 导出竞品门店（按用户隔离）
-router.get('/export', authenticate, (req, res) => {
-  try {
-    const db = getDb()
-    const competitors = db.prepare('SELECT * FROM competitors WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id)
-
-    res.json(competitors)
-  } catch (error) {
-    console.error('导出错误:', error)
-    res.status(500).json({ message: '导出失败' })
-  }
-})
-
-// 空间查询 - 获取范围内的竞品门店
-router.get('/query/bounds', authenticate, (req, res) => {
-  try {
-    const { north, south, east, west } = req.query
-
-    if (!north || !south || !east || !west) {
-      return res.status(400).json({ message: '请提供范围参数' })
-    }
-
-    const db = getDb()
-    const competitors = db.prepare(`
-      SELECT * FROM competitors
-      WHERE user_id = ?
-      AND latitude BETWEEN ? AND ?
-      AND longitude BETWEEN ? AND ?
-    `).all(req.user.id, south, north, west, east)
-
-    res.json({ competitors, count: competitors.length })
-  } catch (error) {
-    console.error('空间查询错误:', error)
-    res.status(500).json({ message: '查询失败' })
   }
 })
 
