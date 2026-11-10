@@ -332,6 +332,17 @@
         <el-button type="primary" :loading="mapSaving" :disabled="!mapMyBrand || !scopeMetaLoaded" @click="saveMapScope">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- v1.13.349：多品牌账号强制补映射（硬阻断，无取消键） -->
+    <BrandMapRequiredDialog
+      v-model="requiredMapVisible"
+      :my-brands="scopeMeta.myBrands"
+      :competitor-brands="scopeMeta.competitorBrands"
+      :scopes="scopeMeta.scopes"
+      :just-imported-brand="lastImportedCompBrand"
+      :degraded="requiredMapDegraded"
+      @saved="onRequiredMapSaved"
+    />
   </div>
 </template>
 
@@ -343,10 +354,11 @@ import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@
 import { useCompetitorStore } from '@/stores/competitor'
 import { currentUidOr } from '@/utils/currentUser.js'
 import { normBrand } from '@/utils/brandScope.js'
-import { decideBrandMapPrompt, buildBrandMapPromptText } from '@/utils/brandMapPrompt.js'
+import { decideBrandMapPrompt } from '@/utils/brandMapPrompt.js'
 import api from '@/utils/api'
 import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
 import SnapshotMonitorPanel from '@/components/competitor/SnapshotMonitorPanel.vue'
+import BrandMapRequiredDialog from '@/components/competitor/BrandMapRequiredDialog.vue'
 
 const router = useRouter()
 const competitorStore = useCompetitorStore()
@@ -361,6 +373,10 @@ const mapCompBrands = ref([])
 const scopeMeta = ref({ myBrands: [], competitorBrands: [], scopes: {} })
 // 元数据读取失败时禁止保存：否则弹窗回显为空，一次「保存」就会把已有映射覆盖成空集
 const scopeMetaLoaded = ref(false)
+// v1.13.349：强制补映射弹窗（硬阻断）—— 声明必须早于 setup 级复查调用
+const requiredMapVisible = ref(false)
+const requiredMapDegraded = ref(false)
+const lastImportedCompBrand = ref('')
 const myBrands = computed(() => (scopeMeta.value.myBrands?.length ? scopeMeta.value.myBrands : competitorStore.myBrands) || [])
 const availableCompBrands = computed(() => (scopeMeta.value.competitorBrands?.length ? scopeMeta.value.competitorBrands : competitorStore.competitorBrands) || [])
 
@@ -418,7 +434,8 @@ async function onAnalysisBrandChange(v) {
 // 恢复上次选择（按 uid 命名空间，⛔ 不共用 localStorage.userId）
 try { analysisBrand.value = localStorage.getItem(BRAND_LS_KEY()) || '' } catch (e) { /* 忽略 */ }
 competitorStore.filters.myBrand = analysisBrand.value
-loadScopeMeta()
+// v1.13.349：进页复查「有没有品牌没配映射」—— 硬阻断唯一的缺口是用户关标签页，靠这条补上
+checkRequiredBrandMapOnEnter()
 
 // 筛选和分页 - 使用 store 中的筛选条件（持久化）
 // 使用 ref 包装 store 中的 filters，确保响应式
@@ -817,44 +834,68 @@ const handleSnapshotImported = async (payload) => {
   await competitorStore.fetchCompetitors(true)
   // 列表已被新镜像替换 → 清掉本地筛选态，避免残留条件看不到新数据
   handleClearFilters()
-  // v1.13.348：刚灌进新品牌竞品的时刻，正是最可能顺手配置品牌竞品映射的时刻
-  await maybePromptBrandMap(payload)
+  // v1.13.349：刚灌进新品牌竞品的时刻，正是最该把品牌竞品映射配掉的时刻（强制）
+  await openRequiredBrandMap(payload?.brand)
 }
 
 /**
- * v1.13.348：多品牌账号导入竞品后，提示去配置「品牌竞品映射」。
+ * v1.13.349：多品牌账号必须完成「品牌竞品映射」（取代 348 的可跳过确认框）。
  *
- * 为什么在这里提示：344 起竞品按自有品牌分池统计，但**未配置映射的品牌会退回全量**。
- *   「我的门店」有 2 个以上品牌时（生产实测：滨寿司 + 食其家），A 的竞品与 B 的竞品被加在
- *   一起 ⇒ 竞争分、门店信号灯的判定一起偏红。用户此刻刚导入竞品，最可能顺手配掉。
+ * 为什么必须：344 起竞品按自有品牌分池统计，但**未配置映射的品牌退回全量**。
+ *   「我的门店」有 2 个以上品牌时，A 的竞品与 B 的竞品被加在一起 ⇒ 竞争分被压低、
+ *   门店信号灯被别业态点亮。348 弹的是「要不要去设置」，点「暂不设置」就过 ⇒ 等于没治。
  *
- * 判据全部在 utils/brandMapPrompt.js（单测钉死）；这里只负责「拉元数据 → 弹窗 → 预选品牌」。
- * 🔴 配置接口读失败时必须静默跳过：⛔ 不能因为拉不到元数据就弹一个空对话框。
- * 🔴 用户点「暂不设置」等同正常路径，⛔ 不许再弹错误提示打断他。
+ * 触发时机（两处，缺一不可）：
+ *   ① 导入成功后 → openRequiredBrandMap()（justImportedBrand = 本次导入的**竞品品牌**，用于预勾选）
+ *   ② 每次进入竞品页 → checkRequiredBrandMapOnEnter()（关标签页能绕过任何前端阻断）
+ *
+ * 🔴 判据全在 utils/brandMapPrompt.js（单测钉死），本文件只负责「拉元数据 → 开窗」。
+ * 🔴 进页复查时元数据读不到 ⇒ **静默**（下次进页再查），⛔ 不要每次进页都弹一个什么也做不了的窗。
+ * 🔴 导入后元数据读不到 ⇒ 弹 degraded 窗**告知一次**（用户刚以为配完了，得让他知道没检查成）。
  */
-async function maybePromptBrandMap(payload) {
+async function openRequiredBrandMap(justImportedBrand = '') {
   try {
     await loadScopeMeta() // 先拉最新映射：刚导入的竞品品牌会出现在 availableCompBrands 里
+    if (!scopeMetaLoaded.value) {
+      requiredMapDegraded.value = true
+      lastImportedCompBrand.value = ''
+      requiredMapVisible.value = true
+      return
+    }
+    const d = decideBrandMapPrompt({
+      myBrands: scopeMeta.value.myBrands,
+      scopes: scopeMeta.value.scopes
+    })
+    if (!d.required) return
+    requiredMapDegraded.value = false
+    lastImportedCompBrand.value = String(justImportedBrand || '')
+    requiredMapVisible.value = true
+  } catch (e) {
+    /* 拉元数据异常不阻断导入主流程；下次进页会再复查一次 */
+  }
+}
+
+async function checkRequiredBrandMapOnEnter() {
+  try {
+    await loadScopeMeta()
     if (!scopeMetaLoaded.value) return
     const d = decideBrandMapPrompt({
       myBrands: scopeMeta.value.myBrands,
-      scopes: scopeMeta.value.scopes,
-      justImportedBrand: payload?.brand
+      scopes: scopeMeta.value.scopes
     })
-    if (!d.prompt) return
-    await ElMessageBox.confirm(buildBrandMapPromptText(d), '设置品牌竞品映射', {
-      confirmButtonText: '立即设置',
-      cancelButtonText: '暂不设置',
-      type: 'warning',
-      distinguishCancelAndClose: false // 关掉弹窗也当「暂不设置」，不额外报错
-    })
-    // 「立即设置」：把建议的品牌预选进既有映射对话框，用户只需勾竞品品牌
-    mapMyBrand.value = d.preferred
-    onMapBrandChange()
-    mapDialogVisible.value = true
+    if (!d.required) return
+    requiredMapDegraded.value = false
+    lastImportedCompBrand.value = ''
+    requiredMapVisible.value = true
   } catch (e) {
-    /* 用户选「暂不设置」/关闭弹窗 ⇒ 走到这里，属正常分支，⛔ 不提示错误 */
+    /* 静默：进页复查失败不打扰 */
   }
+}
+
+// 弹窗保存成功：重新拉映射 + 刷新竞品列表（计数口径变了）
+async function onRequiredMapSaved() {
+  await loadScopeMeta()
+  await competitorStore.fetchCompetitors(true)
 }
 // Tab2 删除期次后：若删到最新期（镜像被移除）则同步刷新竞品列表（强制绕过 H2 新鲜期）
 const handleSnapshotDeleted = async (payload) => {

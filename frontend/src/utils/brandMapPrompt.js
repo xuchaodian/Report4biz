@@ -1,72 +1,88 @@
 /**
- * v1.13.348：竞品导入后「该不该提示去配置品牌竞品映射」的**唯一判据**
+ * 自有品牌 → 竞品品牌映射：**强制补齐**的判定与草稿（v1.13.349，取代 348 的可跳过提示）
  *
- * 为什么需要提示：
- *   344 起，自有品牌 → 竞品品牌集合是「按品牌分池」统计的。但**未配置映射的品牌会退回全量**，
- *   于是「我的门店」有 2 个以上品牌时（生产实测：滨寿司 + 食其家），A 的竞品与 B 的竞品会被
- *   加在一起 ⇒ 商圈竞争分、体检信号灯、AI 周边一起偏红。用户导入完竞品门店，正是他刚把
- *   「新品牌竞品」灌进来的时刻，也是他最可能在此时配置映射的时刻 —— 过了这个点就忘了。
+ * 背景：344 起「未配置＝按账号全量竞品」，但多品牌账号导入竞品后往往不配映射，
+ *   于是 A 品牌的商圈把 B 品牌的竞品一起算进来 ⇒ 竞争分被压低、信号灯被别业态点亮。
+ *   348 只是弹个「要不要去设置」的确认框，用户点「暂不设置」就过 ⇒ 口径静默放宽。
+ *   349 改为硬阻断：未配完不让关窗，且每次进竞品页复查。
  *
- * 判据三条（少一条都是噪音）：
- *   1. 自有品牌 **≥2 个** —— 单品牌不存在「多品牌竞品混算」，⛔ 不打扰
- *   2. 存在**未配置**映射的品牌 —— 全都配过了就是纯噪音，⛔ 不打扰
- *   3. 配置接口读失败时调用方直接跳过（⛔ 不能因为拉不到元数据就弹空对话框）
- *
- * 🔴 「已配置」= scopes 里存在该品牌的 key，**包括配成空数组**（明确「该品牌无竞品」）。
- *    所以判断必须看 key 在不在，⛔ 不能用「值非空」当已配置。
- * 🔴 品牌归一必须与后端 normalizeBrand 一致（压缩空白 + 去首尾 + 大写），
- *    映射 key 是配置时写入的原值，大小写常与 markers.brand 不同。
+ * 铁律：
+ *   · 「已配置」判据＝scopes 里**存在该 key**，⛔ 不是「值非空」。
+ *     配成 [] 是「该品牌确实没有竞品」的明确表达（⇒ 0 家 ⇒ 判未评，绝不变绿灯）。
+ *   · 未配置品牌由本模块唯一产出，组件只渲染，⛔ 不许在组件里另写一份判据。
+ *   · 归一化只用 utils/brandScope.js::normBrand（与后端 storeDedup.js::normalizeBrand 同规则）。
+ *   · 本模块只产出「要保存什么」，⛔ 不碰网络请求（便于 22 例纯函数测试）。
  */
 import { normBrand } from './brandScope.js'
 
-/**
- * @param {object} p
- * @param {string[]} p.myBrands          我的门店全部自有品牌（后端 brandScopeMeta.myBrands）
- * @param {object} p.scopes              已配置映射 { 自有品牌: [竞品品牌...] }
- * @param {string} [p.justImportedBrand] 本次刚导入竞品的自有品牌（期次上传时用户已选）
- * @returns {{prompt:boolean, missing:string[], preferred:string, justImportedMissing:boolean,
- *            total:number, reason:string}}
- */
-export function decideBrandMapPrompt({ myBrands, scopes, justImportedBrand } = {}) {
-  const brands = Array.from(
-    new Set((myBrands || []).map(b => String(b ?? '').trim()).filter(Boolean))
-  )
-
-  if (brands.length < 2) {
-    return { prompt: false, missing: [], preferred: '', justImportedMissing: false, total: brands.length, reason: 'single-brand' }
+function normalizeMyBrands(myBrands) {
+  const out = []
+  const seen = new Set()
+  for (const raw of myBrands || []) {
+    const b = String(raw ?? '').trim()
+    if (!b) continue
+    const k = normBrand(b)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(b)
   }
-
-  const map = scopes || {}
-  const configured = new Set(Object.keys(map).map(k => normBrand(k)))
-  const missing = brands.filter(b => !configured.has(normBrand(b)))
-
-  if (missing.length === 0) {
-    return { prompt: false, missing: [], preferred: '', justImportedMissing: false, total: brands.length, reason: 'all-configured' }
-  }
-
-  const imported = normBrand(justImportedBrand)
-  const hit = imported ? missing.find(b => normBrand(b) === imported) : null
-
-  return {
-    prompt: true,
-    missing,
-    preferred: hit || missing[0],
-    justImportedMissing: !!hit,
-    total: brands.length,
-    reason: 'missing-scope'
-  }
+  return out
 }
 
 /**
- * 弹窗文案。与判据分离，便于单测钉文案（⛔ 不许出现「预计/预估」这类词，
- * 这里给的是机制说明，不是业绩承诺）。
+ * 是否需要强制补映射。
+ * @returns {{required:boolean, missing:string[], total:number, reason:'single-brand'|'all-configured'|'missing-scope'}}
  */
-export function buildBrandMapPromptText(d) {
-  const list = (d.missing || []).join('、')
-  const head = d.justImportedMissing
-    ? `本次导入的自有品牌「${d.preferred}」还没有配置竞品映射。`
-    : `你的账号下有 ${d.total} 个自有品牌，其中「${list}」还没有配置竞品映射。`
-  return head +
-    '未配置时该品牌会按账号下全部竞品统计，多个品牌的竞品会混在一起，' +
-    '竞争分与门店信号的判定容易偏红。现在去设置吗？'
+export function decideBrandMapPrompt({ myBrands, scopes } = {}) {
+  const brands = normalizeMyBrands(myBrands)
+  // 单品牌账号不存在「按品牌分池」的问题 ⇒ 不打扰
+  if (brands.length < 2) {
+    return { required: false, missing: [], total: brands.length, reason: 'single-brand' }
+  }
+  const configured = new Set(Object.keys(scopes || {}).map(k => normBrand(k)))
+  const missing = brands.filter(b => !configured.has(normBrand(b)))
+  if (missing.length === 0) {
+    return { required: false, missing: [], total: brands.length, reason: 'all-configured' }
+  }
+  return { required: true, missing, total: brands.length, reason: 'missing-scope' }
+}
+
+/**
+ * 生成待补映射草稿（每个未配置自有品牌一行）。
+ * ⚠️ justImportedBrand 是**竞品品牌**（competitors.brand，来自导入快照的品牌），
+ *    不是自有品牌 ⇒ 只用来「预勾选」，⛔ 不要拿去和 myBrands 比（348 就是错在这里）。
+ */
+export function buildRequiredMapDraft({ myBrands, scopes, justImportedBrand } = {}) {
+  const d = decideBrandMapPrompt({ myBrands, scopes })
+  if (!d.required) return []
+  const seed = String(justImportedBrand ?? '').trim()
+  return d.missing.map(myBrand => ({
+    myBrand,
+    compBrands: seed ? [seed] : [],
+    none: false,
+    seeded: !!seed
+  }))
+}
+
+/** 单行是否已有结论：勾了「暂无竞品」或 至少选了一个竞品品牌 */
+export function isRowDecided(row) {
+  if (!row) return false
+  if (row.none === true) return true
+  return Array.isArray(row.compBrands) && row.compBrands.length > 0
+}
+
+/** 汇总进度，complete 决定「全部保存」是否可点 */
+export function summarizeDraft(rows) {
+  const list = Array.isArray(rows) ? rows : []
+  const decided = list.filter(isRowDecided).length
+  return { total: list.length, decided, pending: list.length - decided, complete: list.length > 0 && decided === list.length }
+}
+
+/** 单行 → PUT /brand-competitor-map 的请求体（none ⇒ 显式空集） */
+export function buildSavePayload(row) {
+  const none = row?.none === true
+  const compBrands = none
+    ? []
+    : Array.from(new Set((row?.compBrands || []).map(v => String(v ?? '').trim()).filter(Boolean)))
+  return { myBrand: String(row?.myBrand ?? '').trim(), competitorBrands: compBrands }
 }
