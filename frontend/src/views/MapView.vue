@@ -11986,6 +11986,32 @@ const startPopulationCompare = async () => {
 }
 
 
+/**
+ * 均值虚线（markLine）的标签样式 —— v1.13.350
+ *
+ * 🔴 position 必须是 inside*：echarts 默认的 `'end'` 把标签画在虚线**右端外侧**，而本图
+ *    grid.right 只有 4%（且 containLabel）⇒ 绘图区右边缘几乎贴着画布右边界，标签被整体
+ *    裁掉，用户只看到两条虚线却读不到数值。`'start'` 同理会溢出左侧（也只有 3% 余量）。
+ * 🔴 数值必须换算「万」：y 轴刻度就是万（见 yAxis.axisLabel.formatter），标签若用原始
+ *    数值（73700）会与刻度单位不一致，逼用户心算。
+ * 🔴 两处 series 必须共用本函数，⛔ 不许各自内联 —— 改一处忘一处必然漂移（历史上
+ *    `'均值: {c}'` 就是这么复制成两遍的）。
+ */
+const avgLineLabelStyle = (color) => ({
+  position: 'insideEndTop',
+  distance: 4,
+  fontSize: 10,
+  color,
+  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+  padding: [2, 4],
+  borderRadius: 3,
+  formatter: (p) => {
+    const v = Number(p.value)
+    if (!Number.isFinite(v)) return '均值: -'
+    return '均值: ' + (Math.abs(v) >= 10000 ? (v / 10000).toFixed(2) + '万' : Math.round(v))
+  }
+})
+
 // 渲染柱状图（仅2家门店时使用）
 const renderBarChart = () => {
   if (!barChartRef.value || compareResults.value.length !== 2) return
@@ -12067,7 +12093,7 @@ const renderBarChart = () => {
           silent: true,
           lineStyle: { type: 'dashed', color: '#409EFF', width: 1.5 },
           data: [{ type: 'average', name: '平均值' }],
-          label: { formatter: '均值: {c}', fontSize: 10, color: '#409EFF' }
+          label: avgLineLabelStyle('#409EFF')
         }
       },
       {
@@ -12085,7 +12111,7 @@ const renderBarChart = () => {
           silent: true,
           lineStyle: { type: 'dashed', color: '#67C23A', width: 1.5 },
           data: [{ type: 'average', name: '平均值' }],
-          label: { formatter: '均值: {c}', fontSize: 10, color: '#67C23A' }
+          label: avgLineLabelStyle('#67C23A')
         }
       }
     ]
