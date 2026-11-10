@@ -510,7 +510,9 @@ describe('G. 接线守卫：前端真的把继承接上了', () => {
 
   it('G3 配置弹窗能看出「这是继承来的」并且按钮文案会切换', () => {
     const tpl = templateOf(read(VIEW))
-    expect(tpl).toContain('mapBrandSource')
+    // v1.13.352：判据从 mapBrandSource（单一枚举）拆成「来源」+「筛选方式」两个维度，
+    // 模板侧的守卫相应改为 isInheritedScope —— 不变量不变：继承态必须在弹窗里被说出来。
+    expect(tpl).toContain('isInheritedScope')
     expect(tpl).toContain('resetMapLabel')
     expect(tpl).toContain('inheritName')
   })
@@ -527,10 +529,13 @@ describe('G. 接线守卫：前端真的把继承接上了', () => {
 
   it('G5 恢复按钮真的按来源禁用/换文案（⛔ 不能一律「恢复全量」）', () => {
     const tpl = templateOf(read(VIEW))
-    expect(tpl).toMatch(/mapBrandSource === 'group'/)
+    // 自己没有配置时按钮必须禁用（否则等于给继承态一个「删掉集团配置」的空点击）
+    expect(tpl).toMatch(/:disabled="[^"]*!canResetMap/)
     const js = stripJsComments(read(VIEW))
-    expect(js).toContain("已是集团口径")
-    expect(js).toContain('恢复为集团口径')
+    expect(js).toContain('已是集团口径')
+    // 两条回落分支必须在源码里分得清：集团有 ⇒ 回落集团；集团没有 ⇒ 回到全量
+    expect(js).toContain('回落集团口径')
+    expect(js).toContain('回到全量')
   })
 
   it('G6 强制弹窗组件透传 inheritedScopes 给判据', () => {

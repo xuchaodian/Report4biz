@@ -39,24 +39,31 @@ router.get('/', authenticate, (req, res) => {
 })
 
 // 写：整体覆盖某自有品牌的竞品品牌集合（头表 + 明细，单事务）
+// v1.13.352：新增 body.mode —— 'all' ＝该自有品牌**显式不筛选**（全量），
+//   'map'（缺省，向后兼容 349 弹窗）＝按 competitorBrands 筛选。
+//   mode='all' 时明细行会被清空：库里只留一条「意图」，不叠任何品牌。
 router.put('/', authenticate, (req, res) => {
   try {
     const db = getDb()
     const myBrand = normalizeMyBrand(req.body?.myBrand)
     const raw = req.body?.competitorBrands
+    const mode = req.body?.mode === 'all' ? 'all' : 'map'
     if (!myBrand) return res.status(400).json({ message: '缺少自有品牌' })
-    if (!Array.isArray(raw)) return res.status(400).json({ message: '竞品品牌集合格式错误' })
+    // mode='all' 不要求传 competitorBrands（前端「不筛选」开关没有待选项）
+    if (mode !== 'all' && !Array.isArray(raw)) return res.status(400).json({ message: '竞品品牌集合格式错误' })
     if (!ownsBrand(db, req.user.id, myBrand)) {
       return res.status(400).json({ message: '该品牌不在「我的门店」里' })
     }
-    const clean = Array.from(new Set(raw.map(v => String(v ?? '').trim()).filter(Boolean)))
+    const clean = mode === 'all'
+      ? []
+      : Array.from(new Set(raw.map(v => String(v ?? '').trim()).filter(Boolean)))
     if (clean.length > 200) return res.status(400).json({ message: '竞品品牌过多（上限 200）' })
     const esc = v => "'" + String(v).replace(/'/g, "''") + "'"
     db.beginTx()
     try {
-      db.exec(`INSERT INTO brand_competitor_scope (user_id, my_brand, updated_at)
-               VALUES (${Number(req.user.id)}, ${esc(myBrand)}, datetime('now'))
-               ON CONFLICT(user_id, my_brand) DO UPDATE SET updated_at = datetime('now')`)
+      db.exec(`INSERT INTO brand_competitor_scope (user_id, my_brand, mode, updated_at)
+               VALUES (${Number(req.user.id)}, ${esc(myBrand)}, '${mode}', datetime('now'))
+               ON CONFLICT(user_id, my_brand) DO UPDATE SET mode = '${mode}', updated_at = datetime('now')`)
       db.exec(`DELETE FROM brand_competitor_map WHERE user_id = ${Number(req.user.id)} AND my_brand = ${esc(myBrand)}`)
       for (const b of clean) {
         db.exec(`INSERT OR IGNORE INTO brand_competitor_map (user_id, my_brand, competitor_brand)
@@ -67,7 +74,7 @@ router.put('/', authenticate, (req, res) => {
       try { db.rollbackTx() } catch (e) { /* 忽略 */ }
       throw txErr
     }
-    // 保存后重新解析一次：本账号的 scope 行已存在 ⇒ source='self'（即便是空集）
+    // 保存后重新解析一次：本账号的 scope 行已存在 ⇒ source='self'（空集）或 'all'（全量）
     const sc = resolveBrandScope(db, req.user.id, myBrand)
     res.json({ success: true, ...brandScopeMeta(db, req.user.id, sc.compBrands, sc) })
   } catch (e) {

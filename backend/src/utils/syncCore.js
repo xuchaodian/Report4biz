@@ -47,6 +47,8 @@
 // ============================================================================
 
 import { normalizeCity, parseCityList, parseBrandList } from './scopeGuard.js'
+// v1.13.352：品牌归一唯一实现（与 competitorScope / 前端 brandScope.js 同规则）
+import { normalizeBrand } from './storeDedup.js'
 
 /** 竞品期次快照：内核里唯一的「特例对象」（两表一起搬），见 §5b */
 export const SNAPSHOT_KIND = 'competitor_snapshots'
@@ -272,7 +274,8 @@ export function inAllowedScope(row, { cityKeys, brands, belongUserId } = {}) {
   if (!cityKeys.has(ck)) return false
 
   if (brands && brands.size > 0) {
-    const b = String(row.brand ?? '').trim()
+    // 🔴 归一比较（v1.13.352）：白名单来自用户勾选（可能 "kfc"），表里可能是 "KFC"
+    const b = normalizeBrand(row.brand)
     if (!brands.has(b)) return false
   }
   return true
@@ -283,7 +286,47 @@ export function buildScopeMatcher(scopeJson, belongUserId) {
   const cities = parseCityList(scopeJson)
   const brands = parseBrandList(scopeJson)
   const cityKeys = new Set(cities.map(normalizeCity).filter(Boolean))
-  return { cityKeys, brands: new Set(brands.map(b => String(b).trim()).filter(Boolean)), belongUserId, cities, brandList: brands }
+  // v1.13.352：集合里存**归一值**，与 inAllowedScope / snapshotHeaderAllowed 的比较口径一致
+  return { cityKeys, brands: new Set(brands.map(b => normalizeBrand(b)).filter(Boolean)), belongUserId, cities, brandList: brands }
+}
+
+/**
+ * 把「两表共用的品牌白名单」收窄成「**属于本对象的**品牌」（v1.13.352）。
+ *
+ * 问题：`scope_json.brands` 是**一个**白名单，同时作用于 markers 与 competitors，
+ *   但两者的 brand 语义完全不同 —— markers.brand 是自有品牌（滨寿司/食其家），
+ *   competitors.brand 是竞品品牌（寿司郎/元气寿司）。于是：
+ *     · 勾「滨寿司」（自有）后同步竞品门店 ⇒ 白名单去筛 competitors.brand ⇒
+ *       交集为空 ⇒ **0 行下发**，界面上只多一行「筛选外丢弃 N 条」，没人看得出根因。
+ *     · 反向勾竞品品牌同理，会让「我的门店」0 行。
+ *
+ * 做法（语义：白名单里属于本对象的那些，才对本次同步生效）：
+ *   取白名单 ∩ 源账号该表的品牌全集；交集非空 ⇒ 用它筛选；
+ *   交集为空 ⇒ 本次同步**该对象不限品牌**（勾的品牌与它无关，不是"用户要 0 行"），
+ *   并把被忽略的品牌名回传给前端明示 —— ⛔ 不再静默。
+ *
+ * ⚠️ 为什么不做「交集为空 ⇒ 0 行」：那等于让用户「勾了自家品牌」就同步不到任何竞品，
+ *   与勾选意图相反（勾竞品门店就是想拿到竞品）。真要 0 家，用映射里的显式空集表达。
+ *
+ * @returns {{set:Set<string>|null, kept:string[], ignored:string[]}}
+ *   set=null ⇒ 对该对象不限品牌（白名单为空，或勾的品牌与该对象完全无关）
+ */
+function narrowBrandFilter(db, sourceUserId, kind, brandsAll) {
+  const all = brandsAll instanceof Set ? [...brandsAll] : []
+  if (!all.length) return { set: null, kept: [], ignored: [] }
+  // kind 只会是 markers / competitors（快照走 buildSnapshotPlan 的独立分支）
+  // 🔴 用归一值比较：白名单来自用户勾选（可能 "kfc"），表里可能是 "KFC"
+  const present = new Set(
+    (db.prepare(`
+      SELECT DISTINCT brand FROM ${kind}
+       WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
+    `).all(sourceUserId) || []).map(r => normalizeBrand(r.brand))
+  )
+  const kept = all.filter(b => present.has(normalizeBrand(b)))
+  const ignored = all.filter(b => !present.has(normalizeBrand(b)))
+  if (!kept.length) return { set: null, kept, ignored }
+  // set 存归一值（与 inAllowedScope 的比较口径一致）；kept 保留用户勾选的原始写法用于回显
+  return { set: new Set(kept.map(normalizeBrand)), kept, ignored }
 }
 
 function matchKeyword(row, keyword) {
@@ -372,6 +415,10 @@ export function buildPlan(db, opts) {
 
   const fields = syncableFields(db, kind)
   const matcher = buildScopeMatcher(scopeJson, belongUserId)
+  // v1.13.352：品牌白名单按对象收窄（详见 narrowBrandFilter 注释）。
+  // ⚠️ 只影响「有勾品牌」的场景；scope.brands 为空 ⇒ set=null ⇒ 老行为逐字不变。
+  const brandNarrow = narrowBrandFilter(db, sourceUserId, kind, matcher.brands)
+  matcher.brands = brandNarrow.set || new Set()
 
   const sourceRows = db.prepare(`SELECT * FROM ${kind} WHERE user_id = ?`).all(sourceUserId) || []
 
@@ -384,6 +431,8 @@ export function buildPlan(db, opts) {
     // 原实现把「超过 MAX_PLAN_ROWS」折进 outOfFilter，语义是「关键词没匹配上」，
     // 于是界面上完全看不出「被截断」：用户只看到总数少了一截、**没有任何提示**。
     truncated: 0,
+    // v1.13.352：被「按对象收窄」忽略掉的品牌勾选数（如勾了自有品牌却要同步竞品）
+    brandIgnored: 0,
     // 快照专有维度（泛化对象恒为 0，保持键齐全便于各对象计数加总）
     detailRows: 0, detailOutOfScope: 0, detailOutOfFilter: 0, directionBlocked: 0, periodFiltered: 0
   }
@@ -482,10 +531,19 @@ export function buildPlan(db, opts) {
   }
 
   counts.duplicateShadowed = bkIndex.shadowed
+  counts.brandIgnored = brandNarrow.ignored.length
   counts.total = counts.added + counts.updated + counts.deleted + counts.skipped + counts.duplicate
   // scopeJson/keyword 一并回传：`applyPlan` 要**重建**范围过滤器
   // （快照明细的按城市过滤发生在 apply 阶段，必须与预览同一套口径，否则「预览 650、落库 1905」）
-  return { kind, direction, sourceUserId, targetUserId, fields, items, counts, scopeJson, belongUserId, keyword }
+  return {
+    kind, direction, sourceUserId, targetUserId, fields, items, counts, scopeJson, belongUserId, keyword,
+    // v1.13.352：本次品牌筛选的实际生效情况（applied=false ⇒ 对该对象不限品牌）
+    brandFilter: {
+      applied: !!brandNarrow.set,
+      kept: brandNarrow.kept,
+      ignored: brandNarrow.ignored
+    }
+  }
 }
 
 /**
@@ -517,21 +575,23 @@ export function buildPlanForKinds(db, opts) {
 
   const fieldsByKind = {}
   const byKind = {}
+  const brandFilterByKind = {}
   const items = { added: [], updated: [], deleted: [], skipped: [], duplicate: [] }
   const counts = {
     added: 0, updated: 0, deleted: 0, skipped: 0, duplicate: 0,
     outOfScope: 0, outOfFilter: 0, selfOrigin: 0, noChange: 0, total: 0, byKind,
-    duplicateShadowed: 0, truncated: 0,
+    duplicateShadowed: 0, truncated: 0, brandIgnored: 0,
     detailRows: 0, detailOutOfScope: 0, detailOutOfFilter: 0, directionBlocked: 0, periodFiltered: 0
   }
 
   for (const p of parts) {
     fieldsByKind[p.kind] = p.fields
     byKind[p.kind] = p.counts
+    if (p.brandFilter) brandFilterByKind[p.kind] = p.brandFilter
     for (const bucket of ['added', 'updated', 'deleted', 'skipped', 'duplicate']) items[bucket].push(...p.items[bucket])
     for (const k of [
       'added', 'updated', 'deleted', 'skipped', 'duplicate', 'outOfScope', 'outOfFilter',
-      'selfOrigin', 'noChange', 'total', 'duplicateShadowed', 'truncated',
+      'selfOrigin', 'noChange', 'total', 'duplicateShadowed', 'truncated', 'brandIgnored',
       'detailRows', 'detailOutOfScope', 'detailOutOfFilter', 'directionBlocked', 'periodFiltered'
     ]) {
       counts[k] += p.counts[k] || 0
@@ -546,6 +606,8 @@ export function buildPlanForKinds(db, opts) {
     targetUserId,
     fields: fieldsByKind[kinds[0]] || [],
     fieldsByKind,
+    // v1.13.352：逐对象的品牌筛选实况（哪些勾选被忽略、哪些真的在筛）
+    brandFilterByKind,
     items,
     counts,
     // ★ 供 `applyPlan` 重建范围过滤器：快照明细的按城市过滤发生在 apply 阶段，
@@ -575,6 +637,9 @@ export function listCandidates(db, opts) {
   if (kind === SNAPSHOT_KIND) return listSnapshotCandidates(db, opts)
 
   const matcher = buildScopeMatcher(scopeJson, belongUserId)
+  // v1.13.352：与 buildPlan 同一套收窄 —— 否则「候选 N 家」与「预览 M 行」会不一致
+  const brandNarrow = narrowBrandFilter(db, sourceUserId, kind, matcher.brands)
+  matcher.brands = brandNarrow.set || new Set()
   const rows = db.prepare(`SELECT * FROM ${kind} WHERE user_id = ?`).all(sourceUserId) || []
 
   const inScope = []
@@ -615,7 +680,11 @@ export function listCandidates(db, opts) {
     })
   }
 
-  return { kind, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin, duplicate }
+  return {
+    kind, total: rows.length, inScope, outOfScope, outOfFilter, selfOrigin, duplicate,
+    // v1.13.352：品牌筛选实际生效情况（applied=false ⇒ 勾的品牌与该对象无关，按不限处理）
+    brandFilter: { applied: !!brandNarrow.set, kept: brandNarrow.kept, ignored: brandNarrow.ignored }
+  }
 }
 
 /**
@@ -635,7 +704,7 @@ export function listCandidatesForKinds(db, opts) {
 
   const out = {
     kinds, total: 0, inScope: [], outOfScope: 0, outOfFilter: 0, selfOrigin: 0, duplicate: 0,
-    detailRows: 0, byKind: {}
+    detailRows: 0, byKind: {}, brandFilterByKind: {}, brandIgnored: 0
   }
   for (const p of parts) {
     out.byKind[p.kind] = {
@@ -643,6 +712,11 @@ export function listCandidatesForKinds(db, opts) {
       outOfScope: p.outOfScope, outOfFilter: p.outOfFilter, selfOrigin: p.selfOrigin,
       duplicate: p.duplicate,
       detailRows: p.detailRows || 0    // 快照：本辖区的明细行数（「N 期 / M 行」要分开说）
+    }
+    // v1.13.352：品牌筛选被忽略的勾选（勾了自有品牌却要同步竞品）必须能传到界面
+    if (p.brandFilter) {
+      out.brandFilterByKind[p.kind] = p.brandFilter
+      out.brandIgnored += (p.brandFilter.ignored || []).length
     }
     out.total += p.total
     out.inScope.push(...p.inScope)
@@ -715,7 +789,7 @@ function snapshotFilters({ scopeJson = null, keyword = '', periods = [] } = {}) 
 /** 头表是否在范围内（只判品牌；城市维度留给明细） */
 function snapshotHeaderAllowed(snap, f) {
   if (f.brands && f.brands.size > 0) {
-    const b = String((snap && snap.brand) || '').trim()
+    const b = normalizeBrand((snap && snap.brand) || '')
     if (!f.brands.has(b)) return false
   }
   return true

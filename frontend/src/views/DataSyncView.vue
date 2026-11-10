@@ -163,10 +163,21 @@
                 clearable
                 placeholder="全部品牌"
                 size="small"
-                style="width:170px;"
+                style="width:190px;"
                 :disabled="!consented"
               >
-                <el-option v-for="b in scopeBrandOptions" :key="b" :label="b" :value="b" />
+                <!-- v1.13.352：按语义分组 —— 自有品牌只影响「我的门店」，竞品品牌只影响「竞品门店」 -->
+                <template v-if="hasBrandGroups">
+                  <el-option-group v-if="brandGroupOptions.my.length" label="我的门店品牌">
+                    <el-option v-for="b in brandGroupOptions.my" :key="'my:'+b" :label="b" :value="b" />
+                  </el-option-group>
+                  <el-option-group v-if="brandGroupOptions.competitors.length" label="竞品品牌">
+                    <el-option v-for="b in brandGroupOptions.competitors" :key="'comp:'+b" :label="b" :value="b" />
+                  </el-option-group>
+                </template>
+                <template v-else>
+                  <el-option v-for="b in scopeBrandOptions" :key="b" :label="b" :value="b" />
+                </template>
               </el-select>
               <el-input
                 v-model="filter.keyword"
@@ -193,7 +204,37 @@
               <span v-if="candidateSummary.selfOrigin" class="ds-muted">
                 · 防回环跳过 {{ candidateSummary.selfOrigin }} 条
               </span>
+              <!-- v1.13.352：勾选被忽略时**必须说出来**，否则用户只会以为「怎么一家都没同步到」 -->
+              <span v-if="candidateSummary.brandIgnored" class="ds-warn">
+                · 品牌筛选已忽略 {{ candidateSummary.brandIgnored }} 项（与所选对象无关）
+              </span>
               <span v-if="lastSync" class="ds-muted" style="margin-left:auto;">上次同步：{{ lastSync }}</span>
+            </div>
+
+            <!-- v1.13.352：前置依赖 / 品牌口径提示。放在按钮之前 —— 用户是在这里做决定的 -->
+            <div v-if="prereqWarnings.length" class="ds-prereq">
+              <el-alert
+                v-for="w in prereqWarnings"
+                :key="w.code"
+                :type="w.level === 'info' ? 'info' : 'warning'"
+                :closable="false"
+                show-icon
+                :title="w.title"
+                :description="w.message"
+                style="margin-bottom:8px;"
+              />
+            </div>
+            <div v-if="brandFilterHint.length" class="ds-prereq">
+              <el-alert
+                v-for="h in brandFilterHint"
+                :key="h.kind"
+                type="info"
+                :closable="false"
+                show-icon
+                :title="`「${h.label}」的品牌筛选已忽略：${h.ignored.join('、')}`"
+                description="这些品牌不在该对象的数据里（例如把自有品牌勾给了竞品门店），本次该对象按「不限品牌」处理。要按品牌收窄，请勾选属于它的品牌。"
+                style="margin-bottom:8px;"
+              />
             </div>
 
             <div class="ds-actions">
@@ -704,6 +745,35 @@ const scopeCities = ref([])
 const scopeBrands = ref([])
 const cityOptions = ref([])     // [{name, key, count}]
 const brandOptions = ref([])
+/**
+ * v1.13.352：品牌候选**分组**（后端 scope-options.brandGroups）。
+ * 为什么要分组：`scope_json.brands` 是两表共用的一个白名单，但 markers.brand 是
+ * **自有品牌**、competitors.brand 是**竞品品牌**。混在一个下拉里时，用户勾了
+ * 「滨寿司」去同步竞品门店 ⇒ 交集为空 ⇒ 0 行，而界面上只多一行「筛选外丢弃」，
+ * 根本看不出根因。分组后一眼能看出「我勾的这组会影响哪个对象」。
+ */
+const brandGroups = ref({ my: [], competitors: [] })
+const ignoredBrands = ref([])       // 被「按对象收窄」忽略掉的勾选
+const brandFilterHint = ref([])     // [{kind,label,ignored,applied}]
+const prereq = ref(null)            // 后端 buildPrereq 的结果
+// ⚠️ KIND_LABEL 在本文件下方已有定义（不要重复声明 —— SFC 编译会直接报
+//    「Identifier 'KIND_LABEL' has already been declared」，而 vitest 的源码守卫看不出来）
+/** 前置依赖警告（没有自有门店 ⇒ 竞品分不了池）—— 只在渲染时过滤，⛔ 不就地改后端数据 */
+const prereqWarnings = computed(() => {
+  const list = prereq.value?.warnings || []
+  // 方向②（子公司→集团，集团账号不靠自有门店分池）只保留 info 级别，避免误伤
+  return isMember.value ? list : list.filter(w => w.level === 'info')
+})
+
+/** 分组下拉的选项（仍按当前管辖范围的品牌白名单收窄，与原 scopeBrandOptions 同义） */
+const brandGroupOptions = computed(() => {
+  const allow = scopeBrands.value.length ? new Set(scopeBrands.value) : null
+  const pick = (arr) => (allow ? arr.filter(b => allow.has(b)) : arr)
+  return { my: pick(brandGroups.value.my || []), competitors: pick(brandGroups.value.competitors || []) }
+})
+const hasBrandGroups = computed(
+  () => brandGroupOptions.value.my.length > 0 || brandGroupOptions.value.competitors.length > 0
+)
 
 const filter = ref({ cities: [], brands: [], keyword: '' })
 // 快照默认不勾：与「竞品门店」保持一致的显式选择习惯（一次可能写入上千行明细）
@@ -991,6 +1061,8 @@ async function loadAll () {
       const opts = await safeGet('/sync/scope-options', { orgId: orgId.value, userId: isMember.value ? undefined : targetMember.value })
       cityOptions.value = opts.cities || []
       brandOptions.value = opts.brands || []
+      // v1.13.352：分组候选（老后端没有这个字段 ⇒ 回退成并集单列，行为不变）
+      brandGroups.value = opts.brandGroups || { my: [], competitors: [] }
     } catch (e) {
       console.error('读取下拉选项失败:', e)
       ElMessage.warning('读取管辖范围选项失败，下拉可能为空')
@@ -1017,12 +1089,44 @@ async function loadCandidates () {
         outOfFilter: d.outOfFilter,
         selfOrigin: d.selfOrigin,
         // 快照：候选的「期数」与「明细行数」是两回事（1 期可能上千行）
-        detailRows: d.detailRows || 0
+        detailRows: d.detailRows || 0,
+        // v1.13.352：被「按对象收窄」忽略掉的品牌勾选（勾了自有品牌却要同步竞品）
+        brandIgnored: d.brandIgnored || 0
       }
+      applyBrandFilterReport(d.brandFilterByKind)
+      applyPrereq(d.prereq)
     } catch (e) {
       console.error('查询候选失败:', e)
     }
   }
+}
+
+/** v1.13.352：把「哪些勾选被忽略了」记下来，供下拉下方明示（⛔ 不再静默 0 行） */
+function applyBrandFilterReport (byKind) {
+  const ignored = new Set()
+  for (const rep of Object.values(byKind || {})) {
+    for (const b of (rep?.ignored || [])) ignored.add(String(b))
+  }
+  ignoredBrands.value = [...ignored]
+  // 同步时品牌筛选的实况：某一对象完全没生效（勾的品牌与该对象无关）
+  brandFilterHint.value = Object.entries(byKind || {})
+    .filter(([, rep]) => rep && rep.ignored && rep.ignored.length)
+    .map(([kind, rep]) => ({
+      kind,
+      label: KIND_LABEL[kind] || kind,
+      ignored: rep.ignored,
+      applied: !!rep.applied
+    }))
+}
+
+/**
+ * v1.13.352：前置依赖检查结果（后端 buildPrereq）。
+ * 为什么不能只靠「预览时的行数」判断：竞品同步下来是**能落库的**，
+ * 缺的是「自有门店」这个分池骨架 —— 没有它，竞争分/信号灯/AI 周边会按全量算，
+ * 全程不报错。所以必须在用户可以反悔的阶段（候选/预览）把后果写出来。
+ */
+function applyPrereq (p) {
+  prereq.value = p || null
 }
 
 async function loadTargetScope () {
@@ -1044,6 +1148,9 @@ async function doPreview () {
       : { userId: targetMember.value, direction: 'member_to_group', kinds: kindsForDirection('member_to_group'), filter: { keyword: '' } }
     const d = await api.post('/sync/preview', body)
     preview.value = d
+    // v1.13.352：预览是用户最后一次能反悔的地方 ⇒ 前置依赖与品牌筛选实况都要刷新
+    applyPrereq(d.prereq)
+    applyBrandFilterReport(d.brandFilterByKind)
     checkedKeys.value = [
       ...d.items.added.map(i => i.key),
       ...d.items.updated.map(i => i.key),
@@ -1397,6 +1504,8 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-danger { color: #f56c6c; }
 .ds-changes { font-size: 12px; color: #606266; }
 .ds-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+/* v1.13.352：前置依赖 / 品牌口径提示区（放在预览按钮之前） */
+.ds-prereq { margin: 0 0 10px; }
 
 /* ==== 知情确认（v1.13.152）==== */
 /* 提示条与「① 从集团同步」之间留白：它虽在区块之外，但语义上是该区块的前置条件 */

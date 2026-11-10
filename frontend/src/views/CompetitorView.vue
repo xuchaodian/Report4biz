@@ -6,9 +6,21 @@
         <div class="data-header">
           <h2>竞品管理</h2>
           <div class="header-actions">
-            <el-select v-model="analysisBrand" clearable placeholder="分析品牌（不限）" style="width:170px" @change="onAnalysisBrandChange">
+            <!-- v1.13.352：「全部品牌」必须是**可见选项**，⛔ 不能再靠留空/清空表达全量
+                 （留空＝不传 myBrand⇒后端全量，这条隐形通道让「我要全量」和「我没配」分不清） -->
+            <el-select v-model="analysisBrand" placeholder="分析品牌" style="width:186px" @change="onAnalysisBrandChange">
+              <el-option label="全部品牌（不筛选）" :value="MY_BRAND_ALL" />
               <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
             </el-select>
+            <!-- ⚠️ 不要加 myBrands.length 前置条件：没有自有门店时恰恰最需要这句
+                 「无自有门店 · 竞品按全量」—— 否则用户看不出结论为什么不分池 -->
+            <el-tag
+              v-if="analysisScopeTag"
+              :type="analysisScopeTag.type"
+              :effect="analysisScopeTag.effect"
+              size="small"
+              class="scope-tag"
+            >{{ analysisScopeTag.text }}</el-tag>
             <el-button @click="openMapConfig">品牌竞品映射</el-button>
             <el-button type="primary" @click="showAddDialog">
               <el-icon><Plus /></el-icon>添加竞品
@@ -315,7 +327,7 @@
       />
       <!-- v1.13.351：继承自集团的映射 —— 回显的是集团口径，保存即转为本账号独立配置 -->
       <el-alert
-        v-if="mapBrandSource === 'group'"
+        v-if="isInheritedScope"
         type="success" :closable="false" show-icon style="margin-bottom:12px"
         :title="`当前沿用「${inheritName}」的集团映射（无需子公司重复配置）`"
         description="这是继承来的口径：集团改映射，这里跟着变。点「保存」即转为当前账号的独立配置，之后不再跟随集团。"
@@ -326,16 +338,29 @@
             <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
           </el-select>
         </el-form-item>
-        <el-form-item label="竞品品牌">
+        <el-form-item label="筛选方式">
+          <!-- v1.13.352：显式「不筛选」出口 —— 有了它，用户不必再靠「删掉配置」或
+               「分析品牌留空」这种副作用来表达「我就是要全量」 -->
+          <el-radio-group v-model="mapExplicitAll" :disabled="!mapMyBrand">
+            <el-radio-button :value="false">按竞品品牌筛选</el-radio-button>
+            <el-radio-button :value="true">不筛选（全部竞品）</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="!mapExplicitAll" label="竞品品牌">
           <el-select v-model="mapCompBrands" multiple filterable allow-create clearable
                      placeholder="可多选，也可输入新品牌" style="width:100%">
             <el-option v-for="b in availableCompBrands" :key="b" :label="b" :value="b" />
           </el-select>
         </el-form-item>
+        <el-alert
+          v-else
+          type="info" :closable="false" show-icon style="margin:0 0 4px 110px"
+          title="该自有品牌将使用账号下的全部竞品参与计算（不分池）"
+        />
       </el-form>
       <template #footer>
         <el-button @click="mapDialogVisible = false">取消</el-button>
-        <el-button :disabled="!mapMyBrand || !scopeMetaLoaded || mapBrandSource === 'group'" @click="resetMapScope">{{ resetMapLabel }}</el-button>
+        <el-button :disabled="!mapMyBrand || !scopeMetaLoaded || !canResetMap" @click="resetMapScope">{{ resetMapLabel }}</el-button>
         <el-button type="primary" :loading="mapSaving" :disabled="!mapMyBrand || !scopeMetaLoaded" @click="saveMapScope">保存</el-button>
       </template>
     </el-dialog>
@@ -361,7 +386,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Upload, Download, Search, Edit, Delete, Location, Close } from '@element-plus/icons-vue'
 import { useCompetitorStore } from '@/stores/competitor'
 import { currentUidOr } from '@/utils/currentUser.js'
-import { normBrand } from '@/utils/brandScope.js'
+import { normBrand, MY_BRAND_ALL, isAllBrandsToken, pickScope } from '@/utils/brandScope.js'
 import { decideBrandMapPrompt } from '@/utils/brandMapPrompt.js'
 import api from '@/utils/api'
 import SnapshotUploadPanel from '@/components/competitor/SnapshotUploadPanel.vue'
@@ -373,11 +398,15 @@ const competitorStore = useCompetitorStore()
 
 // ===== v1.13.344：分析品牌 + 品牌竞品映射 =====
 const BRAND_LS_KEY = () => `competitorAnalysisBrand_${currentUidOr('anon')}`
-const analysisBrand = ref('')
+// v1.13.352：默认值从「空串」改成显式哨兵 —— 空串＝后端「没传 myBrand」⇒ 全量，
+//   这条隐形通道让「我要全量」和「我没配」在界面与库里长得一样（详见后端注释）。
+const analysisBrand = ref(MY_BRAND_ALL)
 const mapDialogVisible = ref(false)
 const mapSaving = ref(false)
 const mapMyBrand = ref('')
 const mapCompBrands = ref([])
+// v1.13.352：映射弹窗的「不筛选（全量）」开关 —— 显式全量的界面出口
+const mapExplicitAll = ref(false)
 const scopeMeta = ref({
   myBrands: [],
   competitorBrands: [],
@@ -414,27 +443,74 @@ function applyScopeMeta(data) {
   }
 }
 
-/** 在 { 品牌: [...] } 里按归一值取值；undefined＝没有这个 key（🔴 与「空数组」严格区分） */
-function pickScope(map, brand) {
-  const k = normBrand(brand)
-  if (!k) return undefined
-  const hit = Object.keys(map || {}).find(x => normBrand(x) === k)
-  return hit === undefined ? undefined : (map[hit] || [])
+// 三态取值（undefined＝没配 / null＝显式全量 / []＝明确无竞品）只有一份实现，
+// 在 utils/brandScope.js::pickScope —— ⛔ 别在本文件再写一版（352 就翻在 `|| []` 上）
+const inheritName = computed(() => scopeMeta.value.inherit?.orgName || '集团')
+
+/**
+ * 该品牌的口径**来自谁**：'own'＝本账号配的 / 'group'＝继承集团 / null＝两边都没有。
+ * ⚠️ 与 brandSourceOf 分开是因为「来源」和「筛选方式」是两个维度：
+ *    集团把该品牌设成「全量」时，source='all' 但 origin 仍是 'group' ——
+ *    界面要同时说清「沿用集团」和「不筛选」，⛔ 不能用一个枚举硬塞。
+ */
+function brandOriginOf(brand) {
+  if (!brand || isAllBrandsToken(brand)) return null
+  if (pickScope(scopeMeta.value.ownScopes, brand) !== undefined) return 'own'
+  if (pickScope(scopeMeta.value.inheritedScopes, brand) !== undefined) return 'group'
+  return null
 }
 
-const inheritName = computed(() => scopeMeta.value.inherit?.orgName || '集团')
-/** 当前选中品牌的映射来源：self＝自己配的 / group＝继承集团 / none＝未配置（全量） */
-const mapBrandSource = computed(() => {
-  if (!mapMyBrand.value) return 'none'
-  if (pickScope(scopeMeta.value.ownScopes, mapMyBrand.value) !== undefined) return 'self'
-  if (pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined) return 'group'
-  return 'none'
+/**
+ * v1.13.352：某自有品牌的**映射来源** —— 全页唯一判据（⛔ 别在别处再写一份）
+ *   'self'  本账号自己配的（含显式空集 []）
+ *   'group' 继承集团（集团那边可能是 map，也可能是 all）
+ *   'all'   显式全量（mode='all'，自己或集团设的）—— 与 'none' 严格区分：
+ *           'none' 是「还没配」（349 要拦），'all' 是「已决策」（349 必须放过）
+ *   'none'  未配置
+ * ⚠️ pickScope 返回 undefined＝没有这个 key；返回 null＝显式全量（352 新语义）
+ */
+function brandSourceOf(brand) {
+  if (!brand) return 'none'
+  if (isAllBrandsToken(brand)) return 'all'
+  const origin = brandOriginOf(brand)
+  if (!origin) return 'none'
+  const v = origin === 'own'
+    ? pickScope(scopeMeta.value.ownScopes, brand)
+    : pickScope(scopeMeta.value.inheritedScopes, brand)
+  if (v === null) return 'all'
+  return origin === 'own' ? 'self' : 'group'
+}
+
+/** 当前品牌是不是「纯继承」态（自己没有配置、集团有）—— 绿色提示条 / 禁用「取消」都看它 */
+const isInheritedScope = computed(() => brandOriginOf(mapMyBrand.value) === 'group')
+
+/** 当前口径的一行说明：把「为什么是全量/为什么只看这几个竞品」直接写在页头 */
+const analysisScopeTag = computed(() => {
+  if (!scopeMetaLoaded.value) return null
+  const b = analysisBrand.value
+  if (isAllBrandsToken(b)) {
+    return myBrands.value.length
+      ? { text: '全部竞品 · 不按品牌筛选', type: 'info', effect: 'plain' }
+      : { text: '无自有门店 · 竞品按全量', type: 'warning', effect: 'plain' }
+  }
+  const src = brandSourceOf(b)
+  if (src === 'self') return { text: '按本账号映射', type: 'success', effect: 'plain' }
+  if (src === 'group') return { text: `继承「${inheritName.value}」映射`, type: 'success', effect: 'plain' }
+  if (src === 'all') return { text: '该品牌已设为全量', type: 'info', effect: 'plain' }
+  return { text: '未配映射 · 按全量竞品', type: 'warning', effect: 'plain' }
 })
-/** 「恢复」按钮文案：删掉自有配置后到底回到集团口径还是全量，⛔ 不能一律写「恢复全量」 */
+
+/** 本账号对该品牌是否有**自己**的配置（决定「取消」按钮能不能点） */
+const canResetMap = computed(() => pickScope(scopeMeta.value.ownScopes, mapMyBrand.value) !== undefined)
+/** 「取消」按钮文案：删掉自有配置后到底回落到集团口径还是全量，⛔ 不能一律写「恢复全量」 */
 const resetMapLabel = computed(() => {
-  if (mapBrandSource.value === 'group') return '已是集团口径'
-  if (pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined) return '恢复为集团口径'
-  return '恢复全量'
+  if (!canResetMap.value) {
+    return pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined
+      ? '已是集团口径' : '尚未配置'
+  }
+  return pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value) !== undefined
+    ? '取消配置（回落集团口径）'
+    : '取消配置（回到全量）'
 })
 
 // 🔴 归一函数只有一份：utils/brandScope.js::normBrand（与后端 normalizeBrand 同规则）
@@ -453,28 +529,41 @@ async function loadScopeMeta() {
 }
 async function openMapConfig() {
   await loadScopeMeta() // 先拉到最新映射再回显，避免竞态把已有配置显示成空
-  mapMyBrand.value = analysisBrand.value || (myBrands.value[0] || '')
+  // ⚠️ 「全部品牌」哨兵不是真实品牌，⛔ 不能带进映射弹窗（否则 400 或错配）
+  mapMyBrand.value = (!isAllBrandsToken(analysisBrand.value) && analysisBrand.value)
+    || (myBrands.value[0] || '')
   onMapBrandChange()
   mapDialogVisible.value = true
 }
 // 回显三级：自己配的 → 继承集团的 → 空（未配置＝全量）
+// v1.13.352：值为 null ⇒ 显式全量 ⇒ 打开「不筛选」开关、竞品品牌清空
 function onMapBrandChange() {
   const own = pickScope(scopeMeta.value.ownScopes, mapMyBrand.value)
   const inherited = pickScope(scopeMeta.value.inheritedScopes, mapMyBrand.value)
   const v = own !== undefined ? own : (inherited !== undefined ? inherited : [])
-  mapCompBrands.value = [...(v || [])]
+  mapExplicitAll.value = v === null
+  mapCompBrands.value = Array.isArray(v) ? [...v] : []
 }
 async function saveMapScope() {
   if (!scopeMetaLoaded.value) { ElMessage.error('配置读取失败，已阻止保存以免覆盖现有配置'); return }
-  const wasInherited = mapBrandSource.value === 'group'
+  const wasInherited = isInheritedScope.value
   mapSaving.value = true
   try {
-    const data = await api.put('/brand-competitor-map', { myBrand: mapMyBrand.value, competitorBrands: mapCompBrands.value })
+    const payload = mapExplicitAll.value
+      ? { myBrand: mapMyBrand.value, competitorBrands: [], mode: 'all' }
+      : { myBrand: mapMyBrand.value, competitorBrands: mapCompBrands.value, mode: 'map' }
+    const data = await api.put('/brand-competitor-map', payload)
     applyScopeMeta(data)
     await competitorStore.fetchCompetitors(true)
-    ElMessage.success(wasInherited
-      ? '已保存为本账号的独立配置，之后不再跟随集团'
-      : '已保存；该品牌的竞品统计按新集合收窄')
+    if (mapExplicitAll.value) {
+      ElMessage.success(wasInherited
+        ? '已保存为本账号的独立配置：该品牌不按竞品映射筛选'
+        : '已保存：该品牌不按竞品映射筛选（全部竞品参与计算）')
+    } else {
+      ElMessage.success(wasInherited
+        ? '已保存为本账号的独立配置，之后不再跟随集团'
+        : '已保存；该品牌的竞品统计按新集合收窄')
+    }
     mapDialogVisible.value = false
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '保存失败')
@@ -494,12 +583,27 @@ async function resetMapScope() {
   } catch (e) { ElMessage.error(e?.response?.data?.message || '操作失败') }
 }
 async function onAnalysisBrandChange(v) {
-  try { localStorage.setItem(BRAND_LS_KEY(), String(v || '')) } catch (e) { /* 隐私模式降级 */ }
-  await competitorStore.setMyBrand(v || '')
+  // v1.13.352：空值一律归一成显式哨兵 —— ⛔ 不再用「空串」表达全量
+  const val = v ? String(v) : MY_BRAND_ALL
+  try { localStorage.setItem(BRAND_LS_KEY(), val) } catch (e) { /* 隐私模式降级 */ }
+  await competitorStore.setMyBrand(val)
 }
 // 恢复上次选择（按 uid 命名空间，⛔ 不共用 localStorage.userId）
-try { analysisBrand.value = localStorage.getItem(BRAND_LS_KEY()) || '' } catch (e) { /* 忽略 */ }
+// v1.13.352：老值可能是 ''（旧版「全量」的隐式表达）⇒ 迁移成显式哨兵后重新落盘
+try {
+  const saved = localStorage.getItem(BRAND_LS_KEY()) || ''
+  analysisBrand.value = saved ? saved : MY_BRAND_ALL
+  if (!saved) localStorage.setItem(BRAND_LS_KEY(), MY_BRAND_ALL)
+} catch (e) { /* 忽略 */ }
 competitorStore.filters.myBrand = analysisBrand.value
+// v1.13.352：存的品牌可能已经不在门店里了（品牌改名/门店清空）⇒ 自动回到「全部品牌」，
+//   否则后端 owns 闸门会判 none ⇒ 静默全量，而界面上还显示着那个旧品牌名。
+watch(myBrands, (list) => {
+  if (!list || !list.length) return
+  const cur = analysisBrand.value
+  if (isAllBrandsToken(cur)) return
+  if (!list.some(b => normBrand(b) === normBrand(cur))) onAnalysisBrandChange(MY_BRAND_ALL)
+})
 // v1.13.349：进页复查「有没有品牌没配映射」—— 硬阻断唯一的缺口是用户关标签页，靠这条补上
 checkRequiredBrandMapOnEnter()
 
@@ -1027,8 +1131,10 @@ const handleExport = async () => {
   align-items: center;
   margin-bottom: 20px;
   h2 { margin: 0; font-size: 18px; color: #333; }
-  .header-actions { display: flex; gap: 10px; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
 }
+/* v1.13.352：当前竞品口径（继承集团 / 本账号映射 / 未配映射 / 全量）—— 就贴在「分析品牌」右边 */
+.scope-tag { flex: none; }
 .filter-bar {
   background: white;
   padding: 15px;

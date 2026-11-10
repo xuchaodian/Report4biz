@@ -790,10 +790,18 @@ export async function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       my_brand TEXT NOT NULL,
+      mode TEXT DEFAULT 'map',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, my_brand)
     )
   `)
+  // v1.13.352：mode 列 —— 「显式全量」的落点。
+  //   'map'（默认，含所有历史行）＝按 brand_competitor_map 筛选竞品；
+  //   'all' ＝ 用户主动选择「这个自有品牌不按映射筛选」。
+  // 🔴 为什么需要它：352 之前「全量」只能靠「没配过」表达，于是
+  //   「没配过（待配置）」与「我要全量（已决策）」在库里长得一模一样，
+  //   349 硬阻断只能把两者都当成待配置反复拦人，或者都放过 ⇒ 口径静默放宽。
+  try { db.run(`ALTER TABLE brand_competitor_scope ADD COLUMN mode TEXT DEFAULT 'map'`) } catch (e) { /* 列已存在 */ }
   db.run(`
     CREATE TABLE IF NOT EXISTS brand_competitor_map (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

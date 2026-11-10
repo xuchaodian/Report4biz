@@ -124,6 +124,85 @@ function resolveOrgView(req, db) {
 }
 
 /**
+ * 同步前置依赖检查（v1.13.352）
+ *
+ * 为什么需要：竞品门店与「我的门店」之间有**隐式顺序依赖**，但它不在 API 契约里 ——
+ *   竞品能不能按自有品牌分池，取决于 `resolveBrandScope(目标账号, 自有品牌)`，
+ *   而它的第一道闸门 `ownsMyBrand` 查的是 `markers.brand`（维表在目标账号自己名下）。
+ *   ⇒ 目标账号没有自有门店时：
+ *     ① 「分析品牌」下拉为空、349 补映射弹窗**也不会弹**（空品牌列表 ⇒ 不阻断）
+ *        ⇒ 界面看起来完全正常；
+ *     ② 映射解析在 owns 闸门就返回 none ⇒ **静默全量** ⇒ 多品牌账号的
+ *        滨寿司与食其家的竞品被混在同一个池里算竞争分 / 体检信号灯 / AI 周边。
+ *   全程没有任何报错，只有结论悄悄偏红 —— 这正是必须在预览阶段说出来的原因。
+ *
+ * ⚠️ 只提示、⛔ 不阻断：确实存在「只做竞品调研、没有自有门店」的合法账号，
+ *    拦下来会把人堵死在错误的地方。要表达「确实没有竞品」用映射里的显式空集。
+ *
+ * @returns {{target:object, source:object, warnings:Array<{code,level,title,message}>}}
+ */
+export function buildPrereq(db, { kinds = [], sourceUserId, targetUserId } = {}) {
+  const n = (sql, ...p) => (db.prepare(sql).get(...p)?.n || 0)
+  const markerCount = (uid) => n(
+    `SELECT COUNT(*) AS n FROM markers WHERE user_id = ? AND merged_into IS NULL`, uid
+  )
+  const myBrandCount = (uid) => n(
+    `SELECT COUNT(DISTINCT UPPER(TRIM(brand))) AS n FROM markers
+      WHERE user_id = ? AND merged_into IS NULL AND brand IS NOT NULL AND TRIM(brand) != ''`, uid
+  )
+  const compCount = (uid) => n(`SELECT COUNT(*) AS n FROM competitors WHERE user_id = ?`, uid)
+  const scopeCount = (uid) => n(`SELECT COUNT(*) AS n FROM brand_competitor_scope WHERE user_id = ?`, uid)
+
+  const target = {
+    markers: markerCount(targetUserId),
+    myBrands: myBrandCount(targetUserId),
+    competitors: compCount(targetUserId)
+  }
+  const source = {
+    markers: markerCount(sourceUserId),
+    myBrands: myBrandCount(sourceUserId),
+    competitors: compCount(sourceUserId),
+    mapRows: scopeCount(sourceUserId)
+  }
+
+  const wantsComp = kinds.includes('competitors') || kinds.includes('competitor_snapshots')
+  const wantsMarkers = kinds.includes('markers')
+  const warnings = []
+
+  if (wantsComp && target.markers === 0) {
+    warnings.push({
+      code: 'competitors_without_markers',
+      level: 'warning',
+      title: wantsMarkers
+        ? '本次同步后目标账号才会有「我的门店」，映射要等下一次刷新才生效'
+        : '本次没有勾选「我的门店」，目标账号当前也没有自有门店',
+      message: wantsMarkers
+        ? '竞品门店与自有门店会在同一批落库。落库后请重新进入竞品页：品牌竞品映射要基于「我的门店」里的品牌才能算出分池，本次预览阶段还没有这些品牌。'
+        : '竞品门店会照常落库，但目标账号没有任何自有门店 ⇒ 竞品无法按自有品牌分池：竞争分、门店体检信号灯、AI 周边会把全部竞品算在每个品牌头上。建议同时勾选「我的门店」，或先单独同步一次我的门店。'
+    })
+  } else if (wantsComp && target.myBrands === 0 && target.markers > 0) {
+    warnings.push({
+      code: 'markers_without_brand',
+      level: 'warning',
+      title: '目标账号的门店没有填品牌',
+      message: `目标账号有 ${target.markers} 家门店，但没有一家填了品牌 ⇒ 无法建立「自有品牌 → 竞品品牌」的映射，竞品会按全量计算。请先在「我的门店」补齐品牌字段（可用「补数据」批量补）。`
+    })
+  }
+
+  // 映射本身不是同步对象 —— 这条不提示的话，子公司会以为「集团同步时没把映射带下来」
+  if (wantsComp && source.mapRows > 0 && target.markers === 0) {
+    warnings.push({
+      code: 'map_not_synced',
+      level: 'info',
+      title: '集团已配好竞品映射，但它不会随同步下发',
+      message: '品牌竞品映射是各账号自己的消费配置（不在同步对象里）。子公司不需要重复配置：自有门店同步下来、且门店里有对应品牌后，会自动继承集团口径。'
+    })
+  }
+
+  return { target, source, warnings }
+}
+
+/**
  * 解析「源 / 目标 / 成员」三要素（两个方向共用）。
  *   group_to_member → 源 = 集团账号，目标 = 成员
  *   member_to_group → 源 = 成员，    目标 = 集团账号
@@ -283,30 +362,37 @@ router.get('/scope-options', authenticate, (req, res) => {
     //   否则会出现「下拉里能选、保存却被 400」（v0.13 R1 起的硬要求）。
     const cities = aggregateMarkersCities(db, sourceUserId)
 
-    // ---- 品牌候选：自家门店 ∪ 竞品门店 ----
+    // ---- 品牌候选：自家门店 ∪ 竞品门店 ∪ 快照 ----
+    // ⚠️ v1.13.352：并集仍是 `brands`（保持契约），但**同时给分组** ——
+    //   三者的 brand 语义互不相同（自有品牌 / 竞品品牌），前端必须分组展示，
+    //   否则用户勾了自有品牌去筛竞品门店 ⇒ 老版本会静默 0 行。
     const brandSet = new Set()
-    const pushBrands = (rows) => {
+    const brandGroups = { my: new Set(), competitors: new Set(), snapshots: new Set() }
+    const pushBrands = (rows, group) => {
       for (const r of rows) {
         const b = String(r.brand ?? '').trim()
-        if (b) brandSet.add(b)
+        if (!b) continue
+        brandSet.add(b)
+        brandGroups[group].add(b)
       }
     }
     pushBrands(db.prepare(`
       SELECT DISTINCT brand FROM markers
        WHERE user_id = ? AND merged_into IS NULL AND brand IS NOT NULL AND TRIM(brand) != ''
-    `).all(sourceUserId))
+    `).all(sourceUserId), 'my')
     pushBrands(db.prepare(`
       SELECT DISTINCT brand FROM competitors
        WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
-    `).all(sourceUserId))
+    `).all(sourceUserId), 'competitors')
     // 快照品牌（P2/R3）：集团可能「只上传了季度快照、还没建竞品门店列表」
     // （线上实况就是如此：user4 名下 5 个快照 / 5637 行明细，competitors 却是 0 行）
     // ⇒ 不把快照品牌算进来，子公司侧的品牌下拉会是空的，等于同步不了竞品。
     pushBrands(db.prepare(`
       SELECT DISTINCT brand FROM competitor_snapshots
        WHERE user_id = ? AND brand IS NOT NULL AND TRIM(brand) != ''
-    `).all(sourceUserId))
-    const brands = [...brandSet].sort((a, b) => a.localeCompare(b, 'zh'))
+    `).all(sourceUserId), 'snapshots')
+    const byZh = (a, b) => a.localeCompare(b, 'zh')
+    const brands = [...brandSet].sort(byZh)
 
     // ---- 该成员当前已选（回显用；集团无数据的已选城市也应能显示出来）----
     let selected = []
@@ -326,6 +412,12 @@ router.get('/scope-options', authenticate, (req, res) => {
       kinds: SYNC_KINDS.map(k => ({ kind: k, ...KIND_META[k] })),
       cities,
       brands,
+      // v1.13.352：分组品牌候选。语义差异见上方 brandSet 注释 ——
+      //   my = 自有品牌（筛「我的门店」有效），competitors/snapshots = 竞品品牌（筛竞品有效）
+      brandGroups: {
+        my: [...brandGroups.my].sort(byZh),
+        competitors: [...new Set([...brandGroups.competitors, ...brandGroups.snapshots])].sort(byZh)
+      },
       // 三类来源（门店 ∪ 竞品 ∪ 快照明细）的行数合计。
       // ⚠️ 字段名沿用历史的 `totalMarkers`（前端未消费，保留以免破坏契约），
       //    语义自 v1.13.154 起已不止「门店」—— 改名前请先确认无外部消费者。
@@ -388,6 +480,8 @@ router.get('/candidates', authenticate, (req, res) => {
       scope: { cities: merged.cities, brands: merged.brands },
       scopeCities: parseCityList(tr.member.scope_json),
       ...out,
+      // v1.13.352：候选阶段就把「竞品没有自有门店可依附」说出来，别等到预览才发现
+      prereq: buildPrereq(db, { kinds, sourceUserId: tr.sourceUserId, targetUserId: tr.targetUserId }),
       emptyScope: parseCityList(tr.member.scope_json).length === 0,
       hint: parseCityList(tr.member.scope_json).length === 0
         ? '尚未为该账号设置管辖范围（城市）→ 没有任何行可同步。请先在「用户管理 → 集团/子公司」里点「设置范围」。'
@@ -492,6 +586,11 @@ router.post('/preview', authenticate, (req, res) => {
       //   前端若只用 source/member 两个名字画「A → B」会渲染成「子公司 → 子公司」
       targetName: displayName(db, tr.targetUserId),
       scope: { cities: merged.cities, brands: merged.brands },
+      // v1.13.352：前置依赖检查（「先把我的门店同步下来」这类隐式顺序，见 buildPrereq 注释）
+      prereq: buildPrereq(db, { kinds, sourceUserId: tr.sourceUserId, targetUserId: tr.targetUserId }),
+      // v1.13.352：逐对象的品牌筛选实况 —— 前端要在预览区明示「哪些勾选被忽略」
+      // ⚠️ 必须与 /candidates 同名字段（前端同一个 applyBrandFilterReport 消费两处）
+      brandFilterByKind: plan.brandFilterByKind || {},
       items: plan.items,
       counts: plan.counts
     })

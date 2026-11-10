@@ -108,7 +108,18 @@
             placeholder="不限"
             style="width: 100%"
           >
-            <el-option v-for="b in options.brands" :key="b" :label="b" :value="b" />
+            <!-- v1.13.352：分组只影响**展示**。同一个 scope.brands 会同时筛「我的门店」与
+                 「竞品门店」，但两份数据的 brand 语义不同 ⇒ 勾自有品牌只会筛到门店，
+                 勾竞品品牌只会筛到竞品。分开口径见同步页的候选栏提示。 -->
+            <el-option-group v-if="(options.brandGroups?.my || []).length" label="我的门店品牌">
+              <el-option v-for="b in options.brandGroups.my" :key="'my:'+b" :label="b" :value="b" />
+            </el-option-group>
+            <el-option-group v-if="(options.brandGroups?.competitors || []).length" label="竞品品牌">
+              <el-option v-for="b in options.brandGroups.competitors" :key="'comp:'+b" :label="b" :value="b" />
+            </el-option-group>
+            <template v-if="!(options.brandGroups?.my || []).length && !(options.brandGroups?.competitors || []).length">
+              <el-option v-for="b in options.brands" :key="b" :label="b" :value="b" />
+            </template>
           </el-select>
         </el-form-item>
       </el-form>
@@ -171,7 +182,7 @@ const loading = ref(false)
 const saving = ref(false)
 const cities = ref([])
 const brands = ref([])
-const options = ref({ cities: [], brands: [] })
+const options = ref({ cities: [], brands: [], brandGroups: { my: [], competitors: [] } })
 const occupancyMembers = ref([])
 
 /**
@@ -272,7 +283,10 @@ async function load() {
     ])
     options.value = {
       cities: optRes?.cities || [],
-      brands: optRes?.brands || []
+      brands: optRes?.brands || [],
+      // v1.13.352：品牌按语义分组（自有品牌 / 竞品品牌）。并集 brands 仍然保留，
+      // 写回 scope_json 的结构没变 —— 这里只是让「勾的品牌会影响哪个对象」可见。
+      brandGroups: optRes?.brandGroups || { my: [], competitors: [] }
     }
     const sc = scopeRes?.scope || { cities: [], brands: [] }
     cities.value = [...(sc.cities || [])]
