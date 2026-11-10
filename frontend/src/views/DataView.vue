@@ -887,6 +887,7 @@ import axios from 'axios'
 import Papa from 'papaparse'
 import { escapeHtml } from '@/utils/escapeHtml'
 import { currentUidOr } from '@/utils/currentUser.js'
+import { brandAllowed } from '@/utils/brandScope.js'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { SALES_BAND_OPTIONS, bandLabel } from '@/utils/salesBand'
 import { downloadStoreTemplate, downloadSalesTemplate } from '@/utils/importTemplates.js'
@@ -2205,15 +2206,11 @@ function countStoresInCircle(centerLat, centerLng, radiusM, excludeStoreId, stor
   }).length
 
   // v1.13.344：圆分析按「当前门店的自有品牌」取对应竞品集合；未配置 ⇒ 全量（老行为）
+  // v1.13.345：归一与集合判断收敛到 utils/brandScope.js，⛔ 不再在页面内自带 norm 副本
   const scopes = competitorStore.brandScopeMap || {}
-  const allowed = Object.prototype.hasOwnProperty.call(scopes, String(storeBrand || '')) ? scopes[String(storeBrand || '')] : null
-  const norm = v => String(v ?? '').replace(/\s+/g, ' ').trim().toUpperCase()
   const compCount = competitorStore.activeCompetitors.filter(c => {
     if (c.latitude == null || c.longitude == null) return false
-    if (Array.isArray(allowed)) {
-      const k = norm(c.brand)
-      if (!(allowed || []).some(b => norm(b) === k)) return false
-    }
+    if (!brandAllowed(scopes, storeBrand, c.brand)) return false
     return calculateDistance(centerLat, centerLng, c.latitude, c.longitude) <= radiusM
   }).length
 

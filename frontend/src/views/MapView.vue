@@ -146,6 +146,14 @@
             <el-input-number v-model="storeCircleRadius" :min="0.5" :max="10" :step="0.5" :precision="1" style="width:200px" />
           </el-form-item>
           <template v-if="storeCircleMode === 'opportunity'">
+            <el-form-item label="分析品牌">
+              <div style="width:100%;">
+                <el-select v-model="opportunityBrand" clearable placeholder="不限（全量竞品）" style="width:200px">
+                  <el-option v-for="b in opportunityBrandOptions" :key="b" :label="b" :value="b" />
+                </el-select>
+                <div style="font-size:12px;color:#909399;margin-top:4px;line-height:1.4;">按该自有品牌的竞品映射统计；不选或未配置＝全量</div>
+              </div>
+            </el-form-item>
             <el-form-item label="密度阈值">
               <el-input-number v-model="opportunityDensityThreshold" :min="1" :max="20" :step="1" style="width:200px" />
               <span style="margin-left:8px;font-size:12px;color:#909399;">网格内竞品≤该值视为机会区</span>
@@ -1900,6 +1908,7 @@ import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUiStore } from '@/stores/ui'
 import { useUserStore } from '@/stores/user'
 import { currentUidOr } from '@/utils/currentUser.js'
+import { scopeBrandsFor, groupByBrand, compPointsForBrand } from '@/utils/brandScope.js'
 import { authHeaders } from '@/utils/authHeaders.js'
 import AiAssistant from '@/components/AiAssistant.vue'
 import PoiResultPanel from '@/components/PoiResultPanel.vue'
@@ -2137,6 +2146,11 @@ const storeCircleFilters = ref({
 // 机会区分析参数
 const opportunityDensityThreshold = ref(2)   // 网格内竞品 ≤ 该值 → 机会区
 const opportunityScope = ref('viewport')     // 'viewport'=当前视野, 'city'=全城
+// v1.13.345：机会区网格没有「门店主体」，无法按店分池 ⇒ 必须显式选分析品牌。
+//   ⛔ 不隐式继承竞品页的 filters.myBrand：否则换个页面回来结果就变了却不知道为什么。
+//   空 = 全量；选了但该品牌未配置映射 ⇒ 仍全量（与后端「未配置＝全量」一致）。
+const opportunityBrand = ref('')
+const opportunityBrandOptions = computed(() => competitorStore.myBrands || [])
 let opportunityLayer = null                  // 机会区网格图层
 // 竞争追踪：指定竞争品牌（单选）
 const trackBrand = ref('')
@@ -2168,6 +2182,11 @@ watch(competitionBrands, (val) => {
   }
 })
 const competitionBrandList = computed(() => {
+  // v1.13.345：优先用全量竞品品牌（GET /competitors 的 brandScope.competitorBrands）。
+  //   竞品池被「分析品牌」收窄后，下拉若只取池内品牌，就会选不到被映射排除的品牌
+  //   （追踪模式会误报「没有找到品牌 X 的门店」）。
+  const full = competitorStore.competitorBrands || []
+  if (full.length) return [...full].sort()
   const brands = new Set()
   competitorStore.activeCompetitors.forEach(c => { if (c.brand) brands.add(c.brand) })
   return [...brands].sort()
@@ -2205,11 +2224,21 @@ function openCompetitionRadar(lat, lng, radiusM, store) {
   }
   const compPoints = allComps.filter(s => s.latitude && s.longitude)
 
+  // v1.13.345：与「门店竞争数」画圈同源 —— 按该门店自身自有品牌取竞品集合。
+  //   未配置 ⇒ 保持全量；显式空集 ⇒ 空数组（雷达显示 0 家，⛔ 不回落全量）。
+  let radarPoints = compPoints
+  if (store && store._type === '我的门店' && store.brand) {
+    const radarScopeMap = competitorStore.brandScopeMap || {}
+    if (scopeBrandsFor(radarScopeMap, store.brand) !== null) {
+      radarPoints = compPointsForBrand(groupByBrand(compPoints), radarScopeMap, store.brand) || []
+    }
+  }
+
   const brands = {}
   const dirs = [0, 0, 0, 0, 0, 0, 0, 0]
   let total = 0
   let distSum = 0
-  for (const p of compPoints) {
+  for (const p of radarPoints) {
     const d = calculateDistance(lat, lng, p.latitude, p.longitude)
     if (d > 0 && d <= radiusM) {
       total++
@@ -8676,7 +8705,8 @@ const applyStoreCircles = () => {
     ms = ms.filter(filterStoreByStatus)
     ms.forEach(m => {
       if (m.latitude && m.longitude) {
-        allStores.push({ latitude: m.latitude, longitude: m.longitude, name: m.name, _type: '我的门店', city: m.city || '' })
+        // v1.13.345：带上 brand —— 网点优化要按「每家门店自己的品牌」取竞品集合
+        allStores.push({ latitude: m.latitude, longitude: m.longitude, name: m.name, _type: '我的门店', city: m.city || '', brand: m.brand || '' })
       }
     })
   }
@@ -8738,7 +8768,16 @@ const applyStoreCircles = () => {
       }
     }
     const compPoints = allComps.filter(c => c.latitude && c.longitude)
-    if (compPoints.length === 0) {
+    // v1.13.345：网格没有门店主体 ⇒ 按对话框里显式选择的「分析品牌」收窄。
+    //   未选 / 该品牌未配置映射 ⇒ 全量；显式空集 ⇒ 空数组 ⇒ 直接提示无数据（⛔ 不回落全量）。
+    let oppPoints = compPoints
+    if (opportunityBrand.value) {
+      const oppScopeMap = competitorStore.brandScopeMap || {}
+      if (scopeBrandsFor(oppScopeMap, opportunityBrand.value) !== null) {
+        oppPoints = compPointsForBrand(groupByBrand(compPoints), oppScopeMap, opportunityBrand.value) || []
+      }
+    }
+    if (oppPoints.length === 0) {
       ElMessage.warning('没有竞品门店数据，无法分析机会区')
       return
     }
@@ -8750,7 +8789,7 @@ const applyStoreCircles = () => {
       bounds = { minLat: b.getSouth(), maxLat: b.getNorth(), minLng: b.getWest(), maxLng: b.getEast() }
     } else {
       let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity
-      compPoints.forEach(c => {
+      oppPoints.forEach(c => {
         if (c.latitude < minLat) minLat = c.latitude
         if (c.latitude > maxLat) maxLat = c.latitude
         if (c.longitude < minLng) minLng = c.longitude
@@ -8768,7 +8807,7 @@ const applyStoreCircles = () => {
 
     // 统计每个网格的竞品数
     const gridCounts = {}
-    compPoints.forEach(c => {
+    oppPoints.forEach(c => {
       const gi = Math.floor(c.latitude / latStep)
       const gj = Math.floor(c.longitude / lngStep)
       const key = gi + '_' + gj
@@ -8864,6 +8903,26 @@ const applyStoreCircles = () => {
     //  → eq 全筛掉(0结果)/lte 全放行/gte 全筛掉, 筛选形同虚设, v1.13.80-dev 已实测复现)
     const compPoints = allComps.filter(s => s.latitude && s.longitude).map(s => ({ lat: s.latitude, lng: s.longitude, brand: s.brand }))
 
+    // v1.13.345：按「每家门店自己的自有品牌」分池取竞品（344 遗留：原先是竞品页选中品牌的全局口径）
+    //   · 只有「我的门店」分池；竞品/品牌门店/购物中心作圆心时不筛（否则会把自己排除）
+    //   · 未配置 ⇒ 直接用全量数组（不复制）；显式空集 ⇒ 空数组 ⇒ 圈内竞品恒 0（⛔ 不得回退全量）
+    //   · 预分组 groupByBrand，避免每店对全量竞品重复做归一
+    const scopeMap = competitorStore.brandScopeMap || {}
+    const compsByBrand = groupByBrand(compPoints)
+    const poolCache = new Map()
+    const scopedBrandKeys = new Set()
+    const compPoolFor = (store) => {
+      if (!store || store._type !== '我的门店') return compPoints
+      const key = String(store.brand || '')
+      if (!key) return compPoints
+      if (poolCache.has(key)) return poolCache.get(key)
+      const allowed = scopeBrandsFor(scopeMap, key)
+      const pool = allowed === null ? compPoints : compPointsForBrand(compsByBrand, scopeMap, key)
+      poolCache.set(key, pool)
+      if (allowed !== null) scopedBrandKeys.add(key)
+      return pool
+    }
+
     storeCircleLayer = L.layerGroup().addTo(map)
     const compFilters = storeCircleFilters.value.competition
     let drawnCount = 0
@@ -8875,11 +8934,12 @@ const applyStoreCircles = () => {
       let myCount = 0
       let compCount = 0
       const brandCounts = {}
+      const compPool = compPoolFor(store)
       for (const p of myStorePoints) {
         const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
         if (d > 0 && d <= radiusM) myCount++
       }
-      for (const p of compPoints) {
+      for (const p of compPool) {
         const d = calculateDistance(store.latitude, store.longitude, p.lat, p.lng)
         if (d > 0 && d <= radiusM) {
           compCount++
@@ -8958,7 +9018,7 @@ const applyStoreCircles = () => {
     storeCircleLegendVisible.value = true
     console.log('[legend] competition mode - visibility set to', storeCircleLegendVisible.value, 'items:', storeCircleLegendItems.value.length)
     const totalInFilter = drawnCount
-    ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因品牌数量筛选未显示）` : ''}`)
+    ElMessage.success(`已为 ${totalInFilter} 家门店生成 ${storeCircleRadius.value}km 竞争分析${scopedBrandKeys.size ? `（${scopedBrandKeys.size} 个自有品牌已按映射取竞品）` : ''}${drawnCount < validStores.length ? `（${validStores.length - drawnCount} 家因品牌数量筛选未显示）` : ''}`)
     sceneDone.competition = true
     return
   }

@@ -210,11 +210,54 @@ def main():
         if '竞品列表' in wb.sheetnames:
             ws = wb['竞品列表']
 
-            # 查询当前用户的竞品门店
-            competitors = db.execute(
-                "SELECT * FROM competitors WHERE user_id = ?",
-                (user_id,)
-            ).fetchall()
+            # v1.13.345：按「本购买记录所属门店的自有品牌」取竞品集合（与后端 competitorScope 同口径）
+            #   未配置 / 门店名在 markers 里查不到 ⇒ None（全量，老行为与输出逐字节不变）
+            #   配置了但集合为空 ⇒ []（明确「该品牌无竞品」⇒ SQL 用 1 = 0，⛔ 不得退化成全量）
+            #   旧库无映射表 ⇒ except 回退 None，⛔ 不得让整份导出失败
+            def resolve_comp_brands(conn, uid, sname):
+                if not sname:
+                    return None
+                mrow = conn.execute(
+                    "SELECT brand FROM markers WHERE user_id = ? AND name = ? AND merged_into IS NULL LIMIT 1",
+                    (uid, sname)
+                ).fetchone()
+                my_brand = str((mrow['brand'] if mrow else '') or '').strip()
+                if not my_brand:
+                    return None
+                try:
+                    scoped = conn.execute(
+                        "SELECT 1 FROM brand_competitor_scope WHERE user_id = ? AND my_brand = ?",
+                        (uid, my_brand)
+                    ).fetchone()
+                    if not scoped:
+                        return None
+                    rows = conn.execute(
+                        "SELECT competitor_brand FROM brand_competitor_map WHERE user_id = ? AND my_brand = ?",
+                        (uid, my_brand)
+                    ).fetchall()
+                except sqlite3.Error:
+                    return None
+                out = []
+                for r in rows:
+                    v = str(r['competitor_brand'] or '').strip()
+                    if v:
+                        out.append(v)
+                return out
+
+            comp_brands = resolve_comp_brands(db, user_id, store_name)
+
+            # 查询当前用户的竞品门店（未配置映射时 SQL 与老口径完全一致）
+            comp_sql = "SELECT * FROM competitors WHERE user_id = ?"
+            comp_params = [user_id]
+            if comp_brands is not None:
+                # 归一与 JS 侧 normalizeBrand 一致：压缩内部空白 + 去首尾 + 大写
+                keys = sorted({' '.join(b.split()).upper() for b in comp_brands if b and b.strip()})
+                if not keys:
+                    comp_sql += " AND 1 = 0"
+                else:
+                    comp_sql += " AND UPPER(TRIM(COALESCE(brand,''))) IN (" + ",".join("?" * len(keys)) + ")"
+                    comp_params.extend(keys)
+            competitors = db.execute(comp_sql, tuple(comp_params)).fetchall()
 
             # 计算距离并筛选3km内
             nearby = []

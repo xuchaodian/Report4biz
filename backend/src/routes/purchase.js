@@ -12,6 +12,7 @@ import { mapWithConcurrency } from '../utils/concurrency.js'
 import { PURCHASE_SHARE_SECRET } from '../config.js'
 import { visibleScope, readableUserIds, sourceLabels, placeholders, scopeSummary } from '../utils/visibleScope.js'
 import { STORE_ONLY_SQL, isReportPurchase, storeTypeLabel, REPORT_SOURCE_NOTE, storedServiceCodes } from '../utils/purchaseScope.js'
+import { resolveCompBrands, competitorWhere } from '../utils/competitorScope.js'
 import NodeCache from 'node-cache'
 import * as XLSX from 'xlsx'
 
@@ -746,12 +747,22 @@ router.get('/:id/competitors-for-map', authenticate, (req, res) => {
     //   与子公司本人看到的底图一致（而不是拿集团自己的竞品去套）。
     const vis = visibleScope(db, req.user.id)
     const purchase = db.prepare(
-      `SELECT user_id, center_lng, center_lat FROM purchases
+      `SELECT user_id, store_name, center_lng, center_lat FROM purchases
         WHERE id = ? AND user_id IN (${placeholders(vis.ids.length)})`
     ).get(id, ...vis.ids)
     if (!purchase) return res.status(404).json({ message: '记录不存在' })
 
-    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ? AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(Number(purchase.user_id))
+    // v1.13.345：竞品按「本记录所属门店的自有品牌」收窄，未配置/查不到品牌 ⇒ 全量（老行为）。
+    //   🔴 必须用 purchase.user_id（行所属账号）解配置，不能用 req.user.id：
+    //      集团 owner 导出子公司记录时，映射是子公司自己的，用集团账号会错配成集团口径。
+    const myBrand = db.prepare(
+      `SELECT brand FROM markers WHERE user_id = ? AND name = ? AND merged_into IS NULL LIMIT 1`
+    ).get(Number(purchase.user_id), purchase.store_name || '')?.brand
+    const { sql: compBrandSql, params: compBrandParams } = competitorWhere(
+      resolveCompBrands(db, purchase.user_id, myBrand)
+    )
+
+    const competitors = db.prepare(`SELECT id, name, brand, latitude, longitude, address FROM competitors WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND user_id = ?${compBrandSql} AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))`).all(Number(purchase.user_id), ...compBrandParams)
 
     res.json({
       center: { lat: purchase.center_lat, lng: purchase.center_lng },
