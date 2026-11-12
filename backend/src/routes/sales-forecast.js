@@ -2,6 +2,7 @@ import express from 'express'
 import * as turf from '@turf/turf'
 import { aroundSearch } from '../utils/amapPoi.js'
 import { PersistentCache } from '../utils/persistentCache.js'
+import { DELIVERY_RATIO_MAP, DELIVERY_RATIO_FALLBACK } from '../utils/deliveryRatio.js'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { getGeoObject } from '../models/geoStore.js'
@@ -489,12 +490,9 @@ router.get('/candidates', authenticate, requireVip, (req, res) => {
 
 // ===================== 预测 =====================
 // ===================== L2 回归（Ridge · log坪效 · LOOCV） =====================
-const DELIVERY_RATIO_MAP = {
-  '霸王茶姬': 65, '茶百道': 65, '蜜雪冰城': 70, '瑞幸咖啡': 60, '库迪咖啡': 60,
-  '肯德基': 45, '麦当劳': 45, '华莱士': 55, '正新鸡排': 70,
-  '食其家': 40, '吉野家': 40, '老乡鸡': 35, '大米先生': 45, '米村拌饭': 35, '谷田稻香': 45, '杨国福': 50, '张亮麻辣烫': 50,
-  '西塔老太太': 15, '海底捞': 15, '呷哺呷哺': 20, '外婆家': 10, '绿茶餐厅': 10
-}
+// 品牌 → 默认外卖占比：唯一来源在 utils/deliveryRatio.js（v1.13.357 抽出）
+// 🔴 原先这里内嵌了一份字面量，与前端 storeBrand.js 构成两份副本 ⇒ 已删。
+//    ⛔ 不要在本文件重新写表；tests/storeSimGuard.test.js 断言两侧逐字一致。
 // 半径内竞品/我的门店数（DB 快算，按用户隔离：admin=名下全量运营数据，普通用户=仅自己上传）
 function countNearby(db, lat, lng, radius, userId, isAdmin) {
   const R = 6371000
@@ -568,7 +566,7 @@ function buildTrainingSet(db, userId, isAdmin) {
     const dv = d ? districtProfileVector(d) : [0, 0, 0, 0]
     const pop = calcRadiusPopulation(db, m.latitude, m.longitude, m.city)
     const nearby = countNearby(db, m.latitude, m.longitude, 500, userId, isAdmin)
-    const dr = rec.dr != null && rec.dr !== '' ? Number(rec.dr) : (DELIVERY_RATIO_MAP[m.brand] ?? 35)
+    const dr = rec.dr != null && rec.dr !== '' ? Number(rec.dr) : (DELIVERY_RATIO_MAP[m.brand] ?? DELIVERY_RATIO_FALLBACK)
     rows.push({
       store: m, year: rec.year, area: rec.area, salesAmount: rec.amount, deliveryRatio: dr,
       X: buildX(m, rec.area, dr, dv, pop, nearby, rec.year, MALL_CODES.get(m.mall_type) || 0, TRADE_CODES.get(m.trade_area_type) || 0, uniMap.get(m.name) || null),
@@ -624,7 +622,7 @@ function buildXForRef(db, ref, userId, isAdmin, profileIds = null) {
   const dv = ref.district ? districtProfileVector(ref.district) : [0, 0, 0, 0]
   const pop = calcRadiusPopulation(db, ref.lat, ref.lng, ref.city)
   const nearby = countNearby(db, ref.lat, ref.lng, 500, userId, isAdmin)
-  const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? 35)
+  const dr = ref.deliveryRatio != null ? ref.deliveryRatio : (DELIVERY_RATIO_MAP[ref.brand] ?? DELIVERY_RATIO_FALLBACK)
   return buildX(ref, ref.area, dr, dv, pop, nearby, ref.year, 0, 0, unicomVector(db, ref.name, profileIds))
 }
 
@@ -821,7 +819,7 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
         if (l3Use) {
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
-          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
+          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? DELIVERY_RATIO_FALLBACK
           const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name, profileIds))
           const nearRefs = refs.filter(r => haversineDist(cand.latitude, cand.longitude, r.lat, r.lng) <= 3000)
           const X_near = nearRefs.map(r => buildXForRef(db, r, req.user.id, isAdmin, profileIds))
@@ -875,7 +873,7 @@ router.post('/predict', authenticate, requireVip, async (req, res) => {
           const model = ridgeFitStd(trainSet.map(r => r.X), trainSet.map(r => r.y), 1)
           const dv = candDistrict ? districtProfileVector(candDistrict) : [0, 0, 0, 0]
           const nearby = countNearby(db, cand.latitude, cand.longitude, 500, req.user.id, isAdmin)
-          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? 35
+          const dr = DELIVERY_RATIO_MAP[cand.brand] ?? DELIVERY_RATIO_FALLBACK
           const candX = buildX(cand, candArea, dr, dv, candPop, nearby, new Date().getFullYear(), 0, 0, unicomVector(db, cand.name, profileIds))
           const predLog = model.predictRaw(candX)
           const predictComp = Math.round(Math.exp(predLog) * candArea)

@@ -893,6 +893,7 @@ import { brandAllowed } from '@/utils/brandScope.js'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { SALES_BAND_OPTIONS, bandLabel } from '@/utils/salesBand'
 import { downloadStoreTemplate, downloadSalesTemplate } from '@/utils/importTemplates.js'
+import { DELIVERY_RATIO_MAP } from '@/utils/storeBrand'
 
 import { useMarkerStore } from '@/stores/marker'
 import { useCompetitorStore } from '@/stores/competitor'
@@ -1363,13 +1364,9 @@ const openSaleDialog = (stores) => {
   saleDialogVisible.value = true
 }
 // ===== 销售记录展示 =====
-// 品牌 → 默认外卖占比（业态经验值，录入时预填；未映射留空由用户填）
-const DELIVERY_RATIO_MAP = {
-  '霸王茶姬': 65, '茶百道': 65, '蜜雪冰城': 70, '瑞幸咖啡': 60, '库迪咖啡': 60,
-  '肯德基': 45, '麦当劳': 45, '华莱士': 55, '正新鸡排': 70,
-  '食其家': 40, '吉野家': 40, '老乡鸡': 35, '大米先生': 45, '米村拌饭': 35, '谷田稻香': 45, '杨国福': 50, '张亮麻辣烫': 50,
-  '西塔老太太': 15, '海底捞': 15, '呷哺呷哺': 20, '外婆家': 10, '绿茶餐厅': 10
-}
+// 品牌 → 默认外卖占比：唯一来源在 utils/storeBrand.js（v1.13.357 抽出）
+// 🔴 原先这里内嵌了一份字面量，与后端 deliveryRatio.js 构成三份副本 ⇒ 已删。
+//    ⛔ 不要在本文件重新写表；tests/storeSimGuard.test.js 会判红。
 const allSales = ref([])
 const saleSummaryByStore = {}
 const loadAllSales = async () => {
