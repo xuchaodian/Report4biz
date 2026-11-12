@@ -2311,6 +2311,9 @@ function renderRadarCharts() {
     // 品牌名截断（>2 字符取前 2 字，避免雷达图轴标签重叠/裁切）
     const shortName = (s) => String(s || '').replace(/品牌$/, '').slice(0, 2) || '?'
     radarChart.setOption({
+      // A 档（v1.13.356）：canvas 图没有文本等价物 ⇒ 读屏完全读不到。
+      // 开 ECharts 自带的 aria 后，渲染时它会自动给容器写 role="img" + 这条 description。
+      aria: { enabled: true, label: { description: `竞品品牌雷达图：${brands.map(b => `${b.name} ${b.value} 家`).join('，')}` } },
       backgroundColor: 'transparent',
       tooltip: { trigger: 'item' },
       radar: {
@@ -2337,6 +2340,8 @@ function renderRadarCharts() {
     const seriesData = data.directions.map((v, i) => ({ value: v, name: DIRECTION_NAMES[i] }))
     const maxV = Math.max(...data.directions, 1)
     directionChart.setOption({
+      // A 档（v1.13.356）：同上，方位玫瑰图补文本等价物
+      aria: { enabled: true, label: { description: `竞品方位分布：${data.directions.map((v, i) => `${DIRECTION_NAMES[i]} ${v} 家`).join('，')}` } },
       backgroundColor: 'transparent',
       tooltip: { trigger: 'item', formatter: '{b}: {c} 家' },
       angleAxis: {
@@ -12027,6 +12032,8 @@ const renderBarChart = () => {
   const fields = [...new Set(uniqueFields)].filter(f => f !== 'RecID')
 
   const option = {
+    // A 档（v1.13.356）：两店对比柱状图补文本等价物（原来只有 title 是文字，canvas 内容读屏读不到）
+    aria: { enabled: true, label: { description: `门店对比柱状图：${r1.name} 与 ${r2.name}，共 ${fields.length} 项指标` } },
     title: {
       text: `${r1.name} vs ${r2.name}`,
       left: 'center',

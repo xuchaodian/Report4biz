@@ -366,7 +366,12 @@
               :show-file-list="false"
               :http-request="handleTenantUpload"
             >
-              <el-button type="primary" :loading="tenantImporting"><el-icon><Upload /></el-icon>{{ tenantImporting ? '导入中...' : '导入CSV' }}</el-button>
+              <!-- A 档（v1.13.356）：内层改纯 span（原 <el-button :loading> ⇒ 嵌套交互）。
+                   loading 态用 EP 自带的 .is-loading 旋转图标复刻，视觉与原按钮一致 -->
+              <span class="upload-trigger is-primary">
+                <el-icon v-if="tenantImporting" class="is-loading"><Loading /></el-icon>
+                <el-icon v-else><Upload /></el-icon>{{ tenantImporting ? '导入中...' : '导入CSV' }}
+              </span>
             </el-upload>
             <el-button v-if="userStore.isAdmin" type="danger" @click="handleClearAllTenants"><el-icon><Delete /></el-icon>全清除</el-button>
             <span v-if="tenantImportProgress > 0 && tenantImporting" style="font-size:12px;color:#909399">{{ tenantImportProgress }}%</span>
@@ -492,7 +497,7 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Upload, Download, Search, Edit, Delete, Location, Close, DataAnalysis, WarningFilled } from '@element-plus/icons-vue'
+import { Plus, Upload, Loading, Download, Search, Edit, Delete, Location, Close, DataAnalysis, WarningFilled } from '@element-plus/icons-vue'
 import { useShoppingCenterStore } from '@/stores/shoppingCenterStore'
 import { useUserStore } from '@/stores/user'
 import { formatNumber } from '@/utils/populationStats'
@@ -1016,6 +1021,9 @@ const renderCompareChart = () => {
   })
 
   compareChart.setOption({
+    // A 档（v1.13.356）：对比柱状图补文本等价物。ECharts 开了 aria 会自动给容器
+    // 写 role="img" + 这条 description，读屏才能读到图里讲了什么。
+    aria: { enabled: true, label: { description: `商场对比柱状图：${r1.name} 与 ${r2.name}，共 ${uniqueFields.length} 项指标` } },
     title: { text: `${r1.name} vs ${r2.name}`, left: 'center', textStyle: { fontSize: 14, fontWeight: 'bold' } },
     tooltip: {
       trigger: 'axis',
@@ -1212,6 +1220,8 @@ const renderTcPieChart = (mall) => {
     .sort((a, b) => b.value - a.value)
   const total = data.reduce((s, d) => s + d.value, 0)
   tcChartInstance.setOption({
+    // A 档（v1.13.356）：业态分类型饼图补文本等价物
+    aria: { enabled: true, label: { description: `${mall} 业态分布：${data.map(d => `${d.name} ${d.value} 家`).join('，')}` } },
     title: { text: mall, left: 'center', textStyle: { fontSize: 14 } },
     tooltip: {
       trigger: 'item',

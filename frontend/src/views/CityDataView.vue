@@ -14,7 +14,8 @@
             :on-success="onImportSuccess"
             :on-error="() => ElMessage.error('导入失败')"
           >
-            <el-button type="primary" size="small"><el-icon><Upload /></el-icon>导入CSV</el-button>
+            <!-- A 档（v1.13.356）：el-upload 触发区已是 role=button，内层改纯 span 防嵌套交互 -->
+            <span class="upload-trigger is-small is-primary"><el-icon><Upload /></el-icon>导入CSV</span>
           </el-upload>
         </div>
         <div style="display:flex;gap:8px">

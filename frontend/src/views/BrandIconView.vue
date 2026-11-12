@@ -87,10 +87,12 @@
             :http-request="(opt) => handleUpload(opt, brand)"
             accept="image/*"
           >
-            <el-button size="small" :type="hasIcon(brand) ? 'default' : 'primary'">
+            <!-- A 档（v1.13.356）：el-upload 触发区本身是 div[role=button][tabindex=0]，
+                 slot 里只能放不可聚焦元素（原 <el-button> ⇒ 嵌套交互，Tab 停两次） -->
+            <span class="upload-trigger is-small" :class="{ 'is-primary': !hasIcon(brand) }">
               <el-icon><Upload /></el-icon>
               {{ hasIcon(brand) ? (isMyIcon(brand) ? '更换' : '覆盖') : '上传图标' }}
-            </el-button>
+            </span>
           </el-upload>
 
           <!-- 删除图标（只能删除自己上传的） -->

@@ -61,12 +61,16 @@
             </div>
             <div v-else style="width: 56px; height: 56px; border: 1px dashed #dcdfe6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 11px; flex-shrink: 0;">无Logo</div>
             <div>
+              <!-- A 档（v1.13.356）：EP 的 el-upload 触发区本身就是 div[role=button][tabindex=0]，
+                   里面再放 <el-button> 就是「可聚焦元素套可聚焦元素」⇒ Tab 要停两次、
+                   读屏连报两层「按钮」。内部换成纯 <span> 复刻小号次要按钮样式，
+                   焦点只留外层一个；视觉由 .logo-upload-trigger 保证与原按钮一致。 -->
               <el-upload
                 :show-file-list="false"
                 accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 :before-upload="handleLogoUpload"
               >
-                <el-button size="small">上传 Logo</el-button>
+                <span class="upload-trigger is-small">上传 Logo</span>
               </el-upload>
               <div v-if="userStore.logoInherited" style="font-size: 11px; color: #e6a23c; margin-top: 4px; max-width: 320px; line-height: 1.5;">
                 当前显示的是集团「{{ userStore.logoGroupName }}」的品牌 Logo（无需重复上传）；上传自己的即会改为本账号专属
@@ -1436,6 +1440,9 @@ const renderCompareCharts = async () => {
     })
     const chart = echarts.init(popEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
+      // A 档（v1.13.356）：canvas 图无文本等价物 ⇒ 读屏读不到。开 aria 后 ECharts
+      // 会自动给容器写 role="img" + 这条 description。
+      aria: { enabled: true, label: { description: `人口规模对比柱状图：${orders.map(o => o.store_name).join('、')}，维度为到访 / 居住 / 工作` } },
       tooltip: { trigger: 'axis' },
       legend: { data: dims.map(d => d.name) },
       grid: { left: 80, right: 20, top: 40, bottom: 70 },
@@ -1469,6 +1476,8 @@ const renderCompareCharts = async () => {
     })
     const chart = echarts.init(flowEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
+      // A 档（v1.13.356）：客流活跃度对比折线图补文本等价物
+      aria: { enabled: true, label: { description: `客流活跃度对比折线图：${orders.map(o => o.store_name).join('、')}` } },
       tooltip: { trigger: 'axis' },
       legend: { data: orders.map(o => o.store_name), type: 'scroll' },
       grid: { left: 80, right: 20, top: 40, bottom: 60 },
@@ -1498,6 +1507,8 @@ const renderCompareCharts = async () => {
     }))
     const chart = echarts.init(consumeEl, null, { renderer: 'canvas', preserveDrawingBuffer: true })
     chart.setOption({
+      // A 档（v1.13.356）：消费水平对比柱状图补文本等价物
+      aria: { enabled: true, label: { description: `消费水平对比柱状图：${orders.map(o => o.store_name).join('、')}，分低 / 中 / 高三档` } },
       tooltip: { trigger: 'axis' },
       legend: { data: levels.map(l => l.name) },
       grid: { left: 80, right: 20, top: 40, bottom: 70 },
@@ -2949,6 +2960,9 @@ const initAllCharts = () => {
     try {
       const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
       if (!option) continue
+      // A 档（v1.13.356）：这里是「数据洞察」卡片列表里所有图表的统一出口，
+      // 在这注入 aria 一处覆盖全部；ECharts 会把 role="img" + 描述写到容器上。
+      option.aria = { enabled: true, label: { description: `数据图表：${item.title}` } }
       
       const chart = echarts.init(dom, null, { renderer: 'canvas', preserveDrawingBuffer: true })
       chart.setOption(option)

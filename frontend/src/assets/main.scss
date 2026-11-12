@@ -723,3 +723,68 @@ body {
 .el-table.el-table {
   --el-table-header-text-color: #4b5563;
 }
+
+/* ===== 上传触发区（A 档 v1.13.356）=====
+   问题：Element Plus 的 el-upload 触发容器**本身就是**
+   `div[role="button"][tabindex="0"]`（见 upload-content 源码）。我们在 slot 里
+   再放 <el-button> ⇒ 可聚焦元素套可聚焦元素（axe: nested-interactive）：
+   Tab 要停两次、读屏连报两层「按钮」。
+
+   做法：slot 里只放不可聚焦的 <span>，由它复刻 EP 按钮外观。
+   ⛔ 不要用 aria-hidden + tabindex="-1" 掩盖内层按钮 —— 焦点还在，
+      只是从读屏树里消失，属 WCAG 4.1.2 反面教材。
+
+   三种形态：默认（白底灰字）/ .is-primary（主色底白字）/ .is-small（24px 小号）。
+   颜色全部走 EP 变量 ⇒ 换主色时自动跟随，不会变成第二个硬编码源。 */
+.upload-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 15px;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  border-radius: 4px;
+  color: #606266;
+  background-color: #fff;
+  border: 1px solid #dcdfe6;
+  transition: color .1s, background-color .1s, border-color .1s;
+
+  &.is-small {
+    height: 24px;
+    padding: 0 11px;
+    font-size: 12px;
+  }
+
+  &.is-primary {
+    color: #fff;
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+}
+
+/* hover 挂在 .el-upload 上：事件真正落在外层那个 div[role=button]，
+   span 自身收不到稳定的 :hover（鼠标移过时可能停在图标间隙）。 */
+.el-upload:hover .upload-trigger {
+  color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary-light-5);
+}
+
+.el-upload:hover .upload-trigger.is-primary {
+  color: #fff;
+  background-color: var(--el-color-primary-light-3);
+  border-color: var(--el-color-primary-light-3);
+}
+
+/* 键盘焦点环画在外层 div 上（唯一可聚焦元素），只在键盘操作时出现 */
+.el-upload:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

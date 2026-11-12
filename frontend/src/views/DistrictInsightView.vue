@@ -9,7 +9,10 @@
         </p>
       </div>
       <div class="dv-header-right">
+        <!-- A 档（v1.13.356）：原「分析品牌」只写在 placeholder 里，读屏不进输入框就读不到
+             ⇒ 补 aria-label 作为可访问名称（视觉零变化，placeholder 仍作占位提示） -->
         <el-select v-model="analysisBrand" clearable placeholder="分析品牌（全量）" size="small"
+                   aria-label="分析品牌"
                    style="width:170px;margin-right:8px" @change="onAnalysisBrandChange">
           <el-option v-for="b in myBrands" :key="b" :label="b" :value="b" />
         </el-select>

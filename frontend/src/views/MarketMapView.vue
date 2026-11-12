@@ -57,7 +57,10 @@
 
     <div class="mm-body">
       <!-- 左：省份机会榜单 -->
-      <div class="mm-left">
+      <!-- A 档（v1.13.356）：本块 height:640px + overflow-y:auto，是真正可滚动区域，
+           但原先是裸 div ⇒ Tab 键永远进不去、键盘用户滚不动（WCAG 2.1.1）。
+           tabindex=0 让它可聚焦，role=region + aria-label 给它一个可播报的名字。 -->
+      <div class="mm-left" tabindex="0" role="region" aria-label="省份机会榜单（可滚动）">
         <div class="mm-panel-title">{{ $t('cityInsight.provinceTitle') }} <span class="mm-sub">{{ $t('cityInsight.provinceSub') }}</span></div>
         <div class="mm-prov-list" v-loading="loading">
           <div v-for="p in provinces" :key="p.province" class="mm-prov-item" :class="{ selected: selectedProvince === p.province }" @click="selectProvince(p.province)">
@@ -392,6 +395,12 @@ onMounted(loadData)
   padding: 14px;
   height: 640px;
   overflow-y: auto;
+}
+/* A 档（v1.13.356）：tabindex=0 后必须有可见焦点环，否则键盘用户不知道自己停在哪
+   （WCAG 2.4.7）。只在键盘聚焦时出现，鼠标点击不高亮。 */
+.mm-left:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 .mm-right {
   flex: 1;

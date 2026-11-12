@@ -796,7 +796,9 @@
       </template>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
         <span style="font-size:13px;color:#555;">年份</span>
-        <el-select v-model="saleYear" style="width:110px" @change="onSaleYearChange">
+        <!-- A 档（v1.13.356）：旁边这个 <span>年份</span> 只是视觉像标签，没有 for/id 关联
+             ⇒ 读屏只念「组合框」。补 aria-label 才是程序可读的名称 -->
+        <el-select v-model="saleYear" aria-label="录入年份" style="width:110px" @change="onSaleYearChange">
           <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
         </el-select>
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
