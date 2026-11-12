@@ -2842,7 +2842,7 @@ watch(() => props.store, (newStore) => {
 }
 
 .insight-info {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-left: 3px solid var(--brand-primary);
 }
 

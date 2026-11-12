@@ -479,8 +479,8 @@ onMounted(loadData)
   flex-shrink: 0;
   font-size: 11px;
   color: var(--brand-primary);
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-8);
   border-radius: 3px;
   padding: 0 5px;
   line-height: 16px;

@@ -253,7 +253,7 @@ const onBrandToggle = (val) => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  border: 2px solid #409eff;
+  border: 2px solid var(--brand-primary);
   min-width: 100px;
 }
 
@@ -264,7 +264,7 @@ const onBrandToggle = (val) => {
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--el-color-primary-dark-2) 100%);
 }
 
 .toggle-title {
@@ -328,7 +328,7 @@ const onBrandToggle = (val) => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  border: 2px solid #409eff;
+  border: 2px solid var(--brand-primary);
   min-width: 96px;
 }
 
@@ -339,7 +339,7 @@ const onBrandToggle = (val) => {
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--el-color-primary-dark-2) 100%);
 }
 
 .store-tools-title {
@@ -380,12 +380,12 @@ const onBrandToggle = (val) => {
 }
 
 .store-tools-item:hover {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   color: var(--brand-primary);
 }
 
 .store-tools-item.active {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   color: var(--brand-primary);
   font-weight: 600;
 }
@@ -416,7 +416,7 @@ const onBrandToggle = (val) => {
 }
 
 .brand-filter-btn:hover {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
 }
 
 .brand-filter-btn.is-empty {

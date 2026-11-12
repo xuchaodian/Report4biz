@@ -287,7 +287,7 @@
         <div style="max-height: 280px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
           <div v-for="item in filteredCompareList" :key="item.id"
             style="display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ebeef5; cursor: pointer;"
-            :style="{ background: compareSelectedList.some(s => s.id === item.id) ? '#ecf5ff' : 'white' }"
+            :style="{ background: compareSelectedList.some(s => s.id === item.id) ? 'var(--el-color-primary-light-9)' : 'white' }"
             @click="toggleCompareItem(item)">
             <el-button :type="compareSelectedList.some(s => s.id === item.id) ? 'primary' : 'default'" size="small" style="margin-right: 12px;" @click.stop="toggleCompareItem(item)">
               {{ compareSelectedList.some(s => s.id === item.id) ? '已选' : '选择' }}
@@ -437,7 +437,7 @@
         </div>
         <div style="max-height:350px;overflow-y:auto;border:1px solid #ebeef5;border-radius:4px;padding:8px">
           <div v-for="name in tcFilteredMallList" :key="name"
-            :style="{ display:'flex', alignItems:'center', padding:'6px 8px', cursor:'pointer', borderBottom:'1px solid #f5f5f5', background: tcSelectedList.includes(name) ? '#ecf5ff' : 'white' }"
+            :style="{ display:'flex', alignItems:'center', padding:'6px 8px', cursor:'pointer', borderBottom:'1px solid #f5f5f5', background: tcSelectedList.includes(name) ? 'var(--el-color-primary-light-9)' : 'white' }"
             @click="tcToggleItem(name)">
             <el-button :type="tcSelectedList.includes(name) ? 'primary' : 'default'" size="small" style="margin-right:12px">
               {{ tcSelectedList.includes(name) ? '已选' : '选择' }}
@@ -1045,12 +1045,12 @@ const renderCompareChart = () => {
       {
         name: r1.name, type: 'bar', barGap: '5%',
         itemStyle: {
-          color: '#409EFF',
-          emphasis: { color: '#66b1ff', shadowBlur: 8, shadowColor: 'rgba(64,158,255,0.4)' }
+          color: '#2563eb',
+          emphasis: { color: '#6692f1', shadowBlur: 8, shadowColor: 'rgba(37,99,235,0.4)' }
         },
         data: uniqueFields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)),
         label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
-        emphasis: { itemStyle: { color: '#66b1ff' } }
+        emphasis: { itemStyle: { color: '#6692f1' } }
       },
       {
         name: r2.name, type: 'bar', barGap: '5%',

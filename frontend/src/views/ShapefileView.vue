@@ -620,7 +620,7 @@ onMounted(() => {
 
 .shapefile-uploader :deep(.el-upload-dragger:hover) {
   border-color: var(--brand-primary);
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
 }
 
 .upload-icon {

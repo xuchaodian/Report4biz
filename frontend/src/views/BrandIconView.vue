@@ -319,8 +319,8 @@ onMounted(async () => {
 }
 
 .tip-box {
-  background: #ecf5ff;
-  border: 1px solid #d9ecff;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-8);
   border-radius: 6px;
   padding: 10px 15px;
   margin-bottom: 15px;

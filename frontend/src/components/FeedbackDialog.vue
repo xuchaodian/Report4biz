@@ -118,7 +118,7 @@ const submit = async () => {
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .fb-type:hover {
-  border-color: #a0cfff;
+  border-color: var(--el-color-primary-light-5);
 }
 .fb-type.is-active {
   border-color: var(--brand-primary);

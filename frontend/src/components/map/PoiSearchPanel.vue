@@ -67,7 +67,7 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
   min-width: 110px;
   max-width: 110px;
   overflow: hidden;
-  border: 2px solid #409eff;
+  border: 2px solid var(--brand-primary);
 }
 
 .poi-search-header {
@@ -77,7 +77,7 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--el-color-primary-dark-2) 100%);
 }
 
 .poi-search-title {
@@ -141,7 +141,7 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
 }
 
 .poi-mode-btn:hover {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-color: var(--brand-primary);
   color: var(--brand-primary);
 }

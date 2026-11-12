@@ -1749,7 +1749,7 @@
             v-for="store in filteredCompareStores"
             :key="store.id"
             style="display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ebeef5; cursor: pointer;"
-            :style="{ background: selectedCompareStoresState.list.some(s => s.id === store.id) ? '#ecf5ff' : 'white' }"
+            :style="{ background: selectedCompareStoresState.list.some(s => s.id === store.id) ? 'var(--el-color-primary-light-9)' : 'white' }"
             @click="toggleCompareStore(store)"
           >
             <el-button
@@ -2317,14 +2317,14 @@ function renderRadarCharts() {
         indicator: brands.map(b => ({ name: `${shortName(b.name)} ${b.value}`, max: maxV })),
         radius: '65%',
         center: ['50%', '52%'],
-        splitArea: { areaStyle: { color: ['rgba(64,158,255,0.03)', 'rgba(64,158,255,0.08)'] } },
+        splitArea: { areaStyle: { color: ['rgba(37,99,235,0.03)', 'rgba(37,99,235,0.08)'] } },
         axisName: { color: '#303133', fontSize: 11, lineHeight: 14 }
       },
       series: [{
         type: 'radar',
         symbol: 'circle',
         symbolSize: 5,
-        data: [{ value: brands.map(b => b.value), name: '竞品数量', areaStyle: { color: 'rgba(64,158,255,0.35)' }, lineStyle: { color: '#409eff', width: 2 }, itemStyle: { color: '#409eff' } }]
+        data: [{ value: brands.map(b => b.value), name: '竞品数量', areaStyle: { color: 'rgba(37,99,235,0.35)' }, lineStyle: { color: '#2563eb', width: 2 }, itemStyle: { color: '#2563eb' } }]
       }]
     })
   }
@@ -2354,7 +2354,7 @@ function renderRadarCharts() {
         data: seriesData,
         coordinateSystem: 'polar',
         barWidth: 18,
-        itemStyle: { color: (params) => params.value > 0 && params.value === maxV ? '#f56c6c' : '#409eff' }
+        itemStyle: { color: (params) => params.value > 0 && params.value === maxV ? '#f56c6c' : '#2563eb' }
       }]
     })
   }
@@ -4589,7 +4589,7 @@ function getStorePopupHtml(markerData) {
       ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
       <div id="store-sales-${markerData.id}" style="margin: 8px 0 2px; padding: 6px 8px; background: #f5f7fa; border-radius: 6px; font-size: 12px; color: #909399;">销售数据加载中…</div>
       <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
-        <button type="button" data-store-act="edit" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #409eff; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
+        <button type="button" data-store-act="edit" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
         <button type="button" data-store-act="delete" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
         <button type="button" data-store-act="smartsteps" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #e07070; color: white; border: none; border-radius: 4px; font-size: 12px;">联通人口</button>
         <button type="button" data-store-act="similar" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #e6a23c; color: white; border: none; border-radius: 4px; font-size: 12px;">相似店</button>
@@ -5864,7 +5864,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
     statsHtml += `</tr>`
 
     // 选定字段行（使用API返回的总计，与常住人口对比一致）
-    statsHtml += `<tr style="background:#ecf5ff;">`
+    statsHtml += `<tr style="background:#eaf0fd;">`
     statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;font-weight:bold;">${fieldName}</td>`
     sortedRadii.forEach(r => {
       const data = radiusResults[r]
@@ -12083,17 +12083,17 @@ const renderBarChart = () => {
         type: 'bar',
         barGap: '5%',
         itemStyle: {
-          color: '#409EFF',
-          emphasis: { color: '#66b1ff' }
+          color: '#2563eb',
+          emphasis: { color: '#6692f1' }
         },
         data: fields.map(f => f === r1.statField ? r1.total : (r1.allFields?.[f] || 0)),
         label: { show: true, position: 'top', formatter: (p) => formatNumber(p.value), fontSize: 10 },
-        emphasis: { itemStyle: { color: '#66b1ff' } },
+        emphasis: { itemStyle: { color: '#6692f1' } },
         markLine: {
           silent: true,
-          lineStyle: { type: 'dashed', color: '#409EFF', width: 1.5 },
+          lineStyle: { type: 'dashed', color: '#2563eb', width: 1.5 },
           data: [{ type: 'average', name: '平均值' }],
-          label: avgLineLabelStyle('#409EFF')
+          label: avgLineLabelStyle('#2563eb')
         }
       },
       {
@@ -12452,7 +12452,7 @@ function getHeatmapCellStyle(nums, idx) {
     }
     
     &.active {
-      background: #ecf5ff;
+      background: var(--el-color-primary-light-9);
       border-color: var(--brand-primary);
       color: var(--brand-primary);
     }
@@ -12860,17 +12860,17 @@ function getHeatmapCellStyle(nums, idx) {
   line-height: 1;
   color: #fff;
   /* 与「地图工具箱」同一套蓝 ⇒ 视觉上是一族；在白色面板群里足够突出 */
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--el-color-primary-dark-2) 100%);
   border: none;
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(64, 158, 255, 0.45);
+  box-shadow: 0 4px 14px rgba(var(--el-color-primary-rgb), 0.45);
   cursor: pointer;
   white-space: nowrap;
   transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .map-nav-toggle:hover {
   filter: brightness(1.08);
-  box-shadow: 0 6px 18px rgba(64, 158, 255, 0.55);
+  box-shadow: 0 6px 18px rgba(var(--el-color-primary-rgb), 0.55);
   transform: translateY(-1px);
 }
 .map-nav-toggle:active {
@@ -13171,7 +13171,7 @@ function getHeatmapCellStyle(nums, idx) {
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: rgba(64, 158, 255, 0.95);
+  background: rgba(var(--el-color-primary-rgb), 0.95);
   color: white;
   border-radius: 8px;
   font-size: 14px;

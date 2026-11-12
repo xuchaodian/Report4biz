@@ -1533,7 +1533,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
   background: #f5f7fa; border-radius: 8px;
   display: flex; flex-direction: column; gap: 4px;
 }
-.ds-quota-card.ds-quota-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
+.ds-quota-card.ds-quota-hl { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-8); }
 .ds-quota-label { font-size: 12px; color: #909399; }
 .ds-quota-num { font-size: 20px; color: #303133; font-weight: 600; }
 .ds-quota-hl .ds-quota-num { color: var(--brand-primary); }
@@ -1553,7 +1553,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
   display: inline-block; min-width: 34px; padding: 1px 6px; margin-right: 4px;
   border-radius: 4px; font-size: 12px; text-align: center;
 }
-.ds-tag-pool { background: #ecf5ff; color: var(--brand-primary); border: 1px solid #d9ecff; }
+.ds-tag-pool { background: var(--el-color-primary-light-9); color: var(--brand-primary); border: 1px solid var(--el-color-primary-light-8); }
 .ds-tag-move { background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
 .ds-move-tip {
   font-size: 12px; color: #606266; line-height: 1.9;

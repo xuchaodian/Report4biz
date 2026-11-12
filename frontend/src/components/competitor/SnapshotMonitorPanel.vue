@@ -445,7 +445,7 @@ watch(() => props.initialTarget, (nv) => { if (nv) { targetPeriod.value = nv; if
       flex: 0 0 auto; width: 150px; border: 1px solid #ebeef5; border-radius: 6px;
       padding: 8px 10px; cursor: pointer; background: #fafafa; text-align: left;
       &:hover { border-color: #c6e2ff; }
-      &.active { border-color: var(--brand-primary); background: #ecf5ff; }
+      &.active { border-color: var(--brand-primary); background: var(--el-color-primary-light-9); }
       .tl-period {
         position: relative; display: flex; align-items: center; justify-content: space-between;
         font-weight: 700; font-size: 15px; color: #303133;

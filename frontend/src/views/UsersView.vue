@@ -1545,7 +1545,7 @@ onMounted(() => {
 
       &.total {
         border-color: var(--brand-primary);
-        background: linear-gradient(135deg, #ecf5ff 0%, #f0f7ff 100%);
+        background: linear-gradient(135deg, var(--el-color-primary-light-9) 0%, #f0f7ff 100%);
 
         .label { color: var(--brand-primary); cursor: help; border-bottom: 1px dashed currentColor; }
         .value { color: var(--brand-primary); font-weight: bold; font-size: 18px; }
@@ -1811,7 +1811,7 @@ onMounted(() => {
   background: #f5f7fa; border-radius: 8px;
   display: flex; flex-direction: column; gap: 4px;
 }
-.ov-card.ov-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
+.ov-card.ov-hl { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-8); }
 .ov-label { font-size: 12px; color: #909399; }
 .ov-num { font-size: 20px; color: #303133; font-weight: 600; }
 .ov-hl .ov-num { color: var(--brand-primary); }
@@ -1875,7 +1875,7 @@ onMounted(() => {
 
 /* v1.13.218：配额采购申请条 —— 蓝色底与 VIP 橙色条区分（同一 .vip-pending-bar 骨架）。
    ⚠️ 必须各写一条覆盖规则：骨架上的无条件规则会赢过「只继承」的期望（212 教训）。 */
-.quota-pending-bar { background: #ecf5ff; border-color: #b3d8ff; }
+.quota-pending-bar { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-7); }
 .quota-pending-bar .vip-pending-icon { color: #0d579c; }
 .quota-pending-bar b { color: #0d579c; }
 /* 收款提示条（弹窗内，模板直写 ⇒ teleport 不影响 scopeId，单类选择器命中） */

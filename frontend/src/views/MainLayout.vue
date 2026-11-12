@@ -834,7 +834,7 @@ const doExport = async (type) => {
       }
       
       &.active {
-        background: #ecf5ff;
+        background: var(--el-color-primary-light-9);
         color: var(--brand-primary);
         font-weight: 600;  /* v1.13.175（L8）：当前页除底色外再加「字重」维度 */
       }
@@ -909,7 +909,7 @@ const doExport = async (type) => {
       }
 
       &.active .nav-dropdown-trigger {
-        background: #ecf5ff;
+        background: var(--el-color-primary-light-9);
         color: var(--brand-primary);
       }
 

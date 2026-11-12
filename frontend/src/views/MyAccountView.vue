@@ -1412,7 +1412,7 @@ const renderCompareCharts = async () => {
   const orders = compareOrders.value
   if (orders.length < 2) return
 
-  const colorPalette = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399']
+  const colorPalette = ['#2563eb', '#67c23a', '#e6a23c', '#f56c6c', '#909399']
 
   // 1. 人口规模对比（分组柱状图）
   const popEl = comparePopEl.value
@@ -5128,7 +5128,7 @@ const handleExportExcel = async () => {
   border-left: 3px solid #f56c6c;
 }
 .insight-info {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-left: 3px solid var(--brand-primary);
 }
 

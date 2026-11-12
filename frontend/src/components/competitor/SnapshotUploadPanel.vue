@@ -623,7 +623,7 @@ defineExpose({ refreshHistory, setBrand: (b) => { brand.value = b; refreshHistor
     display: flex; align-items: center; font-weight: 600; font-size: 14px;
     .step-badge {
       display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
-      background: #409eff; color: #fff; font-size: 12px; align-items: center;
+      background: var(--brand-primary); color: #fff; font-size: 12px; align-items: center;
       justify-content: center; margin-right: 8px;
     }
   }

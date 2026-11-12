@@ -903,8 +903,8 @@ async function refreshDistrict() {
   transition: all 0.2s;
 }
 .dv-center-tag:hover {
-  background: #409eff !important;
-  border-color: #409eff !important;
+  background: var(--brand-primary) !important;
+  border-color: var(--brand-primary) !important;
   color: #fff !important;
 }
 .dv-center-stars {

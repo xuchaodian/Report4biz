@@ -34,6 +34,28 @@
   --icon-tone-success: var(--el-color-success);
 }
 
+/* ===== Element Plus 主色迁移（v1.13.355 / 色板治理 B2）=====
+   ⛔ 选择器必须写 html:root（特异性 0,1,1），不能写 :root（0,1,0）：
+      EP 组件样式由 unplugin-vue-components 按需注入，异步 chunk 的样式在运行时
+      才插到 head 末尾 —— 同为 :root 时后插入者胜，会出现「主按钮底色变了、
+      hover 却跳回旧浅蓝」的割裂。
+   ⛔ light-3/5/7/8/9、dark-2 是 theme-chalk 里**写死的静态值**，不随
+      --el-color-primary 派生。只改主色 ⇒ 底色深了、hover/disabled 仍是旧浅蓝，
+      所以必须整套给（G6 守卫钉住这一点）。
+   取值 = Sass mix 规则（与白/黑按 10% 步长混合）从 #2563eb 实算；
+   唯一例外 light-9：纯 mix 值 #e9effd 上放主色只有 4.487:1（AA 需 4.5），
+   上调 1 阶到 #eaf0fd = 4.52:1，肉眼无法区分。 */
+html:root {
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #6692f1;  /* hover */
+  --el-color-primary-light-5: #92b1f5;  /* disabled */
+  --el-color-primary-light-7: #bed0f9;  /* 浅描边 */
+  --el-color-primary-light-8: #d3e0fb;  /* 浅分隔线 */
+  --el-color-primary-light-9: #eaf0fd;  /* 选中态 / tag 浅底 */
+  --el-color-primary-dark-2: #1e4fbc;   /* active / 按下 */
+  --el-color-primary-rgb: 37, 99, 235;  /* 半透明叠加（rgba() 展开用） */
+}
+
 /* ===== 图标基础类（配合 components/AppIcon.vue 使用）===== */
 .app-icon {
   display: inline-flex;
@@ -191,7 +213,7 @@ body {
   width: 4px;
   height: 16px;
   border-radius: 2px;
-  background: #409eff;
+  background: var(--brand-primary);
 }
 
 .el-dialog__headerbtn {
@@ -268,12 +290,12 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: rgba(64, 158, 255, 0.12);
+  background: rgba(var(--el-color-primary-rgb), 0.12);
   transition: background 0.2s, color 0.2s;
 }
 
 .el-dialog.dialog-fancy .el-dialog__headerbtn:hover {
-  background: #409eff;
+  background: var(--brand-primary);
   color: #fff;
 }
 
@@ -598,8 +620,10 @@ body {
 
    ⛔ 不能用 display:none / visibility:hidden 隐藏 —— 那会让元素不可聚焦，
       skip-link 就彻底失去意义。必须用「移出视口 + :focus 时归位」。
-   ⛔ 底色不用 var(--el-color-primary)（#409eff，白字仅 2.78:1 不达标）；
-      用 #0d579c（项目「同色系 600 级」蓝，白字 7.34:1 ✅），与 174 图标色板同源。
+   ⚠️ 底色用 #0d579c（项目「同色系 600 级」蓝，白字 7.34:1 ✅），与 174 图标色板同源。
+      （v1.13.176 当时主色还是 #409eff、白字仅 2.78:1，所以刻意避开；
+        v1.13.355 B2 后主色已换 #2563eb、白字 5.17:1 本身达标，此处仍不改 ——
+        skip-link 是最高优先级的键盘跳转提示，用更深一档更稳。）
    ⚠️ z-index 必须高于 .header 的 100，否则聚焦滑入时被顶栏盖住。 */
 .skip-link {
   position: fixed;
@@ -642,6 +666,10 @@ body {
      warning #e6a23c on #fdf6ec = 2.04:1 ❌      primary #409eff on #ecf5ff = 2.53:1 ❌
      danger  #f56c6c on #fef0f0 = 2.61:1 ❌
 
+   ⚠️ primary 那一行是 v1.13.176 诊断时的旧值。v1.13.355（B2）主色迁到 #2563eb 后，
+      在自家浅底 #eaf0fd 上已是 4.52:1 ✅；但下面仍保留 #0d579c 文字色 ——
+      它比主色更深（6.47:1），且与 174 图标色板同源，视觉更稳。
+
    这里**只改文字色**，浅底（bg-color）与描边（border-color）一字不动
    ⇒ 视觉语言仍是 EP 默认的轻量标记，不会变成报告建议的那种「深色块」。
    这条路本项目已有成功先例：自定义 VIP 紫标签（#7c3aed on #f3e8ff = 4.83:1 ✅）。
@@ -649,9 +677,10 @@ body {
    ⛔ 不改成「深底白字」（报告 §四② 的路线）：那会把全站 100 个标签从
       「行内轻量状态标记」变成「重色块」，与用法冲突；且报告给的替换色
       自身不达标（复算 3.49:1 / 3.64:1）。
-   ⛔ 不动 --el-color-success / --el-color-primary 等品牌变量：那会连带
-      按钮、进度条、表单校验、开关、分页……全站所有用到该色的组件
-      （＝本项目 C 档「主色迁移」要专门处理的问题，不在这里做）。
+   ⛔ 这段不动 --el-color-success / --el-color-danger 等语义色变量：那会连带按钮、
+      进度条、表单校验、开关、分页……全站组件。primary 已于 v1.13.355（B2）单独
+      迁到 #2563eb，但**本段仍然只改文字色** —— 浅底与描边交给主色 token 联动，
+      不要在这里再叠一层手写值。
    ⛔ 不直接搬 174 图标用的 600 级色：那是配图标底（#e1f5ee 等）算的，
       搬过来复算不达标 —— #17825d on #f0f9eb 只有 4.43:1（差 0.07）。
       **必须用标签自己的浅底复算**，所以 success 要再深一档到 #14724f。
@@ -667,7 +696,7 @@ body {
 .el-tag.el-tag--danger:not(.el-tag--dark)  { --el-tag-text-color: #b91c1c; }  /* on #fef0f0 5.83:1 ✅ */
 .el-tag.el-tag--error:not(.el-tag--dark)   { --el-tag-text-color: #b91c1c; }  /* EP 里 error 与 danger 同色，一并对齐 */
 .el-tag.el-tag--info:not(.el-tag--dark)    { --el-tag-text-color: #4b5563; }  /* on #f4f4f5 6.88:1 ✅ */
-.el-tag.el-tag--primary:not(.el-tag--dark) { --el-tag-text-color: #0d579c; }  /* on #ecf5ff 6.67:1 ✅ */
+.el-tag.el-tag--primary:not(.el-tag--dark) { --el-tag-text-color: #0d579c; }  /* on #eaf0fd 6.47:1 ✅ */
 
 /* ⚠️ 上面 6 条同时覆盖 `effect="plain"`（白底）：EP 的 plain 只重设
    bg-color / border-color，**不重设文字色** ⇒ 文字色仍走这几个变量

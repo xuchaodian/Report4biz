@@ -71,7 +71,7 @@ watch(() => props.results, (newResults) => {
         因此本值与上面几个直接比较）。 */
   z-index: 1400;
   overflow: hidden;
-  border: 2px solid #409eff;
+  border: 2px solid var(--brand-primary);
 }
 
 .search-body {

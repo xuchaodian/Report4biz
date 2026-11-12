@@ -78,7 +78,7 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   z-index: 1001;
   overflow: hidden;
-  border: 2px solid #409eff;
+  border: 2px solid var(--brand-primary);
 }
 
 .toolbar-header {
@@ -87,7 +87,7 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(135deg, #409eff 0%, #337ecc 100%);
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--el-color-primary-dark-2) 100%);
 }
 
 .toolbar-title {
@@ -138,7 +138,7 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
 
 .tool-item:hover,
 .tool-item.active {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border-color: var(--brand-primary);
 }
 
@@ -151,7 +151,7 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
 }
 
 .measurement-result {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   padding: 4px 10px;
   font-size: 12px;
   color: var(--brand-primary);

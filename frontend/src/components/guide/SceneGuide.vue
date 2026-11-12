@@ -412,7 +412,7 @@ onUnmounted(clearTipTimers)
 .sg-progress-fill {
   display: block;
   height: 100%;
-  background: #409eff;
+  background: var(--brand-primary);
   transition: width 0.25s;
 }
 .sg-progress-txt {
@@ -428,7 +428,7 @@ onUnmounted(clearTipTimers)
   margin-bottom: 4px;
 }
 .sg-step.is-now {
-  border-color: #b3d8ff;
+  border-color: var(--el-color-primary-light-7);
   background: #f4f8fe;
 }
 .sg-step-head {

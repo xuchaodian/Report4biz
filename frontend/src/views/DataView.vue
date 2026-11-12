@@ -613,7 +613,7 @@
         <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px;">
           <div v-for="store in storeCompareFiltered" :key="store.id"
             style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
-            :style="{ background: storeCompareSelected.some(s => s.id === store.id) ? '#ecf5ff' : 'white' }"
+            :style="{ background: storeCompareSelected.some(s => s.id === store.id) ? 'var(--el-color-primary-light-9)' : 'white' }"
             @click="toggleStoreCompare(store)">
             <el-button :type="storeCompareSelected.some(s => s.id === store.id) ? 'primary' : 'default'" size="small" style="margin-right: 12px;" @click.stop="toggleStoreCompare(store)">
               {{ storeCompareSelected.some(s => s.id === store.id) ? '已选' : '选择' }}
@@ -686,7 +686,7 @@
         <div style="max-height: 260px; overflow-y: auto; border: 1px solid #ebeef5; border-radius: 4px; margin-bottom: 12px;">
           <div v-for="store in storeSimilarFiltered" :key="store.id"
             style="display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
-            :style="{ background: storeSimilarSelected?.id === store.id ? '#ecf5ff' : 'white' }"
+            :style="{ background: storeSimilarSelected?.id === store.id ? 'var(--el-color-primary-light-9)' : 'white' }"
             @click="storeSimilarSelected = store">
             <el-button :type="storeSimilarSelected?.id === store.id ? 'primary' : 'default'" size="small" style="margin-right: 12px;">
               {{ storeSimilarSelected?.id === store.id ? '已选' : '选择' }}
@@ -2754,7 +2754,7 @@ const resetRanking = () => {
   color: #e6a23c;
 }
 .dedup-stats b.info {
-  color: #337ecc;
+  color: var(--el-color-primary-dark-2);
 }
 /* 口径说明里的行内小标签（与组头 .dg-kind 同色系） */
 .tag-hint {
@@ -2772,9 +2772,9 @@ const resetRanking = () => {
   border-color: #fde2e2;
 }
 .tag-hint.k-dualFormat {
-  background: #ecf5ff;
-  color: #337ecc;
-  border-color: #d9ecff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary-dark-2);
+  border-color: var(--el-color-primary-light-8);
 }
 .tag-hint.k-suspected {
   background: #fdf6ec;
@@ -2796,9 +2796,9 @@ const resetRanking = () => {
   border-color: #fde2e2;
 }
 .dg-kind.k-dualFormat {
-  background: #ecf5ff;
-  color: #337ecc;
-  border-color: #d9ecff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary-dark-2);
+  border-color: var(--el-color-primary-light-8);
 }
 .dg-kind.k-suspected {
   background: #fdf6ec;
@@ -2870,7 +2870,7 @@ const resetRanking = () => {
   border-bottom: 1px dashed #f2f6fc;
 }
 .dedup-row.keep {
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
 }
 .dr-name {
   flex: 0 0 auto;
