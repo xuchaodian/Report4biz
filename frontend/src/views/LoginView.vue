@@ -262,7 +262,7 @@ const backToPassword = () => {
   line-height: 1.6;
   color: #5a6b80;
   background: #f2f7fd;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--brand-primary);
   border-radius: 4px;
   padding: 9px 12px;
 }
@@ -276,7 +276,7 @@ const backToPassword = () => {
   margin: -6px 0 14px;
 
   a {
-    color: #409eff;
+    color: var(--brand-primary);
     font-size: 13px;
     /* v1.13.173（WCAG 1.4.1 不能仅靠颜色区分）：原静置态 text-decoration:none，
        与周围内容仅靠颜色区分 ⇒ 改为常显 1px 下划线 + 3px 偏移；悬停加粗到 2px 作反馈。

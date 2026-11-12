@@ -424,7 +424,7 @@
                 @mouseout="$event.currentTarget.style.background = 'transparent'"
                 @click="locateCompetitionCity(item.key, city)"
               >
-                <el-icon style="font-size:12px;color:#409eff;"><Location /></el-icon>
+                <el-icon style="font-size:12px;color: var(--brand-primary);"><Location /></el-icon>
                 <span>{{ city }}</span>
                 <span :style="{ marginLeft: 'auto', color: '#909399' }">{{ count }}家</span>
                 <el-icon style="font-size:11px;color:#c0c4cc;"><ArrowRight /></el-icon>
@@ -1241,7 +1241,7 @@
         <!-- 综合分 -->
         <div style="display:flex;align-items:center;gap:16px;padding:14px;background:#f5f7fa;border-radius:8px;margin-bottom:14px;">
           <div style="text-align:center;flex-shrink:0;">
-            <div style="font-size:32px;font-weight:600;color:#409eff;line-height:1;">{{ envScoreTotal.toFixed(1) }}</div>
+            <div style="font-size:32px;font-weight:600;color: var(--brand-primary);line-height:1;">{{ envScoreTotal.toFixed(1) }}</div>
             <div style="font-size:11px;color:#909399;margin-top:4px;">综合分 / 5.0</div>
           </div>
           <div style="flex:1;">
@@ -8355,7 +8355,7 @@ const finishMeasure = () => {
     L.marker(last, {
       icon: L.divIcon({
         className: '',
-        html: `<div style="display:flex;align-items:center;gap:6px;background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 1px 4px rgba(0,0,0,0.2);">
+        html: `<div style="display:flex;align-items:center;gap:6px;background:#fff;color:#333;padding:4px 10px;border-radius:3px;font-size:12px;font-weight:bold;white-space:nowrap;border:1px solid var(--brand-primary);box-shadow:0 1px 4px rgba(0,0,0,0.2);">
           总计: ${formatDistance(totalDist)}
           <span data-measure-act="clear" aria-hidden="true" style="cursor:pointer;color:#f56c6c;font-weight:bold;line-height:1;" title="清除测量结果">❌</span>
         </div>`,
@@ -8418,7 +8418,7 @@ const handleAreaMeasure = (lat, lng) => {
   measureAreaLabel = L.marker(center, {
     icon: L.divIcon({
       className: '',
-      html: `<div style="background:#fff;color:#333;padding:5px 12px;border-radius:4px;font-size:13px;font-weight:bold;white-space:nowrap;border:1px solid #409eff;box-shadow:0 2px 6px rgba(0,0,0,0.2);display:inline-block;">
+      html: `<div style="background:#fff;color:#333;padding:5px 12px;border-radius:4px;font-size:13px;font-weight:bold;white-space:nowrap;border:1px solid var(--brand-primary);box-shadow:0 2px 6px rgba(0,0,0,0.2);display:inline-block;">
         面积: ${areaStr}
       </div>`,
       iconSize: null,
@@ -10820,7 +10820,7 @@ const showPoiOnMap = (pois, centerLat, centerLng, radius) => {
         <div style="color:#666;font-size:12px;margin-bottom:2px;">${poi.address || ''}</div>
         <div style="color:#999;font-size:11px;">${poi.city}${poi.district}</div>
         ${poi.distance ? `<div style="color:#f56c6c;font-size:11px;margin-top:4px;">距中心: ${poi.distance}米</div>` : ''}
-        ${poi.tel ? `<div style="color:#409eff;font-size:11px;margin-top:2px;">电话：${poi.tel}</div>` : ''}
+        ${poi.tel ? `<div style="color: var(--brand-primary);font-size:11px;margin-top:2px;">电话：${poi.tel}</div>` : ''}
       </div>
     `)
     
@@ -12358,7 +12358,7 @@ function getHeatmapCellStyle(nums, idx) {
   width: 40px;
   height: 40px;
   border: 3px solid #e0e0e0;
-  border-top-color: #409eff;
+  border-top-color: var(--brand-primary);
   border-radius: 50%;
   animation: map-loading-spin 0.8s linear infinite;
   margin: 0 auto 16px;
@@ -12422,7 +12422,7 @@ function getHeatmapCellStyle(nums, idx) {
       gap: 6px;
       font-size: 14px;
       font-weight: 600;
-      color: #409eff;
+      color: var(--brand-primary);
       margin-bottom: 10px;
       padding-bottom: 8px;
       border-bottom: 1px solid #eee;
@@ -12448,13 +12448,13 @@ function getHeatmapCellStyle(nums, idx) {
     
     &:hover {
       background: #f5f7fa;
-      border-color: #409eff;
+      border-color: var(--brand-primary);
     }
     
     &.active {
       background: #ecf5ff;
-      border-color: #409eff;
-      color: #409eff;
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
     }
     
     .style-icon {
@@ -12502,7 +12502,7 @@ function getHeatmapCellStyle(nums, idx) {
   align-items: center;
 
   .city-name {
-    color: #409eff;
+    color: var(--brand-primary);
     font-weight: 500;
     display: flex;
     align-items: center;
@@ -12546,11 +12546,11 @@ function getHeatmapCellStyle(nums, idx) {
       }
 
       &:hover {
-        border-color: #409eff;
+        border-color: var(--brand-primary);
       }
 
       &.active {
-        border-color: #409eff;
+        border-color: var(--brand-primary);
       }
 
       img {
@@ -12878,7 +12878,7 @@ function getHeatmapCellStyle(nums, idx) {
   filter: brightness(0.96);
 }
 .map-nav-toggle:focus-visible {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
 }
 .map-nav-toggle .el-icon {
@@ -13247,7 +13247,7 @@ function getHeatmapCellStyle(nums, idx) {
 }
 .district-count-num {
   font-weight: 600;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .district-count-sub {
   font-size: 12px;

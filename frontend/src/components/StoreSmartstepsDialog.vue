@@ -897,7 +897,7 @@ function formatP0SData(data) {
       <div style="font-size:11px;color:#999;margin-top:2px;">到访人数</div>
     </div>
     <div style="flex:1;background:#e8f4fd;border-radius:6px;padding:10px;text-align:center;">
-      <div style="font-size:22px;font-weight:bold;color:#409eff;">${dwellTotal.toLocaleString()}</div>
+      <div style="font-size:22px;font-weight:bold;color: var(--brand-primary);">${dwellTotal.toLocaleString()}</div>
       <div style="font-size:11px;color:#999;margin-top:2px;">居住人数</div>
     </div>
     <div style="flex:1;background:#fce8f3;border-radius:6px;padding:10px;text-align:center;">
@@ -2843,7 +2843,7 @@ watch(() => props.store, (newStore) => {
 
 .insight-info {
   background: #ecf5ff;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--brand-primary);
 }
 
 .insight-icon {

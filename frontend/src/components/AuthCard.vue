@@ -92,7 +92,7 @@ defineProps({
 
   /* 页脚内容由调用方以插槽传入 ⇒ 属于父组件作用域，必须用 :deep() 才能命中 */
   :deep(a) {
-    color: #409eff;
+    color: var(--brand-primary);
     margin-left: 5px;
     /* v1.13.173（WCAG 1.4.1 不能仅靠颜色区分）：原静置态 text-decoration:none，
        与周围灰字仅靠「蓝 vs 灰」区分 ⇒ 改为常显 1px 下划线 + 3px 偏移（不离字太近），

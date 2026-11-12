@@ -139,11 +139,11 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
 .tool-item:hover,
 .tool-item.active {
   background: #ecf5ff;
-  border-color: #409eff;
+  border-color: var(--brand-primary);
 }
 
 .tool-item.active span {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 .toolbar-body :deep(.el-divider) {
@@ -154,7 +154,7 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
   background: #ecf5ff;
   padding: 4px 10px;
   font-size: 12px;
-  color: #409eff;
+  color: var(--brand-primary);
   font-weight: 500;
   text-align: center;
   border-top: 1px solid #eee;

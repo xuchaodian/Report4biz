@@ -378,7 +378,7 @@ watch(() => props.visible, (val) => {
 .quota-number {
   font-size: 28px;
   font-weight: bold;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .quota-display .quota-label {
   font-size: 14px;

@@ -619,13 +619,13 @@ onMounted(() => {
 }
 
 .shapefile-uploader :deep(.el-upload-dragger:hover) {
-  border-color: #409eff;
+  border-color: var(--brand-primary);
   background: #ecf5ff;
 }
 
 .upload-icon {
   font-size: 48px;
-  color: #409eff;
+  color: var(--brand-primary);
   margin-bottom: 16px;
 }
 

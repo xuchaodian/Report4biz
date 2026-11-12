@@ -381,12 +381,12 @@ const onBrandToggle = (val) => {
 
 .store-tools-item:hover {
   background: #ecf5ff;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 .store-tools-item.active {
   background: #ecf5ff;
-  color: #409eff;
+  color: var(--brand-primary);
   font-weight: 600;
 }
 
@@ -406,9 +406,9 @@ const onBrandToggle = (val) => {
 .brand-filter-btn {
   font-size: 12px;
   padding: 1px 8px;
-  border: 1px solid #409eff;
+  border: 1px solid var(--brand-primary);
   border-radius: 4px;
-  color: #409eff;
+  color: var(--brand-primary);
   background: #fff;
   cursor: pointer;
   white-space: nowrap;

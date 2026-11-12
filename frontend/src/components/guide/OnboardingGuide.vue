@@ -214,7 +214,7 @@ const skipWizard = () => {
   margin: 0 auto;
 }
 .banner-icon {
-  color: #409eff;
+  color: var(--brand-primary);
   font-size: 18px;
   flex-shrink: 0;
 }
@@ -224,7 +224,7 @@ const skipWizard = () => {
   color: #333;
 }
 .banner-text strong {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .banner-btn {
   flex-shrink: 0;
@@ -285,7 +285,7 @@ const skipWizard = () => {
   margin-bottom: 20px;
 }
 .wizard-tip .el-icon {
-  color: #409eff;
+  color: var(--brand-primary);
   flex-shrink: 0;
 }
 .wizard-action {

@@ -86,12 +86,12 @@ watch(() => props.results, (newResults) => {
 }
 
 .search-body :deep(.el-input__wrapper):hover {
-  border-color: #409eff;
+  border-color: var(--brand-primary);
 }
 
 .search-body :deep(.el-input__wrapper.is-focus) {
-  border-color: #409eff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 .search-body :deep(.el-input__inner) {
@@ -103,7 +103,7 @@ watch(() => props.results, (newResults) => {
 }
 
 .search-body :deep(.el-input__prefix) {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 .search-body :deep(.el-input__clear) {
@@ -111,7 +111,7 @@ watch(() => props.results, (newResults) => {
 }
 
 .search-body :deep(.el-input__clear):hover {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 .search-results {
@@ -149,7 +149,7 @@ watch(() => props.results, (newResults) => {
   justify-content: center;
   background: #f5f5f5;
   border-radius: 50%;
-  color: #409eff;
+  color: var(--brand-primary);
   font-size: 14px;
 }
 

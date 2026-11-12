@@ -114,7 +114,7 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
 }
 
 .poi-search-input :deep(.el-input__inner) {
-  border-color: #409eff;
+  border-color: var(--brand-primary);
   width: 100%;
 }
 
@@ -142,7 +142,7 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
 
 .poi-mode-btn:hover {
   background: #ecf5ff;
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
 }
 </style>

@@ -1,5 +1,14 @@
 :root {
-  --primary-color: #409eff;
+  /* ===== 品牌色 token（v1.13.354 / 色板治理 B1）=====
+     这里是「UI 主色」的唯一来源，与「品牌实体色」严格分开：
+       · UI 主色（按钮 / 链接 / 选中态 / 图标）→ var(--brand-primary)
+       · 品牌实体色（吉野家 = #409eff 之类）→ utils/brandColors.js，⛔ 两套不得互相套用
+     白底对比度：#409eff 2.78:1 ❌ → #2563eb 5.17:1 ✅（WCAG 1.4.3 文本、1.4.11 非文本）
+     本批只接管「前景色 + 描边」；填充类（background / 渐变）留到 B2，随 EP 主色一起迁移，
+     届时把 --el-color-primary 指到本变量即可全站联动。
+     原 --primary-color 为历史死变量（全项目 0 处引用），已删。 */
+  --brand-primary: #2563eb;
+
   --success-color: #67c23a;
   --warning-color: #e6a23c;
   --danger-color: #f56c6c;
@@ -306,7 +315,7 @@ body {
 
 .map-context-menu-item:hover {
   background: #f5f7fa;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 .map-context-menu-item .el-icon {
@@ -315,7 +324,7 @@ body {
 }
 
 .map-context-menu-item:hover .el-icon {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 /* 菜单分隔线（添加门店与下方操作区分） */
@@ -457,7 +466,7 @@ body {
   color: #1557a5 !important;
 }
 .el-dropdown-menu__item.dd-admin-item .el-icon {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 
 /* v1.13.205：入口红点（待处理 VIP 试用申请数）—— 与上面同理，必须写全局：

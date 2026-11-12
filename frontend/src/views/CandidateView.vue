@@ -501,7 +501,7 @@ onMounted(() => {
 .cd-stage-t { font-size: 12px; color: #606266; }
 .cd-total { margin-left: auto; font-size: 13px; color: #606266; }
 .cd-total b { color: #303133; }
-.cd-clear { margin-left: 8px; color: #409eff; cursor: pointer; }
+.cd-clear { margin-left: 8px; color: var(--brand-primary); cursor: pointer; }
 
 .cd-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 .cd-error { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #fef0f0; color: #f56c6c; border-radius: 6px; font-size: 13px; }

@@ -773,10 +773,10 @@
               </div>
             </div>
             <div style="flex: 1;">
-              <div style="font-size: 13px; font-weight: bold; color: #409eff; margin-bottom: 6px; text-align: center;">后10</div>
+              <div style="font-size: 13px; font-weight: bold; color: var(--brand-primary); margin-bottom: 6px; text-align: center;">后10</div>
               <div v-for="(s, sIdx) in group.bottom10" :key="s.name" style="display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px;">
                 <span><span style="color: #999; margin-right: 6px;">{{ sIdx + 1 }}</span>{{ s.name }}</span>
-                <span style="font-weight: bold; color: #409eff;">{{ s.value.toLocaleString() }}</span>
+                <span style="font-weight: bold; color: var(--brand-primary);">{{ s.value.toLocaleString() }}</span>
               </div>
             </div>
           </div>
@@ -802,7 +802,7 @@
         <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:12px;padding:8px 10px;background:#f4f8ff;border-radius:6px;">
-        <AppIcon style="color:#409eff;"><Lock /></AppIcon>
+        <AppIcon style="color: var(--brand-primary);"><Lock /></AppIcon>
         <span style="font-size:12px;color:#5a6b85;line-height:1.6;">
           销售数据<b>仅您本人账号可见</b>——平台侧只统计「录入条数」、看不到金额；集团「同步下发」不含销售记录，报告与导出均不含销售额。
           <span style="color:#e6a23c;">（门店若被划拨给集团其他成员，销售记录会随门店一并转移）</span><br/>
@@ -821,7 +821,7 @@
             <div>{{ row.name }}</div>
             <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
               <template v-for="(c, i) in row.yearCells" :key="c.year">
-                <span :style="c.text === '-' ? '' : (c.isBand ? 'color:#e6a23c;' : 'color:#409eff;')" :title="c.title">{{ c.year }}: {{ c.text }}</span><template v-if="i < row.yearCells.length - 1"><span style="margin:0 5px;">·</span></template>
+                <span :style="c.text === '-' ? '' : (c.isBand ? 'color:#e6a23c;' : 'color: var(--brand-primary);')" :title="c.title">{{ c.year }}: {{ c.text }}</span><template v-if="i < row.yearCells.length - 1"><span style="margin:0 5px;">·</span></template>
               </template>
             </div>
           </template>
@@ -2730,7 +2730,7 @@ const resetRanking = () => {
   line-height: 1.7;
   color: #606266;
   background: #f5f7fa;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--brand-primary);
   border-radius: 4px;
 }
 .dedup-loading {

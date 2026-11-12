@@ -1544,11 +1544,11 @@ onMounted(() => {
       border: 1px solid #dcdfe6;
 
       &.total {
-        border-color: #409eff;
+        border-color: var(--brand-primary);
         background: linear-gradient(135deg, #ecf5ff 0%, #f0f7ff 100%);
 
-        .label { color: #409eff; cursor: help; border-bottom: 1px dashed currentColor; }
-        .value { color: #409eff; font-weight: bold; font-size: 18px; }
+        .label { color: var(--brand-primary); cursor: help; border-bottom: 1px dashed currentColor; }
+        .value { color: var(--brand-primary); font-weight: bold; font-size: 18px; }
       }
 
       &.api {
@@ -1814,7 +1814,7 @@ onMounted(() => {
 .ov-card.ov-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
 .ov-label { font-size: 12px; color: #909399; }
 .ov-num { font-size: 20px; color: #303133; font-weight: 600; }
-.ov-hl .ov-num { color: #409eff; }
+.ov-hl .ov-num { color: var(--brand-primary); }
 .ov-note {
   font-size: 12px; color: #606266; line-height: 1.8;
   margin-top: 10px; padding: 8px 12px;
@@ -1822,7 +1822,7 @@ onMounted(() => {
 }
 .ov-org { font-weight: 600; color: #303133; }
 .ov-member { color: #606266; }
-.ov-g-pool { color: #409eff; }
+.ov-g-pool { color: var(--brand-primary); }
 .ov-g-move { color: #e6a23c; }
 .ov-g-sep { color: #c0c4cc; margin: 0 4px; }
 .ov-reconcile {

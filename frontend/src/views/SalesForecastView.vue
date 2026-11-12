@@ -509,7 +509,7 @@ onMounted(() => {
 .fc-amount {
   font-size: 32px;
   font-weight: 500;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .fc-unit {
   font-size: 14px;

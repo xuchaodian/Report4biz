@@ -1497,7 +1497,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-label { font-size: 12px; color: #606266; }
 
 .ds-candbar { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #303133; margin-bottom: 10px; flex-wrap: wrap; }
-.ds-num { color: #409eff; }
+.ds-num { color: var(--brand-primary); }
 .ds-muted { font-size: 12px; color: #909399; }
 .ds-ok { color: #67c23a; }
 .ds-warn { color: #e6a23c; }
@@ -1536,7 +1536,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-quota-card.ds-quota-hl { background: #ecf5ff; border: 1px solid #d9ecff; }
 .ds-quota-label { font-size: 12px; color: #909399; }
 .ds-quota-num { font-size: 20px; color: #303133; font-weight: 600; }
-.ds-quota-hl .ds-quota-num { color: #409eff; }
+.ds-quota-hl .ds-quota-num { color: var(--brand-primary); }
 .ds-allocate-head { font-size: 14px; color: #303133; }
 
 /* 二级再分配：⑥ 区块头部按钮 + 我的额度一行 */
@@ -1553,7 +1553,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
   display: inline-block; min-width: 34px; padding: 1px 6px; margin-right: 4px;
   border-radius: 4px; font-size: 12px; text-align: center;
 }
-.ds-tag-pool { background: #ecf5ff; color: #409eff; border: 1px solid #d9ecff; }
+.ds-tag-pool { background: #ecf5ff; color: var(--brand-primary); border: 1px solid #d9ecff; }
 .ds-tag-move { background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
 .ds-move-tip {
   font-size: 12px; color: #606266; line-height: 1.9;

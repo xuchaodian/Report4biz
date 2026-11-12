@@ -361,7 +361,7 @@ onUnmounted(clearTipTimers)
   transition: border-color 0.15s, background 0.15s;
 }
 .sg-scene:hover {
-  border-color: #409eff;
+  border-color: var(--brand-primary);
   background: #f4f8fe;
 }
 .sg-scene-row {
@@ -455,8 +455,8 @@ onUnmounted(clearTipTimers)
   color: #fff;
 }
 .sg-step.is-now .sg-step-no {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
 }
 .sg-step-title {
   font-size: 12px;
@@ -576,7 +576,7 @@ onUnmounted(clearTipTimers)
   cursor: pointer;
 }
 .sg-feedback:hover {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .sg-back {
   font-size: 11px;
@@ -584,6 +584,6 @@ onUnmounted(clearTipTimers)
   cursor: pointer;
 }
 .sg-back:hover {
-  color: #409eff;
+  color: var(--brand-primary);
 }
 </style>

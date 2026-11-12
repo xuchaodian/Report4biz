@@ -327,7 +327,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;  font-size: 13px;
-  color: #409eff;
+  color: var(--brand-primary);
 
   .el-icon {
     flex-shrink: 0;

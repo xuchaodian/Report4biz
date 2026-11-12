@@ -332,7 +332,7 @@ onMounted(loadData)
 }
 .mm-weight-pct {
   font-weight: 500;
-  color: #409eff;
+  color: var(--brand-primary);
 }
 .mm-legend {
   display: flex;
@@ -478,7 +478,7 @@ onMounted(loadData)
 .mm-city-tag {
   flex-shrink: 0;
   font-size: 11px;
-  color: #409eff;
+  color: var(--brand-primary);
   background: #ecf5ff;
   border: 1px solid #d9ecff;
   border-radius: 3px;

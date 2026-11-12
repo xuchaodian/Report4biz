@@ -121,7 +121,7 @@ const submit = async () => {
   border-color: #a0cfff;
 }
 .fb-type.is-active {
-  border-color: #409eff;
+  border-color: var(--brand-primary);
   background: #f4f8fe;
   color: #1677d2;
   font-weight: 500;

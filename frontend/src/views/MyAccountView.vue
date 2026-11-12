@@ -4666,7 +4666,7 @@ const handleExportExcel = async () => {
   cursor: pointer;
   color: #909399;
   &:hover {
-    color: #409eff;
+    color: var(--brand-primary);
   }
 }
 
@@ -5129,7 +5129,7 @@ const handleExportExcel = async () => {
 }
 .insight-info {
   background: #ecf5ff;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--brand-primary);
 }
 
 .insight-icon { flex-shrink: 0; font-size: 15px; }

@@ -141,9 +141,9 @@
               </el-dropdown-item>
               <li class="quota-dropdown-item" @click.stop>
                 <div class="quota-dropdown-row">
-                  <el-icon style="color:#409eff;"><Odometer /></el-icon>
+                  <el-icon style="color: var(--brand-primary);"><Odometer /></el-icon>
                   <span v-if="quotaLoading" class="quota-value" style="color:#909399;">加载中...</span>
-                  <span v-else-if="userStore.quota" class="quota-value">剩余 <b style="color:#409eff;">{{ userStore.availableQuota }}</b> 次</span>
+                  <span v-else-if="userStore.quota" class="quota-value">剩余 <b style="color: var(--brand-primary);">{{ userStore.availableQuota }}</b> 次</span>
                   <span v-else class="quota-value" style="color:#f56c6c;">--</span>
                 </div>
               </li>
@@ -288,7 +288,7 @@
         </el-table-column>
       </el-table>
       <div style="margin-top:10px;font-size:12px;color:#606266;">
-        已选 <b style="color:#409eff;">{{ exportSelected.length }}</b> 条记录
+        已选 <b style="color: var(--brand-primary);">{{ exportSelected.length }}</b> 条记录
         <span v-if="exportList.some(r => r.is_report)" style="margin-left:8px;">
           · 标「报告取数」的记录仅含联通 1001 人口服务，导出的其余指标为空属正常
         </span>
@@ -830,12 +830,12 @@ const doExport = async (type) => {
       
       &:hover {
         background: #f5f7fa;
-        color: #409eff;
+        color: var(--brand-primary);
       }
       
       &.active {
         background: #ecf5ff;
-        color: #409eff;
+        color: var(--brand-primary);
         font-weight: 600;  /* v1.13.175（L8）：当前页除底色外再加「字重」维度 */
       }
 
@@ -905,12 +905,12 @@ const doExport = async (type) => {
 
       &:hover .nav-dropdown-trigger {
         background: #f5f7fa;
-        color: #409eff;
+        color: var(--brand-primary);
       }
 
       &.active .nav-dropdown-trigger {
         background: #ecf5ff;
-        color: #409eff;
+        color: var(--brand-primary);
       }
 
       .nav-dropdown-arrow {
