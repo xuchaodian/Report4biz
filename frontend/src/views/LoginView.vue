@@ -20,7 +20,13 @@
       </el-dropdown>
     </div>
 
-    <AuthCard :title="$t('login.title')" :subtitle="$t('login.subtitle')">
+    <!-- :show-icp="false"：登录页不显示备案号（v1.13.359）。合规展示位由官网首页页脚承担，
+         其余认证页（注册/找回/重置/404）仍默认显示，详见 AuthCard.vue 注释。 -->
+    <AuthCard
+      :title="$t('login.title')"
+      :subtitle="$t('login.subtitle')"
+      :show-icp="false"
+    >
       <el-form
         v-if="!needTotp"
         ref="formRef"

@@ -15,9 +15,13 @@
       <slot name="footer" />
     </div>
 
-    <!-- ICP 备案号：四张认证页（登录/注册/忘记密码/重置密码）共用的公开展示位，
-         工信部要求「可见 + 可点进 beian.miit.gov.cn」⇒ 常显下划线只在 hover 出现，靠链接语义兜底 -->
+    <!-- ICP 备案号：认证页共用的公开展示位（v1.13.359 起可用 showIcp 关闭）。
+         工信部要求「网站主页底部展示 + 可点进 beian.miit.gov.cn」——**主页**指官网首页
+         homepage/index.html 的页脚，那里恒常驻；此处属可选加固位，故登录页可按需隐藏。
+         ⚠️ 只允许「本组件内按页开关」，⛔ 别把 homepage 页脚那处一起删（那是合规位）。
+         常显下划线只在 hover 加粗，靠链接语义兜底 -->
     <a
+      v-if="showIcp"
       class="auth-card__icp"
       href="https://beian.miit.gov.cn/"
       target="_blank"
@@ -29,7 +33,10 @@
 <script setup>
 defineProps({
   title: { type: String, default: '' },
-  subtitle: { type: String, default: '' }
+  subtitle: { type: String, default: '' },
+  /* 是否展示底部 ICP 备案号。默认 true（注册/找回密码/重置密码/404 保持原样）；
+     登录页显式传 false —— 登录页是对外门面，备案号展示位改由官网首页承担。 */
+  showIcp: { type: Boolean, default: true }
 })
 </script>
 
