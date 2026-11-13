@@ -25,6 +25,21 @@ export default {
     fullscreenHint: '上部ナビを隠して地図を全画面表示（ショートカット F）',
     showNavHint: '上部ナビを再表示（ショートカット F）'
   },
+  // ===== タブタイトル（v1.13.360）=====
+  // ナビに既にある項目は nav.* を再利用（ここには重複して書かない）
+  pageTitle: {
+    login: 'ログイン',
+    register: '新規登録',
+    forgotPassword: 'パスワード再設定',
+    resetPassword: 'パスワードリセット',
+    sharedPurchase: '購入申請',
+    storeCheckup: '店舗ヘルスチェック',
+    brands: 'アイコン設定',
+    auditLog: '操作監査',
+    cityData: '都市データ',
+    dataSync: 'データ同期',
+    notFound: 'ページが見つかりません'
+  },
   // ===== ログインページ =====
   login: {
     title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）

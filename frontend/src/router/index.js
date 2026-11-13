@@ -1,44 +1,55 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { watch } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { i18n } from '@/i18n'
+import { formatTitle } from '@/utils/pageTitle'
 
+// ===== 页面标题（v1.13.360）=====
+// 背景：此前**没有任何一处**写 document.title —— 路由表没有 title 元信息、
+//   全仓也没有 document.title 赋值 ⇒ 浏览器标签页在 20+ 个页面之间切换时标题恒为
+//   index.html 里那句站点标题。后果是多标签页办公时分不清哪个标签是哪个页面，
+//   收藏/历史记录也全是同一个名字。
+// 做法：每条路由挂 `meta.titleKey`（i18n 键，⛔ 不写中文定值 —— 本站有三语），
+//   afterEach 里翻译后拼成 `页面名 - 品牌名`（格式由 utils/pageTitle.js 单点定义）。
+// ⚠️ 键名优先复用 `nav.*`：菜单文案与标签页标题必须是同一个来源，否则改一处漏一处。
 const routes = [
   {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/LoginView.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, titleKey: 'pageTitle.login' }
   },
   {
     path: '/register',
     name: 'Register',
     component: () => import('@/views/RegisterView.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, titleKey: 'pageTitle.register' }
   },
   {
     // 忘记密码：提交邮箱 → 后端发重置链接（不透露邮箱是否已注册）
     path: '/forgot-password',
     name: 'ForgotPassword',
     component: () => import('@/views/ForgotPasswordView.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, titleKey: 'pageTitle.forgotPassword' }
   },
   {
     // 重置密码：邮件链接带着 ?token= 进入（一次性、30 分钟有效）
     path: '/reset-password',
     name: 'ResetPassword',
     component: () => import('@/views/ResetPasswordView.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, titleKey: 'pageTitle.resetPassword' }
   },
   {
     path: '/shared/purchase',
     name: 'SharedPurchase',
     component: () => import('@/views/SharedPurchaseView.vue'),
-    meta: { requiresAuth: false }
+    meta: { requiresAuth: false, titleKey: 'pageTitle.sharedPurchase' }
   },
   {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/DashboardView.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, titleKey: 'nav.dashboard' }
   },
   {
     path: '/',
@@ -48,58 +59,65 @@ const routes = [
       {
         path: '',
         name: 'Map',
-        component: () => import('@/views/MapView.vue')
+        component: () => import('@/views/MapView.vue'),
+        meta: { titleKey: 'nav.map' }
       },
       {
         path: 'data',
         name: 'Data',
-        component: () => import('@/views/DataView.vue')
+        component: () => import('@/views/DataView.vue'),
+        meta: { titleKey: 'nav.myStores' }
       },
       {
         // 门店体检（v1.13.291 上线，v1.13.296 由「位置体检」更名）：入口在门店管理页工具栏，不占顶部导航。
         // 全免费（纯本地几何 + 一次聚合查询，不消耗联通/高德配额）；仅本人门店。
         path: 'store-checkup',
         name: 'StoreCheckup',
-        component: () => import('@/views/StoreCheckupView.vue')
+        component: () => import('@/views/StoreCheckupView.vue'),
+        meta: { titleKey: 'pageTitle.storeCheckup' }
       },
       {
         path: 'competitors',
         name: 'Competitors',
-        component: () => import('@/views/CompetitorView.vue')
+        component: () => import('@/views/CompetitorView.vue'),
+        meta: { titleKey: 'nav.competitors' }
       },
       {
         path: 'brand-stores',
         name: 'BrandStores',
-        component: () => import('@/views/BrandStoreView.vue')
+        component: () => import('@/views/BrandStoreView.vue'),
+        meta: { titleKey: 'nav.brandStores' }
       },
       {
         path: 'shopping-centers',
         name: 'ShoppingCenters',
-        component: () => import('@/views/ShoppingCenterView.vue')
+        component: () => import('@/views/ShoppingCenterView.vue'),
+        meta: { titleKey: 'nav.shoppingCenters' }
       },
       {
         path: 'brands',
         name: 'Brands',
-        component: () => import('@/views/BrandIconView.vue')
+        component: () => import('@/views/BrandIconView.vue'),
+        meta: { titleKey: 'pageTitle.brands' }
       },
       {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/UsersView.vue'),
-        meta: { requiresAdmin: true }
+        meta: { requiresAdmin: true, titleKey: 'nav.users' }
       },
       {
         // 操作审计（v1.13.321）—— 仅 admin；后端 /api/audit-log 也是组级 requireAdmin
         path: 'audit-log',
         name: 'AuditLog',
         component: () => import('@/views/AuditLogView.vue'),
-        meta: { requiresAdmin: true }
+        meta: { requiresAdmin: true, titleKey: 'pageTitle.auditLog' }
       },
       {
         path: 'resale',
         name: 'Resale',
         component: () => import('@/views/ResaleView.vue'),
-        meta: { requiresAdmin: true }
+        meta: { requiresAdmin: true, titleKey: 'nav.apiOpen' }
       },
       {
         path: 'candidates',
@@ -108,17 +126,19 @@ const routes = [
         // v1.13.343：业主「还没想好」⇒ 收紧为仅管理员可进，全局守卫 next('/') 弹回首页。
         //   ⛔ 只挡 UI 深链；后端 /api/candidates 未加 requireAdmin（见 candidateAdminOnly.test.js 文件头）。
         component: () => import('@/views/CandidateView.vue'),
-        meta: { requiresAdmin: true }
+        meta: { requiresAdmin: true, titleKey: 'nav.candidates' }
       },
       {
         path: 'market-map',
         name: 'MarketMap',
-        component: () => import('@/views/MarketMapView.vue')
+        component: () => import('@/views/MarketMapView.vue'),
+        meta: { titleKey: 'nav.cityInsight' }
       },
       {
         path: 'district-insight',
         name: 'DistrictInsight',
-        component: () => import('@/views/DistrictInsightView.vue')
+        component: () => import('@/views/DistrictInsightView.vue'),
+        meta: { titleKey: 'nav.districtInsight' }
       },
       // v1.13.231：选址评估（site-evaluation）已**整体清理**。
       //   沿革：v1.11.x 上线 → c9fba2e(2026-08-19) 因「与现有功能重叠」隐藏（路由注释、代码保留）
@@ -130,29 +150,34 @@ const routes = [
       {
         path: 'sales-forecast',
         name: 'SalesForecast',
-        component: () => import('@/views/SalesForecastView.vue')
+        component: () => import('@/views/SalesForecastView.vue'),
+        meta: { titleKey: 'nav.salesForecast' }
       },
       {
         path: 'account',
         name: 'Account',
-        component: () => import('@/views/MyAccountView.vue')
+        component: () => import('@/views/MyAccountView.vue'),
+        meta: { titleKey: 'nav.account' }
       },
       {
         path: 'shapefiles',
         name: 'Shapefiles',
-        component: () => import('@/views/ShapefileView.vue')
+        component: () => import('@/views/ShapefileView.vue'),
+        meta: { titleKey: 'nav.statistics' }
       },
       {
         path: 'city-data',
         name: 'CityData',
-        component: () => import('@/views/CityDataView.vue')
+        component: () => import('@/views/CityDataView.vue'),
+        meta: { titleKey: 'pageTitle.cityData' }
       },
       {
         // 数据同步（集团/子公司）—— 入口在右上角个人下拉；不属于任何组织的账号
         // 也能进（页面给空态引导），因此不加 requiresAdmin
         path: 'data-sync',
         name: 'DataSync',
-        component: () => import('@/views/DataSyncView.vue')
+        component: () => import('@/views/DataSyncView.vue'),
+        meta: { titleKey: 'pageTitle.dataSync' }
       }
     ]
   },
@@ -169,7 +194,7 @@ const routes = [
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),
-    meta: { requiresAuth: false, noindex: true }
+    meta: { requiresAuth: false, noindex: true, titleKey: 'pageTitle.notFound' }
   }
 ]
 
@@ -223,6 +248,25 @@ function applyRobotsMeta(noindex) {
   }
 }
 
+// ===== 标签页标题：按路由 meta.titleKey 写入 document.title（v1.13.360）=====
+// ⚠️ 不要在页面组件里各自写 document.title —— 那样每页都要重复一遍格式，
+//   且漏写一页就是「标题还停在上一个页面」，很难发现。
+// ⚠️ titleKey 只放**键**，不放中文：本站有中/日/英三语，写死定值会让日文/英文界面
+//   的标签页仍是中文（与品牌锚点铁律同源的问题）。
+function applyTitle(to) {
+  if (typeof document === 'undefined') return // 守卫测试/SSR 环境下安全跳过
+  const key = to && to.meta && to.meta.titleKey
+  document.title = formatTitle(key ? i18n.global.t(key) : '')
+}
+
+// 切语言时标题要跟着变：否则「日文界面 + 中文标签页」会一直挂到下次导航。
+// ⚠️ 用 watch 而不是改 setAppLocale：`i18n/index.js` 不引 router（引了就是循环依赖），
+//   由 router 单向监听 locale 是唯一不产生环的做法。
+watch(
+  () => i18n.global.locale.value,
+  () => applyTitle(router.currentRoute.value)
+)
+
 // ===== L13（v1.13.176 B 档）：路由切换后的焦点管理 =====
 // 问题：SPA 里点导航切页时，被点的那个 <a> 随旧页面一起卸载 ⇒ document.activeElement
 //       掉回 <body>。实测（点顶栏「我的门店」→ /data）确实如此。后果：
@@ -236,6 +280,12 @@ router.afterEach((to, from) => {
   // ⚠️ 必须排在下文「`!from.name` 提前 return」**之前**：首屏直接输入未知 URL 时
   //   from 即 START_LOCATION（name 为空），若排在其后就永远不会注入 404 的 noindex。
   applyRobotsMeta(to.meta.noindex === true)
+
+  // ===== 标签页标题（v1.13.360）=====
+  // ⚠️ 同样必须排在下文「`!from.name` 提前 return」**之前**：首次进入（直接输 URL /
+  //   刷新 / 从收藏夹打开）时 from 是 START_LOCATION，若排在其后则**首屏永远拿不到标题**——
+  //   而这恰恰是「从收藏夹/历史记录进来」最常见的场景，等于改了个看不见的效果。
+  applyTitle(to)
 
   // ① 首次进入（刷新页面 / 直接输 URL / 从站外跳回）：`from` 是 START_LOCATION，
   //    name 为空。此时浏览器给 <body> 焦点是正常的，抢焦点反而会打断

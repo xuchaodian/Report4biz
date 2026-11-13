@@ -25,6 +25,21 @@ export default {
     fullscreenHint: 'Hide the top navigation so the map fills the screen (shortcut: F)',
     showNavHint: 'Show the top navigation again (shortcut: F)'
   },
+  // ===== Tab titles (v1.13.360) =====
+  // Pages already present in the nav reuse nav.* (do not duplicate them here)
+  pageTitle: {
+    login: 'Sign in',
+    register: 'Sign up',
+    forgotPassword: 'Forgot password',
+    resetPassword: 'Reset password',
+    sharedPurchase: 'Purchase Order',
+    storeCheckup: 'Store Checkup',
+    brands: 'Icons',
+    auditLog: 'Audit Log',
+    cityData: 'City Data',
+    dataSync: 'Data Sync',
+    notFound: 'Page Not Found'
+  },
   // ===== Login =====
   login: {
     title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）

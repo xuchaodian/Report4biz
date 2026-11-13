@@ -25,6 +25,22 @@ export default {
     fullscreenHint: '收起顶部导航，让地图占满整个屏幕（快捷键 F）',
     showNavHint: '重新显示顶部导航（快捷键 F）'
   },
+  // ===== 标签页标题（v1.13.360）=====
+  // 只放**导航里没有的**页面：导航里有的（数据大屏/我的门店/城市洞察…）直接复用 nav.*，
+  // ⛔ 不要为了「凑齐一份」再把 nav 的文案抄一遍 —— 改一处漏一处就是标题与菜单不一致。
+  pageTitle: {
+    login: '登录',
+    register: '注册',
+    forgotPassword: '忘记密码',
+    resetPassword: '重置密码',
+    sharedPurchase: '采购单',
+    storeCheckup: '门店体检',
+    brands: '设置图标',
+    auditLog: '操作审计',
+    cityData: '城市数据',
+    dataSync: '数据同步',
+    notFound: '页面不存在'
+  },
   // ===== 登录页 =====
   login: {
     title: BRAND_NAME,   // 产品锚点，⛔ 不翻译（见 i18n/brand.js）

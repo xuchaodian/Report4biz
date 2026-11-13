@@ -101,7 +101,12 @@ describe('C. /candidates 深链受 requiresAdmin 守卫', () => {
     const i = src.indexOf("path: 'candidates'")
     expect(i, '找不到 candidates 路由（守卫已失锚，请同步更新）').toBeGreaterThan(-1)
     const block = src.slice(i, i + 320)
-    expect(block, '直接输 /candidates 不受守卫保护').toMatch(/meta:\s*\{\s*requiresAdmin:\s*true\s*\}/)
+    // ⚠️ 原来写的是 `meta:\s*\{\s*requiresAdmin:\s*true\s*\}` —— 要求 requiresAdmin 是
+    //   meta 里的**唯一**键。v1.13.360 给每条路由补 `titleKey` 后 meta 变成
+    //   `{ requiresAdmin: true, titleKey: 'nav.candidates' }`，这条只是**格式**断了、
+    //   权限本身没变，却报红。⇒ 放宽成「meta 对象内出现 requiresAdmin: true」，
+    //   语义不变（仍要求同一个 meta 对象里含该键且为 true），且不再被后续加键误伤。
+    expect(block, '直接输 /candidates 不受守卫保护').toMatch(/meta:\s*\{[^}]*\brequiresAdmin:\s*true\b/)
   })
 
   it('⑥ 全局守卫仍按 requiresAdmin 把非管理员弹回首页', () => {

@@ -48,6 +48,8 @@ import syncRoutes from './routes/sync.js'
 // v1.13.211：trial 到期自动降级属于「降权」⇒ 必须同时撤销该账号已签发 token，
 // 否则旧 token 里的 role='trial' 还能按旧身份放行最长 7 天（详见 utils/vipRole.js）
 import { bumpTokenVersion } from './utils/tokenAuth.js'
+// v1.13.360：为 GET/HEAD 的 JSON 响应补 Cache-Control（ETag/304 由 Express 内置提供）
+import { httpCacheHeaders } from './middleware/httpCache.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -86,6 +88,12 @@ app.use(cors({
 }))
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// 缓存指令（v1.13.360）：给 GET/HEAD 的 JSON 响应补 `Cache-Control: private, no-cache`
+// —— ETag 与 304 由 Express 内置提供（实测线上已生效），本中间件只补「让浏览器愿意复验」
+// 这一个头，从而把首屏 2.7MB 的全量列表降成一次 304 空响应。
+// ⚠️ 必须排在所有 /api 路由之前；路由自己设过 Cache-Control 的一律不覆盖（见文件头注释）。
+app.use(httpCacheHeaders)
 
 // 请求级事务上下文（S2/A3, v1.13.106）：ALS 隔离每请求 inTransaction，
 // 防 async handler 的 await 间隙被并发请求覆盖事务标志；
