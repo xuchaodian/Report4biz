@@ -77,6 +77,27 @@ html:root {
 @keyframes app-icon-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .app-icon.is-spin { animation: none; } }
 
+/* ===== 视觉隐藏但留在无障碍树里（v1.13.361）=====
+   用途：给 `role="alert"` 活区、图表的替代文本、表格 caption 之类「只给读屏看」的内容。
+   🔴🔴 绝不能用 display:none / visibility:hidden —— 那会把元素**一起移出无障碍树**，
+        活区彻底失效（读屏一声不响，而代码看着「已经修了」，比不加更糟）。
+   clip + clip-path 是全套里唯一「视觉零占位、语义零损失」的组合，
+   两个都写是为了兼容老 WebKit（只认 clip）与新引擎（只认 clip-path）。
+   ⚠️ 存量：DashboardView 的 `.ds-sr-only`（表格 caption）与登录页历史 `.login-sr-only`
+      是本类的同义实现，收敛时可直接替换，行为等价。 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ===== 图标 + 文字 混排：类加在【图标】上，inline 布局即可 =====
    用法：<AppIcon class="icon-text"><Key /></AppIcon>API开放
    为什么不做成「父级 flex 容器」：宿主是 h2 / el-button / el-card #header /

@@ -15,6 +15,10 @@
            @click="type = 'idea'" @keydown.enter="type = 'idea'">有改进建议</div>
     </div>
 
+    <!-- v1.13.361：这里没有 el-form/rules，所以不走 useFormErrorA11y ——
+         空内容校验是 ElMessage.warning，而 EP 的 .el-message 自带 role="alert"
+         （message.vue…lang.mjs:114），读屏本来就能听到，⛔ 别再加一个活区造成重复播报。
+         真正缺的是可访问名：原本只有 placeholder 兜底，补一个 aria-label 更稳。 -->
     <el-input
       v-model="content"
       type="textarea"
@@ -22,6 +26,7 @@
       maxlength="2000"
       show-word-limit
       resize="none"
+      aria-label="反馈内容"
       placeholder="说说你遇到的情况：&#10;· 你在做什么（比如「在看浦东的竞争强度」）&#10;· 你期望是什么&#10;· 实际发生了什么"
     />
 

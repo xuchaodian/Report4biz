@@ -9,17 +9,28 @@
         :rules="rules"
         class="register-form"
         @submit.prevent="handleRegister"
+        @validate="onValidate"
       >
+        <!-- v1.13.361：字段级校验的主动播报活区。
+             为什么需要它 —— 提交时写的是 `if (!valid) return`，对读屏用户来说
+             就是「点了注册什么都没发生」；EP 的 .el-form-item__error 既无 role 也无 aria-live。
+             实现与用法见 utils/useFormErrorA11y.js，⛔ 别在这里另写一套状态。 -->
+        <div class="sr-only" role="alert" aria-live="assertive">{{ liveErr }}</div>
+
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
             placeholder="请输入用户名"
             aria-label="用户名"
+            v-bind="fieldAria('username')"
             name="username"
             autocomplete="username"
             size="large"
             :prefix-icon="User"
           />
+          <template #error="{ error }">
+            <div :id="errId('username')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <el-form-item prop="email">
@@ -27,11 +38,15 @@
             v-model="form.email"
             placeholder="请输入邮箱"
             aria-label="邮箱"
+            v-bind="fieldAria('email')"
             name="email"
             autocomplete="email"
             size="large"
             :prefix-icon="Message"
           />
+          <template #error="{ error }">
+            <div :id="errId('email')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <el-form-item prop="password">
@@ -40,6 +55,7 @@
             :type="pwdShow.password ? 'text' : 'password'"
             placeholder="请输入密码"
             aria-label="密码（至少 6 位）"
+            v-bind="fieldAria('password')"
             name="password"
             autocomplete="new-password"
             size="large"
@@ -58,6 +74,9 @@
               </button>
             </template>
           </el-input>
+          <template #error="{ error }">
+            <div :id="errId('password')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <el-form-item prop="confirmPassword">
@@ -66,6 +85,7 @@
             :type="pwdShow.confirmPassword ? 'text' : 'password'"
             placeholder="请确认密码"
             aria-label="确认密码"
+            v-bind="fieldAria('confirmPassword')"
             name="confirmPassword"
             autocomplete="new-password"
             size="large"
@@ -84,6 +104,9 @@
               </button>
             </template>
           </el-input>
+          <template #error="{ error }">
+            <div :id="errId('confirmPassword')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <!-- 蜜罐（v1.13.149 注册防护）：留在渲染树里让脚本「看得见」，
@@ -133,6 +156,15 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import AuthBackground from '@/components/AuthBackground.vue'
 import AuthCard from '@/components/AuthCard.vue'
+import { useFormErrorA11y } from '@/utils/useFormErrorA11y'
+
+/* v1.13.361：字段级校验的可访问性（活区 + aria-invalid/aria-describedby）。
+   四个 prop 必须与 el-form-item 的 prop 逐字一致，否则 @validate 的事件被静默忽略。
+   前缀 'reg' 保证错误节点 id 唯一（同页其他地方不会撞）。 */
+const { liveErr, onValidate, errId, fieldAria } = useFormErrorA11y(
+  ['username', 'email', 'password', 'confirmPassword'],
+  'reg'
+)
 
 const router = useRouter()
 const userStore = useUserStore()

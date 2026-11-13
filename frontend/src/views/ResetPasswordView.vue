@@ -25,13 +25,20 @@
         :rules="rules"
         class="reset-form"
         @submit.prevent="handleSubmit"
+        @validate="onValidate"
       >
+        <!-- v1.13.361：字段级校验的主动播报活区（见 utils/useFormErrorA11y.js）。
+             ⚠️ 「链接不可用」「密码已重置」两个状态用的是 el-alert，它自带 role="alert"，
+                状态切换时读屏会被动播报，不需要在这里再补一句。 -->
+        <div class="sr-only" role="alert" aria-live="assertive">{{ liveErr }}</div>
+
         <el-form-item prop="password">
           <el-input
             v-model="form.password"
             :type="pwdShow.password ? 'text' : 'password'"
             placeholder="请输入新密码（至少 6 位）"
             aria-label="新密码（至少 6 位）"
+            v-bind="fieldAria('password')"
             name="password"
             autocomplete="new-password"
             size="large"
@@ -50,6 +57,9 @@
               </button>
             </template>
           </el-input>
+          <template #error="{ error }">
+            <div :id="errId('password')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <el-form-item prop="confirmPassword">
@@ -58,6 +68,7 @@
             :type="pwdShow.confirmPassword ? 'text' : 'password'"
             placeholder="请再次输入新密码"
             aria-label="确认新密码"
+            v-bind="fieldAria('confirmPassword')"
             name="confirmPassword"
             autocomplete="new-password"
             size="large"
@@ -77,6 +88,9 @@
               </button>
             </template>
           </el-input>
+          <template #error="{ error }">
+            <div :id="errId('confirmPassword')" class="el-form-item__error">{{ error }}</div>
+          </template>
         </el-form-item>
 
         <el-form-item>
@@ -115,6 +129,13 @@ import { ElMessage } from 'element-plus'
 import api from '@/utils/api'
 import AuthBackground from '@/components/AuthBackground.vue'
 import AuthCard from '@/components/AuthCard.vue'
+import { useFormErrorA11y } from '@/utils/useFormErrorA11y'
+
+/* v1.13.361：字段级校验的可访问性。prop 名必须与 el-form-item 的 prop 逐字一致。 */
+const { liveErr, onValidate, errId, fieldAria } = useFormErrorA11y(
+  ['password', 'confirmPassword'],
+  'reset'
+)
 
 const route = useRoute()
 const router = useRouter()

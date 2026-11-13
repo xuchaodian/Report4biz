@@ -43,15 +43,14 @@
                · aria-describedby 指向每字段的隐藏错误文本，负责「聚焦时能听到原因」
              ⚠️ 活区必须用 clip 隐藏，⛔ 不能用 display:none / visibility:hidden
                 （把元素移出无障碍树 = 活区失效，loginA11yGuard 钉住）。 -->
-        <div class="login-sr-only" role="alert" aria-live="assertive">{{ liveErr }}</div>
+        <div class="sr-only" role="alert" aria-live="assertive">{{ liveErr }}</div>
 
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
             :placeholder="$t('login.username')"
             :aria-label="$t('login.usernameLabel')"
-            :aria-invalid="fieldErr.username ? 'true' : undefined"
-            :aria-describedby="fieldErr.username ? 'login-err-username' : undefined"
+            v-bind="fieldAria('username')"
             name="username"
             autocomplete="username"
             size="large"
@@ -62,7 +61,7 @@
                所以文案只有**一份**，且我们能给它 id 供 aria-describedby 指过去。
                ⛔ 两个都留 = 读屏把同一句错误念两遍（实测踩过）。 -->
           <template #error="{ error }">
-            <div id="login-err-username" class="el-form-item__error">{{ error }}</div>
+            <div :id="errId('username')" class="el-form-item__error">{{ error }}</div>
           </template>
         </el-form-item>
 
@@ -72,8 +71,7 @@
             :type="pwdShow.password ? 'text' : 'password'"
             :placeholder="$t('login.password')"
             :aria-label="$t('login.passwordLabel')"
-            :aria-invalid="fieldErr.password ? 'true' : undefined"
-            :aria-describedby="fieldErr.password ? 'login-err-password' : undefined"
+            v-bind="fieldAria('password')"
             name="password"
             autocomplete="current-password"
             size="large"
@@ -94,7 +92,7 @@
             </template>
           </el-input>
           <template #error="{ error }">
-            <div id="login-err-password" class="el-form-item__error">{{ error }}</div>
+            <div :id="errId('password')" class="el-form-item__error">{{ error }}</div>
           </template>
         </el-form-item>
 
@@ -165,6 +163,7 @@ import { ElMessage } from 'element-plus'
 import { setAppLocale } from '@/i18n'
 import AuthBackground from '@/components/AuthBackground.vue'
 import AuthCard from '@/components/AuthCard.vue'
+import { useFormErrorA11y } from '@/utils/useFormErrorA11y'
 
 const { t, locale } = useI18n()
 // 语言按钮缩写：中 / 日 / EN
@@ -193,26 +192,13 @@ const form = reactive({
   password: ''
 })
 
-/* ===== 校验错误的可访问性（E1 / v1.13.358）=====
+/* ===== 校验错误的可访问性（E1 / v1.13.358，v1.13.361 抽为共用 composable）=====
    EP 的 form-item 只把错误渲染成一个无 role 的 div，读屏既不会主动播报、
-   聚焦时也拿不到原因。这里接 @validate 把 EP 自己的校验消息收下来复用：
+   聚焦时也拿不到原因。实现见 utils/useFormErrorA11y.js（注册/找回/重置三页同款复用）：
      · ⛔ 不自己编文案（两套文案必然与 EP 可视错误漂移）
-     · 消息本身已走 rules 里的 t()，语言切换自动跟随 */
-const fieldErr = reactive({ username: '', password: '' })
-
-/** 主动播报用：多字段同时错时给一句合并文案（同一 tick 内 EP 会连续 emit，Vue 会批到一次 DOM 更新）。 */
-const liveErr = computed(() => {
-  const list = [fieldErr.username, fieldErr.password].filter(Boolean)
-  if (!list.length) return ''
-  const sep = locale.value === 'ja' ? '。' : locale.value === 'en' ? '; ' : '；'
-  return list.join(sep)
-})
-
-/** EP @validate 签名：(prop, isValid, message)。此处只认本表单的两个字段。 */
-const onValidate = (prop, isValid, message) => {
-  if (prop !== 'username' && prop !== 'password') return
-  fieldErr[prop] = isValid ? '' : message || ''
-}
+     · 消息本身已走 rules 里的 t()，语言切换自动跟随
+     · 前缀固定 'login' ⇒ 生成的 login-err-* 与 358 完全一致，既有守卫不受影响 */
+const { liveErr, onValidate, errId, fieldAria } = useFormErrorA11y(['username', 'password'], 'login')
 
 // 背景轮播逻辑已抽到 components/AuthBackground.vue（v1.13.151），四页共用
 
@@ -282,21 +268,8 @@ const backToPassword = () => {
 <style lang="scss" scoped>
 /* 容器（.auth-container）与主按钮（.auth-submit）样式在 assets/main.scss —— 四页共用 */
 
-/* E1（v1.13.358）：视觉隐藏但**留在无障碍树里**。
-   🔴 绝不能用 display:none / visibility:hidden —— 那样 role="alert" 活区会一起失效，
-      比不加还糟（读屏什么都不播，而代码看着"已经修了"）。 */
-.login-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
+/* E1（v1.13.358）：活区的视觉隐藏类已提升为全局 `.sr-only`（v1.13.361），
+   与注册/找回/重置三页共用同一份实现；语义与原先的 .login-sr-only 完全等价。 */
 
 .login-lang {
   position: fixed;
