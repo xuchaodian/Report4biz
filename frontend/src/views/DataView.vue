@@ -185,7 +185,11 @@
         <el-table-column prop="store_category" label="门店区分" width="100" align="center">
           <template #default="{ row }">{{ row.store_category || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <!-- v1.13.362（361-A）：触控目标 20×20 → 44×44。
+             class-name="op-cell" 供样式块按指针类型定位这一列（EP 会把该 class 加到 td 上）；
+             :width 在触屏下收窄到 164（3×2 网格），桌面端仍是 220 —— 见 script 里 actionColWidth。
+             ⚠️ 宽度必须走绑定、不能用 CSS 覆盖：EP 把列宽写成 <col> 的行内 style，CSS 压不过它。 -->
+        <el-table-column label="操作" :width="actionColWidth" fixed="right" class-name="op-cell">
           <template #default="{ row }">
             <!-- v1.13.177 A 档：操作列此前只有图标、无可访问名。
                  title 保留作鼠标悬浮提示，aria-label 定可访问名（二者并存，改动面最小）。
@@ -904,6 +908,36 @@ const route = useRoute()
 const markerStore = useMarkerStore()
 const competitorStore = useCompetitorStore()
 const userStore = useUserStore()
+
+// ─── 操作列触控目标（v1.13.362 / 批次 361-A）──────────────────────────────
+// 实测基线（生产 /data，1440×900）：5 个图标按钮各 20×20（.el-button.is-link 的 padding:2px
+// + 16px 图标），间距 12px，列宽 220、内容区 196。20×20 低于 WCAG 2.5.8（AA）的 24×24。
+//
+// 修复分两层（样式块里实现），这里只负责「列宽」：
+//  · 所有指针类型：伪元素把可点区外扩到 32×32（正好吃满 12px 间距的一半，互不重叠），
+//    视觉与布局零变化 ⇒ 桌面端零回流。
+//  · 主指针为触屏 (pointer: coarse)：真放大到 44×44（WCAG 2.5.5 AAA），改 3×2 网格。
+//    为什么不排一行 5 个：5×44 加间距要 236+24=260 列宽，在 375px 手机上占掉 69% 屏宽；
+//    横向空间比纵向稀缺 ⇒ 换成两行，列宽反而从 220 收到 164。
+const ACTION_COL_WIDTH_FINE = 220
+const ACTION_COL_WIDTH_COARSE = 164 // 3×44 + 2×4(gap) + 24(cell 左右 padding)
+const coarsePointerMq =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(pointer: coarse)')
+    : null
+const isCoarsePointer = ref(coarsePointerMq ? coarsePointerMq.matches : false)
+if (coarsePointerMq) {
+  const onPointerKindChange = (e) => { isCoarsePointer.value = e.matches }
+  // Safari < 14 只有已废弃的 addListener；两者都判，避免老 WebView 上直接抛错
+  if (typeof coarsePointerMq.addEventListener === 'function') {
+    coarsePointerMq.addEventListener('change', onPointerKindChange)
+  } else if (typeof coarsePointerMq.addListener === 'function') {
+    coarsePointerMq.addListener(onPointerKindChange)
+  }
+}
+const actionColWidth = computed(() =>
+  isCoarsePointer.value ? ACTION_COL_WIDTH_COARSE : ACTION_COL_WIDTH_FINE
+)
 
 // 门店购买次数映射 {门店名称: 购买次数}
 const storePurchaseCount = ref({})
@@ -2718,6 +2752,64 @@ const resetRanking = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===== 操作列触控目标（v1.13.362 / 批次 361-A）=====
+   改前（生产实测）：5 个图标按钮各 20×20、间距 12px、列宽 220 ⇒ 低于 WCAG 2.5.8(AA) 的 24×24。
+   ⚠️ .op-cell 由 el-table 的 class-name 落在 <td> 上，不是本模板里的节点 ⇒ 必须 :deep()。
+   ⚠️ 列宽不能在这写：EP 把宽度写成 <col style="width:220px">，行内 style 压不过 CSS，
+      所以触屏收窄走 script 的 actionColWidth（164 / 220）。
+
+   第 ① 层 · 所有指针类型：可点区 30×30（实测），视觉与布局零变化。
+     按钮 20×20、间距 12px ⇒ 每侧外扩 6px 足够，相邻热区之间**还留 3px 空隙**（实测 l/r 到位，
+     不相接更不重叠）。⛔ 别再加大：外扩到 8px 就会重叠，相邻两个按钮出现命中不确定区，
+     比小按钮更容易误点（WCAG 2.5.8 明确要求目标之间不重叠）。
+     ⚠️ 伪元素实际是 30×30 而不是 32×32 —— .el-button 有 1px 边框，绝对定位的包含块是**padding box（18px）**，
+     inset:-6 ⇒ 18+12=30。已实测确认，不要按 20+12 推算。
+     .el-table .cell 是 overflow:hidden ⇒ 外扩必须留在列宽内；首尾各 6px 小于 cell 的 12px padding，安全。 */
+/* 🔴 选择器必须写 `td.op-cell`，不能只写 `.op-cell`：
+   EP 的 class-name **同时落在表头 <th> 上**（生产实测 21 个 .op-cell ＝ 20 行 + 1 个表头），
+   而 coarse 的 `display:grid` 套到 th 上会把「操作」二字塞进 44px 的第一列 —— 改成 td 后表头不受影响。 */
+:deep(td.op-cell) .el-button {
+  /* .el-button 基线没有 position:relative（已读 theme-chalk/el-button.css 确认），不补则伪元素跑到祖先身上 */
+  position: relative;
+}
+:deep(td.op-cell) .el-button::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+/* 🔴 EP 的 .el-table .cell 带 overflow:hidden，会把伪元素在垂直方向裁到 23px 高
+   （td 上下各有 8px padding，cell 只剩 23）⇒ 命中区变 30×24，正好卡在 AA 的 24 边界上，
+   再差 1px 像素取整就掉到 23。操作列**没有文字**、不需要省略号裁剪，放开裁切后是 30×30。
+   ⚠️ 别把这行搬到别的列 —— 需要 show-overflow-tooltip 的列靠它。 */
+:deep(td.op-cell) .cell {
+  overflow: visible;
+}
+
+/* 第 ② 层 · 主指针为触屏：44×44（WCAG 2.5.5 AAA），3 列 2 行。
+   一行排 5 个需要 5×44+间距+padding ≈ 260 列宽，375px 手机上占 69% 屏宽；
+   横向比纵向稀缺 ⇒ 换两行，列宽反而从 220 收到 164。 */
+@media (pointer: coarse) {
+  :deep(td.op-cell) .cell {
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    gap: 4px;
+    justify-content: start;
+  }
+  :deep(td.op-cell) .el-button {
+    min-width: 44px;
+    height: 44px;
+    /* 图标走 .el-icon{width/height:1em} ⇒ 放大 font-size 即放大图标。
+       44px 框里放 16px 字标太飘（真机截图看过），20px 更协调；不影响 44×44 热区。 */
+    font-size: 20px;
+    /* EP 的 `.el-button + .el-button { margin-left: 12px }` 在 grid 里会把 140 的内容宽撑破 */
+    margin-left: 0;
+  }
+  /* 已经真放大，撤销伪元素外扩 —— 否则相邻 44px 按钮的热区会互相重叠 8px */
+  :deep(td.op-cell) .el-button::after {
+    content: none;
+  }
 }
 /* ===== 门店清洗（v1.13.285 上线，v1.13.288 更名）=====
    ⚠️ el-dialog 内的自建元素只用单类选择器：弹窗根节点不继承父 scopeId，
