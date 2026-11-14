@@ -304,13 +304,13 @@ const onBrandToggle = (val) => {
 }
 .toggle-label-sub {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .toggle-label {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
 }
 
 .toggle-row :deep(.el-switch) {
@@ -375,7 +375,7 @@ const onBrandToggle = (val) => {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   transition: all 0.15s;
 }
 
@@ -440,7 +440,7 @@ const onBrandToggle = (val) => {
 .brand-pop-title {
   font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: var(--text-regular);
 }
 
 .brand-pop-actions {
@@ -453,7 +453,7 @@ const onBrandToggle = (val) => {
 .brand-pop-hint {
   padding: 6px 4px 2px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .brand-pop-list {
@@ -497,12 +497,12 @@ const onBrandToggle = (val) => {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .brand-pop-name {
   font-size: 13px;
-  color: #606266;
+  color: var(--text-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

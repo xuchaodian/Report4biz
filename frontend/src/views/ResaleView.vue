@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><Key /></AppIcon>API开放</h2>
-        <p style="margin:4px 0 0;font-size:13px;color:#909399;">
+        <p style="margin:4px 0 0;font-size:13px;color:var(--text-secondary);">
           第三方调用联通人口数据（/api/v1/population）的 API Key 管理，按次计费 60 元/次，最低 100 次起充
         </p>
       </div>
@@ -26,7 +26,7 @@
       </div>
       <div class="pool-item">
         <span class="pool-label">测试模式余额</span>
-        <span class="pool-value" style="color:#909399;">{{ poolInfo.mockBalance }}</span>
+        <span class="pool-value" style="color:var(--text-secondary);">{{ poolInfo.mockBalance }}</span>
       </div>
       <div class="pool-item">
         <span class="pool-label">剩余可分配</span>
@@ -49,7 +49,7 @@
       <el-table-column label="API Key" min-width="240">
         <template #default="{ row }">
           <el-tooltip content="Key 已加密存储，完整 Key 仅在创建时显示一次（复制请在创建弹窗内完成）" placement="top">
-            <code style="font-size:12px;color:#909399;word-break:break-all;">{{ row.api_key }}</code>
+            <code style="font-size:12px;color:var(--text-secondary);word-break:break-all;">{{ row.api_key }}</code>
           </el-tooltip>
         </template>
       </el-table-column>
@@ -95,11 +95,11 @@
         </el-form-item>
         <el-form-item label="初始次数">
           <el-input-number v-model="createForm.initialBalance" :min="0" :step="100" style="width:200px" />
-          <span style="margin-left:8px;font-size:12px;color:#909399;">可留 0，后续充值</span>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">可留 0，后续充值</span>
         </el-form-item>
         <el-form-item label="测试模式">
           <el-switch v-model="createForm.mock" />
-          <span style="margin-left:8px;font-size:12px;color:#909399;">测试模式返回模拟数据，不调上游、不扣次数</span>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">测试模式返回模拟数据，不调上游、不扣次数</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -113,17 +113,17 @@
       <template #header>
         <span class="dlg-title"><AppIcon><Money /></AppIcon>充值次数</span>
       </template>
-      <div style="margin-bottom:14px;font-size:13px;color:#606266;">
+      <div style="margin-bottom:14px;font-size:13px;color:var(--text-regular);">
         为 <b>{{ currentClient?.company_name }}</b> 充值（当前余额 {{ currentClient?.balance }} 次）
       </div>
       <el-form label-width="90px">
         <el-form-item label="充值次数" required>
           <el-input-number v-model="rechargeAmount" :min="100" :step="100" style="width:200px" />
-          <span style="margin-left:8px;font-size:12px;color:#909399;">最低 100 次起充</span>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">最低 100 次起充</span>
         </el-form-item>
         <el-form-item label="应付金额">
           <span style="font-size:18px;font-weight:600;color:#f56c6c;">¥ {{ (rechargeAmount || 0) * 60 }}</span>
-          <span style="margin-left:8px;font-size:12px;color:#909399;">60 元/次</span>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">60 元/次</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -137,13 +137,13 @@
       <template #header>
         <span class="dlg-title"><AppIcon><Minus /></AppIcon>扣减次数</span>
       </template>
-      <div style="margin-bottom:14px;font-size:13px;color:#606266;">
+      <div style="margin-bottom:14px;font-size:13px;color:var(--text-regular);">
         为 <b>{{ currentClient?.company_name }}</b> 扣减（当前余额 {{ currentClient?.balance }} 次），扣减次数将归还配额池
       </div>
       <el-form label-width="90px">
         <el-form-item label="扣减次数" required>
           <el-input-number v-model="deductAmount" :min="1" :max="currentClient?.balance || 0" :step="50" style="width:200px" />
-          <span style="margin-left:8px;font-size:12px;color:#909399;">不超过当前余额</span>
+          <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">不超过当前余额</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -163,7 +163,7 @@
           </div>
         </div>
       </template>
-      <div style="margin-bottom:12px;font-size:13px;color:#606266;">
+      <div style="margin-bottom:12px;font-size:13px;color:var(--text-regular);">
         客户：<b>{{ currentClient?.company_name }}</b>
       </div>
       <el-table :data="usageList" stripe border size="small" style="width:100%" max-height="380">
@@ -186,7 +186,7 @@
         </el-table-column>
         <el-table-column label="扣费" width="80" align="center">
           <template #default="{ row }">
-            <span :style="{ color: row.cost > 0 ? '#f56c6c' : '#909399', fontWeight: 600 }">
+            <span :style="{ color: row.cost > 0 ? '#f56c6c' : 'var(--text-secondary)', fontWeight: 600 }">
               {{ row.cost > 0 ? '-' + row.cost + '次' : '免费' }}
             </span>
           </template>
@@ -420,7 +420,7 @@ onMounted(() => {
 
 .pool-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .pool-value {

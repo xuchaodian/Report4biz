@@ -131,7 +131,7 @@ defineProps({
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   background: #fff;
-  color: #606266;
+  color: var(--text-regular);
   font-size: 12px;
   cursor: pointer;
   box-sizing: border-box;

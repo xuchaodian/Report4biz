@@ -633,13 +633,13 @@ defineExpose({ refreshHistory, setBrand: (b) => { brand.value = b; refreshHistor
       background: #f5f7fa; border-radius: 6px; padding: 10px 0; text-align: center;
       .stat-num { font-size: 22px; font-weight: 700; color: #303133;
         &.warn { color: #e6a23c; } }
-      .stat-label { font-size: 12px; color: #909399; margin-top: 2px; }
+      .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
     }
   }
   .version-line { margin-top: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
   .sub-title { font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 8px; }
-  .sub-hint { font-size: 12px; color: #909399; font-weight: 400; margin-left: 8px;
-    b.auto { color: #67c23a; } b.maybe { color: #e6a23c; } b.keep { color: #909399; } }
+  .sub-hint { font-size: 12px; color: var(--text-secondary); font-weight: 400; margin-left: 8px;
+    b.auto { color: #67c23a; } b.maybe { color: #e6a23c; } b.keep { color: var(--text-secondary); } }
   .history-list {
     .history-item {
       display: flex; justify-content: space-between; align-items: center;
@@ -648,7 +648,7 @@ defineExpose({ refreshHistory, setBrand: (b) => { brand.value = b; refreshHistor
       &:hover { border-color: #c6e2ff; background: #f5faff; }
       .his-left {
         .his-period { font-weight: 600; font-size: 14px; color: #303133; }
-        .his-meta { font-size: 12px; color: #909399; margin-top: 3px; }
+        .his-meta { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
         .his-meta .his-scope { color: #e6a23c; }
       }
     }

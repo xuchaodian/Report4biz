@@ -132,7 +132,7 @@
     <!-- 门店商圈半径设置对话框 -->
     <el-dialog v-model="storeCircleDialogVisible" :title="storeCircleDialogTitle" width="420px" :close-on-click-modal="false">
       <div style="padding: 10px 0;">
-        <p style="margin-bottom:12px;font-size:14px;color:#606266;">
+        <p style="margin-bottom:12px;font-size:14px;color:var(--text-regular);">
           {{ storeCircleMode === 'overlap'
             ? '为地图上所有可见门店生成半径圆，按重叠率着色'
             : storeCircleMode === 'track'
@@ -151,12 +151,12 @@
                 <el-select v-model="opportunityBrand" clearable placeholder="不限（全量竞品）" style="width:200px">
                   <el-option v-for="b in opportunityBrandOptions" :key="b" :label="b" :value="b" />
                 </el-select>
-                <div style="font-size:12px;color:#909399;margin-top:4px;line-height:1.4;">按该自有品牌的竞品映射统计；不选或未配置＝全量</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.4;">按该自有品牌的竞品映射统计；不选或未配置＝全量</div>
               </div>
             </el-form-item>
             <el-form-item label="密度阈值">
               <el-input-number v-model="opportunityDensityThreshold" :min="1" :max="20" :step="1" style="width:200px" />
-              <span style="margin-left:8px;font-size:12px;color:#909399;">网格内竞品≤该值视为机会区</span>
+              <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">网格内竞品≤该值视为机会区</span>
             </el-form-item>
             <el-form-item label="数据范围">
               <el-radio-group v-model="opportunityScope">
@@ -187,7 +187,7 @@
                 <el-select v-model="competitionBrands" placeholder="不选 = 统计全部竞品" style="width:100%" multiple collapse-tags collapse-tags-tooltip clearable>
                   <el-option v-for="b in competitionBrandList" :key="b" :label="b" :value="b" />
                 </el-select>
-                <div style="font-size:12px;color:#909399;margin-top:4px;">仅统计所选品牌的竞品门店，不选则统计全部</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">仅统计所选品牌的竞品门店，不选则统计全部</div>
               </div>
             </el-form-item>
             <el-form-item v-if="competitionBrands.length > 0" label="数量筛选">
@@ -201,9 +201,9 @@
                     <el-option value="gte" label="不少于" />
                   </el-select>
                   <el-input-number v-model="competitionBrandLimits[b]" :min="0" :max="50" :step="1" size="small" style="width:110px" :disabled="competitionBrandCmp[b] === 'any'" />
-                  <span style="font-size:12px;color:#909399;">家</span>
+                  <span style="font-size:12px;color:var(--text-secondary);">家</span>
                 </div>
-                <div style="font-size:12px;color:#909399;margin-top:2px;">仅显示圈内该品牌数量满足条件的门店（多品牌需同时满足；不限 = 只过滤品牌不筛数量）</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">仅显示圈内该品牌数量满足条件的门店（多品牌需同时满足；不限 = 只过滤品牌不筛数量）</div>
               </div>
             </el-form-item>
           </template>
@@ -310,7 +310,7 @@
                 高密度区
               </span>
             </el-checkbox>
-            <div style="font-size:12px;color:#909399;margin-top:6px;">密度分级基于当前竞品数据相对分位，纯本地计算 0 成本</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">密度分级基于当前竞品数据相对分位，纯本地计算 0 成本</div>
           </template>
         </div>
       </div>
@@ -412,21 +412,21 @@
                 }"
               ></span>
               <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
-              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ getCategoryTotal(item.key) }}家</span>
+              <span :style="{ marginLeft: 'auto', color: 'var(--text-secondary)', fontSize: '11px' }">{{ getCategoryTotal(item.key) }}家</span>
               <span :style="{ color: '#c0c4cc', fontSize: '10px', transform: expandedLegendCategory === item.key ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }">▶</span>
             </div>
             <div v-if="expandedLegendCategory === item.key" :style="{ padding: '2px 0 6px 22px' }">
               <div
                 v-for="(count, city) in competitionCityStats[item.key] || {}"
                 :key="city"
-                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#606266' }"
+                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-regular)' }"
                 @mouseover="$event.currentTarget.style.background = '#f5f7fa'"
                 @mouseout="$event.currentTarget.style.background = 'transparent'"
                 @click="locateCompetitionCity(item.key, city)"
               >
                 <el-icon style="font-size:12px;color: var(--brand-primary);"><Location /></el-icon>
                 <span>{{ city }}</span>
-                <span :style="{ marginLeft: 'auto', color: '#909399' }">{{ count }}家</span>
+                <span :style="{ marginLeft: 'auto', color: 'var(--text-secondary)' }">{{ count }}家</span>
                 <el-icon style="font-size:11px;color:#c0c4cc;"><ArrowRight /></el-icon>
               </div>
               <div v-if="Object.keys(competitionCityStats[item.key] || {}).length === 0" :style="{ fontSize: '12px', color: '#c0c4cc', padding: '2px 0' }">暂无</div>
@@ -452,12 +452,12 @@
                 }"
               ></span>
               <span :style="{ color: '#555', fontSize: '12px', lineHeight: 1.6 }">{{ item.label }}</span>
-              <span :style="{ marginLeft: 'auto', color: '#909399', fontSize: '11px' }">{{ item.count !== undefined ? item.count + '格' : (item.stores ? item.stores.length : 0) + '家' }}</span>
+              <span :style="{ marginLeft: 'auto', color: 'var(--text-secondary)', fontSize: '11px' }">{{ item.count !== undefined ? item.count + '格' : (item.stores ? item.stores.length : 0) + '家' }}</span>
               <span :style="{ color: '#c0c4cc', fontSize: '10px', transform: expandedLegendCategory === item.key ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }">▶</span>
             </div>
             <div v-if="expandedLegendCategory === item.key" :style="{ padding: '2px 0 6px 22px' }">
               <div :style="{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }">
-                <span :style="{ fontSize: '11px', color: '#909399' }">门店列表（{{ (item.stores || []).length }}家）</span>
+                <span :style="{ fontSize: '11px', color: 'var(--text-secondary)' }">门店列表（{{ (item.stores || []).length }}家）</span>
                 <el-button link size="small" type="primary" :style="{ fontSize: '11px' }" @click="copyOverlapStores(item)">
                   <el-icon style="margin-right:2px;"><CopyDocument /></el-icon>复制
                 </el-button>
@@ -465,7 +465,7 @@
               <div
                 v-for="(sname, si) in item.stores"
                 :key="si"
-                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0', fontSize: '12px', color: '#606266' }"
+                :style="{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 0', fontSize: '12px', color: 'var(--text-regular)' }"
               >
                 <span :style="{ width: '4px', height: '4px', borderRadius: '50%', background: item.color, flexShrink: 0 }"></span>
                 <span :style="{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }">{{ sname }}</span>
@@ -779,7 +779,7 @@
             <el-select v-model="potentialBrand" clearable placeholder="不限（全量竞品）" style="width:100%" filterable>
               <el-option v-for="b in potentialAnalyzeBrandOptions" :key="b" :label="b" :value="b" />
             </el-select>
-            <div style="font-size:12px;color:#909399;margin-top:4px;line-height:1.4;">
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.4;">
               按该自有品牌的「品牌 → 竞品」映射统计竞品；不选或该品牌未配置映射＝全量
             </div>
             <div v-if="potentialScopeEmpty" style="font-size:12px;color:#e6a23c;margin-top:4px;line-height:1.4;">
@@ -1233,7 +1233,7 @@
           </div>
         </div>
       </template>
-      <div v-if="envScoreLoading" style="text-align:center;padding:40px;color:#909399;">
+      <div v-if="envScoreLoading" style="text-align:center;padding:40px;color:var(--text-secondary);">
         <el-icon class="is-loading"><Loading /></el-icon>
         <p style="margin-top:8px;">正在评估周边环境...</p>
       </div>
@@ -1242,11 +1242,11 @@
         <div style="display:flex;align-items:center;gap:16px;padding:14px;background:#f5f7fa;border-radius:8px;margin-bottom:14px;">
           <div style="text-align:center;flex-shrink:0;">
             <div style="font-size:32px;font-weight:600;color: var(--brand-primary);line-height:1;">{{ envScoreTotal.toFixed(1) }}</div>
-            <div style="font-size:11px;color:#909399;margin-top:4px;">综合分 / 5.0</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">综合分 / 5.0</div>
           </div>
           <div style="flex:1;">
             <div style="font-size:14px;font-weight:600;color:#333;">{{ envScoreLevel }}</div>
-            <div style="font-size:12px;color:#909399;margin-top:4px;">
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
               位置：{{ envScorePoint?.lat?.toFixed(5) }}, {{ envScorePoint?.lng?.toFixed(5) }} · 半径 {{ envScoreRadius }}m
             </div>
           </div>
@@ -1263,11 +1263,11 @@
         <!-- 8 项指标 -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div v-for="item in envScoreItems" :key="item.key" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fafafa;border:0.5px solid #ebeef5;border-radius:6px;">
-            <span style="width:52px;font-size:12px;color:#606266;flex-shrink:0;">{{ item.label }}</span>
+            <span style="width:52px;font-size:12px;color:var(--text-regular);flex-shrink:0;">{{ item.label }}</span>
             <span v-if="item.count === null" style="color:#c0c4cc;font-size:12px;">—— 未取到</span>
             <template v-else>
               <span style="color:#ba7517;font-size:13px;letter-spacing:1px;white-space:nowrap;">{{ '★'.repeat(item.stars) }}<span style="color:#ddd;">{{ '★'.repeat(5 - item.stars) }}</span></span>
-              <span style="margin-left:auto;font-size:12px;color:#909399;">{{ item.count }}个</span>
+              <span style="margin-left:auto;font-size:12px;color:var(--text-secondary);">{{ item.count }}个</span>
             </template>
           </div>
         </div>
@@ -1448,13 +1448,13 @@
             <el-radio value="walk">步行可达（分钟）</el-radio>
           </el-radio-group>
           <!-- v1.13.307：每日配额（免费/试用 5 次、VIP 30 次、admin 不限）——付费前必明「消耗/剩余」 -->
-          <div v-if="(popScopeMode === 'drive' || popScopeMode === 'walk') && isoUsage" style="font-size: 12px; color: #606266; margin-top: 4px;">
+          <div v-if="(popScopeMode === 'drive' || popScopeMode === 'walk') && isoUsage" style="font-size: 12px; color: var(--text-regular); margin-top: 4px;">
             今日剩余
             <b>{{ isoUsage.limit == null ? '不限' : isoUsage.remaining }}</b>
             <template v-if="isoUsage.limit != null"> / {{ isoUsage.limit }} 次</template>
-            <span style="color: #909399;">（每分析一次消耗 1 次）</span>
+            <span style="color: var(--text-secondary);">（每分析一次消耗 1 次）</span>
           </div>
-          <div v-if="popScopeMode === 'drive' || popScopeMode === 'walk'" style="font-size: 12px; color: #909399; margin-top: 4px;">
+          <div v-if="popScopeMode === 'drive' || popScopeMode === 'walk'" style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
             按真实路网探测{{ popScopeMode === 'walk' ? '步行' : '驾车' }}耗时（24 个方向），连成可达范围；
             <b>{{ popScopeMode === 'walk' ? '按常规步行路线估算' : '按常规路况估算' }}，不等于导航 App 的实时时长</b>
           </div>
@@ -1465,7 +1465,7 @@
             <el-input-number v-model="driveMinutes.m2" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
             <el-input-number v-model="driveMinutes.m3" :min="1" :max="30" :step="1" style="flex:1" placeholder="留空则不算" />
           </div>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
             三档共用同一批探测（不多花配额）；{{ popScopeMode === 'walk' ? '步行建议 10 / 20 / 30 分钟（10 分钟约 600m）' : '驾车建议 5 / 10 / 15 分钟' }}
           </div>
         </el-form-item>
@@ -1571,7 +1571,7 @@
             <el-option value="equal" label="等值均分（每档跨度相等，图例可直接读区间）" />
             <el-option value="quantile" label="等频分档（每档格数相等，长尾数据层次更分明）" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
             等值均分下每档宽度 = （最大值 − 最小值）÷ 5；等频分档按格数均分，档与档的数值跨度不等
           </div>
         </el-form-item>
@@ -1585,7 +1585,7 @@
               inline-prompt
               aria-label="在地图上显示网格数字标签"
             />
-            <span style="font-size:12px;color:#909399;">
+            <span style="font-size:12px;color:var(--text-secondary);">
               关掉只留色块（放大到 12 级以上才显示，本来就挤）
             </span>
           </div>
@@ -1795,7 +1795,7 @@
                   <span :style="{ color: row.maxIndex === idx ? '#f56c6c' : '#333', fontWeight: row.maxIndex === idx ? 'bold' : 'normal' }">
                     {{ row.values[idx] }}
                   </span>
-                  <span v-if="row.diffs[idx]" style="color: #909399; font-size: 11px; margin-left: 4px;">
+                  <span v-if="row.diffs[idx]" style="color: var(--text-secondary); font-size: 11px; margin-left: 4px;">
                     {{ row.diffs[idx] }}
                   </span>
                 </template>
@@ -1803,7 +1803,7 @@
             </el-table>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <span style="font-size:13px;color:#909399;">对比柱状图</span>
+            <span style="font-size:13px;color:var(--text-secondary);">对比柱状图</span>
             <el-button size="small" text @click="exportBarChart">
               <el-icon><Download /></el-icon> 导出图片
             </el-button>
@@ -4592,7 +4592,7 @@ function getStorePopupHtml(markerData) {
       ${markerData.open_date ? `<p style="margin: 4px 0;"><strong>开业:</strong> ${markerData.open_date}</p>` : ''}
       ${markerData.business_hours ? `<p style="margin: 4px 0;"><strong>营业:</strong> ${markerData.business_hours}</p>` : ''}
       ${markerData.description ? `<p style="margin: 4px 0;"><strong>备注:</strong> ${markerData.description}</p>` : ''}
-      <div id="store-sales-${markerData.id}" style="margin: 8px 0 2px; padding: 6px 8px; background: #f5f7fa; border-radius: 6px; font-size: 12px; color: #909399;">销售数据加载中…</div>
+      <div id="store-sales-${markerData.id}" style="margin: 8px 0 2px; padding: 6px 8px; background: #f5f7fa; border-radius: 6px; font-size: 12px; color: var(--text-secondary);">销售数据加载中…</div>
       <div style="margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
         <button type="button" data-store-act="edit" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 4px; font-size: 12px;">编辑</button>
         <button type="button" data-store-act="delete" data-store-id="${markerData.id}" style="padding: 4px 10px; cursor: pointer; background: #b0b0b0; color: white; border: none; border-radius: 4px; font-size: 12px;">删除</button>
@@ -4616,7 +4616,7 @@ async function loadStoreSalesIntoPopup(storeId) {
     if (!d || !d.success) { el.innerHTML = '📊 销售数据加载失败'; return }
     // v1.13.186：admin 查非自己名下门店时，后端只回答「有没有记录」、不回金额
     if (d.restricted) {
-      el.innerHTML = `<div style="color:#909399;">🔒 销售数据仅门店归属账号可见${d.recordCount > 0 ? `（该店有 ${d.recordCount} 条记录）` : ''}</div>`
+      el.innerHTML = `<div style="color:var(--text-secondary);">🔒 销售数据仅门店归属账号可见${d.recordCount > 0 ? `（该店有 ${d.recordCount} 条记录）` : ''}</div>`
       return
     }
     const has = (d.series || []).filter(s => s.salesAmount != null)
@@ -5305,7 +5305,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
       h += `<span>📊 人口分布分析</span>`
       h += `<button id="${freePanelId}-close" type="button" style="background:none;border:none;cursor:pointer;font-size:14px;color:#999;padding:0;width:16px;height:16px;" title="关闭">×</button>`
       h += `</div>`
-      h += `<div style="font-size:10px;color:#909399;margin-bottom:4px;">时间档（${travelMode === 'walk' ? '步行' : '驾车'}）: ${freeRadii.map(k => k + ' 分钟').join(' / ')}</div>`
+      h += `<div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px;">时间档（${travelMode === 'walk' ? '步行' : '驾车'}）: ${freeRadii.map(k => k + ' 分钟').join(' / ')}</div>`
       h += `<table style="width:100%;border-collapse:collapse;font-size:10px;white-space:nowrap;">`
       h += `<tr style="background:#f5f7fa;"><th style="padding:4px 6px;text-align:left;border:1px solid #dcdfe6;">档位</th><th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">面积</th><th style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;">${fieldName}</th></tr>`
       freeRadii.forEach(k => {
@@ -5316,7 +5316,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
         h += `<td style="padding:4px 6px;text-align:right;border:1px solid #dcdfe6;font-weight:bold;${total == null ? 'color:#f56c6c;' : ''}">${total == null ? '失败' : fmtN(total)}</td></tr>`
       })
       h += `</table>`
-      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:9px;color:#606266;line-height:1.6;">`
+      h += `<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #e4e7ed;font-size:11px;color:var(--text-regular);line-height:1.6;">`
       h += `网格着色与色阶图例、分年龄段人口、网格数字标签、手动微调范围 —— <b>升级后可见</b>`
       // v1.13.309：原来这里只有一句不可点的文字，等于「只拦不卖」——
       // 免费用户看到限制却没有任何动作可做，转化链路是断的。
@@ -5325,8 +5325,8 @@ const analyzePopulationDistribution = async (opts = {}) => {
         h += `<div style="margin-top:5px;"><button id="${freePanelId}-vip" type="button" style="width:100%;background:#1f6fd0;border:none;border-radius:4px;color:#fff;font-size:11px;padding:5px 0;cursor:pointer;line-height:1.5;" title="提交 VIP 试用申请：管理员审核通过后 30 天内可用全部功能">申请开通 VIP（30 天试用）</button></div>`
       }
       h += `</div>`
-      h += `<div style="margin-top:3px;font-size:9px;color:#909399;">今日剩余 ${u.limit == null ? '不限' : u.remaining + ' / ' + u.limit} 次 · 本次已消耗 1 次</div>`
-      h += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
+      h += `<div style="margin-top:3px;font-size:11px;color:var(--text-secondary);">今日剩余 ${u.limit == null ? '不限' : u.remaining + ' / ' + u.limit} 次 · 本次已消耗 1 次</div>`
+      h += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:11px;color:var(--text-secondary);text-align:center;">📋 可拖动调整位置</div>`
       h += `</div>`
 
       const freePanel = L.marker([centerLat, centerLng + 0.003], {
@@ -5803,7 +5803,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
       return `（${edited.map(bandLabel).join(' / ')}已手调）`
     }
     if (radiiLabels) {
-      statsHtml += `<div style="font-size:10px;color:#909399;margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? `<span style="color:#e6a23c;">${bandSourceText()}</span>` : ''}</div>`
+      statsHtml += `<div style="font-size:11px;color:var(--text-secondary);margin-top:1px;">${isReach ? `时间档（${travelMode === 'walk' ? '步行' : '驾车'}）` : '半径'}: ${radiiLabels}${isReach && popBandsEdited ? `<span style="color:#e6a23c;">${bandSourceText()}</span>` : ''}</div>`
     }
     // v1.13.300：面板里的「数字标签」开关 ——
     // 弹窗里的开关只赶得上「分析前」，重新打开弹窗会把图层清掉（openHdPopulationDistribution 开头就 removeLayer），
@@ -5814,12 +5814,12 @@ const analyzePopulationDistribution = async (opts = {}) => {
 
     // v1.13.300：数字标签开关（单独一行，标题栏放不下见上）
     // v1.13.303：驾车模式再加一个「编辑范围」——拖顶点微调后松手即重算
-    statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10px;color:#909399;margin:0 0 4px;">`
+    statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:11px;color:var(--text-secondary);margin:0 0 4px;">`
     if (isReach) {
-      statsHtml += `<button id="toggle-iso-edit-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#1f6fd0;padding:0 6px;line-height:15px;" title="拖动蓝色顶点微调可达范围，松手自动重算">${popEditMode.value ? '完成编辑' : '编辑范围'}</button>`
+      statsHtml += `<button id="toggle-iso-edit-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:11px;color:#1f6fd0;padding:0 6px;line-height:15px;" title="拖动蓝色顶点微调可达范围，松手自动重算">${popEditMode.value ? '完成编辑' : '编辑范围'}</button>`
     }
     statsHtml += `数字标签`
-    statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
+    statsHtml += `<button id="toggle-pop-labels-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:11px;color:var(--text-regular);padding:0 6px;line-height:15px;" title="在地图上显示/隐藏网格数字标签">${popLabelVisible.value ? '隐藏' : '显示'}</button>`
     statsHtml += `</div>`
 
     // v1.13.308：常用范围（保存 / 载入）
@@ -5828,9 +5828,9 @@ const analyzePopulationDistribution = async (opts = {}) => {
     //   后端 403 need_vip 是兜底，这里只是不给按钮。
     const canUseRanges = isReach && isoUsage.value && isoUsage.value.tier !== 'free'
     if (canUseRanges) {
-      statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10px;color:#909399;margin:0 0 4px;">常用范围`
-      statsHtml += `<button id="save-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="把当前范围（含手调结果）存下来，下次直接载入">保存</button>`
-      statsHtml += `<button id="load-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:10px;color:#606266;padding:0 6px;line-height:15px;" title="载入之前保存过的范围（会按当前数据重算）">载入</button>`
+      statsHtml += `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:11px;color:var(--text-secondary);margin:0 0 4px;">常用范围`
+      statsHtml += `<button id="save-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:11px;color:var(--text-regular);padding:0 6px;line-height:15px;" title="把当前范围（含手调结果）存下来，下次直接载入">保存</button>`
+      statsHtml += `<button id="load-range-${panelId}" type="button" style="background:none;border:1px solid #dcdfe6;border-radius:3px;cursor:pointer;font-size:11px;color:var(--text-regular);padding:0 6px;line-height:15px;" title="载入之前保存过的范围（会按当前数据重算）">载入</button>`
       statsHtml += `</div>`
     }
 
@@ -5838,7 +5838,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
     // 🔴 刻度与色块同源（上面的 breakpoints / getColorByValue），⛔ 不许另算一套
     // ⚠️ 必须放在表格**上方**：字段一多表格就有 400+ px，图例放底部会被挤出屏幕（实测 220×464 面板）
     statsHtml += `<div style="border:1px solid #ebeef5;border-radius:4px;padding:4px 5px;margin-bottom:5px;background:#fafbfc;">`
-    statsHtml += `<div style="font-size:10px;color:#606266;font-weight:bold;margin-bottom:3px;">色阶 · ${fieldName}（${popColorMode.value === 'equal' ? '等值均分' : '等频分档'}）</div>`
+    statsHtml += `<div style="font-size:11px;color:var(--text-regular);font-weight:bold;margin-bottom:3px;">色阶 · ${fieldName}（${popColorMode.value === 'equal' ? '等值均分' : '等频分档'}）</div>`
     statsHtml += `<div style="display:flex;height:11px;border-radius:2px;overflow:hidden;border:1px solid #dcdfe6;">`
     colors.forEach((c, i) => {
       const lo = breakpoints[i]
@@ -5847,14 +5847,14 @@ const analyzePopulationDistribution = async (opts = {}) => {
     })
     statsHtml += `</div>`
     // 每档格数（等值均分下能一眼看出数据偏斜：低档塞满、高档个位数）
-    statsHtml += `<div style="display:flex;font-size:8px;color:#909399;margin-top:1px;">`
+    statsHtml += `<div style="display:flex;font-size:11px;color:var(--text-secondary);margin-top:1px;">`
     binCounts.forEach(n => { statsHtml += `<div style="flex:1;text-align:center;">${n}</div>` })
     statsHtml += `</div>`
     // 6 个边界刻度
-    statsHtml += `<div style="display:flex;justify-content:space-between;font-size:8px;color:#606266;margin-top:1px;">`
+    statsHtml += `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-regular);margin-top:1px;">`
     breakpoints.forEach(b => { statsHtml += `<span>${fmtTick(b)}</span>` })
     statsHtml += `</div>`
-    statsHtml += `<div style="font-size:8px;color:#909399;margin-top:1px;">${allValues.length} 格参与分级 · 色块下方数字为该档格数</div>`
+    statsHtml += `<div style="font-size:11px;color:var(--text-secondary);margin-top:1px;">${allValues.length} 格参与分级 · 色块下方数字为该档格数</div>`
     statsHtml += `</div>`
 
     // 表头（表格可滚动：字段多时不让整个面板长出屏幕）
@@ -5890,7 +5890,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
     // 其他字段行（优先使用API返回的字段总计，与常住人口对比一致）
     fieldList.forEach(field => {
       statsHtml += `<tr>`
-      statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;color:#606266;">${field}</td>`
+      statsHtml += `<td style="padding:4px 6px;border:1px solid #dcdfe6;color:var(--text-regular);">${field}</td>`
       sortedRadii.forEach(r => {
         const data = radiusResults[r]
         if (!data) {
@@ -5910,7 +5910,7 @@ const analyzePopulationDistribution = async (opts = {}) => {
     statsHtml += `</table>`
     statsHtml += `</div>`
 
-    statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:9px;color:#909399;text-align:center;">📋 可拖动调整位置</div>`
+    statsHtml += `<div style="margin-top:6px;padding-top:4px;border-top:1px dashed #eee;font-size:11px;color:var(--text-secondary);text-align:center;">📋 可拖动调整位置</div>`
     statsHtml += `</div>`
 
     // 添加可拖动的统计面板
@@ -12053,8 +12053,8 @@ const renderBarChart = () => {
           const pct = params[1].value ? ((diff / params[1].value) * 100).toFixed(1) : '∞'
           const sign = diff >= 0 ? '+' : ''
           result += `<hr style="margin:4px 0;border:none;border-top:1px solid #eee;"/>`
-          result += `<span style="color:#909399;font-size:12px;">差值: ${sign}${formatNumber(Math.abs(diff))}</span><br/>`
-          result += `<span style="color:#909399;font-size:12px;">差异率: ${pct}%</span>`
+          result += `<span style="color:var(--text-secondary);font-size:12px;">差值: ${sign}${formatNumber(Math.abs(diff))}</span><br/>`
+          result += `<span style="color:var(--text-secondary);font-size:12px;">差异率: ${pct}%</span>`
         }
         return result
       }
@@ -12377,7 +12377,7 @@ function getHeatmapCellStyle(nums, idx) {
 
 .map-loading-text {
   font-size: 14px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-bottom: 20px;
 }
 
@@ -12934,7 +12934,7 @@ function getHeatmapCellStyle(nums, idx) {
 .grid-legend-close {
   margin-left: auto;
   font-style: normal;
-  color: #909399;
+  color: var(--text-secondary);
   cursor: pointer;
   line-height: 1;
   padding: 0 2px;
@@ -12942,7 +12942,7 @@ function getHeatmapCellStyle(nums, idx) {
 }
 .grid-legend-close:hover { color: #303133; }
 .grid-legend-sub {
-  color: #909399;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 .grid-legend-row {
@@ -13018,7 +13018,7 @@ function getHeatmapCellStyle(nums, idx) {
   line-height: 1.4;
 }
 .grid-breaks-loading {
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -13042,7 +13042,7 @@ function getHeatmapCellStyle(nums, idx) {
 .grid-dialog-hint {
   margin: 0 0 0 88px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
@@ -13093,7 +13093,7 @@ function getHeatmapCellStyle(nums, idx) {
 .pop-mode-card:hover .pop-mode-title { color: #ff8800; }
 .pop-mode-sub {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 3px;
   line-height: 1.5;
 }
@@ -13102,7 +13102,7 @@ function getHeatmapCellStyle(nums, idx) {
 .cr-empty {
   padding: 18px 8px;
   text-align: center;
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -13139,7 +13139,7 @@ function getHeatmapCellStyle(nums, idx) {
 }
 .cr-meta {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   margin-top: 2px;
 }
 .cr-time {
@@ -13152,7 +13152,7 @@ function getHeatmapCellStyle(nums, idx) {
   background: none;
   border: 1px solid #dcdfe6;
   border-radius: 3px;
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 11px;
   padding: 2px 7px;
   cursor: pointer;
@@ -13272,7 +13272,7 @@ function getHeatmapCellStyle(nums, idx) {
 /* 商圈查询样式 */
 .commerce-match-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-left: 8px;
   font-weight: normal;
 }
@@ -13294,7 +13294,7 @@ function getHeatmapCellStyle(nums, idx) {
   color: #303133;
 }
 .commerce-item-source {
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 12px;
   margin-top: 2px;
 }

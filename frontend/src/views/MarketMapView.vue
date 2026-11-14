@@ -4,7 +4,7 @@
     <div class="mm-header">
       <div>
         <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><Search /></AppIcon>{{ $t('cityInsight.title') }}</h2>
-        <p style="margin:4px 0 0;font-size:13px;color:#909399;">
+        <p style="margin:4px 0 0;font-size:13px;color:var(--text-secondary);">
           {{ $t('cityInsight.desc') }}
         </p>
       </div>
@@ -25,7 +25,7 @@
       <template #header>
         <span class="dlg-title"><AppIcon><Setting /></AppIcon>{{ $t('cityInsight.weightDialogTitle') }}</span>
       </template>
-      <div style="font-size:12px;color:#909399;margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
         {{ $t('cityInsight.weightDialogDesc') }}
       </div>
       <div v-for="dim in weightDims" :key="dim.key" class="mm-weight-row">
@@ -35,7 +35,7 @@
         </div>
         <el-slider v-model="weightForm[dim.key]" :min="0" :max="1" :step="0.05" :show-tooltip="false" @change="onWeightChange" />
       </div>
-      <div style="font-size:12px;color:#909399;margin-top:8px;">
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;">
         {{ $t('cityInsight.weightTotal') }}：<b style="color:#303133;">{{ Math.round(weightTotal * 100) }}%</b>
         <span v-if="Math.abs(weightTotal - 1) > 0.001" style="color:#e6a23c;">{{ $t('cityInsight.willNormalize') }}</span>
       </div>
@@ -341,7 +341,7 @@ onMounted(loadData)
   display: flex;
   gap: 14px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
 }
 .mm-legend-item {
   display: flex;
@@ -378,7 +378,7 @@ onMounted(loadData)
 .mm-kpi-num.c-red { color: #f56c6c; }
 .mm-kpi-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 
@@ -433,7 +433,7 @@ onMounted(loadData)
   width: 22px;
   text-align: center;
   font-size: 13px;
-  color: #909399;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 .mm-prov-name {
@@ -538,7 +538,7 @@ onMounted(loadData)
 }
 .mm-detail-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 6px;
 }
 .mm-detail-dim-title {
@@ -598,7 +598,7 @@ onMounted(loadData)
 }
 .mm-fact span {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .mm-fact b {
   font-size: 13px;

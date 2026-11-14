@@ -213,7 +213,7 @@
         <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
       </el-upload>
       <el-progress v-if="importing" :percentage="importProgress" :stroke-width="16" style="margin: 16px 0" :status="importProgress >= 100 && importStatus === 'done' ? 'success' : importStatus === 'error' ? 'exception' : undefined" />
-      <div v-if="importing" style="text-align:center;font-size:13px;color:#909399;margin-bottom:8px;">{{ importStatusText }}</div>
+      <div v-if="importing" style="text-align:center;font-size:13px;color:var(--text-secondary);margin-bottom:8px;">{{ importStatusText }}</div>
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="importing" @click="handleImportConfirm">确定导入</el-button>

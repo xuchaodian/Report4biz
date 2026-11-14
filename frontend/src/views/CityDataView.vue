@@ -24,7 +24,7 @@
       </div>
     </div>
     <div class="page-body">
-      <div v-if="loading" style="text-align:center;padding:40px;color:#909399">加载中...</div>
+      <div v-if="loading" style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>
       <el-table v-else :data="cityData" style="width:100%" stripe border :max-height="700" size="small" @sort-change="onSortChange">
         <el-table-column prop="城市" label="城市" min-width="70" fixed sortable="custom" />
         <el-table-column prop="省份" label="省份" min-width="70" sortable="custom" />
@@ -61,7 +61,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="!loading && cityData.length === 0" style="text-align:center;padding:60px;color:#909399">
+      <div v-if="!loading && cityData.length === 0" style="text-align:center;padding:60px;color:var(--text-secondary)">
         <el-empty description="暂无数据" />
       </div>
     </div>

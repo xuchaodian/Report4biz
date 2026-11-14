@@ -767,7 +767,7 @@ watch(() => props.modelValue, (v) => {
 <style scoped>
 .rp-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .rp-bar-l { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.rp-hint { font-size: 12px; color: #909399; line-height: 1.5; }
+.rp-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
 /* 人口取数条：在**纸外**（不进 PDF），只做操作与状态提示 */
 .rp-popbar {
@@ -789,7 +789,7 @@ watch(() => props.modelValue, (v) => {
   font-size: 12px; line-height: 1.6; color: #7a5b1e;
 }
 .rp-pop-empty b { font-size: 13px; color: #a15c00; }
-.rp-cat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #606266; margin-bottom: 10px; }
+.rp-cat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-regular); margin-bottom: 10px; }
 .rp-scroll { max-height: 62vh; overflow: auto; background: #f2f3f5; padding: 16px; }
 
 /* A4 纸张：794px ≈ 210mm @96dpi */

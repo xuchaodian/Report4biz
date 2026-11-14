@@ -117,7 +117,7 @@ const submit = async () => {
   border-radius: 8px;
   text-align: center;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-regular);
   cursor: pointer;
   user-select: none;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
@@ -134,7 +134,7 @@ const submit = async () => {
 .fb-hint {
   margin: 10px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 </style>

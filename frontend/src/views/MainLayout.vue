@@ -142,7 +142,7 @@
               <li class="quota-dropdown-item" @click.stop>
                 <div class="quota-dropdown-row">
                   <el-icon style="color: var(--brand-primary);"><Odometer /></el-icon>
-                  <span v-if="quotaLoading" class="quota-value" style="color:#909399;">加载中...</span>
+                  <span v-if="quotaLoading" class="quota-value" style="color:var(--text-secondary);">加载中...</span>
                   <span v-else-if="userStore.quota" class="quota-value">剩余 <b style="color: var(--brand-primary);">{{ userStore.availableQuota }}</b> 次</span>
                   <span v-else class="quota-value" style="color:#f56c6c;">--</span>
                 </div>
@@ -211,12 +211,12 @@
       <template #header>
         <span class="dlg-title"><AppIcon><Document /></AppIcon>导出报表</span>
       </template>
-      <div class="export-dialog-tips" style="margin-bottom:10px;font-size:12px;color:#909399;">
+      <div class="export-dialog-tips" style="margin-bottom:10px;font-size:12px;color:var(--text-secondary);">
         勾选要导出的购买记录（可多选），然后选择导出格式
       </div>
       <!-- v1.13.156 集团可见域：本公司有多个账号时提供「来源」筛选 -->
       <div v-if="exportSourceOptions.length > 1" class="export-source-bar" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:12px;color:#606266;">数据来源</span>
+        <span style="font-size:12px;color:var(--text-regular);">数据来源</span>
         <el-select
           v-model="exportSourceFilter"
           size="small"
@@ -287,7 +287,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top:10px;font-size:12px;color:#606266;">
+      <div style="margin-top:10px;font-size:12px;color:var(--text-regular);">
         已选 <b style="color: var(--brand-primary);">{{ exportSelected.length }}</b> 条记录
         <span v-if="exportList.some(r => r.is_report)" style="margin-left:8px;">
           · 标「报告取数」的记录仅含联通 1001 人口服务，导出的其余指标为空属正常
@@ -940,7 +940,7 @@ const doExport = async (type) => {
          #606266 on #e4e7ed = 4.68:1，过 WCAG AA（本项目 a11y 统一按 4.5 口径）。 */
       .el-avatar.avatar-fallback {
         background: #e4e7ed;
-        color: #606266;
+        color: var(--text-regular);
       }
       
       &:hover {
@@ -1000,7 +1000,7 @@ const doExport = async (type) => {
 }
 .quota-label {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   font-weight: 600;
 }
 .quota-value {

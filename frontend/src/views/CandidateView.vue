@@ -486,7 +486,7 @@ onMounted(() => {
 .cand-page { padding: 20px 24px 40px; max-width: 1280px; margin: 0 auto; }
 .cd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .cd-head-l h2 { margin: 4px 0 6px; font-size: 20px; font-weight: 500; }
-.cd-sub { margin: 0; font-size: 13px; line-height: 1.7; color: #606266; max-width: 720px; }
+.cd-sub { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-regular); max-width: 720px; }
 .cd-head-r { display: flex; gap: 8px; flex-shrink: 0; }
 
 .cd-stages { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -498,29 +498,29 @@ onMounted(() => {
 .cd-stage:hover { border-color: var(--sc); }
 .cd-stage.active { border-color: var(--sc); box-shadow: 0 0 0 2px color-mix(in srgb, var(--sc) 18%, transparent); }
 .cd-stage-n { font-size: 18px; font-weight: 500; color: var(--sc); line-height: 1.2; }
-.cd-stage-t { font-size: 12px; color: #606266; }
-.cd-total { margin-left: auto; font-size: 13px; color: #606266; }
+.cd-stage-t { font-size: 12px; color: var(--text-regular); }
+.cd-total { margin-left: auto; font-size: 13px; color: var(--text-regular); }
 .cd-total b { color: #303133; }
 .cd-clear { margin-left: 8px; color: var(--brand-primary); cursor: pointer; }
 
 .cd-tools { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 .cd-error { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #fef0f0; color: #f56c6c; border-radius: 6px; font-size: 13px; }
-.cd-empty { padding: 56px 0; text-align: center; color: #606266; font-size: 14px; }
+.cd-empty { padding: 56px 0; text-align: center; color: var(--text-regular); font-size: 14px; }
 .cd-empty p { margin: 0 0 8px; }
-.cd-empty-hint { font-size: 13px; color: #909399; }
+.cd-empty-hint { font-size: 13px; color: var(--text-secondary); }
 
 .cd-table { cursor: pointer; }
 .cd-name { font-size: 14px; color: #303133; }
-.cd-name-sub { font-size: 12px; color: #909399; margin-top: 2px; }
-.cd-addr { font-size: 12px; color: #909399; margin-top: 2px; }
+.cd-name-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.cd-addr { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .cd-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
 
 .cd-detail-top { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.cd-detail-hint { font-size: 12px; color: #909399; }
+.cd-detail-hint { font-size: 12px; color: var(--text-secondary); }
 .cd-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin: 0 0 18px; }
 .cd-info > div { min-width: 0; }
 .cd-info-wide { grid-column: 1 / -1; }
-.cd-info dt { font-size: 12px; color: #909399; margin-bottom: 2px; }
+.cd-info dt { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
 .cd-info dd { margin: 0; font-size: 13px; color: #303133; word-break: break-all; }
 .cd-drop { color: #f56c6c; }
 
@@ -528,15 +528,15 @@ onMounted(() => {
 .cd-sec h3 { font-size: 14px; font-weight: 500; margin: 0 0 10px; color: #303133; }
 .cd-stage-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .cd-note-input { margin-bottom: 6px; }
-.cd-sec-foot { font-size: 12px; color: #909399; }
-.cd-muted { font-size: 12px; color: #909399; font-weight: 400; }
+.cd-sec-foot { font-size: 12px; color: var(--text-secondary); }
+.cd-muted { font-size: 12px; color: var(--text-secondary); font-weight: 400; }
 .cd-timeline { padding-left: 2px; }
-.cd-note-stage { font-size: 12px; color: #606266; margin-bottom: 2px; }
+.cd-note-stage { font-size: 12px; color: var(--text-regular); margin-bottom: 2px; }
 .cd-note-text { font-size: 13px; color: #303133; line-height: 1.6; }
 .cd-remark { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .cd-detail-actions { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid #ebeef5; }
 
 .cd-row { display: flex; gap: 8px; width: 100%; }
-.cd-tip { font-size: 12px; color: #909399; line-height: 1.6; margin-top: 4px; }
-.cd-tip-inline { margin-left: 8px; font-size: 12px; color: #909399; }
+.cd-tip { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-top: 4px; }
+.cd-tip-inline { margin-left: 8px; font-size: 12px; color: var(--text-secondary); }
 </style>

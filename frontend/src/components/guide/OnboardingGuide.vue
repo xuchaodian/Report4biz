@@ -231,7 +231,7 @@ const skipWizard = () => {
 }
 .banner-close {
   cursor: pointer;
-  color: #909399;
+  color: var(--text-secondary);
   flex-shrink: 0;
   font-size: 16px;
 }
@@ -251,7 +251,7 @@ const skipWizard = () => {
   color: #303133;
 }
 .wizard-hero p {
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 13px;
   margin: 0 auto;
   max-width: 420px;
@@ -267,7 +267,7 @@ const skipWizard = () => {
   color: #303133;
 }
 .wizard-desc {
-  color: #606266;
+  color: var(--text-regular);
   font-size: 13px;
   margin: 0 0 16px;
 }
@@ -280,7 +280,7 @@ const skipWizard = () => {
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   text-align: left;
   margin-bottom: 20px;
 }

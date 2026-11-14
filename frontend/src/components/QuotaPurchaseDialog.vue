@@ -190,17 +190,17 @@ async function submit() {
 .qad-unit {
   margin-left: 8px;
   font-size: 13px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .qad-note {
   margin: 4px 0 10px;
   font-size: 12px;
   line-height: 1.7;
-  color: #909399;
+  color: var(--text-secondary);
 
   b {
-    color: #606266;
+    color: var(--text-regular);
     font-weight: 600;
   }
 }
@@ -212,7 +212,7 @@ async function submit() {
   gap: 6px;
   font-size: 12px;
   line-height: 1.7;
-  color: #606266;
+  color: var(--text-regular);
 
   b {
     color: #0d579c;

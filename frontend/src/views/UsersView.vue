@@ -183,7 +183,7 @@
                 {{ isVipExpiring(row) ? '⏰ ' : isVipExpired(row) ? '❌ ' : '' }}{{ formatDate(row.vip_until) }}
               </span>
               <!-- v1.13.158：vip_until 为空 = 不过期（与后端 ai.js 的 VIP 门禁判定一致），不再显示「—」 -->
-              <span v-else style="color: #909399;">长期有效</span>
+              <span v-else style="color: var(--text-secondary);">长期有效</span>
             </template>
             <span v-else style="color: #c0c4cc;">—</span>
           </template>
@@ -287,7 +287,7 @@
         <el-form-item v-if="form.role === 'vip' || form.role === 'trial'" label="VIP到期">
           <div style="width: 100%;">
             <div class="quota-tip" style="color: #e6a23c;">{{ form.role === 'trial' ? 'VIP 试用自保存之日起 30 天，到期后自动恢复为普通用户' : '自保存之日起自动续期 1 年（管理员未将其改为普通用户则持续有效）' }}</div>
-            <div v-if="form.vipUntilText" style="font-size: 12px; color: #909399; margin-top: 4px;">当前 VIP 到期：{{ form.vipUntilText }}</div>
+            <div v-if="form.vipUntilText" style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">当前 VIP 到期：{{ form.vipUntilText }}</div>
           </div>
         </el-form-item>
         <el-form-item v-if="isEdit" label="剩余次数">
@@ -295,7 +295,7 @@
           <div class="quota-tip">
             <div>当前剩余次数: {{ form.remaining }}　｜　已使用次数: {{ form.usedQuota }}</div>
             <div>当前授权额度（累计）: {{ form.quota }}</div>
-            <div>系统剩余可分配(全池): {{ quotaInfo.poolAvailableQuota }} <span style="color:#909399;">（已扣除 API 开放页占用 {{ quotaInfo.apiAllocatedQuota }} 次）</span></div>
+            <div>系统剩余可分配(全池): {{ quotaInfo.poolAvailableQuota }} <span style="color:var(--text-secondary);">（已扣除 API 开放页占用 {{ quotaInfo.apiAllocatedQuota }} 次）</span></div>
             <!-- v1.13.332：原文案「自动换算为配额总数」与实现不符（实际是直接覆盖），
                  且是 2026-07-24 那次误改的诱因。改为如实描述「按增减量调整授权额度」。 -->
             <div style="color: #67c23a; margin-top: 4px;">按剩余次数的增减量调整授权额度；数字不变则额度与配额履历都不变</div>
@@ -1571,8 +1571,8 @@ onMounted(() => {
         border-color: #909399;
         background: linear-gradient(135deg, #f4f4f5 0%, #f9f9fa 100%);
 
-        .label { color: #909399; }
-        .value { color: #909399; font-weight: bold; font-size: 18px; }
+        .label { color: var(--text-secondary); }
+        .value { color: var(--text-secondary); font-weight: bold; font-size: 18px; }
       }
 
       &.consumed {
@@ -1631,7 +1631,7 @@ onMounted(() => {
     font-size: 14px;
 
     .label {
-      color: #606266;
+      color: var(--text-regular);
     }
 
     .value {
@@ -1648,11 +1648,11 @@ onMounted(() => {
 
 .quota-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 4px;
   line-height: 1.4;
 
-  b { color: #606266; }
+  b { color: var(--text-regular); }
 }
 
 /* 累计总配额弹窗：保存后的剩余配额实时预览（A+B 改动） */
@@ -1670,10 +1670,10 @@ onMounted(() => {
     flex-wrap: wrap;
   }
 
-  .qp-label { font-size: 13px; color: #606266; }
+  .qp-label { font-size: 13px; color: var(--text-regular); }
   .qp-value { font-size: 20px; font-weight: bold; color: #303133; }
-  .qp-delta { font-size: 13px; color: #909399; }
-  .qp-hint { margin-top: 4px; font-size: 12px; color: #909399; }
+  .qp-delta { font-size: 13px; color: var(--text-secondary); }
+  .qp-hint { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
 
   &.up {
     background: #f0f9eb;
@@ -1762,7 +1762,7 @@ onMounted(() => {
 
 .purchase-summary .ps-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .purchase-summary .ps-item.baseline .ps-label {
@@ -1786,7 +1786,7 @@ onMounted(() => {
 }
 
 .qrange {
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 .qrange.after {
@@ -1812,16 +1812,16 @@ onMounted(() => {
   display: flex; flex-direction: column; gap: 4px;
 }
 .ov-card.ov-hl { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-8); }
-.ov-label { font-size: 12px; color: #909399; }
+.ov-label { font-size: 12px; color: var(--text-secondary); }
 .ov-num { font-size: 20px; color: #303133; font-weight: 600; }
 .ov-hl .ov-num { color: var(--brand-primary); }
 .ov-note {
-  font-size: 12px; color: #606266; line-height: 1.8;
+  font-size: 12px; color: var(--text-regular); line-height: 1.8;
   margin-top: 10px; padding: 8px 12px;
   background: #fafafa; border-radius: 6px;
 }
 .ov-org { font-weight: 600; color: #303133; }
-.ov-member { color: #606266; }
+.ov-member { color: var(--text-regular); }
 .ov-g-pool { color: var(--brand-primary); }
 .ov-g-move { color: #e6a23c; }
 .ov-g-sep { color: #c0c4cc; margin: 0 4px; }
@@ -1831,7 +1831,7 @@ onMounted(() => {
 }
 .ov-reconcile.ov-ok { background: #f0f9eb; color: #529b2e; border: 1px solid #e1f3d8; }
 .ov-reconcile.ov-bad { background: #fef0f0; color: #f56c6c; border: 1px solid #fbc4c4; }
-.ov-tip { margin-top: 10px; font-size: 12px; color: #909399; line-height: 1.8; }
+.ov-tip { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
 
 /* ===== v1.13.205：VIP 试用申请（管理端）===== */
 .vip-pending-bar {
@@ -1854,7 +1854,7 @@ onMounted(() => {
 .vip-pending-bar--quiet {
   background: #fafafa;
   border-color: #ebeef5;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .vip-pending-bar--quiet .vip-pending-icon { color: #c0c4cc; }
 
@@ -1865,13 +1865,13 @@ onMounted(() => {
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
-.vip-review-count { font-size: 13px; color: #909399; }
+.vip-review-count { font-size: 13px; color: var(--text-secondary); }
 .vip-review-count b { color: #e6a23c; }
 .vip-review-toolbar .el-button { margin-left: auto; }
 .vip-review-table { width: 100%; }
 .vip-review-none { color: #c0c4cc; font-size: 12px; }
 .vip-review-note { margin-top: 2px; font-size: 12px; color: #f56c6c; line-height: 1.5; }
-.vip-review-empty { padding: 24px; text-align: center; color: #909399; font-size: 13px; }
+.vip-review-empty { padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px; }
 
 /* v1.13.218：配额采购申请条 —— 蓝色底与 VIP 橙色条区分（同一 .vip-pending-bar 骨架）。
    ⚠️ 必须各写一条覆盖规则：骨架上的无条件规则会赢过「只继承」的期望（212 教训）。 */

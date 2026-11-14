@@ -311,13 +311,13 @@
                   <span :style="{ color: row.maxIndex === idx ? '#f56c6c' : '#333', fontWeight: row.maxIndex === idx ? 'bold' : 'normal' }">
                     {{ row.values[idx] }}
                   </span>
-                  <span v-if="row.diffs[idx]" style="color: #909399; font-size: 11px; margin-left: 4px;">{{ row.diffs[idx] }}</span>
+                  <span v-if="row.diffs[idx]" style="color: var(--text-secondary); font-size: 11px; margin-left: 4px;">{{ row.diffs[idx] }}</span>
                 </template>
               </el-table-column>
             </el-table>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <span style="font-size:13px;color:#909399;">对比柱状图</span>
+            <span style="font-size:13px;color:var(--text-secondary);">对比柱状图</span>
             <el-button size="small" text @click="exportCompareChart">
               <el-icon><Download /></el-icon> 导出图片
             </el-button>
@@ -374,7 +374,7 @@
               </span>
             </el-upload>
             <el-button v-if="userStore.isAdmin" type="danger" @click="handleClearAllTenants"><el-icon><Delete /></el-icon>全清除</el-button>
-            <span v-if="tenantImportProgress > 0 && tenantImporting" style="font-size:12px;color:#909399">{{ tenantImportProgress }}%</span>
+            <span v-if="tenantImportProgress > 0 && tenantImporting" style="font-size:12px;color:var(--text-secondary)">{{ tenantImportProgress }}%</span>
             </div>
           </div>
         </div>
@@ -429,7 +429,7 @@
             @size-change="loadTenants"
           />
         </div>
-        <div v-if="tenantData.length === 0" style="text-align:center;padding:40px;color:#909399">暂无数据</div>
+        <div v-if="tenantData.length === 0" style="text-align:center;padding:40px;color:var(--text-secondary)">暂无数据</div>
 
     <!-- 商场商户对比对话框 -->
     <el-dialog v-model="tcVisible" title="商场商户对比" width="900px" draggable :show-close="true">
@@ -449,7 +449,7 @@
             </el-button>
             <span>{{ name }}</span>
           </div>
-          <div v-if="tcFilteredMallList.length === 0" style="text-align:center;padding:20px;color:#909399">未找到匹配的商场</div>
+          <div v-if="tcFilteredMallList.length === 0" style="text-align:center;padding:20px;color:var(--text-secondary)">未找到匹配的商场</div>
         </div>
         <!-- 选择类型 -->
         <div style="margin-top:16px">
@@ -1039,8 +1039,8 @@ const renderCompareChart = () => {
           const absDiff = Math.abs(d.diff)
           const sign = d.diff >= 0 ? '+' : ''
           r += `<hr style="margin:4px 0;border:none;border-top:1px solid #eee;"/>`
-          r += `<span style="color:#909399;font-size:12px;">差值: ${sign}${formatNumber(absDiff)}</span><br/>`
-          r += `<span style="color:#909399;font-size:12px;">差异率: ${d.pct}%</span>`
+          r += `<span style="color:var(--text-secondary);font-size:12px;">差值: ${sign}${formatNumber(absDiff)}</span><br/>`
+          r += `<span style="color:var(--text-secondary);font-size:12px;">差异率: ${d.pct}%</span>`
         }
         return r
       }

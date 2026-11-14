@@ -208,12 +208,12 @@ const doneRows = computed(() => {
 .imp-body { display: flex; flex-direction: column; gap: 12px; }
 .imp-rules {
   background: #f5f7fa; border: 1px solid #ebeef5; border-radius: 6px;
-  padding: 10px 14px; font-size: 12.5px; color: #606266; line-height: 1.7;
+  padding: 10px 14px; font-size: 12.5px; color: var(--text-regular); line-height: 1.7;
 }
 .imp-rules code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #476582; }
 .imp-step { display: flex; flex-direction: column; gap: 12px; }
 .imp-hint { margin-left: 12px; color: #67c23a; font-size: 13px; }
-.imp-hint.dim { color: #909399; font-size: 12.5px; margin: 0; }
+.imp-hint.dim { color: var(--text-secondary); font-size: 12.5px; margin: 0; }
 .imp-summary { display: flex; gap: 8px; flex-wrap: wrap; }
 .imp-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 </style>

@@ -1475,9 +1475,9 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-card { max-width: 1180px; margin: 0 auto; }
 .ds-header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .ds-title { font-size: 16px; font-weight: 500; }
-.ds-sub { font-size: 12px; color: #909399; }
-.ds-loading { padding: 24px; color: #909399; text-align: center; }
-.ds-empty-tip { font-size: 12px; color: #909399; line-height: 1.8; }
+.ds-sub { font-size: 12px; color: var(--text-secondary); }
+.ds-loading { padding: 24px; color: var(--text-secondary); text-align: center; }
+.ds-empty-tip { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
 
 .ds-orgbar {
   display: flex; align-items: center; gap: 10px;
@@ -1485,24 +1485,24 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
   background: #f5f7fa; border-radius: 8px;
 }
 .ds-orgname { font-size: 14px; font-weight: 500; }
-.ds-orgmeta { font-size: 12px; color: #606266; }
+.ds-orgmeta { font-size: 12px; color: var(--text-regular); }
 
 .ds-block { border-top: 1px solid #ebeef5; padding: 14px 0 4px; }
 .ds-block:first-of-type { border-top: none; }
 .ds-block-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .ds-block-title { font-size: 14px; font-weight: 500; }
-.ds-block-note { font-size: 12px; color: #909399; }
+.ds-block-note { font-size: 12px; color: var(--text-secondary); }
 
 .ds-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.ds-label { font-size: 12px; color: #606266; }
+.ds-label { font-size: 12px; color: var(--text-regular); }
 
 .ds-candbar { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #303133; margin-bottom: 10px; flex-wrap: wrap; }
 .ds-num { color: var(--brand-primary); }
-.ds-muted { font-size: 12px; color: #909399; }
+.ds-muted { font-size: 12px; color: var(--text-secondary); }
 .ds-ok { color: #67c23a; }
 .ds-warn { color: #e6a23c; }
 .ds-danger { color: #f56c6c; }
-.ds-changes { font-size: 12px; color: #606266; }
+.ds-changes { font-size: 12px; color: var(--text-regular); }
 .ds-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 /* v1.13.352：前置依赖 / 品牌口径提示区（放在预览按钮之前） */
 .ds-prereq { margin: 0 0 10px; }
@@ -1511,7 +1511,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 /* 提示条与「① 从集团同步」之间留白：它虽在区块之外，但语义上是该区块的前置条件 */
 .ds-consent-bar { margin-bottom: 14px; }
 .ds-consent-head { display: flex; align-items: center; gap: 12px; }
-.ds-consent-body { font-size: 12px; line-height: 1.9; color: #606266; }
+.ds-consent-body { font-size: 12px; line-height: 1.9; color: var(--text-regular); }
 /* 未确认时禁用区块内的提示字：用橙色与 .ds-muted 区分，避免"看起来只是灰说明" */
 .ds-need-consent { font-size: 12px; color: #e6a23c; font-weight: 500; }
 
@@ -1534,7 +1534,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
   display: flex; flex-direction: column; gap: 4px;
 }
 .ds-quota-card.ds-quota-hl { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-8); }
-.ds-quota-label { font-size: 12px; color: #909399; }
+.ds-quota-label { font-size: 12px; color: var(--text-secondary); }
 .ds-quota-num { font-size: 20px; color: #303133; font-weight: 600; }
 .ds-quota-hl .ds-quota-num { color: var(--brand-primary); }
 .ds-allocate-head { font-size: 14px; color: #303133; }
@@ -1556,7 +1556,7 @@ watch(targetMember, () => { preview.value = null; loadTargetScope() })
 .ds-tag-pool { background: var(--el-color-primary-light-9); color: var(--brand-primary); border: 1px solid var(--el-color-primary-light-8); }
 .ds-tag-move { background: #fdf6ec; color: #e6a23c; border: 1px solid #faecd8; }
 .ds-move-tip {
-  font-size: 12px; color: #606266; line-height: 1.9;
+  font-size: 12px; color: var(--text-regular); line-height: 1.9;
   background: #f5f7fa; border-radius: 6px; padding: 8px 12px;
 }
 

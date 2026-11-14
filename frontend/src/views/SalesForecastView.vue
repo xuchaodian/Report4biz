@@ -644,7 +644,7 @@ onMounted(() => {
 }
 .fc-sub {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   font-weight: 400;
 }
 .fc-toolbar {
@@ -658,7 +658,7 @@ onMounted(() => {
 
 .fc-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-left: auto;
 }
 .fc-result {
@@ -702,7 +702,7 @@ onMounted(() => {
   flex-wrap: wrap;
   margin-top: 10px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .fc-refs-title {
   font-size: 13px;
@@ -757,7 +757,7 @@ onMounted(() => {
 }
 .fc-locked-desc {
   font-size: 13px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.9;
   max-width: 560px;
   margin-bottom: 6px;
@@ -770,10 +770,10 @@ onMounted(() => {
 /* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
 .prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .prov-title{font-size:13px;font-weight:700;color:#303133}
-.prov-sub{font-size:11.5px;color:#909399}
+.prov-sub{font-size:11.5px;color:var(--text-secondary)}
 .prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
 .prov-item{min-width:0}
-.prov-item dt{font-size:11.5px;color:#909399;margin-bottom:2px}
+.prov-item dt{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}
 .prov-item dd{margin:0;font-size:12.5px;color:#303133;line-height:1.45;word-break:break-word}
 .prov-item dd.prov-warn{color:#b88230}
 .prov-item dd.prov-ok{color:#1d9e75}
@@ -789,9 +789,9 @@ onMounted(() => {
 .fc-sim-head:hover{background:#f2f5f9}
 .fc-sim-head:focus-visible{outline:2px solid var(--brand-primary);outline-offset:-2px}
 .fc-sim-title{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;font-weight:600;color:#303133}
-.fc-sim-sub{font-size:11.5px;color:#909399}
+.fc-sim-sub{font-size:11.5px;color:var(--text-secondary)}
 .fc-sim-badge{margin-left:auto}
-.fc-sim-arrow{transition:transform .2s;color:#909399;font-size:13px}
+.fc-sim-arrow{transition:transform .2s;color:var(--text-secondary);font-size:13px}
 .fc-sim-arrow.is-open{transform:rotate(180deg)}
 
 .fc-sim-body{padding:12px 14px 14px;border-top:1px solid #ebeef5}
@@ -805,32 +805,32 @@ onMounted(() => {
 .fc-sim-col-title{font-size:12px;font-weight:600;color:#303133;margin-bottom:7px;
   padding-bottom:5px;border-bottom:1px solid #ebeef5}
 .fc-sim-field{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
-.fc-sim-field>span{font-size:12px;color:#606266;line-height:1.3;min-width:0}
+.fc-sim-field>span{font-size:12px;color:var(--text-regular);line-height:1.3;min-width:0}
 .fc-sim-field :deep(.el-input-number){width:118px;flex:0 0 118px}
 .fc-req{font-style:normal;font-size:10px;color:var(--el-color-danger);margin-left:3px}
-.fc-sim-hint{font-size:11px;line-height:1.55;color:#909399;margin-top:8px}
+.fc-sim-hint{font-size:11px;line-height:1.55;color:var(--text-secondary);margin-top:8px}
 
 .fc-sim-out{display:flex;gap:20px;align-items:center;flex-wrap:wrap;
   background:#f5f7fa;border-radius:8px;padding:12px 16px;margin-bottom:12px}
 .fc-sim-main{min-width:170px}
-.fc-sim-main-label{font-size:11.5px;color:#909399;margin-bottom:2px}
+.fc-sim-main-label{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}
 .fc-sim-main-val{font-size:22px;font-weight:600;line-height:1.25}
 .fc-sim-main-val.tone-good{color:var(--el-color-success)}
 .fc-sim-main-val.tone-warn{color:var(--el-color-warning)}
 .fc-sim-main-val.tone-bad{color:var(--el-color-danger)}
-.fc-sim-main-sub{font-size:11.5px;color:#909399;margin-top:3px}
+.fc-sim-main-sub{font-size:11.5px;color:var(--text-secondary);margin-top:3px}
 .fc-sim-kv{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px 18px;margin:0;flex:1}
 .fc-sim-kv>div{min-width:0}
-.fc-sim-kv dt{font-size:11.5px;color:#909399;margin-bottom:2px}
+.fc-sim-kv dt{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}
 .fc-sim-kv dd{margin:0;font-size:13px;font-weight:500;color:#303133}
 .fc-sim-kv dd.is-neg{color:var(--el-color-danger)}
 
 .fc-sim-scen{border-top:1px dashed #e4e7ed;padding-top:10px}
-.fc-sim-scen-title{font-size:11.5px;color:#909399;margin-bottom:8px}
+.fc-sim-scen-title{font-size:11.5px;color:var(--text-secondary);margin-bottom:8px}
 .fc-sim-scen-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .fc-sim-scen-item{border:1px solid #ebeef5;border-radius:7px;padding:8px 10px;background:#fff}
-.fc-sim-scen-item .scen-label{font-size:11.5px;color:#909399;margin-bottom:3px}
-.fc-sim-scen-item .scen-rev{font-size:12px;color:#606266;margin-bottom:2px}
+.fc-sim-scen-item .scen-label{font-size:11.5px;color:var(--text-secondary);margin-bottom:3px}
+.fc-sim-scen-item .scen-rev{font-size:12px;color:var(--text-regular);margin-bottom:2px}
 .fc-sim-scen-item .scen-pay{font-size:13px;font-weight:600}
 .fc-sim-scen-item.tone-good .scen-pay{color:var(--el-color-success)}
 .fc-sim-scen-item.tone-warn .scen-pay{color:var(--el-color-warning)}

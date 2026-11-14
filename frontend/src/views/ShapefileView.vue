@@ -120,7 +120,7 @@
             <el-button type="primary" link @click="$router.push('/city-data')" style="font-size:14px">
               <el-icon><FullScreen /></el-icon>全屏查看
             </el-button>
-            <span v-if="userStore.isAdmin" style="font-size:12px;color:#909399">支持CSV格式，列名需与现有字段一致</span>
+            <span v-if="userStore.isAdmin" style="font-size:12px;color:var(--text-secondary)">支持CSV格式，列名需与现有字段一致</span>
           </div>
           <div style="display:flex;gap:8px">
             <el-button v-if="userStore.isAdmin" type="danger" size="small" @click="handleClearCityData"><el-icon><Delete /></el-icon>一键清除</el-button>
@@ -598,7 +598,7 @@ onMounted(() => {
 }
 
 .subtitle {
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 14px;
   margin: 0;
 }
@@ -644,12 +644,12 @@ onMounted(() => {
 
 .upload-text .subtitle {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-regular);
 }
 
 .upload-text .format {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 8px;
 }
 
@@ -692,7 +692,7 @@ onMounted(() => {
 }
 
 .file-info .feature-count {
-  color: #909399;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
@@ -715,7 +715,7 @@ onMounted(() => {
 .no-conditions {
   padding: 24px;
   text-align: center;
-  color: #909399;
+  color: var(--text-secondary);
   background: #fafafa;
   border-radius: 6px;
   border: 1px dashed #dcdfe6;

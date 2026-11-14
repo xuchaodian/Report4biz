@@ -10,9 +10,9 @@
     <div style="padding: 6px 0;">
       <div v-if="loading" style="text-align:center;padding:20px;">
         <el-icon class="is-loading" style="font-size:20px;"><Loading /></el-icon>
-        <span style="margin-left:8px;color:#909399;font-size:13px;">加载中...</span>
+        <span style="margin-left:8px;color:var(--text-secondary);font-size:13px;">加载中...</span>
       </div>
-      <div v-else-if="!hasData" style="text-align:center;padding:20px;color:#909399;font-size:13px;">
+      <div v-else-if="!hasData" style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px;">
         暂无城市商圈数据
       </div>
       <template v-else>

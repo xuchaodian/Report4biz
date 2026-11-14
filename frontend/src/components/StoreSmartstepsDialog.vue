@@ -251,7 +251,7 @@
         <p><strong>数据年月:</strong> {{ currentDetail.city_month }}</p>
         <p style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           <el-switch v-model="aiEgressAllowed" size="small" />
-          <span style="font-size:12px;color:#909399;">允许将本单数据发送至第三方 AI（火山方舟）用于生成建议</span>
+          <span style="font-size:12px;color:var(--text-secondary);">允许将本单数据发送至第三方 AI（火山方舟）用于生成建议</span>
         </p>
       </div>
       <!-- AI 选址建议 -->

@@ -334,7 +334,7 @@ onUnmounted(clearTipTimers)
 }
 .sg-close {
   font-size: 14px;
-  color: #909399;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .sg-close:hover {
@@ -349,7 +349,7 @@ onUnmounted(clearTipTimers)
 .sg-list-hint {
   margin: 0 0 10px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 .sg-scene {
@@ -381,13 +381,13 @@ onUnmounted(clearTipTimers)
 }
 .sg-scene-sub {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   margin-top: 3px;
   line-height: 1.5;
 }
 .sg-scene-meta {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   margin-top: 5px;
 }
 
@@ -417,7 +417,7 @@ onUnmounted(clearTipTimers)
 }
 .sg-progress-txt {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -517,13 +517,13 @@ onUnmounted(clearTipTimers)
 .sg-step-why {
   margin: 0 0 4px;
   font-size: 11px;
-  color: #606266;
+  color: var(--text-regular);
   line-height: 1.6;
 }
 .sg-step-how {
   margin: 0 0 8px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 .sg-step-btn {
@@ -537,7 +537,7 @@ onUnmounted(clearTipTimers)
   border: 1px dashed #dcdfe6;
   border-radius: 4px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -572,7 +572,7 @@ onUnmounted(clearTipTimers)
 }
 .sg-feedback {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .sg-feedback:hover {
@@ -580,7 +580,7 @@ onUnmounted(clearTipTimers)
 }
 .sg-back {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .sg-back:hover {

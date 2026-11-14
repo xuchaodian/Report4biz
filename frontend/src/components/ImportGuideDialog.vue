@@ -214,7 +214,7 @@ async function onDownloadSales() {
 .ig-note { font-size: 12px; color: #4b5563; line-height: 1.6; }
 
 .ig-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.ig-hint { font-size: 12px; color: #909399; }
+.ig-hint { font-size: 12px; color: var(--text-secondary); }
 
 .ig-band { margin-top: 12px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; }
 .ig-band-h { font-size: 12px; color: #92400e; line-height: 1.7; }

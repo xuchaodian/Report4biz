@@ -179,6 +179,6 @@ async function handleSaveAll() {
 .map-req__brand { font-weight: 600; font-size: 14px; }
 .map-req__form :deep(.el-form-item) { margin-bottom: 6px; }
 .map-req__footer { display: flex; align-items: center; justify-content: space-between; }
-.map-req__progress { font-size: 12px; color: #909399; }
+.map-req__progress { font-size: 12px; color: var(--text-secondary); }
 .map-req__degraded { padding: 4px 0; }
 </style>

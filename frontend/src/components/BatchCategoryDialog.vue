@@ -262,8 +262,8 @@ watch(() => props.modelValue, (open) => {
 .bc-quick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; }
 .bc-quick-label { font-size: 13px; color: #374151; font-weight: 600; }
 .bc-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-.bc-tip { font-size: 12px; color: #909399; }
-.bc-sub { font-size: 11px; color: #909399; margin-top: 2px; }
+.bc-tip { font-size: 12px; color: var(--text-secondary); }
+.bc-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 .bc-cur.is-empty { color: #b91c1c; }
 .bc-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .bc-foot-l { display: flex; align-items: center; gap: 8px; }

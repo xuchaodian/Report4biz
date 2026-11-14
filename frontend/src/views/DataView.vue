@@ -805,7 +805,7 @@
         <el-select v-model="saleYear" aria-label="录入年份" style="width:110px" @change="onSaleYearChange">
           <el-option v-for="y in saleYearOptions" :key="y" :label="y + ' 年'" :value="y" />
         </el-select>
-        <span style="font-size:12px;color:#909399;">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
+        <span style="font-size:12px;color:var(--text-secondary);">录入该店当年总销售额；同店同年重复保存将覆盖原数据</span>
       </div>
       <div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:12px;padding:8px 10px;background:#f4f8ff;border-radius:6px;">
         <AppIcon style="color: var(--brand-primary);"><Lock /></AppIcon>
@@ -819,13 +819,13 @@
         <el-button size="small" @click="downloadSaleTemplate"><AppIcon class="icon-text"><Download /></AppIcon>下载模板</el-button>
         <el-button size="small" type="primary" plain :loading="saleImporting" @click="saleFileInput?.click()"><AppIcon class="icon-text"><Upload /></AppIcon>上传 Excel</el-button>
         <input ref="saleFileInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleSaleImport" />
-        <span style="font-size:12px;color:#909399;">按「门店编号」匹配（编号优先，名称兜底）</span>
+        <span style="font-size:12px;color:var(--text-secondary);">按「门店编号」匹配（编号优先，名称兜底）</span>
       </div>
       <el-table :data="saleRows" max-height="360" size="small">
         <el-table-column label="门店" width="270">
           <template #default="{ row }">
             <div>{{ row.name }}</div>
-            <div style="font-size:11px;color:#909399;margin-top:2px;line-height:1.5;">
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;line-height:1.5;">
               <template v-for="(c, i) in row.yearCells" :key="c.year">
                 <span :style="c.text === '-' ? '' : (c.isBand ? 'color:#e6a23c;' : 'color: var(--brand-primary);')" :title="c.title">{{ c.year }}: {{ c.text }}</span><template v-if="i < row.yearCells.length - 1"><span style="margin:0 5px;">·</span></template>
               </template>
@@ -1702,7 +1702,7 @@ const askCleanupAfterImport = (count) => {
     try {
       await ElMessageBox.confirm(
         `已导入 <b>${count}</b> 家门店。要不要现在做一次「门店清洗」？<br/>` +
-        '<span style="color:#909399;font-size:12px">只检查同品牌、位置贴得过近的门店；合并前会逐组让你确认，不会自动改动数据。</span>',
+        '<span style="color:var(--text-secondary);font-size:12px">只检查同品牌、位置贴得过近的门店；合并前会逐组让你确认，不会自动改动数据。</span>',
         '接着检查一下门店位置？',
         {
           dangerouslyUseHTMLString: true,
@@ -2819,7 +2819,7 @@ const resetRanking = () => {
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.7;
-  color: #606266;
+  color: var(--text-regular);
   background: #f5f7fa;
   border-left: 3px solid var(--brand-primary);
   border-radius: 4px;
@@ -2828,7 +2828,7 @@ const resetRanking = () => {
   padding: 40px 0;
   text-align: center;
   font-size: 13px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dedup-stats {
   display: flex;
@@ -2836,7 +2836,7 @@ const resetRanking = () => {
   gap: 14px;
   margin-bottom: 10px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
 }
 .dedup-stats b {
   color: #303133;
@@ -2901,7 +2901,7 @@ const resetRanking = () => {
   margin: 0;
   padding: 6px 10px 2px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 /* 双店型的行没有单选圈，缩进对齐到有圈的行的文字位置 */
 .dedup-row.no-pick {
@@ -2949,7 +2949,7 @@ const resetRanking = () => {
   color: #303133;
 }
 .dg-meta {
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dedup-row {
   display: flex;
@@ -2972,7 +2972,7 @@ const resetRanking = () => {
 .dr-meta {
   flex: 1 1 auto;
   min-width: 0;
-  color: #909399;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3007,13 +3007,13 @@ const resetRanking = () => {
   gap: 6px;
   padding: 5px 0;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   border-bottom: 1px dashed #f2f6fc;
 }
 .dp-dist {
   flex: 0 0 auto;
   min-width: 46px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dp-vs {
   color: #c0c4cc;
@@ -3027,6 +3027,6 @@ const resetRanking = () => {
   float: left;
   line-height: 32px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 </style>

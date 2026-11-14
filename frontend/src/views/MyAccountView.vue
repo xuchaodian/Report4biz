@@ -306,7 +306,7 @@
         border
         size="small"
         style="width: 100%"
-        :header-cell-style="{ whiteSpace: 'nowrap', padding: '8px 0', background: '#fdf6ec', color: '#606266', fontWeight: '600' }"
+        :header-cell-style="{ whiteSpace: 'nowrap', padding: '8px 0', background: '#fdf6ec', color: 'var(--text-regular)', fontWeight: '600' }"
         :cell-style="{ whiteSpace: 'nowrap' }"
         @selection-change="handleCompareSelectionChange"
       >
@@ -417,7 +417,7 @@
           </div>
         </div>
       </template>
-      <div v-if="compareLoading" style="text-align:center;padding:40px;color:#909399;">
+      <div v-if="compareLoading" style="text-align:center;padding:40px;color:var(--text-secondary);">
         <el-icon class="is-loading"><Loading /></el-icon>
         <p style="margin-top:8px;">正在加载对比数据...</p>
       </div>
@@ -524,7 +524,7 @@
           </div>
         </div>
       </template>
-      <div v-if="quotaHistoryLoading" style="text-align:center;padding:30px;color:#909399;">加载中...</div>
+      <div v-if="quotaHistoryLoading" style="text-align:center;padding:30px;color:var(--text-secondary);">加载中...</div>
       <template v-else>
         <el-table :data="quotaHistoryList" stripe border style="width:100%" :max-height="420">
           <el-table-column label="时间" width="160">
@@ -553,7 +553,7 @@
             <template #default="{ row }">{{ row.new_quota }}</template>
           </el-table-column>
         </el-table>
-        <div v-if="quotaHistoryList.length === 0" style="text-align:center;padding:30px;color:#909399;">暂无配额分配记录</div>
+        <div v-if="quotaHistoryList.length === 0" style="text-align:center;padding:30px;color:var(--text-secondary);">暂无配额分配记录</div>
       </template>
     </el-dialog>
 
@@ -656,7 +656,7 @@
           <!-- AI 选址建议 -->
           <div v-if="aiAdvice" class="ai-advice-section">
             <h4 style="margin:0 0 6px;font-size:14px;color:#333;"><AppIcon class="icon-text"><Cpu /></AppIcon>AI 选址建议</h4>
-            <div v-if="aiAdviceBrand" style="font-size:12px;color:#909399;margin-bottom:8px;">品牌：{{ aiAdviceBrand }} · 业态：{{ aiAdviceCategory }}</div>
+            <div v-if="aiAdviceBrand" style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">品牌：{{ aiAdviceBrand }} · 业态：{{ aiAdviceCategory }}</div>
             <div style="font-size:13px;line-height:1.8;white-space:pre-wrap;color:#333;">{{ aiAdvice }}</div>
           </div>
           <!-- 数据洞察 -->
@@ -2778,7 +2778,7 @@ const formatResultData = (data) => {
       
       html += `<div class="detail-result">
         <h4>📊 ${serviceName}（${dayCount}天）</h4>
-        <div style="font-size:11px;color:#909399;margin-bottom:8px;">数据范围：${value[0]?.date?.slice(0,4)}-${value[0]?.date?.slice(4,6)}-${value[0]?.date?.slice(6,8)} 至 ${value[value.length-1]?.date?.slice(0,4)}-${value[value.length-1]?.date?.slice(4,6)}-${value[value.length-1]?.date?.slice(6,8)}</div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">数据范围：${value[0]?.date?.slice(0,4)}-${value[0]?.date?.slice(4,6)}-${value[0]?.date?.slice(6,8)} 至 ${value[value.length-1]?.date?.slice(0,4)}-${value[value.length-1]?.date?.slice(4,6)}-${value[value.length-1]?.date?.slice(6,8)}</div>
         <h5 style="margin:8px 0 4px;">📈 日均汇总</h5>
         ${summaryHtml}
         <h5 style="margin:12px 0 4px;">📅 每日明细</h5>
@@ -4461,7 +4461,7 @@ const handleExportExcel = async () => {
   .role-badge {
     font-size: 14px;
     font-weight: 600;
-    color: #606266;
+    color: var(--text-regular);
     background: #f4f4f5;
     border: 1px solid #e9e9eb;
     border-radius: 20px;
@@ -4469,14 +4469,14 @@ const handleExportExcel = async () => {
     white-space: nowrap;
   }
   .role-badge .app-icon {
-    color: #606266;
+    color: var(--text-regular);
     font-size: 18px;
   }
   /* v1.13.205：VIP 试用申请的状态文案与驳回提示 */
   .vip-apply-note {
     font-size: 13px;
     font-weight: 400;
-    color: #909399;
+    color: var(--text-secondary);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -4565,7 +4565,7 @@ const handleExportExcel = async () => {
 
   .qw-sub {
     font-size: 12px;
-    color: #909399;
+    color: var(--text-secondary);
     line-height: 1.5;
   }
 }
@@ -4582,7 +4582,7 @@ const handleExportExcel = async () => {
   margin-bottom: 12px;
   font-size: 12px;
   line-height: 1.7;
-  color: #909399;
+  color: var(--text-secondary);
 
   &.is-pending { color: #e6a23c; }
   &.is-accepted { color: #529b2e; }
@@ -4678,7 +4678,7 @@ const handleExportExcel = async () => {
 
 .coord-icon {
   cursor: pointer;
-  color: #909399;
+  color: var(--text-secondary);
   &:hover {
     color: var(--brand-primary);
   }
@@ -4821,7 +4821,7 @@ const handleExportExcel = async () => {
 
 .cmp-store-sub {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 
 /* 该列最优（并列都高亮）—— 与商圈对比弹窗的 .dv-best 同一视觉语言 */
@@ -4846,7 +4846,7 @@ const handleExportExcel = async () => {
 .compare-note {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
@@ -5182,7 +5182,7 @@ const handleExportExcel = async () => {
 .chart-title {
   margin: 0 0 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-regular);
   font-weight: 600;
 }
 

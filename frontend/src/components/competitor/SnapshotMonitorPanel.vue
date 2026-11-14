@@ -18,7 +18,7 @@
         >
           <el-option v-for="b in brandOptions" :key="b.brand" :label="b.brand" :value="b.brand">
             <span>{{ b.brand }}</span>
-            <span style="float: right; color: #909399; font-size: 12px">
+            <span style="float: right; color: var(--text-secondary); font-size: 12px">
               {{ b.snapshotCount }} 期 · 最新 {{ b.latestPeriod }}
             </span>
           </el-option>
@@ -29,14 +29,14 @@
           <el-select v-model="basePeriod" placeholder="基准期(旧)" style="width: 180px" @change="fetchDiff">
             <el-option v-for="s in periodOptions" :key="'b' + s.period" :label="s.period" :value="s.period">
               <span>{{ s.period }}</span>
-              <span style="float: right; color: #909399; font-size: 12px">{{ s.data_version || '未标版本' }}</span>
+              <span style="float: right; color: var(--text-secondary); font-size: 12px">{{ s.data_version || '未标版本' }}</span>
             </el-option>
           </el-select>
           <span class="arrow">→</span>
           <el-select v-model="targetPeriod" placeholder="目标期(新)" style="width: 180px" @change="fetchDiff">
             <el-option v-for="s in periodOptions" :key="'t' + s.period" :label="s.period" :value="s.period">
               <span>{{ s.period }}</span>
-              <span style="float: right; color: #909399; font-size: 12px">{{ s.data_version || '未标版本' }}</span>
+              <span style="float: right; color: var(--text-secondary); font-size: 12px">{{ s.data_version || '未标版本' }}</span>
             </el-option>
           </el-select>
           <el-button type="primary" :loading="loading" @click="fetchDiff">
@@ -199,7 +199,7 @@
             </template>
           </el-table-column>
         </el-table>
-        <div v-if="pagedChanges.length === 0" style="text-align: center; color: #909399; padding: 20px">该类型暂无变更记录</div>
+        <div v-if="pagedChanges.length === 0" style="text-align: center; color: var(--text-secondary); padding: 20px">该类型暂无变更记录</div>
       </el-card>
     </template>
 
@@ -435,10 +435,10 @@ watch(() => props.initialTarget, (nv) => { if (nv) { targetPeriod.value = nv; if
   .block-card { margin-bottom: 16px; border-radius: 8px; }
   .card-head {
     display: flex; align-items: center; font-weight: 600; font-size: 14px;
-    .sub-hint { font-size: 12px; color: #909399; font-weight: 400; margin-left: 10px; }
+    .sub-hint { font-size: 12px; color: var(--text-secondary); font-weight: 400; margin-left: 10px; }
   }
   .sel-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    .arrow { color: #909399; font-size: 13px; } }
+    .arrow { color: var(--text-secondary); font-size: 13px; } }
   .timeline {
     display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px;
     .tl-item {

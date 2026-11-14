@@ -4,7 +4,7 @@
     <div class="dv-header">
       <div>
         <h2 style="margin:0;font-size:18px;"><AppIcon class="icon-text"><OfficeBuilding /></AppIcon>{{ $t('nav.districtInsight') }}</h2>
-        <p style="margin:4px 0 0;font-size:13px;color:#909399;">
+        <p style="margin:4px 0 0;font-size:13px;color:var(--text-secondary);">
           综合评分 = 人口规模 40% + 消费能力 25% + 竞争宽松度 25% + 客流活跃 10%（基础数据：联通人口版，未标注期次）
         </p>
       </div>
@@ -175,7 +175,7 @@
             <div v-if="selectedDistrict.shoppingCenters && selectedDistrict.shoppingCenters.length > 0" class="dv-centers-list">
               <el-tag v-for="c in selectedDistrict.shoppingCenters" :key="c.name" size="small" type="info" effect="plain" class="dv-center-tag" @click="showShoppingCenter(c)">📌 {{ c.name }}<span v-if="c.stars > 0" class="dv-center-stars">⭐ {{ c.stars }}</span></el-tag>
             </div>
-            <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:#909399;">该商圈边界内暂无购物中心</div>
+            <div v-else-if="selectedDistrict.shoppingCenterCount === 0" style="font-size:12px;color:var(--text-secondary);">该商圈边界内暂无购物中心</div>
           </div>
           <el-button type="primary" plain style="width:100%;margin-top:10px;" :loading="refreshing" @click="refreshDistrict">
             <el-icon><Refresh /></el-icon>&nbsp;刷新最新数据{{ selectedDistrict.dataMonth ? `（${selectedDistrict.dataMonth}）` : '' }}
@@ -227,7 +227,7 @@
         <!-- v1.13.279：去掉「数据」列（未刷新的行恒显示「联通人口版」标签，纯噪音）。
              刷新后的期次由详情卡底部按钮「刷新最新数据（YYYYMM）」承载，此处不重复。 -->
       </el-table>
-      <p style="font-size:12px;color:#909399;margin:8px 0 0;">
+      <p style="font-size:12px;color:var(--text-secondary);margin:8px 0 0;">
         <span class="dv-best" style="padding:1px 6px;border-radius:4px;">绿色高亮</span> = 该列最优值（评分/人口/居住/工作/到访取最高，竞品数取最低）
       </p>
       <p style="font-size:12px;color:#b88230;margin:6px 0 0;">
@@ -704,7 +704,7 @@ async function refreshDistrict() {
 }
 .dv-f-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
   white-space: nowrap;
   flex: none;
 }
@@ -718,7 +718,7 @@ async function refreshDistrict() {
   justify-content: space-between;
   margin-top: 6px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dv-filter-foot b {
   color: #303133;
@@ -739,7 +739,7 @@ async function refreshDistrict() {
   align-items: center;
   padding: 8px 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   border-bottom: 1px solid #f0f2f5;
 }
 .dv-list-body {
@@ -776,7 +776,7 @@ async function refreshDistrict() {
   gap: 10px;
   margin: 4px 0 0 26px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dv-map-wrap {
   flex: 1;
@@ -818,7 +818,7 @@ async function refreshDistrict() {
   align-items: center;
   margin: 6px 0 10px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 /* 画像标签行（客群 / 能级 / 居民特征） */
 .dv-profile {
@@ -835,7 +835,7 @@ async function refreshDistrict() {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .dv-prof em {
   font-style: normal;
@@ -851,7 +851,7 @@ async function refreshDistrict() {
   /* 5 字标签（竞争宽松度）48→60px，56px 会被挤成两行 */
   width: 62px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   white-space: nowrap;
 }
 /* 竞争宽松度的方向说明（分越高＝竞争越少），避免继续被读反 */
@@ -873,7 +873,7 @@ async function refreshDistrict() {
   padding: 6px 8px;
   text-align: center;
 }
-.dv-fact span { display: block; font-size: 11px; color: #909399; }
+.dv-fact span { display: block; font-size: 11px; color: var(--text-secondary); }
 .dv-fact b { font-size: 13px; color: #303133; }
 /* 我的门店 >0：蚕食风险警示色 */
 .dv-fact-warn { background: #fef0f0; }
@@ -888,7 +888,7 @@ async function refreshDistrict() {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-regular);
   font-weight: 500;
   margin-bottom: 6px;
 }
@@ -931,10 +931,10 @@ async function refreshDistrict() {
 /* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
 .prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
 .prov-title{font-size:13px;font-weight:700;color:#303133}
-.prov-sub{font-size:11.5px;color:#909399}
+.prov-sub{font-size:11.5px;color:var(--text-secondary)}
 .prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
 .prov-item{min-width:0}
-.prov-item dt{font-size:11.5px;color:#909399;margin-bottom:2px}
+.prov-item dt{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}
 .prov-item dd{margin:0;font-size:12.5px;color:#303133;line-height:1.45;word-break:break-word}
 .prov-item dd.prov-warn{color:#b88230}
 .prov-item dd.prov-ok{color:#1d9e75}

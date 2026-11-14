@@ -1408,7 +1408,7 @@ onUnmounted(() => {
 
 .data-table th {
   background: #f5f7fa;
-  color: #606266;
+  color: var(--text-regular);
   font-weight: 600;
 }
 

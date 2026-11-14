@@ -353,7 +353,7 @@ onMounted(() => {
 .ip {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
 }
 .audit-pager {
   margin-top: 14px;

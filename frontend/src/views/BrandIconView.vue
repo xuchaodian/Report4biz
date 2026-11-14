@@ -408,7 +408,7 @@ onMounted(async () => {
 
     .icon-label {
       font-size: 11px;
-      color: #909399;          // 默认灰：admin 共享的图标
+      color: var(--text-secondary);          // 默认灰：admin 共享的图标
 
       &.src-self {
         color: #67c23a;        // 绿：我自己传的
@@ -449,12 +449,12 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-regular);
   white-space: nowrap;
 }
 .icon-size-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 </style>
