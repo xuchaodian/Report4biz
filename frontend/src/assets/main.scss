@@ -54,6 +54,35 @@ html:root {
   --el-color-primary-light-9: #eaf0fd;  /* 选中态 / tag 浅底 */
   --el-color-primary-dark-2: #1e4fbc;   /* active / 按下 */
   --el-color-primary-rgb: 37, 99, 235;  /* 半透明叠加（rgba() 展开用） */
+
+  /* ===== 占位文本对比度（v1.13.363 / WCAG 1.4.3）=====
+     EP 默认 #a8abb2 对白底只有 2.30:1，低于正文文本要求的 4.5:1（placeholder 属于
+     需要可读的文本，不是装饰）；改为 #6b7280 = 4.83:1。
+     ⭐ 能写在这里的原因：--el-text-color-placeholder 在 EP 里**只在 :root 声明一次**，
+        --el-input-placeholder-color 仅做 var() 转发，组件内没有重新声明 ⇒ 覆盖源头即全站生效。
+        （与之相对，--el-button-outline-color 被组件内重新声明，必须另写规则，见下方焦点环一节。）
+     认证页四页在 v1.13.173 就局部改成了同一个颜色，此处统一到全局，两处数值一致。
+     连带影响已核：--icon-tone-muted 引用本变量，但 .app-icon--muted 是全项目 0 处使用的
+     死类；.pwd-toggle 图标色虽引用它，但只在认证页（那边本就已改）
+     ⇒ 实际影响面只有全站输入框的 placeholder 文字。 */
+  --el-text-color-placeholder: #6b7280;
+}
+
+/* ===== 键盘焦点环对比度（v1.13.363 / WCAG 1.4.11 非文本对比度 ≥3:1）=====
+   EP 的 .el-button:focus-visible 写的是 outline:2px solid var(--el-button-outline-color)，
+   而该变量默认 = var(--el-color-primary-light-5) = #92b1f5，对白底仅 **2.14:1**
+   ⇒ 键盘用户看得见环，但它几乎和背景同亮度，实质上等于没有焦点指示。
+   ⚠️ 2px 粗细本来就够（WCAG 2.4.13 AAA 的门槛），缺的是**颜色**，⛔ 不要靠加粗解决。
+   🔴 不能只改 :root：.el-button 自身声明了 --el-button-outline-color，五个语义变体
+      （primary / success / warning / danger / info）又各自声明一次 —— 元素自身声明优先于
+      继承，写 :root 会被全部盖掉，是**看着改了其实没生效**的写法。必须在 .el-button 这层压：
+      特异性 html:root .el-button(0,2,1) > EP 的 .el-button(0,1,0)，一条规则覆盖全部变体。
+   ⭐ 口径取「统一主色」而非「跟随语义色」：
+      · 主色 #2563eb = 5.17:1，余量最大；跟随语义色要 5 条规则，且 warning 的 dark-2 只有 3.35:1。
+      · 与 el-input 的焦点环同色（EP 的输入框 focus 本就取主色），全站焦点语言一致。
+      · 蓝底主按钮上的蓝色焦点环外圈落在白底上（outline-offset:1px），仍然可见。 */
+html:root .el-button {
+  --el-button-outline-color: var(--el-color-primary);
 }
 
 /* ===== 图标基础类（配合 components/AppIcon.vue 使用）===== */
