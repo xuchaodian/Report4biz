@@ -6634,23 +6634,50 @@ const initMap = async () => {
   // 必须放在拉数据之前，否则品牌门店会先按「全部」渲染再跳变。
   brandStoreStore.initLayerBrands()
 
-  // 【性能优化】并行拉取所有数据 + 品牌图标
+  // 【性能优化】首屏只 await「必需」的请求（v1.13.365）
+  //
+  // 购物中心（7208 条 / 485KB / 实测 3.3s）原在此处 await，是首屏最大的一笔；
+  // 但它**不参与任何分析链路** —— 不进 aiContext、不进圆分析、不进竞争强度，
+  // 只用于图层渲染与筛选下拉 ⇒ 挪到 loadMarkers 之后后台拉，首屏不再等它。
+  //
+  // 🔴🔴 竞品与品牌门店**必须留在这个 await 里**，⛔ 别图省事一起摘出去：
+  //   MapView 有 20 余处在「图层开关打开之前」就读它们 ——
+  //   aiContext.competitors_count 直接送 AI 选址（:2008）、圆分析竞争强度（:3259）、
+  //   机会品牌与竞争雷达的品牌选项（:2201/:2553）、竞争强度与网点优化推演（:8775 起）、
+  //   竞品/品牌门店的筛选下拉（:10441 起）。
+  //   数据未到时读到空数组**不是空态**，而是「周边无竞品」「圈内 0 家竞品」这种
+  //   **反向业务结论** —— 比慢几秒严重得多。守卫 mapFirstPaintPrefetchGuard.test.js
+  //   把这条顺序钉死了。
   await Promise.all([
     markerStore.fetchMarkers(),
     competitorStore.fetchCompetitors(),
     brandStoreStore.fetchBrandStores(),
-    shoppingCenterStore.fetchShoppingCenters(),
     brandIconStore.fetchBrandIcons()
   ])
 
   // 只渲染我的门店（默认可见），其余图层懒加载
   await loadMarkers(true)  // true = 跳过 fetch（数据已并行拉取）
   // 竞品、品牌门店、购物中心由用户切换开关时懒加载
-  
+
   // 如果初始状态是聚合模式，需要构建聚合图层
   if (showCluster.value) {
     buildAllStoreCluster()
   }
+
+  // v1.13.365：购物中心数据后台补齐（刻意不 await）。
+  // 到货后只有两种情况需要就地重建：①用户在这一两秒内已经把图层开关打开；
+  // ②处于聚合模式（统一聚合把三类点画在一起）。否则什么都不做 ——
+  // 图层开关的 watch 会在打开时按需渲染（见下方 showShoppingCenterLayer 的 watch）。
+  shoppingCenterStore.fetchShoppingCenters().then(() => {
+    // 图层已建好（用户在这一两秒内就切了开关，走的是下方 watch 那条路）⇒ 就地补显隐，
+    // 该函数末尾会连带重建聚合。
+    // 否则若处于聚合模式，购物中心的点也进了统一聚合 ⇒ 需要重建。
+    if (showShoppingCenterLayer.value && shoppingCenterLayer) updateShoppingCenterDisplay()
+    else if (showCluster.value) buildAllStoreCluster()
+  }).catch(() => {
+    // 兜底防止 unhandled rejection：目前 _fetchShoppingCenters 自己吞异常并回落成空数组，
+    // 但这条链是 fire-and-forget，将来那儿一改就会变成控制台红字。
+  })
 }
 
 // 地址搜索（使用高德地图API，支持模糊检索）
@@ -8010,7 +8037,14 @@ watch(showBrandStoreLayer, async (newVal) => {
 watch(showShoppingCenterLayer, async (newVal) => {
   if (newVal && !shoppingCenterLayer) {
     console.log('[懒加载] 购物中心图层未创建，开始渲染...')
-    await loadShoppingCenters(true)
+    // v1.13.365：**不再传 skipFetch**。
+    // 购物中心数据已从首屏 await 里挪到后台拉（见 initMap 末尾），所以这里不能再假设
+    // 「数据已就绪」—— 否则用户在数据到达前切开关会渲染出 0 条，且没有后续触发点。
+    // 不传参时 loadShoppingCenters 会先 await fetchShoppingCenters()；store 内有
+    // in-flight 合并与 60s 新鲜期去重，重复调用幂等，在途请求直接复用同一个 promise。
+    // ⚠️ 与之并列的竞品(:8019)/品牌门店(:8028) 仍传 true —— 那两份数据仍在首屏 await 内，
+    //    传参是为了避免重复请求，语义不同，⛔ 不要一并改掉。
+    await loadShoppingCenters()
   }
   updateShoppingCenterDisplay()
 })
