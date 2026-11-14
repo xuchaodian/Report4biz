@@ -9,7 +9,9 @@ export default {
     competitors: '競合店舗',
     brandStores: 'ブランド店舗',
     shoppingCenters: 'ショッピングセンター',
-    statistics: '統計データ',
+    // v1.13.366: `statistics` / 「統計データ」から改名 — このページは統計ではなく
+    // 空間データファイル（人口・商圏・都市データ）の管理。
+    baseData: '基礎データ',
     siteWorkbench: '立地ワークベンチ',
     cityInsight: '都市インサイト',
     districtInsight: '商圏インサイト',

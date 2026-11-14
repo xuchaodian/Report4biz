@@ -117,7 +117,8 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res) => 
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path)
       }
-      return res.status(403).json({ message: '仅管理员可以上传统计数据' })
+      // v1.13.366：口径与前端菜单对齐（原为「上传统计数据」，但传的是空间数据文件）
+      return res.status(403).json({ message: '仅管理员可以上传基础数据' })
     }
     if (!req.file) {
       return res.status(400).json({ message: '请上传文件' })

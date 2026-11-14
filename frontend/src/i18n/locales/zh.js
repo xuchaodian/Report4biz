@@ -9,7 +9,13 @@ export default {
     competitors: '竞品门店',
     brandStores: '品牌门店',
     shoppingCenters: '购物中心',
-    statistics: '统计数据',
+    // v1.13.366：原为 key `statistics` / 「统计数据」，名不符实 —— 该页（/shapefiles）的四个页签
+    // 是常住人口 / 高精度人口 / 城市商圈 / 城市数据，内容全是**空间数据文件的上传与分级管理**，
+    // 不是报表，也不是城市宏观统计（那在 /city-data 与 AI 的 city_stats 工具里）。
+    // 改名「基础数据」后与相邻的「购物中心」（数据内容页）能区分：一个是底座文件，一个是业务对象。
+    // ⛔ path 仍是 /shapefiles —— 改 path 会让书签、外部链接与 nginx 层的旧地址全部失效，
+    //    本批只改显示名与 key，未动路由地址。
+    baseData: '基础数据',
     siteWorkbench: '选址工作台',
     cityInsight: '城市洞察',
     districtInsight: '商圈洞察',

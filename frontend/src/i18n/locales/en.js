@@ -9,7 +9,9 @@ export default {
     competitors: 'Competitors',
     brandStores: 'Brand Stores',
     shoppingCenters: 'Shopping Centers',
-    statistics: 'Statistics',
+    // v1.13.366: renamed from `statistics` / 'Statistics' — the page manages spatial data
+    // files (population, districts, city data), not statistics/reports.
+    baseData: 'Base Data',
     siteWorkbench: 'Site Workbench',
     cityInsight: 'City Insight',
     districtInsight: 'District Insight',

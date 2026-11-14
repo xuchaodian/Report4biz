@@ -35,7 +35,7 @@
         </router-link>
         <router-link to="/shapefiles" class="nav-item" :class="{ active: $route.path === '/shapefiles' }" :aria-current="$route.path === '/shapefiles' ? 'page' : undefined">
           <el-icon><Document /></el-icon>
-          <span>{{ $t('nav.statistics') }}</span>
+          <span>{{ $t('nav.baseData') }}</span>
         </router-link>
         <!-- trigger=click（非默认 hover）：触屏/共享终端上 hover 常需点两次才展开，
              与右上角个人下拉保持一致 -->

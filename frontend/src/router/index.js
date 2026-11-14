@@ -160,10 +160,12 @@ const routes = [
         meta: { titleKey: 'nav.account' }
       },
       {
+        // v1.13.366：菜单/标题与页面内容对齐 —— path 仍是 shapefiles（不动地址），
+        // 显示名由「统计数据」改为「基础数据」（key 同步 statistics → baseData）。
         path: 'shapefiles',
         name: 'Shapefiles',
         component: () => import('@/views/ShapefileView.vue'),
-        meta: { titleKey: 'nav.statistics' }
+        meta: { titleKey: 'nav.baseData' }
       },
       {
         path: 'city-data',
