@@ -26,6 +26,10 @@
 <title>选址赢家Online - 用数据看清每一平方公里</title>
 <meta name="description" content="选址赢家Online 是 WebGIS 商业智能分析平台：1km 网格商圈人口分析、驾车/步行可达范围、竞品追踪与门店体检、销售预测与 AI 选址建议，帮连锁品牌把开店决策从「凭经验」变成「看数据」。">
 <link rel="canonical" href="https://www.mka-online.cn/">
+<link rel="alternate" hreflang="zh-CN" href="https://www.mka-online.cn/">
+<link rel="alternate" hreflang="en" href="https://www.mka-online.cn/en/">
+<link rel="alternate" hreflang="ja" href="https://www.mka-online.cn/ja/">
+<link rel="alternate" hreflang="x-default" href="https://www.mka-online.cn/">
 <!-- 🔴 favicon 用相对路径：同一份 HTML 同时服务 www 根（官网主址）与主域 /home/（副本），
      写 /favicon.png 会在 www 下正确、在主域下落到 SPA 的 dist 根，两边不同源。
      相对写法两边各自解析到自己的 assets/，不需要在 nginx 里为任何一方开例外。 -->
@@ -59,14 +63,23 @@
       "logo": "https://www.mka-online.cn/assets/favicon.png",
       "description": "选址赢家Online 是基于位置大数据的 WebGIS 商业智能分析平台，聚焦商圈人口分析与门店竞争决策。",
       "email": "jyo@youshi-tech.com",
-      "parentOrganization": { "@type": "Organization", "name": "上海优事商务咨询有限公司", "url": "https://youshi-tech.com/" },
-      "contactPoint": [{
-        "@type": "ContactPoint",
-        "contactType": "sales",
-        "telephone": "+86-138-1779-1741",
-        "email": "jyo@youshi-tech.com",
-        "availableLanguage": ["zh-CN"]
-      }]
+      "parentOrganization": {
+        "@type": "Organization",
+        "name": "上海优事商务咨询有限公司",
+        "url": "https://youshi-tech.com/"
+      },
+      "contactPoint": [
+        {
+          "@type": "ContactPoint",
+          "contactType": "sales",
+          "telephone": "+86-138-1779-1741",
+          "email": "jyo@youshi-tech.com",
+          "availableLanguage": [
+            "zh-CN",
+            "zh-CN"
+          ]
+        }
+      ]
     },
     {
       "@type": "WebSite",
@@ -74,7 +87,9 @@
       "url": "https://www.mka-online.cn/",
       "name": "选址赢家Online",
       "inLanguage": "zh-CN",
-      "publisher": { "@id": "https://mka-online.cn/#organization" }
+      "publisher": {
+        "@id": "https://mka-online.cn/#organization"
+      }
     },
     {
       "@type": "SoftwareApplication",
@@ -85,7 +100,9 @@
       "operatingSystem": "Web Browser (Windows / macOS)",
       "inLanguage": "zh-CN",
       "description": "商圈与整城的人口分析、竞品追踪、门店体检、驾车与步行可达范围、销售预测、AI 选址建议与数据大屏，把开店决策从凭经验变为看数据。支持集团与子公司分层同步、操作审计、管理员两步验证与开放 API。",
-      "publisher": { "@id": "https://mka-online.cn/#organization" }
+      "publisher": {
+        "@id": "https://mka-online.cn/#organization"
+      }
     },
     {
       "@type": "FAQPage",
@@ -94,62 +111,98 @@
         {
           "@type": "Question",
           "name": "需要安装软件吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "不需要。浏览器打开就能用，Windows 与 macOS 的桌面浏览器都支持，无需安装任何客户端。目前完整功能按电脑端设计。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "不需要。浏览器打开就能用，Windows 与 macOS 的桌面浏览器都支持，无需安装任何客户端。目前完整功能按电脑端设计。"
+          }
         },
         {
           "@type": "Question",
           "name": "支持哪些城市？",
-          "acceptedAnswer": { "@type": "Answer", "text": "按城市开通。系统里的城市下拉列表就是当前已开通的范围；需要新的城市可以联系我们申请，通常按区域陆续开通。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "按城市开通。系统里的城市下拉列表就是当前已开通的范围；需要新的城市可以联系我们申请，通常按区域陆续开通。"
+          }
         },
         {
           "@type": "Question",
           "name": "门店数据怎么导入？",
-          "acceptedAnswer": { "@type": "Answer", "text": "用 Excel 或 CSV 模板批量导入，门店编码、名称、地址、面积、状态等字段一次带入，也可以在地图上逐条添加。同一个地址编码不同的重复门店，导入后会自动识别出来。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "用 Excel 或 CSV 模板批量导入，门店编码、名称、地址、面积、状态等字段一次带入，也可以在地图上逐条添加。同一个地址编码不同的重复门店，导入后会自动识别出来。"
+          }
         },
         {
           "@type": "Question",
           "name": "人口数据来自哪里，准确吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "接入运营商级人口大数据，经匿名化处理，按 1km 网格统计人口量级与人群结构，用于判断区域的量级与分布趋势。"
+          }
         },
         {
           "@type": "Question",
           "name": "人口数据多久更新一次？",
-          "acceptedAnswer": { "@type": "Answer", "text": "按月更新，购买的人口数据报告会标明所用的数据年月。人口是慢变量，月度更新足以支撑选址判断。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "按月更新，购买的人口数据报告会标明所用的数据年月。人口是慢变量，月度更新足以支撑选址判断。"
+          }
         },
         {
           "@type": "Question",
           "name": "我的门店数据是私有的吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "按账号隔离，其他账号看不到你的门店明细；平台做区域统计时只使用匿名坐标，不展示门店名称、地址与销售数据。"
+          }
         },
         {
           "@type": "Question",
           "name": "多人协作和集团多子公司支持吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总；同步批次可预览与回滚。管理员还能查操作审计日志（含操作人、时间与 IP），并为自己的账号开启 TOTP 两步验证。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "支持。账号按角色区分权限，集团可以按子公司分层管理门店与配额，子公司的数据互相隔离，总部能看到汇总；同步批次可预览与回滚。管理员还能查操作审计日志（含操作人、时间与 IP），并为自己的账号开启 TOTP 两步验证。"
+          }
         },
         {
           "@type": "Question",
           "name": "只有几家店，用得上吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "门店少的时候，价值主要在开店之前——先看清目标商圈的人口和竞品，再决定签不签。门店多了以后，体检和蚕食分析的作用才会显现出来。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "门店少的时候，价值主要在开店之前——先看清目标商圈的人口和竞品，再决定签不签。门店多了以后，体检和蚕食分析的作用才会显现出来。"
+          }
         },
         {
           "@type": "Question",
           "name": "和 Excel 自己拉表比，差别在哪？",
-          "acceptedAnswer": { "@type": "Answer", "text": "Excel 存的是你已经知道的数据；系统把人口、竞品、可达范围算好，叠在同一张地图上，还能按半径或车行时间随时改口径重算。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Excel 存的是你已经知道的数据；系统把人口、竞品、可达范围算好，叠在同一张地图上，还能按半径或车行时间随时改口径重算。"
+          }
         },
         {
           "@type": "Question",
           "name": "分析报表能直接用于汇报吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "可以。购买记录与门店体检结果都能导出 Excel / PDF，含统计明细与地图截图，可直接用于内部汇报或客户提案。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "可以。购买记录与门店体检结果都能导出 Excel / PDF，含统计明细与地图截图，可直接用于内部汇报或客户提案。"
+          }
         },
         {
           "@type": "Question",
           "name": "手机上能用吗？",
-          "acceptedAnswer": { "@type": "Answer", "text": "能打开，但系统目前按电脑端设计。地图叠图层、批量导入和深度分析请在桌面浏览器上完成；手机上适合浏览已分享的分析结论。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "能打开，但系统目前按电脑端设计。地图叠图层、批量导入和深度分析请在桌面浏览器上完成；手机上适合浏览已分享的分析结论。"
+          }
         },
         {
           "@type": "Question",
           "name": "多个品牌怎么分别算竞品？",
-          "acceptedAnswer": { "@type": "Answer", "text": "在「竞品门店」页为每个自有品牌配置对应的竞品品牌，配置完成后竞品计数、报告与网点优化都会按该品牌分池；也可以继承集团配置，或显式选择「全部品牌（不筛选）」。没有配置过时按全量处理，多品牌账号会先提示完成配置。" }
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "在「竞品门店」页为每个自有品牌配置对应的竞品品牌，配置完成后竞品计数、报告与网点优化都会按该品牌分池；也可以继承集团配置，或显式选择「全部品牌（不筛选）」。没有配置过时按全量处理，多品牌账号会先提示完成配置。"
+          }
         }
       ]
     }
@@ -466,6 +519,15 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   .js .rv{opacity:1;transform:none;transition:none}
   .shot,.spot{transition:opacity .2s}
 }
+
+/* ---- 多语言切换器（构建脚本注入；纯 <a>，无 JS，符合 CSP） ---- */
+.lang-sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink2);white-space:nowrap}
+.lang-sw-a{padding:4px 2px;border-radius:5px;transition:color .2s;opacity:.72}
+.lang-sw-a:hover{color:var(--brand);opacity:1}
+.lang-sw-a.is-active{color:var(--brand);opacity:1;text-decoration:underline;text-underline-offset:3px}
+.lang-sw-sep{color:var(--line2);font-weight:400}
+@media(max-width:1000px){.lang-sw{font-size:12px}}
+
 </style>
 </head>
 <body>
@@ -484,6 +546,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <a href="#faq">常见问题</a>
     </nav>
     <div class="hd-act">
+      <div class="lang-sw" role="group" aria-label="Language / 言語 / 语言"><a class="lang-sw-a is-active" href="https://www.mka-online.cn/" aria-current="page">中文</a><span class="lang-sw-sep" aria-hidden="true">/</span><a class="lang-sw-a" href="https://www.mka-online.cn/en/">EN</a><span class="lang-sw-sep" aria-hidden="true">/</span><a class="lang-sw-a" href="https://www.mka-online.cn/ja/">日本語</a></div>
       <a class="btn btn-sm btn-line" href="https://mka-online.cn/login">登录</a>
       <a class="btn btn-sm btn-dark" href="https://mka-online.cn/register">免费注册</a>
     </div>

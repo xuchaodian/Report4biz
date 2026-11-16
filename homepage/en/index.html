@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- 百度站长平台「HTML 标签验证」。www.mka-online.cn 的站点根就是本文件。
+     主域 mka-online.cn 的验证标签在 SPA 的 dist/index.html 里（两个站点各一份，同一 code）。 -->
+<meta name="baidu-site-verification" content="codeva-1bSY7n0zUN">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- build: v1.13.314 | 2026-11-03 | 首页改版：一屏叙事 + 真实界面操作演示（聚光灯引导），文案压缩约 78% -->
+<meta name="build-version" content="v1.13.314">
+<!-- v1.13.331（2026-11-09）P0 官网口径校正：4 处与代码不符 + 1 处期次表述。
+     ① 移动端：只有零散 CSS 断点、无移动端产品 ⇒ operatingSystem 与两条 FAQ 改为 PC 浏览器口径
+     ② KPI「实时统计」⇒ 实为每小时自动刷新（dashboard 按请求汇总）
+     ③ 可达范围：高德没有驾车等时圈接口，走径向耗时探测 ⇒ 不再写「按真实路网」
+     ④ 演示第 4 步：截图是「按次调用的联通人口报告」，不是每次分析都会自动生成的通用报告 ⇒ 副文案与图片 alt 改名
+     ⑤ 人口期次：只有购买报告标数据年月，商圈洞察基线无期次 ⇒ 不再写「系统里能直接看到」
+     ⚠️ FAQPage 结构化数据与可见 details 必须逐条一致，改任一处两边同改。 -->
+<!-- v1.13.332（2026-11-09）P0 ③：补齐「已实现但官网未宣传」的能力。
+     新增 #enterprise 8 张卡，措辞逐条对照代码核过：审计覆盖 15 类敏感动作、2FA 仅管理员、
+     回滚按批次类型有边界、竞品快照需人工逐期上传、API 仅 1 个付费端点、AI 20 工具 / 2 流程 10 步、
+     250 米网格仅管理员导入。（AI 卡原有的一句能力文案已于 2026-11-11 按业主要求撤下，勿再写回。）
+     ⚠️ 本批不新增 FAQ 条目，只扩写「多人协作」答案 ⇒ JSON-LD 与可见 details 仍须两边同改。 -->
+<!-- v1.13.353（2026-11-11）文档同步：平台能力 8→9 张卡（多品牌竞品口径），并新增 1 条 FAQ。
+     ⚠️ 新增 FAQ 已在 FAQPage JSON-LD 与可见 details 两边同改；口径以 344~352 的实现为准。
+     ⛔ 其余 11 月功能本批按业主要求暂不对外更新；11-09 上线的 AI 卡品牌口径文案同步撤下，勿再写回。 -->
+<title>选址赢家Online - See every square kilometer with data</title>
+<meta name="description" content="选址赢家Online is a WebGIS business intelligence platform: 1km-grid catchment population analysis, driving/walking reachability, competitor tracking and store health checks, sales forecasting and AI site recommendations — helping chain brands turn store-opening decisions from gut feeling into data.">
+<link rel="canonical" href="https://www.mka-online.cn/en/">
+<link rel="alternate" hreflang="zh-CN" href="https://www.mka-online.cn/">
+<link rel="alternate" hreflang="en" href="https://www.mka-online.cn/en/">
+<link rel="alternate" hreflang="ja" href="https://www.mka-online.cn/ja/">
+<link rel="alternate" hreflang="x-default" href="https://www.mka-online.cn/">
+<!-- 🔴 favicon 用相对路径：同一份 HTML 同时服务 www 根（官网主址）与主域 /home/（副本），
+     写 /favicon.png 会在 www 下正确、在主域下落到 SPA 的 dist 根，两边不同源。
+     相对写法两边各自解析到自己的 assets/，不需要在 nginx 里为任何一方开例外。 -->
+<link rel="icon" type="image/png" href="/assets/favicon.png" sizes="190x176" />
+<link rel="shortcut icon" type="image/x-icon" href="/assets/favicon.ico" />
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="选址赢家Online (SiteWinner)">
+<meta property="og:title" content="选址赢家Online - See every square kilometer with data">
+<meta property="og:description" content="Catchment population · Competitive landscape · Store health · AI site recommendations. One platform that turns store-opening decisions into evidence.">
+<meta property="og:url" content="https://www.mka-online.cn/en/">
+<meta property="og:image" content="https://www.mka-online.cn/assets/og-cover.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="选址赢家Online map workspace: own stores and competitor locations on one screen">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="选址赢家Online - See every square kilometer with data">
+<meta name="twitter:description" content="Catchment population · Competitive landscape · Store health · AI site recommendations — all in one platform.">
+<meta name="twitter:image" content="https://www.mka-online.cn/assets/og-cover.jpg">
+<meta name="theme-color" content="#1e6fff">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://mka-online.cn/#organization",
+      "name": "选址赢家Online (SiteWinner)",
+      "url": "https://www.mka-online.cn/en/",
+      "logo": "https://www.mka-online.cn/assets/favicon.png",
+      "description": "选址赢家Online is a WebGIS business intelligence platform built on location big data, focused on catchment population analysis and store competition decisions.",
+      "email": "jyo@youshi-tech.com",
+      "parentOrganization": {
+        "@type": "Organization",
+        "name": "Shanghai Youshi Business Consulting Co., Ltd.",
+        "url": "https://youshi-tech.com/"
+      },
+      "contactPoint": [
+        {
+          "@type": "ContactPoint",
+          "contactType": "sales",
+          "telephone": "+86-138-1779-1741",
+          "email": "jyo@youshi-tech.com",
+          "availableLanguage": [
+            "en",
+            "zh-CN"
+          ]
+        }
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://mka-online.cn/#website",
+      "url": "https://www.mka-online.cn/en/",
+      "name": "选址赢家Online (SiteWinner)",
+      "inLanguage": "en",
+      "publisher": {
+        "@id": "https://mka-online.cn/#organization"
+      }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://mka-online.cn/#software",
+      "name": "选址赢家Online (SiteWinner)",
+      "url": "https://www.mka-online.cn/en/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web Browser (Windows / macOS)",
+      "inLanguage": "en",
+      "description": "Population analysis for catchments and whole cities, competitor tracking, store health checks, driving and walking reachability, sales forecasting, AI site recommendations and dashboards — turning store-opening decisions from guesswork into data. Supports hierarchical group/subsidiary sync, audit logs, admin two-factor authentication and an open API.",
+      "publisher": {
+        "@id": "https://mka-online.cn/#organization"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://www.mka-online.cn/en/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Do I need to install software?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Just open it in a browser — Windows and macOS desktop browsers are both supported, with no client to install. Full functionality is designed for desktop."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which cities are supported?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Cities are enabled individually. The city dropdown in the system shows the currently available range; contact us to request a new city, which are usually rolled out region by region."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I import store data?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Bulk-import with an Excel or CSV template, bringing in store code, name, address, area, status and other fields at once; you can also add stores one by one on the map. Duplicate stores with the same address but different codes are auto-detected after import."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Where does population data come from, and is it accurate?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "We integrate carrier-grade population big data, anonymized and aggregated on 1km grids by population scale and demographics, for judging an area's magnitude and distribution trends."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How often is population data updated?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Updated monthly; purchased population reports state the data year and month used. Population changes slowly, so monthly updates are sufficient for site decisions."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my store data private?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Data is isolated per account — others cannot see your store details. Regional statistics use only anonymized coordinates; store names, addresses and sales data are never shown."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do you support team collaboration and multi-subsidiary groups?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Accounts have role-based permissions; groups can manage stores and quotas hierarchically by subsidiary, with subsidiary data isolated and headquarters seeing roll-ups. Sync batches can be previewed and rolled back. Admins can also review audit logs (operator, time, IP) and enable TOTP two-factor authentication on their own account."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it useful if I only have a few stores?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "With few stores, the value is mainly before opening — see the target catchment's population and competitors first, then decide whether to sign. Health checks and cannibalization analysis become more useful as your store count grows."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is it different from building my own Excel sheets?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Excel holds data you already know; the system calculates population, competitors and reachability, layers them on one map, and lets you change the radius or drive time and recalculate anytime."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can analysis reports be used directly for presentations?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Purchase records and store health results export to Excel / PDF with statistical details and map screenshots, ready for internal reports or client proposals."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use it on mobile?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It opens, but the system is currently designed for desktop. Please use a desktop browser for map layers, bulk import and in-depth analysis; mobile is suited to viewing shared conclusions."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How are competitors counted separately for multiple brands?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "On the Competitor Stores page, configure a competitor brand for each of your own brands. Once set, competitor counts, reports and network optimization are segmented per brand. You can also inherit the group configuration or explicitly choose All Brands (no filter). If not configured, all brands are used; multi-brand accounts are prompted to complete configuration first."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+:root{
+  --brand:#1e6fff; --brand-d:#0b4fd0; --mint:#00b3a4;
+  --ink:#0b1220; --ink2:#5a6577; --ink3:#8b95a7;
+  --line:#e9edf4; --line2:#dbe3ef; --soft:#f7f9fc;
+  --r:16px;
+  --shadow-s:0 8px 30px rgba(16,32,64,.08);
+  --shadow-m:0 20px 50px -20px rgba(16,32,64,.30);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:88px;-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:#fff;color:var(--ink);line-height:1.6;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+h1,h2,h3{margin:0;letter-spacing:-.02em}
+p{margin:0}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+/* ---------------- 导航 ---------------- */
+.hd{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);transition:box-shadow .3s,border-color .3s}
+.hd{box-shadow:0 1px 0 rgba(16,32,64,.06)}
+.hd.is-stuck{box-shadow:0 1px 0 rgba(16,32,64,.08),0 8px 24px -16px rgba(16,32,64,.28)}
+.hd-in{display:flex;align-items:center;justify-content:space-between;height:66px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand img{width:32px;height:32px;object-fit:contain}
+.brand-txt{font-size:16px;font-weight:700;letter-spacing:-.01em}
+.brand-txt em{font-style:normal;font-weight:700;color:inherit;font-size:inherit;margin-left:1px}
+.nav{display:flex;gap:30px;font-size:14.5px;color:#39424f}
+.nav a{padding:6px 0;transition:color .2s}
+.nav a:hover{color:var(--brand)}
+.hd-act{display:flex;align-items:center;gap:10px}
+
+/* ---------------- 按钮 ---------------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;font-weight:600;white-space:nowrap;transition:transform .22s,background .22s,box-shadow .22s,color .22s,border-color .22s;border:1px solid transparent}
+.btn-sm{padding:8px 18px;font-size:14px}
+.btn-xl{padding:15px 34px;font-size:16.5px}
+.btn-dark{background:#0d1526;color:#fff;box-shadow:0 12px 30px -12px rgba(13,21,38,.55)}
+.btn-dark:hover{background:var(--brand);transform:translateY(-2px);box-shadow:0 16px 34px -12px rgba(30,111,255,.6)}
+.btn-ghost{background:#fff;color:var(--ink);border-color:var(--line2);box-shadow:0 2px 8px rgba(16,32,64,.04)}
+.btn-ghost:hover{border-color:#b9c7dd;transform:translateY(-2px)}
+.btn-line{background:transparent;color:var(--ink);border-color:var(--line2)}
+.btn-line:hover{border-color:#b9c7dd;background:#fff}
+.btn svg{flex:0 0 auto}
+
+/* ---------------- Hero ---------------- */
+.hero{position:relative;overflow:hidden;padding:74px 0 0;text-align:center}
+.hero-glow{position:absolute;left:50%;top:-330px;transform:translateX(-50%);width:1180px;height:760px;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(30,111,255,.16),rgba(0,179,164,.10) 46%,rgba(255,255,255,0) 74%);}
+.hero-arc{position:absolute;left:50%;bottom:-420px;transform:translateX(-50%);width:1680px;height:800px;border-radius:50%;pointer-events:none;
+  background:linear-gradient(180deg,rgba(30,111,255,.13),rgba(30,111,255,.02) 55%,rgba(255,255,255,0));}
+.hero .wrap{position:relative;z-index:1}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;padding:6px 15px 6px 12px;border-radius:999px;background:rgba(30,111,255,.07);border:1px solid rgba(30,111,255,.14);color:#1d4ed8;font-size:13px;font-weight:600}
+.eyebrow i{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 3px rgba(0,179,164,.18)}
+h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-height:1.1;font-weight:700}
+.grad{background:linear-gradient(96deg,#1e6fff 8%,#00b3a4 92%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.lede{margin:22px auto 0;max-width:660px;font-size:17px;color:var(--ink2);line-height:1.75}
+.feats{display:grid;grid-template-columns:1fr 1fr;gap:13px 44px;max-width:700px;margin:32px auto 0;text-align:left}
+.ft{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.ft svg{flex:0 0 auto;color:var(--brand)}
+.ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
+.cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
+.hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
+.hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
+  border:1px solid rgba(16,32,64,.10);
+  box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
+.shot-bar{display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;background:#e9eef7;border-bottom:1px solid rgba(16,32,64,.08)}
+.shot-bar i{width:9px;height:9px;border-radius:50%;background:#ccd6e4}
+.shot-bar i:nth-child(1){background:#ff5f57}.shot-bar i:nth-child(2){background:#febc2e}.shot-bar i:nth-child(3){background:#28c840}
+.shot-bar span{margin:0 auto;font-size:11.5px;color:#8b95a7;letter-spacing:.02em}
+.hero-shot img{width:100%;height:auto}
+/* 首屏演示：静态截图当封面（LCP 快，且任何浏览器都有画面）
+ * 🔴 不自动播：进视口不 play()，点中央播放键才加载视频（preload=none，1MB 不进首屏带宽）。
+ * 🔴 播完不能空白：视频淡出，露出下面垫的末帧截图（首屏 demo-market-end.webp / 可达范围卡 hero-end.webp）。
+ *    老做法靠 video 自己停在末帧，Safari / 部分内核 ended 后会清帧 ⇒ 一片雪白。 */
+.hero-media{position:relative;display:block;line-height:0}
+.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s ease;pointer-events:none}
+.hero-media[data-state="playing"] .hero-video,
+.hero-media[data-state="paused"] .hero-video{opacity:1}
+/* 末帧兜底图：除 idle 外常驻垫底，视频淡出时露出的就是它，重播时又被视频盖住 */
+.hero-media .hm-last{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s ease;pointer-events:none}
+.hero-media[data-state="playing"] .hm-last,
+.hero-media[data-state="paused"] .hm-last,
+.hero-media[data-state="ended"] .hm-last{opacity:1}
+/* 中央播放键：只在未播放（idle）时盖在封面上；一旦开始播就收起，
+ * 免得挡住画面里的数字（尤其播完那一帧，人口面板正中间） */
+.hv-play{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  padding:0;border:0;background:transparent;font-family:inherit;cursor:pointer;
+  transition:opacity .26s ease,visibility .26s}
+.hero-media:not([data-state="idle"]) .hv-play{opacity:0;visibility:hidden;pointer-events:none}
+.hv-play .ring{position:relative;display:grid;place-items:center;width:74px;height:74px;border-radius:50%;color:#fff;
+  background:linear-gradient(135deg,#3a86ff,#1465f0);
+  box-shadow:0 16px 32px -12px rgba(20,101,240,.70),0 2px 6px rgba(16,32,64,.20);
+  transition:transform .2s ease,box-shadow .2s ease}
+.hv-play .ring::after{content:"";position:absolute;inset:-9px;border-radius:50%;border:2px solid rgba(30,111,255,.38);animation:hvpulse 2.8s ease-out infinite}
+.hv-play:hover .ring{transform:scale(1.07);box-shadow:0 20px 40px -12px rgba(20,101,240,.78),0 2px 6px rgba(16,32,64,.20)}
+.hv-play:focus-visible{outline:none}
+.hv-play:focus-visible .ring{outline:2px solid var(--brand-d);outline-offset:4px}
+.hv-play .ring svg{width:26px;height:26px;margin-left:3px}
+.hv-play .lbl{display:inline-flex;align-items:center;height:30px;padding:0 15px;border-radius:999px;
+  background:#fff;color:#16233a;font-size:13px;font-weight:700;line-height:1;
+  box-shadow:0 8px 18px -8px rgba(16,32,64,.55),0 0 0 1px rgba(16,32,64,.06)}
+/* 🔴 底图是地图，标签下面常有门店图标/POI ⇒ 必须实底，半透明会透出「铅笔状」暗块。
+ * 这行是「这条视频演示什么」的唯一说明 ⇒ 做成品牌蓝实底强调条，一眼能看到。
+ * 🔴 渐变顶色不能再亮：白字 on #1f66e8 = 5.1:1；上过 #2f7bff 只有 3.9:1（不达 AA）。 */
+.hv-play .sub{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;line-height:1;color:#fff;
+  background:linear-gradient(180deg,#1f66e8,#0b45b0);padding:7px 13px 7px 11px;border-radius:999px;
+  box-shadow:0 14px 26px -14px rgba(11,69,176,.85),0 1px 0 rgba(255,255,255,.20) inset}
+.hv-play .sub svg{width:13px;height:13px;flex:none;opacity:.9}
+.hv-play .sub-t{font-size:11.5px;font-weight:600;color:#fff}
+.hv-play .sub-t::after{content:"·";margin:0 4px;color:rgba(255,255,255,.7);font-weight:400}
+.hv-play .sub-k{font-weight:700;color:#fff}
+@keyframes hvpulse{0%{transform:scale(.92);opacity:.9}70%{transform:scale(1.24);opacity:0}100%{transform:scale(1.24);opacity:0}}
+/* 窄屏：卡片本身只有 ~340×213，播放键按桌面尺寸会把整张图盖住 ⇒ 等比缩小 */
+@media (max-width:640px){
+  .hv-play{gap:8px}
+  .hv-play .ring{width:52px;height:52px}
+  .hv-play .ring svg{width:19px;height:19px}
+  .hv-play .ring::after{inset:-6px}
+  .hv-play .lbl{height:24px;padding:0 11px;font-size:11.5px}
+  .hv-play .sub{font-size:10.5px;padding:5px 9px 5px 8px;gap:5px}
+  .hv-play .sub svg{width:11px;height:11px}
+  .hv-play .sub-t::after{margin:0 4px}
+}
+@media (prefers-reduced-motion:reduce){.hv-play .ring::after{animation:none;opacity:0}.hv-play .ring{transition:none}}
+/* 播放中的暂停键：放在仿浏览器窗口条右侧，不遮挡画面（画面右下角有产品自带地图控件） */
+.hv-btn{position:absolute;top:5px;right:12px;z-index:4;display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;
+  border:0;border-radius:7px;background:rgba(16,32,64,.06);color:var(--ink2);
+  font-family:inherit;font-size:12px;font-weight:600;line-height:1;cursor:pointer;
+  transition:background .18s ease,color .18s ease}
+.hv-btn[hidden]{display:none}
+.hv-btn:hover{background:rgba(16,32,64,.12);color:#1b2536}
+.hv-btn:focus-visible{outline:2px solid var(--brand-d);outline-offset:1px}
+.hv-btn svg{width:11px;height:11px;flex:none;display:none}
+.hv-btn[data-state="playing"] .i-pause,
+.hv-btn[data-state="paused"] .i-play,
+.hv-btn[data-state="ended"] .i-replay{display:block}
+/* 播完的「重播」用品牌色，提示可以再看一遍 */
+.hv-btn[data-state="ended"]{color:var(--brand-d);background:rgba(30,111,255,.09)}
+
+/* ---------------- 通用区块头 ---------------- */
+.sec{padding:118px 0}
+.sec-soft{background:#f6f8fc;border-top:1px solid #eef2f8;border-bottom:1px solid #eef2f8}
+.sec-hd{text-align:center;max-width:640px;margin:0 auto}
+.kicker{display:inline-block;font-size:12.5px;font-weight:700;letter-spacing:.14em;color:var(--brand);text-transform:uppercase}
+.sec-hd h2{margin-top:12px;font-size:clamp(26px,3.1vw,38px);line-height:1.25}
+.sec-hd p{margin-top:14px;font-size:15.5px;color:var(--ink2)}
+/* 标题较长时放宽一行宽度，避免尾字单独成行 */
+.sec-hd.wide{max-width:720px}
+
+/* ---------------- 操作演示 ---------------- */
+.demo{display:flex;flex-direction:column;gap:26px;margin-top:46px}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.step{position:relative;display:flex;flex-direction:column;gap:7px;width:100%;padding:16px 18px 22px;border:0;border-radius:14px;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background .25s,box-shadow .25s;-webkit-tap-highlight-color:transparent}
+.step:hover{background:rgba(255,255,255,.72)}
+.step .n{font-size:12px;font-weight:700;color:#b3bdcc;letter-spacing:.08em;font-variant-numeric:tabular-nums}
+.step b{display:block;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.step em{display:block;margin-top:5px;font-style:normal;font-size:13px;line-height:1.55;color:var(--ink2);min-height:2.9em}
+.step.is-on{background:#fff;box-shadow:0 12px 34px -16px rgba(16,32,64,.30),0 0 0 1px var(--line)}
+.step.is-on .n{color:var(--brand)}
+.step.is-on b{color:var(--ink)}
+.prog{position:absolute;left:18px;right:18px;bottom:10px;height:2px;border-radius:2px;background:#edf1f7;overflow:hidden;opacity:0;transition:opacity .3s}
+.step.is-on .prog{opacity:1}
+.prog i{display:block;height:100%;width:100%;background:var(--brand);transform:scaleX(0);transform-origin:left center}
+.step.is-on .prog i{animation:grow 7s linear forwards}
+@keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+.frame{position:relative;aspect-ratio:1200/750;border-radius:16px;overflow:hidden;background:#e9eef6;border:1px solid var(--line);box-shadow:0 40px 70px -34px rgba(16,32,64,.42)}
+.shot{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.035);transition:opacity .5s ease,transform 1.1s cubic-bezier(.22,1,.36,1)}
+.shot.is-on{opacity:1;transform:scale(1)}
+.spot{position:absolute;border-radius:10px;opacity:0;pointer-events:none;
+  box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 0 9999px rgba(7,13,26,.40);
+  transition:left .65s cubic-bezier(.33,0,.16,1),top .65s cubic-bezier(.33,0,.16,1),width .65s cubic-bezier(.33,0,.16,1),height .65s cubic-bezier(.33,0,.16,1),opacity .35s}
+.spot.is-on{opacity:1}
+.spot-tip{position:absolute;left:-2px;bottom:calc(100% + 11px);padding:7px 12px;border-radius:9px;background:#fff;color:var(--ink);
+  font-size:13px;font-weight:600;white-space:nowrap;box-shadow:0 10px 26px rgba(7,13,26,.28)}
+.spot-tip::after{content:"";position:absolute;left:16px;top:100%;border:6px solid transparent;border-top-color:#fff}
+.spot.tip-below .spot-tip{bottom:auto;top:calc(100% + 11px)}
+.spot.tip-below .spot-tip::after{top:auto;bottom:100%;border-top-color:transparent;border-bottom-color:#fff}
+.demo-hint{margin-top:14px;font-size:12.5px;color:var(--ink3);text-align:right}
+
+/* ---------------- 能力宫格 ---------------- */
+.caps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:52px}
+.card{padding:24px 20px;border:1px solid var(--line);border-radius:var(--r);background:#fff;transition:transform .28s,box-shadow .28s,border-color .28s}
+.card:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:0 18px 40px -22px rgba(16,32,64,.34)}
+.ci{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:12px;background:#eaf2ff;margin-bottom:15px}
+.ci img{width:23px;height:23px;display:block}
+.card h3{font-size:15.5px;font-weight:700}
+.card p{margin-top:7px;font-size:13px;line-height:1.6;color:var(--ink2)}
+
+/* ---------------- 可达范围演示（放在「选择理由」之前） ----------------
+ * 复用 .hero-shot 那套窗口卡片（同一 .hero-media / .hero-video / .hv-play 状态机）。
+ * 🔴 上边不加 padding：#ability 自己的 118px 底距就是间隔；下方留 64px 再接灰底区块。 */
+.iso-sec{padding:0 0 64px;background:#fff}
+.hero-shot.iso-shot{margin:0 auto}
+.iso-sec .sec-hd{max-width:660px}
+@media (max-width:720px){.iso-sec{padding:0 0 44px}}
+
+/* ---------------- 选择理由（旧版 v1.13.244/246 内容，按 v2 版式重排） ---------------- */
+.reason-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:46px}
+.rc{padding:24px 22px;border:1px solid var(--line);border-radius:var(--r);background:#fff;transition:transform .28s,box-shadow .28s,border-color .28s}
+.rc:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:0 18px 40px -22px rgba(16,32,64,.34)}
+.rc-dim{font-size:12px;font-weight:700;color:var(--ink3);letter-spacing:.06em;margin-bottom:14px}
+.cmp{border-radius:10px;padding:12px 14px}
+.cmp+.cmp{margin-top:10px}
+.cmp.map{background:#f4f5f7}
+.cmp.us{background:#eaf2ff}
+.cmp-who{font-size:11.5px;font-weight:700;margin-bottom:4px}
+.cmp.map .cmp-who{color:var(--ink3)}
+.cmp.us .cmp-who{color:var(--brand-d)}
+.cmp-txt{font-size:13.5px;line-height:1.65}
+.cmp.map .cmp-txt{color:var(--ink2)}
+.cmp.us .cmp-txt{color:var(--ink)}
+.cmp-wrap{margin-top:22px;background:#fff;border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
+.cmp-table{width:100%;border-collapse:collapse;font-size:14px}
+.cmp-table th,.cmp-table td{padding:15px 20px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.cmp-table thead th{background:var(--soft);font-size:13px;font-weight:700;color:var(--ink2)}
+.cmp-table thead th.us{background:#eaf2ff;color:var(--brand-d)}
+.cmp-table tbody th{width:132px;font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap;background:#fff}
+.cmp-table tbody td{color:var(--ink2);line-height:1.7}
+.cmp-table tbody td.us{color:var(--ink);background:rgba(30,111,255,.04)}
+.cmp-table tbody tr:last-child th,.cmp-table tbody tr:last-child td{border-bottom:none}
+.reason-note{text-align:center;font-size:12px;color:var(--ink3);margin-top:14px}
+
+/* ---------------- FAQ ---------------- */
+.faq{margin-top:46px;max-width:780px;margin-left:auto;margin-right:auto;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 4px;cursor:pointer;list-style:none;font-size:16px;font-weight:600}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-size:22px;font-weight:400;color:var(--ink3);line-height:1;transition:transform .25s,color .25s}
+.faq details[open] summary::after{content:"−";color:var(--brand)}
+.faq p{padding:0 4px 24px;font-size:14.5px;line-height:1.75;color:var(--ink2);max-width:660px}
+
+/* ---------------- 结尾 CTA ---------------- */
+.end{padding:112px 0 100px;text-align:center;background:linear-gradient(180deg,#f6f9ff,#eaf2ff)}
+.end h2{font-size:clamp(26px,3.2vw,38px);line-height:1.25;max-width:19em;margin:0 auto}
+.end p{margin-top:16px;font-size:15.5px;color:var(--ink2)}
+.end .cta-row{margin-top:34px}
+
+/* ---------------- 页脚 ---------------- */
+.ft-foot{border-top:1px solid var(--line);padding:44px 0 40px;background:#fff}
+.ft-in{display:flex;align-items:flex-start;justify-content:space-between;gap:40px;flex-wrap:wrap}
+.ft-brand{max-width:360px}
+.ft-brand .brand{margin-bottom:12px}
+.ft-brand p{font-size:13px;color:var(--ink2);line-height:1.7}
+.ft-links{display:flex;gap:56px;flex-wrap:wrap}
+.ft-col h4{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--ink)}
+.ft-col a,.ft-col span{display:block;font-size:13px;color:var(--ink2);margin-bottom:9px;transition:color .2s}
+.ft-col a:hover{color:var(--brand)}
+.ft-copy{margin-top:34px;padding-top:22px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+/* ICP 备案号：工信部要求「网站主页底部展示 + 可点进 beian.miit.gov.cn」
+   🔴 色值用 --ink2（#5a6577 ≈ 5.6:1）而非周围的 --ink3（#8b95a7 ≈ 2.6:1）：12.5px 小字要过 WCAG AA */
+.ft-legal{display:flex;gap:16px;flex-wrap:wrap}
+.ft-legal a{color:var(--ink2)}
+.ft-legal a:hover{color:var(--brand)}
+
+/* ---------------- 进场动画 ---------------- */
+.js .rv{opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.js .rv.in{opacity:1;transform:none}
+
+/* ---------------- 响应式 ---------------- */
+@media (max-width:1000px){
+  .nav{display:none}
+  .steps{grid-template-columns:1fr 1fr;gap:8px}
+  .caps{grid-template-columns:1fr 1fr}
+  .reason-grid{grid-template-columns:1fr 1fr}
+  /* 2 列断点时第 3 张卡独占一行，避免右侧留空 */
+  .reason-grid>.rc:last-child:nth-child(odd){grid-column:1 / -1}
+  .sec{padding:88px 0}
+}
+@media (max-width:720px){
+  .hero{padding-top:52px}
+  .hero-glow{width:760px;height:560px;top:-260px}
+  .hero-arc{bottom:-380px;width:1100px}
+  .lede{font-size:15.5px}
+  .feats{grid-template-columns:1fr;gap:11px;max-width:330px;margin-top:26px}
+  .cta-row{flex-direction:column;align-items:stretch;gap:10px;max-width:330px;margin-left:auto;margin-right:auto}
+  .btn-xl{padding:14px 24px;font-size:15.5px}
+  .hero-shot{margin-top:40px;border-radius:12px}
+  .steps{grid-template-columns:1fr}
+  .step{padding:13px 14px 18px}
+  .step em{font-size:12.5px;min-height:0}
+  .prog{left:14px;right:14px;bottom:8px}
+  .demo-hint{text-align:center}
+  .caps{grid-template-columns:1fr;gap:12px}
+  .reason-grid{grid-template-columns:1fr;gap:12px}
+  /* 窄屏把对照表拆成卡片式（th 作小标题、td 用 data-label 回填列名） */
+  .cmp-table thead{display:none}
+  .cmp-table,.cmp-table tbody,.cmp-table tr,.cmp-table th,.cmp-table td{display:block;width:auto}
+  .cmp-table tbody tr{padding:4px 0 12px;border-bottom:1px solid var(--line)}
+  .cmp-table tbody tr:last-child{border-bottom:none}
+  .cmp-table tbody th{padding:12px 14px 4px;border:none;background:transparent;color:var(--ink3);font-size:12px;letter-spacing:.04em}
+  .cmp-table tbody td{padding:6px 14px;border:none}
+  .cmp-table tbody td::before{content:attr(data-label);display:block;font-size:11.5px;font-weight:700;color:var(--ink3);margin-bottom:3px}
+  .cmp-table tbody td.us{background:#eaf2ff;border-radius:8px;margin:6px 10px;padding:10px 12px}
+  .cmp-table tbody td.us::before{color:var(--brand-d)}
+  .ft-in{flex-direction:column;gap:30px}
+  .faq summary{font-size:15px;padding:18px 2px}
+  .end{padding:76px 0 68px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .step.is-on .prog i{animation:none;transform:scaleX(1)}
+  .js .rv{opacity:1;transform:none;transition:none}
+  .shot,.spot{transition:opacity .2s}
+}
+
+/* ---- 多语言切换器（构建脚本注入；纯 <a>，无 JS，符合 CSP） ---- */
+.lang-sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink2);white-space:nowrap}
+.lang-sw-a{padding:4px 2px;border-radius:5px;transition:color .2s;opacity:.72}
+.lang-sw-a:hover{color:var(--brand);opacity:1}
+.lang-sw-a.is-active{color:var(--brand);opacity:1;text-decoration:underline;text-underline-offset:3px}
+.lang-sw-sep{color:var(--line2);font-weight:400}
+@media(max-width:1000px){.lang-sw{font-size:12px}}
+
+</style>
+</head>
+<body>
+
+<header class="hd" id="hd">
+  <div class="wrap hd-in">
+    <!-- 🔴 品牌 logo 用相对路径：www 根下解析为 / ，主域 /home/ 下解析为 /home/，两边都回官网首页 -->
+    <a class="brand" href="https://www.mka-online.cn/en/" aria-label="选址赢家Online home">
+      <img src="/assets/logo.png" alt="" width="113" height="96" style="width:34px;height:auto">
+      <span class="brand-txt">选址赢家 (SiteWinner)<em>Online</em></span>
+    </a>
+    <nav class="nav" aria-label="Main navigation">
+      <a href="#demo">How it works</a>
+      <a href="#ability">Capabilities</a>
+      <a href="#reason">Why choose us</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="hd-act">
+      <div class="lang-sw" role="group" aria-label="Language / 言語 / 语言"><a class="lang-sw-a" href="https://www.mka-online.cn/">中文</a><span class="lang-sw-sep" aria-hidden="true">/</span><a class="lang-sw-a is-active" href="https://www.mka-online.cn/en/" aria-current="page">EN</a><span class="lang-sw-sep" aria-hidden="true">/</span><a class="lang-sw-a" href="https://www.mka-online.cn/ja/">日本語</a></div>
+      <a class="btn btn-sm btn-line" href="https://mka-online.cn/login">Log in</a>
+      <a class="btn btn-sm btn-dark" href="https://mka-online.cn/register">Sign up free</a>
+    </div>
+  </div>
+</header>
+
+<!-- ================= Hero ================= -->
+<section class="hero">
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="hero-arc" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="eyebrow"><i aria-hidden="true"></i>Location-intelligence BI platform</span>
+    <h1>Site selection, <span class="grad">powered by data</span></h1>
+    <p class="lede">Catchment population, competitive landscape, store health, AI advice — one platform that turns store-opening decisions from experience into evidence.</p>
+
+    <div class="feats">
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 2.6 15.4 0 18M12 3C9.4 5.6 9.4 18.4 12 21"/></svg>
+        Catchment population <em>Residents, workers, visitors, user profiles</em>
+      </div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l6 4V9l6 4V5l6 4v12H3Z"/></svg>
+        Competitor tracking <em>Auto-count within radius</em>
+      </div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>
+        Store health check <em>See cannibalization clearly</em>
+      </div>
+      <div class="ft">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg>
+        AI site selection <em>One sentence, a clear conclusion</em>
+      </div>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn btn-xl btn-dark" href="https://mka-online.cn/register">
+        Get started free
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn-xl btn-ghost" href="#demo">See the 5-step walkthrough</a>
+    </div>
+    <div class="hero-note">Browser-based · No install · Store and competitor data isolated per account</div>
+
+    <div class="hero-shot">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / Map workspace</span></div>
+      <button class="hv-btn" type="button" hidden data-state="paused" aria-label="Play product demo video">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg>
+        <svg class="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12.2a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3 4.7v5.4h5.4"/></svg>
+        <span class="hv-txt">Pause</span>
+      </button>
+      <div class="hero-media" data-state="idle">
+        <img src="/assets/demo-market-cover.webp" alt="Map workspace: Shanghai map showing own stores (brand icons) and competitor stores (green number clusters), left panel filters by store status and layer toggles" width="1200" height="750" fetchpriority="high" decoding="async">
+        <img class="hm-last" src="/assets/demo-market-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
+        <video class="hero-video" src="/assets/demo-market.mp4" poster="/assets/demo-market-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <button class="hv-play" type="button" aria-label="Play product demo video: from city insight shortlisting Beijing, to catchment insight on Wudaokou, about 27 seconds">
+          <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
+          <span class="lbl">Play demo</span>
+          <span class="sub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v4.9l3.1 1.9"/></svg>
+            <span class="sub-t">27 sec</span>
+            <span class="sub-k">City insight → Catchment insight</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 操作演示 ================= -->
+<section class="sec sec-soft" id="demo">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">How it works</span>
+      <h2>Five steps, from a map to a conclusion</h2>
+      <p>Below is the real interface from the live product. Click any step to see what it does on screen.</p>
+    </div>
+
+    <div class="demo rv" id="demoBox">
+      <div class="steps" role="tablist" aria-label="Walkthrough steps">
+        <button class="step is-on" type="button" role="tab" aria-selected="true" aria-controls="stagePanel" data-i="0">
+          <span class="n">01</span>
+          <span class="t"><b>Define the area</b><em>Pick an address or draw a box; choose radius, driving or walking</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="1">
+          <span class="n">02</span>
+          <span class="t"><b>See the population</b><em>1km grid shaded cell by cell, 5 bands show population density</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="2">
+          <span class="n">03</span>
+          <span class="t"><b>Track competition</b><em>Competitor count, overlap and threat level within the radius, all on one screen</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="3">
+          <span class="n">04</span>
+          <span class="t"><b>Reach a conclusion</b><em>Scores, insights and charts; reports are exportable</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+        <button class="step" type="button" role="tab" aria-selected="false" aria-controls="stagePanel" data-i="4">
+          <span class="n">05</span>
+          <span class="t"><b>Dashboard overview</b><em>Stores, competitors and covered cities summarized for the team on one screen</em></span>
+          <span class="prog" aria-hidden="true"><i></i></span>
+        </button>
+      </div>
+
+      <div class="stage" id="stagePanel" role="tabpanel" aria-live="polite">
+        <div class="frame" id="frame">
+          <img class="shot is-on" src="/assets/screen-sitefinder.webp" alt="Map workspace: Catchment tools menu expanded at top right, with options for in-catchment points, nearby amenities, resident population and store potential" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="/assets/screen-population.webp" alt="Resident population: a 3km radius circle centered on Wanda Plaza, Wujiaochang, shaded by 1km grid in 6 bands (warmer colors mean denser population), with right panel summarizing 722,000 residents and age breakdown" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="/assets/screen-competitor.webp" alt="Competitor tracking: Shanghai map with pink tracking circles marking competitor distribution, a legend at top left explaining the tracking method, and brand icons distinguishing own from competitor stores" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="/assets/screen-report.webp" alt="Population analysis report (per-call): five-dimension star rating, line-by-line insights, and charts of population structure, age distribution and visit trends" width="1200" height="750" loading="lazy" decoding="async">
+          <img class="shot" src="/assets/screen-dashboard.webp" alt="Dashboard: counts of operating stores and competitors, covered cities and provinces, nationwide store distribution map, and top-10 store cities and competitor brands" width="1200" height="750" loading="lazy" decoding="async">
+          <div class="spot" id="spot" aria-hidden="true"><span class="spot-tip" id="spotTip">Catchment tools</span></div>
+        </div>
+        <div class="demo-hint">Auto-play · Click a step to switch</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 平台能力 ================= -->
+<section class="sec" id="ability">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">Capabilities</span>
+      <h2>Every angle of site selection, in one place</h2>
+      <p>From population to competition, from a single store to a nationwide view.</p>
+    </div>
+    <div class="caps rv">
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/collection.svg" alt="" width="21" height="21"></div>
+        <h3>Catchment population</h3>
+        <p>Radius selection or city-wide mapping, 1km grid in 6 bands, with customizable band ranges.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/position.svg" alt="" width="21" height="21"></div>
+        <h3>Driving / walking reach</h3>
+        <p>Estimates N-minute reach boundaries by travel time per direction — closer to the road network than a radius circle; based on normal traffic conditions, with adjustable boundaries.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/compass.svg" alt="" width="21" height="21"></div>
+        <h3>Network optimization</h3>
+        <p>Self-cannibalization, competitive intensity and competitor tracking — overlap drawn directly on the map.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/aim.svg" alt="" width="21" height="21"></div>
+        <h3>Store health check</h3>
+        <p>Self-cannibalization, competitor density and data completeness, ranked with red/amber/green lights.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/magic-stick.svg" alt="" width="21" height="21"></div>
+        <h3>Sales forecasting</h3>
+        <p>Enter real sales data; models upgrade with sample size — L1 analogy → L2 regression → L3 machine learning.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/cpu.svg" alt="" width="21" height="21"></div>
+        <h3>AI site recommendations</h3>
+        <p>Combines store and catchment data to output a site verdict, customer fit and risk flags.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/office-building.svg" alt="" width="21" height="21"></div>
+        <h3>Data dashboard</h3>
+        <p>Nationwide distribution of stores and competitors on one screen; KPIs refresh automatically every hour.</p>
+      </div>
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/refresh.svg" alt="" width="21" height="21"></div>
+        <h3>Store data cleaning</h3>
+        <p>Auto-detects same address with different codes and dual store types; merges are one-click reversible.</p>
+      </div>
+      <!-- 2026-11-11 文档同步：仅补「多品牌竞品口径」一张卡，措辞对照 344~352 实现 -->
+      <div class="card">
+        <div class="ci"><img src="/assets/icons/shop.svg" alt="" width="21" height="21"></div>
+        <h3>Multi-brand competitor scope</h3>
+        <p>Multi-brand accounts can set a competitor scope per own brand; competitor counts, purchase history exports and network optimization are segmented accordingly. Group inheritance and explicit all-brands are supported.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 适用场景（2026-11-05 新增：覆盖行业长尾搜索） ================= -->
+<section class="sec sec-soft" id="scenario">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">Use cases</span>
+      <h2>Different industries, different questions</h2>
+      <p>A site-selection system should not just give a generic score — it should answer the question your industry actually faces.</p>
+    </div>
+    <div class="caps rv">
+      <div class="card">
+        <h3>Restaurant chains</h3>
+        <p>Whether lunch and dinner footfall on this street can justify the rent.</p>
+      </div>
+      <div class="card">
+        <h3>Tea / coffee shops</h3>
+        <p>Whether office density or visitor population better drives cup volume.</p>
+      </div>
+      <div class="card">
+        <h3>Convenience stores</h3>
+        <p>Whether a 24-hour store is still missing within three kilometers.</p>
+      </div>
+      <div class="card">
+        <h3>Pharmacy chains</h3>
+        <p>How aged the neighborhood is, and the real walking distance to existing pharmacies.</p>
+      </div>
+      <div class="card">
+        <h3>Retail chains</h3>
+        <p>How much a brand can differ between a mall store and a street-side store.</p>
+      </div>
+      <div class="card">
+        <h3>Automotive services</h3>
+        <p>How many potential car owners actually fall within a 15-minute drive.</p>
+      </div>
+      <div class="card">
+        <h3>Franchise expansion</h3>
+        <p>When entering a new city, where the first location should go.</p>
+      </div>
+      <div class="card">
+        <h3>Group headquarters</h3>
+        <p>With hundreds of stores nationwide, which to adjust and which to close.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 可达范围演示（原首屏视频，移到选择理由之前） ================= -->
+<section class="iso-sec" id="isochrone">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">Reachability</span>
+      <h2>Who falls within a 15-minute drive</h2>
+      <p>Draw a 15-minute driving zone in the catchment tools; resident population, age structure and competitor count are calculated at once.</p>
+    </div>
+
+    <div class="hero-shot iso-shot rv">
+      <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / Catchment tools · Driving reach</span></div>
+      <button class="hv-btn" type="button" hidden data-state="paused" aria-label="Play product demo video">
+        <svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.2"/></svg>
+        <svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg>
+        <svg class="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 12.2a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3 4.7v5.4h5.4"/></svg>
+        <span class="hv-txt">Pause</span>
+      </button>
+      <div class="hero-media" data-state="idle">
+        <img src="/assets/screen-hero.webp" alt="Map workspace: Shanghai map showing own stores (brand icons) and competitor stores (green number clusters), with the catchment tools entry at top right" width="1200" height="750" loading="lazy" decoding="async">
+        <img class="hm-last" src="/assets/hero-end.webp" alt="" width="1200" height="750" loading="lazy" decoding="async" aria-hidden="true">
+        <video class="hero-video" src="/assets/demo-isochrone.mp4" poster="/assets/hero-end.webp" width="1200" height="750" muted playsinline preload="none" disablepictureinpicture aria-hidden="true"></video>
+        <button class="hv-play" type="button" aria-label="Play product demo video: 15-minute driving reachability, about 18 seconds">
+          <span class="ring"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.6 5.4c0-.95 1.05-1.53 1.85-1.02l8.6 5.6c.75.49.75 1.6 0 2.09l-8.6 5.6c-.8.51-1.85-.07-1.85-1.02z"/></svg></span>
+          <span class="lbl">Play demo</span>
+          <span class="sub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.4v4.9l3.1 1.9"/></svg>
+            <span class="sub-t">18 sec</span>
+            <span class="sub-k">15-minute driving reach</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 选择理由（保留旧版 v1.13.244/246 的对照内容） ================= -->
+<section class="sec sec-soft" id="reason">
+  <div class="wrap">
+    <div class="sec-hd wide rv">
+      <span class="kicker">Why choose us</span>
+      <h2>If you already manage stores, why add a site-selection system</h2>
+      <p>Maps tell you where a store is; SiteWinner tells you whether it should be there.</p>
+    </div>
+
+    <div class="reason-grid rv">
+      <div class="rc">
+        <div class="rc-dim">01　Store data</div>
+        <div class="cmp map">
+          <div class="cmp-who">General map app</div>
+          <div class="cmp-txt">Saved pins with only a name and location</div>
+        </div>
+        <div class="cmp us">
+          <div class="cmp-who">选址赢家 (SiteWinner)</div>
+          <div class="cmp-txt">Structured store database: brand, operating status, area, catchment type — filterable and analyzable</div>
+        </div>
+      </div>
+      <div class="rc">
+        <div class="rc-dim">02　Population & footfall</div>
+        <div class="cmp map">
+          <div class="cmp-who">General map app</div>
+          <div class="cmp-txt">A heat map alone can't tell you how many people, or of which ages</div>
+        </div>
+        <div class="cmp us">
+          <div class="cmp-who">选址赢家 (SiteWinner)</div>
+          <div class="cmp-txt">Age-segmented population down to 1km grids, aggregatable by radius or mapped city/district-wide, with customizable bands</div>
+        </div>
+      </div>
+      <div class="rc">
+        <div class="rc-dim">03　Decision output</div>
+        <div class="cmp map">
+          <div class="cmp-who">General map app</div>
+          <div class="cmp-txt">You see a location; the judgment is still on you</div>
+        </div>
+        <div class="cmp us">
+          <div class="cmp-who">选址赢家 (SiteWinner)</div>
+          <div class="cmp-txt">Store potential, competitive intensity and AI advice — candidate areas and reasons given directly</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cmp-wrap rv">
+      <table class="cmp-table">
+        <thead>
+          <tr>
+            <th scope="col">Dimension</th>
+            <th scope="col">General map app</th>
+            <th scope="col" class="us">选址赢家Online (SiteWinner)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Data ownership</th>
+            <td data-label="General map app">Stores live in a personal account — lost when people or devices change</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">Stored in your own database, exportable anytime, isolated between accounts</td>
+          </tr>
+          <tr>
+            <th scope="row">Analysis capability</th>
+            <td data-label="General map app">Can show a heat map, but not how many people are actually within a radius</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">Aggregate by radius, filter by multiple thresholds, calculate candidate areas in one pass</td>
+          </tr>
+          <tr>
+            <th scope="row">Competitor counting</th>
+            <td data-label="General map app">Search one by one, count by eye</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">Built-in competitor database auto-counts by radius, with weighting for own-store cannibalization</td>
+          </tr>
+          <tr>
+            <th scope="row">Basis for decisions</th>
+            <td data-label="General map app">You see locations and routes; judgment relies on experience</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">Store potential, competitive intensity, AI advice and sales forecasting</td>
+          </tr>
+          <tr>
+            <th scope="row">Output</th>
+            <td data-label="General map app">Screenshots pasted into slides — redo everything after each change</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">One-click Excel / PDF export; analysis results are reusable</td>
+          </tr>
+          <tr>
+            <th scope="row">Team collaboration</th>
+            <td data-label="General map app">One shared account — no clear record of who changed what</td>
+            <td data-label="选址赢家Online (SiteWinner)" class="us">Multiple accounts with group/subsidiary data isolation and permissions</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="reason-note rv">Population data comes from a licensed carrier source, billed per call</div>
+  </div>
+</section>
+
+<!-- ================= 企业级能力（2026-11-09 新增：已实现但此前未宣传） ================= -->
+<section class="sec sec-soft" id="enterprise">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">Enterprise capabilities</span>
+      <h2>Multi-account, traceable, integrable</h2>
+      <p>What the demo can't show — permissions, audit trails, data governance and external APIs — is already in the system.</p>
+    </div>
+    <div class="caps rv">
+      <div class="card">
+        <h3>Audit logs</h3>
+        <p>Admins can filter audit records by operator, action and date, covering sensitive operations such as accounts, quotas, city data and two-factor authentication, with time, IP and change details.</p>
+      </div>
+      <div class="card">
+        <h3>Admin two-factor authentication</h3>
+        <p>Admin accounts can enable TOTP-based two-factor authentication, compatible with standard authenticator apps, with eight one-time recovery codes; admins can reset it when needed.</p>
+      </div>
+      <div class="card">
+        <h3>Group / subsidiary sync</h3>
+        <p>Manage stores and quotas hierarchically by subsidiary; preview before sync with row-level audit trails. Successful batches can be rolled back: territory transfers restore ownership and sales records, and regular syncs can withdraw the batch's new mirror copies.</p>
+      </div>
+      <div class="card">
+        <h3>Competitor period snapshots</h3>
+        <p>Import competitor store snapshots monthly or quarterly, align operating stores across two periods by store ID, automatically derive openings, closures and status changes, and export change details. Snapshots must be uploaded manually each period.</p>
+      </div>
+      <div class="card">
+        <h3>Open API</h3>
+        <p>Provides a carrier population data API for partners, called with an API Key and billed per call; admins manage clients, balances and usage details in the backend.</p>
+      </div>
+      <div class="card">
+        <h3>AI operations assistant</h3>
+        <p>Built with 20 function-calling tools covering filtering, statistics, POI search and population comparison, plus two guided scenarios of 10 steps in total (network planning 6, single-store evaluation 4).</p>
+      </div>
+      <div class="card">
+        <h3>City / catchment insight</h3>
+        <p>City opportunity scores are weighted by market size, competitive intensity, brand whitespace and spending potential, with adjustable weights; catchment scores break down into population size, purchasing power, competitive headroom and footfall activity.</p>
+      </div>
+      <div class="card">
+        <h3>Population grid & color scale</h3>
+        <p>Beyond 1km grids, a 250m high-precision population grid is available (admin import); the color-scale legend shares its source with grid shading, supporting equal-interval and quantile bands, with grid number labels toggleable anytime.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 常见问题 ================= -->
+<section class="sec" id="faq" style="padding-top:96px;padding-bottom:86px">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">FAQ</span>
+      <h2>You may want to know first</h2>
+    </div>
+    <div class="faq rv">
+      <details>
+        <summary>Do I need to install software?</summary>
+        <p>No. Just open it in a browser — Windows and macOS desktop browsers are both supported, with no client to install. Full functionality is designed for desktop.</p>
+      </details>
+      <details>
+        <summary>Which cities are supported?</summary>
+        <p>Cities are enabled individually. The city dropdown in the system shows the currently available range; contact us to request a new city, which are usually rolled out region by region.</p>
+      </details>
+      <details>
+        <summary>How do I import store data?</summary>
+        <p>Bulk-import with an Excel or CSV template, bringing in store code, name, address, area, status and other fields at once; you can also add stores one by one on the map. Duplicate stores with the same address but different codes are auto-detected after import.</p>
+      </details>
+      <details>
+        <summary>Where does population data come from, and is it accurate?</summary>
+        <p>We integrate carrier-grade population big data, anonymized and aggregated on 1km grids by population scale and demographics, for judging an area's magnitude and distribution trends.</p>
+      </details>
+      <details>
+        <summary>How often is population data updated?</summary>
+        <p>Updated monthly; purchased population reports state the data year and month used. Population changes slowly, so monthly updates are sufficient for site decisions.</p>
+      </details>
+      <details>
+        <summary>Is my store data private?</summary>
+        <p>Yes. Data is isolated per account — others cannot see your store details. Regional statistics use only anonymized coordinates; store names, addresses and sales data are never shown.</p>
+      </details>
+      <details>
+        <summary>Do you support team collaboration and multi-subsidiary groups?</summary>
+        <p>Yes. Accounts have role-based permissions; groups can manage stores and quotas hierarchically by subsidiary, with subsidiary data isolated and headquarters seeing roll-ups. Sync batches can be previewed and rolled back. Admins can also review audit logs (operator, time, IP) and enable TOTP two-factor authentication on their own account.</p>
+      </details>
+      <details>
+        <summary>Is it useful if I only have a few stores?</summary>
+        <p>With few stores, the value is mainly before opening — see the target catchment's population and competitors first, then decide whether to sign. Health checks and cannibalization analysis become more useful as your store count grows.</p>
+      </details>
+      <details>
+        <summary>How is it different from building my own Excel sheets?</summary>
+        <p>Excel holds data you already know; the system calculates population, competitors and reachability, layers them on one map, and lets you change the radius or drive time and recalculate anytime.</p>
+      </details>
+      <details>
+        <summary>Can analysis reports be used directly for presentations?</summary>
+        <p>Yes. Purchase records and store health results export to Excel / PDF with statistical details and map screenshots, ready for internal reports or client proposals.</p>
+      </details>
+      <details>
+        <summary>Can I use it on mobile?</summary>
+        <p>It opens, but the system is currently designed for desktop. Please use a desktop browser for map layers, bulk import and in-depth analysis; mobile is suited to viewing shared conclusions.</p>
+      </details>
+      <details>
+        <summary>How are competitors counted separately for multiple brands?</summary>
+        <p>On the Competitor Stores page, configure a competitor brand for each of your own brands. Once set, competitor counts, reports and network optimization are segmented per brand. You can also inherit the group configuration or explicitly choose All Brands (no filter). If not configured, all brands are used; multi-brand accounts are prompted to complete configuration first.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 结尾 CTA ================= -->
+<section class="end">
+  <div class="wrap">
+    <h2>Ready to make a data-driven site decision?</h2>
+    <p>Sign up free and run your first catchment analysis in minutes.</p>
+    <div class="cta-row">
+      <a class="btn btn-xl btn-dark" href="https://mka-online.cn/register">Sign up free</a>
+      <a class="btn btn-xl btn-ghost" href="mailto:jyo@youshi-tech.com">Contact us</a>
+    </div>
+  </div>
+</section>
+
+<footer class="ft-foot">
+  <div class="wrap">
+    <div class="ft-in">
+      <div class="ft-brand">
+        <div class="brand">
+          <img src="/assets/logo.png" alt="" width="113" height="96" style="width:32px;height:auto">
+          <span class="brand-txt">选址赢家 (SiteWinner)<em>Online</em></span>
+        </div>
+        <p>A WebGIS business intelligence platform focused on catchment population analysis and store competition decisions.</p>
+      </div>
+      <div class="ft-links">
+        <div class="ft-col">
+          <h4>Product</h4>
+          <a href="#demo">How it works</a>
+          <a href="#ability">Capabilities</a>
+          <a href="#reason">Why choose us</a>
+        </div>
+        <div class="ft-col">
+          <h4>Support</h4>
+          <a href="/help/">User manual</a>
+          <a href="#faq">FAQ</a>
+          <a href="mailto:jyo@youshi-tech.com">Feedback</a>
+        </div>
+        <div class="ft-col">
+          <h4>Contact us</h4>
+          <a href="mailto:jyo@youshi-tech.com">jyo@youshi-tech.com</a>
+          <a href="tel:+8613817791741">138 1779 1741</a>
+          <span>Shanghai Youshi Business Consulting Co., Ltd.</span>
+        </div>
+      </div>
+    </div>
+    <div class="ft-copy">
+      <span>© 2026 选址赢家Online · Location Intelligence Platform</span>
+      <span class="ft-legal">
+        <span>Population data from a licensed carrier source</span>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">沪ICP备2026010607号-1</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+<script src="home_v2.js" defer></script>
+</body>
+</html>

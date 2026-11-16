@@ -64,3 +64,10 @@ _bg_originals/
 
 # 数据/回滚留档（清理集团同步测试数据前导出的 sql 快照等，仅本地留档，不入库）
 backups/
+
+# 官网三语构建（v1.13.369）：_extract_i18n.py 的一次性中间产物 + 弃用草稿，均可再生成，不入库
+homepage/_all_records.json
+homepage/_i18n_source.json
+homepage/_pairs.tsv
+homepage/_unique_zh.json
+homepage/i18n_keys.py

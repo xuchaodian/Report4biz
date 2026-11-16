@@ -1,15 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 选址赢家Online 官网 sitemap（2026-11-05）
+<!-- 选址赢家Online 官网 sitemap（2026-11-16 增加 en/ja 三语）
      ⚠️ 只列 www.mka-online.cn 下的 URL：sitemap 规范要求 loc 与 sitemap 所在 host 一致，
         跨 host 会被判定为无效条目。
      ⚠️ 主域 mka-online.cn 是应用入口（登录墙），不进 sitemap；
-        其 /sitemap.xml 由 nginx 301 到本文件，因此全站只有这一份有效 sitemap。 -->
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        其 /sitemap.xml 由 nginx 301 到本文件，因此全站只有这一份有效 sitemap。
+     ⚠️ 三个语言页用 xhtml:link rel=alternate 互指（含 x-default），与页面 head 的 hreflang 一致。 -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://www.mka-online.cn/</loc>
-    <lastmod>2026-11-05</lastmod>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://www.mka-online.cn/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.mka-online.cn/en/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.mka-online.cn/ja/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.mka-online.cn/"/>
+    <lastmod>2026-11-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://www.mka-online.cn/en/</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://www.mka-online.cn/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.mka-online.cn/en/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.mka-online.cn/ja/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.mka-online.cn/"/>
+    <lastmod>2026-11-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.mka-online.cn/ja/</loc>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://www.mka-online.cn/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.mka-online.cn/en/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://www.mka-online.cn/ja/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.mka-online.cn/"/>
+    <lastmod>2026-11-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://www.mka-online.cn/help/</loc>
