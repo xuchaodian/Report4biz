@@ -246,8 +246,12 @@ p{margin:0}
 .hd-act{display:flex;align-items:center;gap:10px}
 /* 🔴 日文可在任意字符断行，译文比中文长：不压缩的话四项导航会折成两行（v1.13.369 实测）。
    仅日文页收紧间距与字号，让整条导航保持单行；中文/英文保持原排版。 */
-html[lang="ja"] .hd-in{gap:14px}
-html[lang="ja"] .nav{gap:9px;font-size:12.5px}
+html[lang="ja"] .hd-in{gap:12px}
+html[lang="ja"] .nav{gap:0;font-size:12.5px}
+/* 日文各项挤在一起：用 ｜(U+FF5C) 分隔，伪元素不进 DOM、不加翻译字典。
+   ⚠️ content 用 CSS 转义 \FF5C，禁止写中文字面量（否则会被 build_i18n 当正文扫）。
+   用 ::after 加窄 margin 替代原 gap:9px，宽度增量小，1024 下仍单行不溢出。 */
+html[lang="ja"] .nav a:not(:last-child)::after{content:"\FF5C";margin:0 5px;color:#c7cdd6;font-size:11px;font-weight:400}
 html[lang="ja"] .brand-txt{font-size:13px}
 
 /* ---------------- 按钮 ---------------- */
