@@ -514,6 +514,7 @@ defineExpose({ addFeedback, visible })
   left: 18px;
   width: 360px;
   height: 520px;
+  /* v1.13.367 窄屏：见文末 @media —— 360px 机器上 18+360=378 > 360 会右溢出 18px */
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
@@ -881,5 +882,31 @@ defineExpose({ addFeedback, visible })
 .ai-slide-leave-to {
   opacity: 0;
   transform: translateY(20px) scale(0.95);
+}
+
+/* ===== 窄屏（≤900px，v1.13.367）=====
+   原来 left:18 + width:360：iPhone(390) 勉强贴边、360px 安卓机右溢出 18px；
+   top:240 + height:520 在横屏（高 390）时下半截永远看不到。 */
+@media (max-width: 900px) {
+  .ai-panel {
+    top: 76px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    height: calc(100vh - 96px);
+  }
+
+  /* 两个悬浮圆原来在 left:18 / top:180、236 —— 正好落在窄屏竖排浮层的区域里
+     （右侧面板从 195 开始往下排），点面板标题会被 AI 按钮挡掉半个字。
+     窄屏改为左下角纵向排：AI 在「显示门店」(bottom 60，高 42) 之上，语言再往上一层。 */
+  .ai-fab {
+    top: auto;
+    bottom: 116px;
+  }
+
+  .ai-lang {
+    top: auto;
+    bottom: 172px;
+  }
 }
 </style>

@@ -359,10 +359,9 @@
 
     <!-- 门店商圈图例（可拖拽面板，内联样式绕过 scoped CSS） -->
     <div v-if="storeCircleLegendVisible && storeCircleLegendItems.length > 0"
-      :style="{
+      class="store-circle-legend-panel"
+      :style="[{
         position: 'absolute',
-        top: legendPanelPos.top + 'px',
-        left: legendPanelPos.left + 'px',
         background: '#fff',
         borderRadius: '8px',
         border: '1px solid #ddd',
@@ -371,10 +370,10 @@
         minWidth: '150px',
         pointerEvents: 'auto',
         display: 'block'
-      }"
+      }, legendPanelStyle]"
     >
       <div
-        @mousedown="onLegendDragStart"
+        @pointerdown="onLegendDragStart"
         :style="{
           display: 'flex',
           alignItems: 'center',
@@ -384,7 +383,8 @@
           fontWeight: 600,
           color: '#333',
           cursor: 'move',
-          userSelect: 'none'
+          userSelect: 'none',
+          touchAction: 'none'
         }"
       >
         <span>{{ storeCircleMode === 'overlap' ? '重合度图例' : storeCircleMode === 'track' ? '竞争门店追踪图例' : storeCircleMode === 'opportunity' ? '机会区分析图例' : '竞争关系图例' }}</span>
@@ -478,8 +478,8 @@
     </div>
 
     <!-- 定位门店面板（4种门店类型，可拖拽） -->
-    <div v-if="storeSearchVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
-      <div class="store-search-header" @mousedown="onDragStart">
+    <div v-if="storeSearchVisible" class="store-search-panel" :style="searchPanelStyle">
+      <div class="store-search-header" @pointerdown="onSearchPanelDragStart">
         <span class="store-search-title">
           <el-icon><Search /></el-icon>
           定位门店
@@ -599,8 +599,8 @@
     </div>
 
     <!-- 查询行政界面板（可拖拽，样式同定位门店） -->
-    <div v-if="districtVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
-      <div class="store-search-header" @mousedown="onDragStart">
+    <div v-if="districtVisible" class="store-search-panel" :style="searchPanelStyle">
+      <div class="store-search-header" @pointerdown="onSearchPanelDragStart">
         <span class="store-search-title">
           <el-icon><Flag /></el-icon>
           查询行政界
@@ -661,8 +661,8 @@
     </div>
 
     <!-- 按商圈查询面板 -->
-    <div v-if="commerceVisible" class="store-search-panel" :style="{ top: searchPanelPos.top + 'px', right: searchPanelPos.right + 'px' }">
-      <div class="store-search-header" @mousedown="onDragStart">
+    <div v-if="commerceVisible" class="store-search-panel" :style="searchPanelStyle">
+      <div class="store-search-header" @pointerdown="onSearchPanelDragStart">
         <span class="store-search-title">
           <el-icon><Shop /></el-icon>
           按商圈查询
@@ -1961,6 +1961,9 @@ import { sortByPopulationPriority } from '@/utils/populationFieldOrder'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { handleApiError } from '@/utils/errorHandler'
 import { exportChartImage } from '@/utils/chartExport'
+// v1.13.367：三套拖拽（检索面板 / 门店商圈图例 / 网格图例）统一走这一个实现
+//   ⇒ pointer 事件（触屏可拖）+ 夹边界（拖不出屏）+ 窄屏自动禁用
+import { useDraggable } from '@/utils/useDraggable'
 // 注意：public目录的中文名图片会被Vite直接复制到dist根目录
 
 const markerStore = useMarkerStore()
@@ -4031,59 +4034,21 @@ const applyCityGrid = async () => {
 }
 
 
-// ===== 网格图例可拖动（v1.13.268）=====
-// ⚠️ 本文件已有两套拖拽（`onDragStart` 检索面板、`onLegendDragStart` 门店商圈图例），
-//    都用 mousedown + document 监听、且**不夹边界**。本实现用 pointer 事件 + 容器夹边界，
-//    故函数名加 Grid 前缀避免撞名。⛔ 不要把它们混着改：三处状态各自独立。
-//    📌 技术债：三套拖拽应抽成一个 `useDraggable(posRef, opts)`（留待后续统一）。
-// 为什么用 pointer 事件而不是 mousedown：pointer 统一覆盖鼠标/触屏，且能 setPointerCapture
-// ⇒ 拖动时鼠标移出面板也不会丢事件。
-// ⚠️ 位置用**容器坐标**（相对 offsetParent）保存，⛔ 不用 clientX/Y 直接存 ——
-//    后者会把「相对视口」和「相对容器」混在一起，滚动或布局变化后就飘。
-const gridLegendPos = ref(null)     // { x, y } px（相对 offsetParent）；null = 默认右下角
-const gridLegendStyle = computed(() => (gridLegendPos.value
-  ? { left: gridLegendPos.value.x + 'px', top: gridLegendPos.value.y + 'px', right: 'auto', bottom: 'auto' }
-  : {}))
-
-let gridLegendDrag = null
-
-const onGridLegendDragStart = (e) => {
-  const panel = e.currentTarget.closest('.grid-legend')
-  if (!panel) return
-  const host = panel.offsetParent || panel.parentElement
-  const hostRect = host.getBoundingClientRect()
-  const rect = panel.getBoundingClientRect()
-  gridLegendDrag = {
-    offsetX: e.clientX - rect.left,   // 抓住点在面板内的偏移
-    offsetY: e.clientY - rect.top,
-    hostRect,
-    w: rect.width,
-    h: rect.height
-  }
-  // 先把当前位置钉成 left/top，再接管移动（否则默认 right/bottom 会与 left/top 打架）
-  gridLegendPos.value = { x: rect.left - hostRect.left, y: rect.top - hostRect.top }
-  try { e.currentTarget.setPointerCapture(e.pointerId) } catch (err) { /* 老浏览器忽略 */ }
-  window.addEventListener('pointermove', onGridLegendDragMove)
-  window.addEventListener('pointerup', onGridLegendDragEnd)
-  window.addEventListener('pointercancel', onGridLegendDragEnd)
-  e.preventDefault()
-}
-
-const onGridLegendDragMove = (e) => {
-  if (!gridLegendDrag) return
-  const { offsetX, offsetY, hostRect, w, h } = gridLegendDrag
-  const EDGE = 4   // 留 4px，避免拖到边缘后抓不回来
-  const x = Math.max(EDGE, Math.min(e.clientX - hostRect.left - offsetX, hostRect.width - w - EDGE))
-  const y = Math.max(EDGE, Math.min(e.clientY - hostRect.top - offsetY, hostRect.height - h - EDGE))
-  gridLegendPos.value = { x, y }
-}
-
-const onGridLegendDragEnd = () => {
-  gridLegendDrag = null
-  window.removeEventListener('pointermove', onGridLegendDragMove)
-  window.removeEventListener('pointerup', onGridLegendDragEnd)
-  window.removeEventListener('pointercancel', onGridLegendDragEnd)
-}
+// ===== 网格图例可拖动（v1.13.268；v1.13.367 迁到 useDraggable）=====
+// 这套原本是「三套拖拽里唯一写对的」（pointer + 夹边界），现已与检索面板、门店商圈图例
+// 统一到 utils/useDraggable.js —— 三处行为一致，改一处三处同时生效。
+// 📌 位置用**容器坐标**（相对 offsetParent）保存，⛔ 不用 clientX/Y 直接存 ——
+//    后者会把「相对视口」和「相对容器」混在一起，导航栏收起（地图变高）后就飘。
+// 初始 null ⇒ 交给 CSS 默认（右下角）；拖过一次才钉 left/top。
+const {
+  style: gridLegendStyle,
+  onPointerDown: onGridLegendDragStart,
+  onPointerUp: stopGridLegendDrag
+} = useDraggable({
+  mode: 'left',
+  initial: null,
+  panelSelector: '.grid-legend'
+})
 
 // 图例区间：等值均分用**左闭右开**（整数数据下右端减 1，避免相邻两档都写同一个边界值）
 const gridLegendRanges = computed(() => {
@@ -10385,53 +10350,30 @@ const storeSearchVisible = ref(false)
 const storeSearchKeyword = ref('')
 const searchTabActive = ref('marker')  // marker | competitor | brand | shopping
 const locateResults = ref({ marker: [], competitor: [], brand: [], shopping: [] })
-// 拖拽
-const searchPanelPos = ref({ top: 60, right: 180 })
-let isDragging = false
-let dragStart = { x: 0, y: 0, top: 0, right: 0 }
+// 拖拽（v1.13.367）：收敛到 utils/useDraggable.js —— pointer 事件（触屏可拖）+ 夹边界（拖不出屏）
+//   · 三个面板（定位门店 / 查询行政界 / 按商圈查询）共用同一份位置，所以用 panelSelector
+//     而不是 ref：谁被按下就找谁（一个 ref 只能挂一个元素）。
+//   · 窄屏（≤900px）下面板改为铺满宽度，位置由 CSS 接管 ⇒ useDraggable 内部会自动禁用。
+const {
+  style: searchPanelStyle,
+  onPointerDown: onSearchPanelDragStart,
+  onPointerUp: stopSearchPanelDrag
+} = useDraggable({
+  mode: 'right',
+  initial: { top: 60, right: 180 },
+  panelSelector: '.store-search-panel'
+})
 
-const onDragStart = (e) => {
-  isDragging = true
-  dragStart = { x: e.clientX, y: e.clientY, top: searchPanelPos.value.top, right: searchPanelPos.value.right }
-  document.addEventListener('mousemove', onDragMove)
-  document.addEventListener('mouseup', onDragEnd)
-}
-const onDragMove = (e) => {
-  if (!isDragging) return
-  searchPanelPos.value = {
-    top: dragStart.top + (e.clientY - dragStart.y),
-    right: dragStart.right - (e.clientX - dragStart.x)
-  }
-}
-const onDragEnd = () => {
-  isDragging = false
-  document.removeEventListener('mousemove', onDragMove)
-  document.removeEventListener('mouseup', onDragEnd)
-}
-
-// 门店商圈图例拖拽
-const legendPanelPos = ref({ top: 100, left: 14 })
-let isLegendDragging = false
-let legendDragStart = { x: 0, y: 0, bottom: 0, left: 0 }
-
-const onLegendDragStart = (e) => {
-  isLegendDragging = true
-  legendDragStart = { x: e.clientX, y: e.clientY, top: legendPanelPos.value.top, left: legendPanelPos.value.left }
-  document.addEventListener('mousemove', onLegendDragMove)
-  document.addEventListener('mouseup', onLegendDragEnd)
-}
-const onLegendDragMove = (e) => {
-  if (!isLegendDragging) return
-  legendPanelPos.value = {
-    top: legendDragStart.top + (e.clientY - legendDragStart.y),
-    left: legendDragStart.left + (e.clientX - legendDragStart.x)
-  }
-}
-const onLegendDragEnd = () => {
-  isLegendDragging = false
-  document.removeEventListener('mousemove', onLegendDragMove)
-  document.removeEventListener('mouseup', onLegendDragEnd)
-}
+// 门店商圈图例拖拽（同上，走 useDraggable；初始化位置 14/100 保持原样）
+const {
+  style: legendPanelStyle,
+  onPointerDown: onLegendDragStart,
+  onPointerUp: stopLegendDrag
+} = useDraggable({
+  mode: 'left',
+  initial: { top: 100, left: 14 },
+  panelSelector: '.store-circle-legend-panel'
+})
 
 // 各标签页独立筛选条件
 // 我的门店
@@ -12317,11 +12259,11 @@ onUnmounted(() => {
   })
   cleanupResources.abortControllers.clear()
   
-  // 清理拖拽事件监听器
-  document.removeEventListener('mousemove', onDragMove)
-  document.removeEventListener('mouseup', onDragEnd)
-  document.removeEventListener('mousemove', onLegendDragMove)
-  document.removeEventListener('mouseup', onLegendDragEnd)
+  // 清理拖拽事件监听器（v1.13.367：三套拖拽统一走 useDraggable，各自暴露 stop）
+  //   ⚠️ 只在「正在拖动时切走路由」才会真的摘到监听，其余情况是幂等的空操作。
+  stopSearchPanelDrag()
+  stopLegendDrag()
+  stopGridLegendDrag()
   
   // 清理动态创建的 DOM 元素事件监听器
   if (completeBtnClickHandler && completeBtnElement) {
@@ -12442,6 +12384,18 @@ function getHeatmapCellStyle(nums, idx) {
   width: 100%;
   height: 100%;
   position: relative;
+
+  /* ===== 窄屏浮层纵向堆叠参数（v1.13.367）=====
+     桌面是一横排（地址框 + 4 个面板 + 工具栏，从 right:15 排到 right:560），需要 ≥910px
+     才不打架；手机上（390px）它们会互相压住、甚至左沿跑到屏幕外（拖都拖不回来）。
+     窄屏改为「地址框占满一行 + 其余面板在右侧竖着排」，坐标全部由下面两个变量推导，
+     避免每个组件各写一个魔法数、改一个忘一个。
+     ⚠️ 收起态面板高度 ≈ 44px（header padding 10+10 + 行高 20 + 边框 2+2）⇒ 步长 50 留 6px 缝。
+        改任一面板的 header padding 就必须同步调这个步长，否则会叠在一起。
+     📌 变量定义在 .map-view 上（不是 :root）：子组件是它的后代，CSS 变量照常继承；
+        scoped 只影响选择器匹配，不影响继承。 */
+  --narrow-stack-top: 64px;   /* 地址框之下第一个（门店工具） */
+  --narrow-stack-step: 50px;  /* 每个面板占的纵向步长 */
 }
 
 // 圆形内门店分析
@@ -12615,48 +12569,9 @@ function getHeatmapCellStyle(nums, idx) {
   }
 }
 
-// 周边检索面板样式
-// 商圈工具面板样式
-// 智慧足迹浮动按钮样式 - 绝对定位右上角（商圈工具左侧）
-.smartsteps-float-btn {
-  position: absolute;
-  top: 10px;
-  right: 560px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 10px 16px;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
-  cursor: pointer;
-  z-index: 1002;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.3s;
-  border: 2px solid transparent;
-  min-width: 110px;
-  justify-content: center;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
-  }
-
-  &.active {
-    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-    border-color: #fff;
-    box-shadow: 0 6px 20px rgba(118, 75, 162, 0.5);
-  }
-
-  .smartsteps-btn-icon {
-    font-size: 18px;
-  }
-
-  .smartsteps-btn-text {
-    font-size: 13px;
-    font-weight: 600;
-  }
-}
+/* v1.13.367：删掉了 .smartsteps-float-btn（无任何模板引用，联通人口入口早已收进
+   「商圈工具」面板）。留着的唯一效果是每次几何审计都报一条「右溢出 310px」的假警报。
+   ⛔ 不要按这条注释把它加回来 —— 要加浮动按钮，请用 .store-tools-panel 那种竖排面板。 */
 
 // 显示门店开关 - 样式参考地图工具箱
 // 自定义缩放控件 - 在图层控制上方
@@ -12716,7 +12631,9 @@ function getHeatmapCellStyle(nums, idx) {
   }
 }
 
-/* 门店检索浮层 */
+/* 门店检索浮层
+   ⚠️ 位置（top/right）由 useDraggable 以内联 style 提供，⛔ 这里不要写 top/right 默认值：
+      内联会赢，写了也白写，反而误导下一个人「CSS 里改过怎么没反应」。 */
 .store-search-panel {
   position: absolute;
   width: 360px;
@@ -12728,6 +12645,21 @@ function getHeatmapCellStyle(nums, idx) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 窄屏（≤900px）：面板铺满宽度、固定在地址框之下。
+   三个面板共用同一个位置状态，所以这里一次覆盖三个。
+   v1.13.367 之前：width 360 + right 180 ⇒ 需要 540px 视口，390px 手机上左沿跑到
+   -150px（内容被裁、拖也拖不回来）。 */
+@media (max-width: 900px) {
+  .store-search-panel {
+    top: var(--narrow-stack-top, 64px);
+    left: 8px;
+    right: 8px;
+    width: auto;
+    /* 视口矮（横屏 390px 高）时面板要能在内部滚动，不然下半截永远够不到 */
+    max-height: calc(100vh - 80px);
+  }
 }
 
 .store-search-tabs {
@@ -12778,6 +12710,9 @@ function getHeatmapCellStyle(nums, idx) {
   gap: 6px;
   cursor: grab;
   user-select: none;
+  /* ⚠️ 触摸必须在把手上关掉浏览器手势，否则 pointermove 会被「页面滚动」抢走而 cancel，
+     表现就是「手机上按下去纹丝不动」（v1.13.367） */
+  touch-action: none;
 }
 
 .store-search-title {

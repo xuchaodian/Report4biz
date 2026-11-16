@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="smartsteps-panel" :style="panelStyle" ref="panelRef">
-    <div class="panel-header" style="cursor: grab;" @mousedown="startDrag">
+    <div class="panel-header" style="cursor: grab; touch-action: none;" @pointerdown="startDrag">
       <span class="panel-title"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>联通人口数据</span>
       <button class="close-btn" @click="close">×</button>
     </div>
@@ -173,6 +173,8 @@ import { fetchAvailableMonths } from '@/utils/smartstepsMonths'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { parseP0S1001, AGE_GROUPS, ARPU_GROUPS } from '@/utils/smartsteps1001'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
+// v1.13.367：拖拽收敛到公共实现（pointer 事件 + 夹边界 + 窄屏禁用）
+import { useDraggable } from '@/utils/useDraggable'
 
 const props = defineProps({
   visible: Boolean,
@@ -223,20 +225,20 @@ watch(
 // 可选月份（最近两个月）
 const availableMonths = ref([])
 
-// 拖动相关
+// 拖动相关（v1.13.367：改用 utils/useDraggable，与地图三个浮层同一套）
+//   原来用 translate 累加 movementX —— 无边界（能拖出屏）、只有 mouse 事件（手机拖不动）。
+//   ⚠️ 位置（top/right/width）改由 CSS 的 .smartsteps-panel + @media 决定：
+//      窄屏下面板铺满宽度并顶到堆叠区首位，内联位置会赢过 @media ⇒ 必须走 CSS。
 const panelRef = ref(null)
-const isDragging = ref(false)
-const translateX = ref(0)
-const translateY = ref(0)
+const {
+  style: dragStyle,
+  dragging: isDragging,
+  onPointerDown: startDrag,
+  onPointerUp: stopPanelDrag
+} = useDraggable({ mode: 'right', initial: { top: 10, right: 570 }, panelRef })
 
-// 面板样式
 const panelStyle = computed(() => ({
-  position: 'absolute',
-  right: '570px',
-  top: '10px',
-  width: '340px',
-  maxHeight: '80vh',
-  transform: `translate(${translateX.value}px, ${translateY.value}px)`,
+  ...dragStyle.value,
   zIndex: isDragging.value ? 2000 : 1001
 }))
 
@@ -293,34 +295,6 @@ const canPurchase = computed(() => {
 })
 
 // 开始拖动
-function startDrag(e) {
-  if (e.target.classList.contains('close-btn') || e.target.tagName === 'BUTTON') {
-    return
-  }
-  
-  e.preventDefault()
-  isDragging.value = true
-  
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
-}
-
-// 拖动中
-function onDrag(e) {
-  if (!isDragging.value) return
-  
-  // 累加移动量到 translate
-  translateX.value += e.movementX
-  translateY.value += e.movementY
-}
-
-// 停止拖动
-function stopDrag() {
-  isDragging.value = false
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
-}
-
 // 加载可选月份（优先取联通 getCityMonth 实测可用月份，失败降级本地最近两月）
 async function loadAvailableMonths() {
   availableMonths.value = await fetchAvailableMonths()
@@ -1138,18 +1112,37 @@ onUnmounted(() => {
   if (tempMarker && props.map) {
     props.map.removeLayer(tempMarker)
   }
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', stopDrag)
+  stopPanelDrag()
 })
 </script>
 
 <style scoped>
 .smartsteps-panel {
+  /* v1.13.367：位置从内联 computed 搬到 CSS —— 否则内联 right:570px 会赢过下面的
+     @media，窄屏（390px）下这张 340px 宽的面板左沿跑到 -520px，整张看不见。 */
+  position: absolute;
+  top: 10px;
+  right: 570px;
+  width: 340px;
+  max-height: 80vh;
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   z-index: 1001;
   overflow: hidden;
+}
+
+/* 窄屏（≤900px，v1.13.367）：铺满宽度，压在竖排面板之上（它是表单，需要完整的宽度）。
+   top 取堆叠区首位并清掉桌面用的 right 偏移。 */
+@media (max-width: 900px) {
+  .smartsteps-panel {
+    top: var(--narrow-stack-top, 64px);
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: calc(100vh - 80px);
+    z-index: 1006;
+  }
 }
 
 .panel-header {

@@ -74,6 +74,18 @@ watch(() => props.results, (newResults) => {
   border: 2px solid var(--brand-primary);
 }
 
+/* 窄屏（≤900px，v1.13.367）：占满整行。
+   原来固定 320px + left 10，390px 手机上虽然不溢出，但右边只剩 60px，
+   后面的面板没有立足之地 ⇒ 统一改成「地址框独占第一行」。 */
+@media (max-width: 900px) {
+  .search-panel {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+}
+
 .search-body {
   padding: 8px 12px;
 }

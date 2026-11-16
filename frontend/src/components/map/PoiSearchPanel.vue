@@ -145,4 +145,17 @@ defineEmits(['update:expanded', 'update:keyword', 'circle-search', 'polygon-sear
   border-color: var(--brand-primary);
   color: var(--brand-primary);
 }
+
+/* 窄屏（≤900px，v1.13.367）：右侧竖排第 3 位（0=门店工具 1=商圈工具 2=本面板 3=工具栏）。
+   原来 right:150 与地址框、商圈工具挤在同一行；390px 下三者互相压住。
+   z-index 按「越靠上越高」递减：上方展开的面板要压住下方收起态的面板，否则
+   展开后的按钮列表会被下面的小面板切掉一截。 */
+@media (max-width: 900px) {
+  .poi-search-panel {
+    top: calc(var(--narrow-stack-top, 64px) + var(--narrow-stack-step, 50px) * 2);
+    right: 8px;
+    z-index: 1003;
+    max-width: 130px;
+  }
+}
 </style>

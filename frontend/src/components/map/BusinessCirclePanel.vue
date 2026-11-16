@@ -87,6 +87,24 @@ defineProps({
   border: 2px solid #ff8800;
 }
 
+/* 窄屏（≤900px，v1.13.367）：右侧竖排第 2 位。
+   原来 right:420 + 110 宽 ⇒ 需要 530px 视口，390px 下左沿跑到 -140px，
+   「商圈工具」四个字都看不全（更别说点）。 */
+@media (max-width: 900px) {
+  .business-circle-panel {
+    top: calc(var(--narrow-stack-top, 64px) + var(--narrow-stack-step, 50px) * 1);
+    right: 8px;
+    z-index: 1004;
+    max-width: calc(100vw - 16px);
+  }
+
+  /* 展开后 7 个按钮 ≈ 300px 高，矮视口（手机横屏 390px）要能在内部滚 */
+  .business-circle-body {
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+  }
+}
+
 .business-circle-header {
   padding: 10px 14px;
   display: flex;

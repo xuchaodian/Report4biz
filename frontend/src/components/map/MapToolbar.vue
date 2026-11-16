@@ -159,4 +159,21 @@ defineEmits(['update:expanded', 'set-tool', 'open-city-trade-area', 'clear-drawi
   text-align: center;
   border-top: 1px solid #eee;
 }
+
+/* 窄屏（≤900px，v1.13.367）：右侧竖排第 4 位（最下）。
+   原来 right:15 + 内容宽度（白色 nowrap，展开约 130px）⇒ 与地址框、商圈工具压在同一行。
+   z-index 1002 = 竖排里最低：上面的面板展开时允许压住它（收起态只有一条 44px 的头）。 */
+@media (max-width: 900px) {
+  .toolbar {
+    top: calc(var(--narrow-stack-top, 64px) + var(--narrow-stack-step, 50px) * 3);
+    right: 8px;
+    z-index: 1002;
+    max-width: calc(100vw - 16px);
+  }
+
+  .toolbar-body {
+    max-height: calc(100vh - 290px);
+    overflow-y: auto;
+  }
+}
 </style>

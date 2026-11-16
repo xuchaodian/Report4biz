@@ -332,6 +332,23 @@ const onBrandToggle = (val) => {
   min-width: 96px;
 }
 
+/* 窄屏（≤900px，v1.13.367）：右侧竖排第 1 位（紧贴地址框下方）。
+   原来 right:285 + 96 宽 ⇒ 需要 381px 视口；360px 安卓机左沿 -21px，360 屏上被裁一条。
+   z-index 1005 = 竖排里最高：它展开后是 4 个工具项，不能被下面的面板切掉。 */
+@media (max-width: 900px) {
+  .store-tools-panel {
+    top: var(--narrow-stack-top, 64px);
+    right: 8px;
+    z-index: 1005;
+    max-width: calc(100vw - 16px);
+  }
+
+  .store-tools-body {
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+  }
+}
+
 .store-tools-header {
   padding: 10px 14px;
   display: flex;
