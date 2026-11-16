@@ -25,7 +25,10 @@ export default {
     fullscreenMap: 'Fullscreen map',
     showNav: 'Show navigation',
     fullscreenHint: 'Hide the top navigation so the map fills the screen (shortcut: F)',
-    showNavHint: 'Show the top navigation again (shortcut: F)'
+    showNavHint: 'Show the top navigation again (shortcut: F)',
+    menu: 'Navigation menu',
+    openMenu: 'Open navigation menu',
+    closeMenu: 'Close navigation menu'
   },
   // ===== Tab titles (v1.13.360) =====
   // Pages already present in the nav reuse nav.* (do not duplicate them here)

@@ -25,7 +25,10 @@ export default {
     fullscreenMap: '全画面地図',
     showNav: 'ナビを表示',
     fullscreenHint: '上部ナビを隠して地図を全画面表示（ショートカット F）',
-    showNavHint: '上部ナビを再表示（ショートカット F）'
+    showNavHint: '上部ナビを再表示（ショートカット F）',
+    menu: 'ナビゲーションメニュー',
+    openMenu: 'ナビゲーションメニューを開く',
+    closeMenu: 'ナビゲーションメニューを閉じる'
   },
   // ===== タブタイトル（v1.13.360）=====
   // ナビに既にある項目は nav.* を再利用（ここには重複して書かない）

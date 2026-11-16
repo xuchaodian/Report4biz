@@ -7,12 +7,45 @@
 
     <!-- 顶部导航栏 -->
     <header class="header">
+      <!-- v1.13.368 窄屏导航抽屉的触发器。≥901px 由 CSS 藏起来（display:none），
+           桌面端仍用横向导航条，不产生任何视觉变化。
+           🔴 aria-controls 指向下面 <nav id="main-nav">，aria-expanded 跟随开关状态 ——
+              只写图标不写这两个属性，屏幕阅读器只会念「按钮」。
+           🔴 44×44 触控目标（项目 a11y 基线是 24×24，导航主入口按 44 给足）。 -->
+      <button
+        type="button"
+        class="nav-toggle"
+        :aria-label="navDrawerOpen ? $t('nav.closeMenu') : $t('nav.openMenu')"
+        :aria-expanded="navDrawerOpen ? 'true' : 'false'"
+        aria-controls="main-nav"
+        ref="navToggleRef"
+        @click="toggleNavDrawer"
+      >
+        <!-- ⚠️ 用两个具名图标而不是 `<component :is="'Menu'">`：`Menu` 不在 main.js 的
+             按需图标白名单里（那边是脚本生成的 58 个），字符串解析会失败并静默渲染空白。 -->
+        <el-icon v-if="navDrawerOpen"><Close /></el-icon>
+        <el-icon v-else><Menu /></el-icon>
+      </button>
+
       <div class="header-left">
         <img src="@/assets/logo.png" alt="Logo" class="header-logo">
         <h1 class="logo-text">选址赢家Online</h1>
       </div>
       
-      <nav class="nav-menu">
+      <nav id="main-nav" class="nav-menu" :class="{ 'nav-menu-open': navDrawerOpen }">
+        <!-- 抽屉标题栏：桌面端 display:none，窄屏抽屉里才有内容。
+             它是**关闭按钮的常驻位置** —— 只靠遮罩和 Esc 关，触屏用户未必知道能点空白处。 -->
+        <div class="nav-drawer-head">
+          <span class="nav-drawer-title">{{ $t('nav.menu') }}</span>
+          <button
+            type="button"
+            class="nav-drawer-close"
+            :aria-label="$t('nav.closeMenu')"
+            @click="closeNavDrawer(true)"
+          >
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
         <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }" :aria-current="$route.path === '/' ? 'page' : undefined">
           <el-icon><MapLocation /></el-icon>
           <span>{{ $t('nav.map') }}</span>
@@ -155,7 +188,11 @@
         </el-dropdown>
       </div>
     </header>
-    
+
+    <!-- v1.13.368 窄屏抽屉遮罩。⛔ 不能放进 <header>：header 收起（地图页全屏）时
+         高度为 0 且 overflow:hidden，遮罩会跟着一起没 —— 而那时抽屉也不该能开。 -->
+    <div v-if="navDrawerOpen" class="nav-drawer-backdrop" @click="closeNavDrawer(false)"></div>
+
     <!-- 新手引导（顶部引导条 + 首次使用向导） -->
     <OnboardingGuide />
 
@@ -310,7 +347,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter, useRoute } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, Flag } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, Flag, Menu, Close } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -338,6 +375,63 @@ const navCollapsed = computed(() => isMapPage.value && uiStore.navCollapsed)
 
 const toggleNav = () => uiStore.toggleNav()
 
+// ── 窄屏导航抽屉（v1.13.368）──────────────────────────────────────────────────
+//
+// 背景：顶栏八个导航项是按 ≥910px 排的一横排。390px 手机上实测
+//   `header.scrollWidth = 1121`（菜单本体 799），右侧「基础数据 / 选址工作台 /
+//   数据大屏」三项直接落在视口外，**点不到也看不见**；因为 body 不横向滚动，
+//   用户甚至没有「往右拉」的线索。
+//
+// 做法：窄屏把**同一份 `<nav>` DOM** 变成左侧抽屉（CSS 定位 + transform），
+//   ⛔ 不复制一份导航项 —— 复制就会出现「加了一个菜单项，桌面有、手机没有」，
+//   这正是 366 那批改名时最怕的「改一处漏一处」。
+//   桌面端（≥901px）CSS 里这条规则不存在，行为与改动前逐像素一致。
+//
+// ⚠️ 关闭态用 `visibility: hidden` 而不是 `display: none`：
+//   前者保留过渡动画，同时**把子元素移出可聚焦序列**（display:none 也行，
+//   但宽度过渡会硬跳）。别只写 `transform: translateX(-100%)` ——
+//   那样元素只是「看不见」，Tab 键仍会把焦点送进屏幕外的链接里。
+const navDrawerOpen = ref(false)
+const navToggleRef = ref(null)
+
+/**
+ * 抽屉断点。**刻意不等于** 367 地图浮层用的 900px：
+ * 这两个数字回答的是不同问题 ——
+ *   · 900  = 「地图浮层横排还放不放得下」（由面板宽度加起来决定）
+ *   · 1240 = 「导航横排还放不放得下」（实测普通用户 1121px、管理员 1231px）
+ * 硬凑成一个数，两边总有一侧是错的。
+ * ⚠️ 改这里必须同步改 CSS 里的 @media (max-width: 1240px)，否则
+ *    「CSS 已切抽屉、JS 还认为在桌面」（或反之），表现为 Esc 关不掉 / 遮罩残留。
+ */
+const NAV_DRAWER_MQ = '(max-width: 1240px)'
+
+const toggleNavDrawer = () => {
+  // ⛔ 这里不要再调 closeNavDrawer：关闭时焦点已经在按钮上（就是点它关的），
+  //    而且 closeNavDrawer 进来就 `if (!navDrawerOpen.value) return` —— 恒早退，纯死代码。
+  navDrawerOpen.value = !navDrawerOpen.value
+}
+
+/**
+ * 关闭抽屉。
+ * @param {boolean} returnFocus 是否把焦点还给汉堡按钮 —— 键盘/Esc 关闭时必须给，
+ *   否则焦点留在已被 `visibility:hidden` 隐藏的链接上，会被浏览器丢到 <body>，
+ *   读屏用户下一按 Tab 就从页首重新开始。
+ */
+const closeNavDrawer = (returnFocus = false) => {
+  if (!navDrawerOpen.value) return
+  navDrawerOpen.value = false
+  if (returnFocus && navToggleRef.value) navToggleRef.value.focus()
+}
+
+// 换页即关：抽屉是覆盖层，点了链接还留在上面会挡住新页面首屏
+watch(() => route.fullPath, () => closeNavDrawer(false))
+
+// 视口变宽（转屏 / 桌面拉窗口）时关掉：CSS 里桌面态没有抽屉样式，
+// 状态若留在 true，遮罩的 v-if 会让人在桌面上看到一层灰。
+// ⚠️ 只在这里挂一次监听，卸载要摘（MapLayout 常驻，但热更新/登出重建时会跑 onBeforeUnmount）。
+let narrowMq = null
+const handleNarrowChange = (e) => { if (!e.matches) closeNavDrawer(false) }
+
 /**
  * F 键切换全屏。
  * ⚠️ 三个排除：
@@ -347,6 +441,14 @@ const toggleNav = () => uiStore.toggleNav()
  *   ④ `e.isComposing`：中文输入法候选期间按 f 不该触发
  */
 const handleGlobalKey = (e) => {
+  // v1.13.368：窄屏导航抽屉的 Esc 关闭。
+  // 🔴 必须放在下面的 `!isMapPage` 早退**之前** —— 抽屉在任何页面都能开，
+  //    放后面就变成「只有地图页按 Esc 才关」，其余页面按了没反应。
+  if (e.key === 'Escape' && navDrawerOpen.value) {
+    e.preventDefault()
+    closeNavDrawer(true)
+    return
+  }
   if (!isMapPage.value) return
   if (e.isComposing) return
   if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -506,6 +608,10 @@ const handleVisibilityForVip = () => {
 
 onMounted(() => {
   document.addEventListener('keydown', handleGlobalKey)
+  if (window.matchMedia) {
+    narrowMq = window.matchMedia(NAV_DRAWER_MQ)
+    narrowMq.addEventListener('change', handleNarrowChange)
+  }
   userStore.fetchUser().then(fetchPendingCounts)
   // 预热组织归属，决定个人下拉里「数据同步」入口是否显示
   userStore.fetchOrgRole()
@@ -519,6 +625,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleGlobalKey)
+  if (narrowMq) {
+    narrowMq.removeEventListener('change', handleNarrowChange)
+    narrowMq = null
+  }
   if (vipPendingTimer) {
     clearInterval(vipPendingTimer)
     vipPendingTimer = null
@@ -1014,5 +1124,218 @@ const doExport = async (type) => {
   background: #f5f7fa;
   border-radius: 4px;
   p { margin: 0; font-size: 14px; color: #666; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   窄屏导航抽屉（v1.13.368）
+   ───────────────────────────────────────────────────────────────────────────
+   问题：顶栏八个导航项是一横排且 `white-space: nowrap`。实测顶栏的**最小内容宽度**：
+         · 普通用户  **1121px**（`header.scrollWidth`，视口 901 时量到）
+         · 管理员    **1231px**（多一个「品牌门店」）
+       所以 1024 的 iPad 横屏、窄一点的笔记本窗口都会把右边几项顶到视口外 ——
+       既看不见也点不到，而 body 不横向滚动，连「往右拖」的线索都没有。
+   做法：把**同一份** `<nav>` 变成左侧抽屉。
+   🔴 断点取 **1240px**（＝管理员最小宽 1231 + 余量），而不是沿用地图那套 900px：
+      900 只能覆盖手机，901~1230 之间管理员仍然被裁。断点应当由「横排放不放得下」
+      决定，不能由别的模块的常量顺手决定。
+   🔴 关闭态必须 `visibility: hidden`：只写 translateX(-100%) 的话元素只是「眼睛
+      看不到」，Tab 仍会把焦点送进屏幕外的链接。
+   🔴 抽屉/遮罩 z-index 要压过地图页浮层（最高 1400），否则手机上会被戳穿。
+   ⚠️ 下面每条选择器都写成与原规则**同等特异性**：@media 不加特异性，
+      少一层 `.header` 就会被桌面规则反压回去。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 触发器：桌面隐藏（display:none ⇒ 不进可聚焦序列，也不被读屏播报） */
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;      /* 项目 a11y 基线 24×24；导航主入口按 WCAG 2.2 AA 给到 44 */
+  height: 44px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-regular);
+  cursor: pointer;
+
+  .el-icon { font-size: 20px; }
+
+  &:hover { background: #f5f7fa; }
+  /* 焦点环要有**颜色**，不能只靠默认 outline 的粗细（361~364 批踩过） */
+  &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+}
+
+/* 抽屉标题栏 / 遮罩：桌面隐藏 */
+.nav-drawer-head { display: none; }
+.nav-drawer-backdrop { display: none; }
+
+/* ── ≤1240px：横向放不下 ⇒ 换抽屉 ───────────────────────────────── */
+@media (max-width: 1240px) {
+  .header {
+    /* 🔴🔴 必须抬到比地图浮层更高（那里最高 1400），否则抽屉会被戳穿。
+       为什么改 .header 而不是继续调 .nav-menu 的 z-index：
+       `.header` 是 `.main-layout`（display:flex）的 **flex item**，按 Flexbox 规范
+       「flex item 只要 z-index ≠ auto 就建立层叠上下文，与 position 无关」。
+       它原有的 z-index:100 把抽屉的 1500 整块关在 100 这一层里 ——
+       实测 elementFromPoint(300,200) 命中的是遮罩、不是抽屉，且「门店工具」按钮
+       压在抽屉白底上。把容器抬起来，里面的 1500 才真的算数。 */
+    z-index: 1600;
+  }
+
+  .nav-toggle { display: flex; }
+
+  /* 🔴 nav 变成 fixed 后脱离文档流，原来靠它的 `flex:1` 把账户区顶到右边的力就没了 ——
+     不补 margin-left:auto，头像会立刻贴到产品名右边。 */
+  .header .header-right { margin-left: auto; }
+
+  /* ── 抽屉本体 ───────────────────────────────────────────────── */
+  .header .nav-menu {
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    bottom: 0;
+    width: min(82vw, 320px);
+    z-index: 1500;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 8px;
+    background: #fff;
+    border-right: 1px solid #e4e7ed;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.12);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0.22s ease;
+  }
+
+  .header .nav-menu.nav-menu-open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  .header .nav-menu .nav-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 2px 10px 10px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #f0f2f5;
+
+    /* ⚠️ 三档文字色必须走 token：364 的 textTierContrastGuard 禁止 color: #909399/#606266
+       （旧的次要灰对白底只有 3.08:1，不达 AA）。 */
+    .nav-drawer-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+
+    .nav-drawer-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-regular);
+      cursor: pointer;
+
+      .el-icon { font-size: 18px; }
+      &:hover { background: #f5f7fa; }
+      &:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
+    }
+  }
+
+  /* 竖排后每项占满一行；44px 触控高度 */
+  .header .nav-menu .nav-item {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 15px;
+    gap: 10px;
+    box-sizing: border-box;
+  }
+
+  /* 原来 `margin-left: auto` 是横向时用来把它顶到最右的 */
+  .header .nav-menu .nav-item.nav-item-right { margin-left: 0; }
+
+  /* 数据大屏的深色胶囊是为白底顶栏设计的，放进白色抽屉里太跳 ⇒ 回归浅色高亮 */
+  .header .nav-menu .nav-item.dashboard-nav {
+    /* 🔴 padding 必须重写：原规则 `.nav-item.dashboard-nav { padding: 7px 12px }`
+       特异性 (0,4,0) 高过上面的 `.nav-item { padding: 12px 14px }` (0,3,0)，
+       不写就会矮成 37px —— 低于 44 触控基线，手机上极易点空。 */
+    padding: 12px 14px;
+    color: #666;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .header .nav-menu .nav-item.dashboard-nav:hover {
+    color: var(--brand-primary);
+    background: #f5f7fa;
+    border-color: transparent;
+  }
+  .header .nav-menu .nav-item.dashboard-nav.active {
+    color: var(--brand-primary);
+    background: var(--el-color-primary-light-9);
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .header .nav-menu .nav-item.dashboard-nav .el-icon,
+  .header .nav-menu .nav-item.dashboard-nav.active .el-icon { color: inherit; }
+
+  /* 「选址工作台」下拉：触发行占满一行，箭头推到右侧 */
+  .header .nav-menu .nav-dropdown { width: 100%; }
+
+  .header .nav-menu .nav-dropdown .nav-dropdown-trigger {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 15px;
+    gap: 10px;
+    box-sizing: border-box;
+  }
+  .header .nav-menu .nav-dropdown .nav-dropdown-arrow { margin-left: auto; }
+
+  /* 遮罩从顶栏下沿开始：盖住内容区但保留汉堡按钮可点（再点一次收起） */
+  .nav-drawer-backdrop {
+    display: block;
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1490;
+    background: rgba(0, 0, 0, 0.38);
+  }
+}
+
+/* ── ≤900px：手机。顶栏自身也要收窄（与 367 的地图浮层同一条线）──────── */
+@media (max-width: 900px) {
+  .header {
+    padding: 0 10px;
+  }
+
+  /* 原来固定占 --sidebar-width(220px)，390 屏上把导航区挤成负空间 */
+  .header .header-left {
+    width: auto;
+    min-width: 0;
+    flex: 1;          /* 吃掉中间空白，把头像顶到最右 */
+  }
+
+  .header .header-left .logo-text {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .header .header-right { flex: none; }
+
+  /* 用户名长度不可控，窄屏只留头像 */
+  .header .header-right .user-info .username,
+  .header .header-right .user-info .arrow { display: none; }
 }
 </style>
