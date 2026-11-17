@@ -945,6 +945,20 @@ export async function initDatabase() {
     }
   }
 
+  // 兼容迁移：shapefiles.city（v1.13.372）—— 与上面四列同样的「历史遗留、建表里没有」情况。
+  // 🔴 现网这列是手工/一次性脚本补的，代码里**从来没有**建它。
+  //    后果：`utils/gridPopulation.js::findGridRow` 的 `SELECT id, name, city, ...` 在
+  //    **任何新建库**（灾备恢复、新环境、单元测试临时库）上直接抛 `no such column: city`
+  //    ⇒ 智能选址一选城市就 500，且 runCoarse 没有 try/catch 兜住。
+  //    2026-11-17 排查熔断测试时暴露（生产库有列所以一直没显形）。
+  // ⚠️ 空值不影响功能：`resolveGridCity` 会回退到从 name 解析（"上海1km网格人口.zip" → 上海）。
+  try {
+    db.run(`ALTER TABLE shapefiles ADD COLUMN city TEXT`)
+    console.log('[数据库] shapefiles 表已添加 city 列')
+  } catch (e) {
+    // 列已存在则忽略
+  }
+
   // 创建智慧足迹购买记录表
   db.run(`
     CREATE TABLE IF NOT EXISTS purchases (

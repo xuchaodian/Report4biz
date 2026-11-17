@@ -104,8 +104,10 @@
           </el-form-item>
 
           <el-form-item label="精算点数">
-            <el-input-number v-model="form.preciseTopK" :min="10" :max="100" :step="5" class="ss-w-full" />
-            <div class="ss-hint">决定本次最多花几次。30 = 出 TOP 20 的下限 20 + 10 冗余。</div>
+            <el-input-number v-model="form.preciseTopK" :min="10" :max="50" :step="5" class="ss-w-full" />
+            <div class="ss-hint">
+              决定本次最多花几次（上限 50）。30 = 出 TOP 20 的下限 20 + 10 冗余；超过 30 需手动输入次数确认。
+            </div>
           </el-form-item>
 
           <el-form-item label="推荐条数">
@@ -452,8 +454,8 @@ function applyCityBox() {
   form.north = +(cy + halfLat).toFixed(4)
 }
 
-function payload() {
-  return {
+function payload(confirmBurn) {
+  const body = {
     bbox: bbox.value,
     stepM: form.stepM,
     city: form.city,
@@ -465,6 +467,9 @@ function payload() {
     minGapM: form.minGapM,
     saturation: { enabled: form.satEnabled, radiusM: form.satRadiusM, maxOwn: form.satMaxOwn }
   }
+  // 🔴 只在用户亲手确认过大额消耗时才带 —— 这是后端的执行口令，⛔ 不要默认塞个值。
+  if (confirmBurn) body.confirmBurn = confirmBurn
+  return body
 }
 
 function fmtErr(e) {
@@ -509,6 +514,15 @@ async function runEstimate() {
       return
     }
 
+    // 🔴🔴 高消耗熔断：超过默认精算点数 ⇒ 必须**亲手输入次数**（业主 2026-11-17 要求）。
+    //    走这里时不再弹普通 confirm —— 一个输入框本身就是确认，叠两个弹窗只会让人盲点。
+    if (d.burnRequired) {
+      const burned = await askBurnConfirm(parts, d, left)
+      if (burned === null) return
+      await runRank(burned)
+      return
+    }
+
     await ElMessageBox.confirm(parts.join('\n'), '确认生成推荐', {
       confirmButtonText: '确认生成',
       cancelButtonText: '取消',
@@ -525,17 +539,68 @@ async function runEstimate() {
   }
 }
 
+/**
+ * 🔴🔴 高消耗确认（「熔断」的交互层）。
+ *
+ * 规则一句话：**默认精算点数（30）以内照常确认；超过就必须亲手敲出本次消耗次数。**
+ * 目的是把「手滑把 30 拖到 50」从一个无阻力的动作，变成一次需要念出数字的动作。
+ *
+ * ⚠️ 阈值与次数**一律来自 `/estimate`**（`burnConfirm` / `burnCount`），
+ *    ⛔ 前端不硬编码 30 —— 后端调阈值而前端没跟，会变成「前端不弹、后端 400」的
+ *    假死（用户点确认 → 后端拒绝 → 界面只报一句"需二次确认"，无从下手）。
+ *
+ * @returns {Promise<number|null>} 确认成功返回本次消耗次数；取消/输错返回 null
+ */
+async function askBurnConfirm(parts, d, left) {
+  const need = Number(d.burnCount || 0)
+  const limit = Number(d.burnConfirm || 0)
+  const pct = left > 0 ? Math.round((need / left) * 100) : 100
+  const msg = [
+    ...parts,
+    '',
+    `⚠️ 本次消耗 ${need} 次，超过默认精算点数 ${limit} 次（占当前剩余 ${left} 次的 ${pct}%）。`,
+    `确认无误解后，请输入 ${need} 继续：`
+  ].join('\n')
+  try {
+    const { value } = await ElMessageBox.prompt(msg, '高消耗确认', {
+      confirmButtonText: '确认生成',
+      cancelButtonText: '取消',
+      inputPattern: /^\d+$/,
+      inputErrorMessage: '请输入整数',
+      inputPlaceholder: `输入 ${need}`,
+      type: 'warning',
+      customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' }
+    })
+    // 输错就是取消 —— ⛔ 不要"帮用户改正后继续"，那等于没有确认
+    if (Number(value) !== need) {
+      ElMessage.warning(`输入的「${value}」与本次消耗 ${need} 次不一致，已取消（未消耗配额）`)
+      return null
+    }
+    return need
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return null
+    throw e
+  }
+}
+
 /** 第二步：真正执行（会扣配额） */
-async function runRank() {
+async function runRank(confirmBurn) {
   ranking.value = true
   result.value = null
   try {
-    const { data } = await axios.post('/api/site-select/rank', payload())
+    const { data } = await axios.post('/api/site-select/rank', payload(confirmBurn))
     if (!data?.success) throw new Error(data?.message || '生成失败')
     result.value = data.data
     remaining.value = Number(data.data?.quota?.remaining ?? remaining.value) || 0
     ElMessage.success(`已生成 ${data.data.returned} 条推荐，消耗 ${data.data.quota.used} 次`)
   } catch (e) {
+    // 🔴 后端算出实际消耗与前端预估不同（参数变了 / 缓存被别的请求写入）⇒ 不能用旧数字重试，
+    //    让用户回去重新预估一次，看到的是新的数字。⛔ 不要在这里自动带新值重发。
+    const res = e?.response?.data
+    if (res?.code === 'burn_confirm_required') {
+      ElMessage.warning(`实际消耗为 ${res.confirmBurn ?? res.need} 次，与预估不一致，请重新点「预估消耗」后再确认`)
+      return
+    }
     ElMessage.error(fmtErr(e))
   } finally {
     ranking.value = false

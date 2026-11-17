@@ -29,7 +29,7 @@ import {
   scoreSite, buildReason, accessScore
 } from '../src/utils/siteScore.js'
 import {
-  SITE_WEIGHTS, PRECISE_TOPK, MIN_GAP, SATURATION_DEFAULT
+  SITE_WEIGHTS, PRECISE_TOPK, MIN_GAP, SATURATION_DEFAULT, SITE_BURN_CONFIRM
 } from '../src/utils/siteSelectConfig.js'
 
 /** 造一个 latLon 方格 feature（边长约 1km） */
@@ -470,9 +470,10 @@ describe('I. 推荐理由', () => {
 })
 
 describe('J. 配置常量护栏（防误改）', () => {
-  it('preciseTopK 上限 100、下限 10（单次成本上限）', () => {
+  it('preciseTopK 上限 50、下限 10（单次成本天花板，v1.13.372 由 100 收紧）', () => {
     expect(PRECISE_TOPK.min).toBe(10)
-    expect(PRECISE_TOPK.max).toBe(100)
+    expect(PRECISE_TOPK.max).toBe(50)
+    expect(SITE_BURN_CONFIRM).toBe(PRECISE_TOPK.default)
   })
 
   it('minGap 默认 800（1km 网格 + 1km 半径必须去重）', () => {

@@ -73,6 +73,7 @@ function loadAll() {
     gridPop: stripJsComments(read('backend/src/utils/gridPopulation.js')),
     config: stripJsComments(read('backend/src/utils/siteSelectConfig.js')),
     score: stripJsComments(read('backend/src/utils/siteScore.js')),
+    database: stripJsComments(read('backend/src/models/database.js')),
     mainLayout: stripHtmlComments(read('frontend/src/views/MainLayout.vue')),
     router: read('frontend/src/router/index.js'),
     // ⚠️ 模板与脚本都要剥注释：代码里有一行「② 不展示粗排分」的说明性注释，
@@ -153,7 +154,11 @@ function audit(f) {
   if (!/clampInt\(src\.preciseTopK,\s*PRECISE_TOPK\.default,\s*PRECISE_TOPK\.min,\s*PRECISE_TOPK\.max\)/.test(f.siteSelect)) {
     bad('D1', 'preciseTopK 未走服务端 clamp（⛔ 不能信前端传值，这是单次成本上限）')
   }
-  if (!/max:\s*100/.test(f.config)) bad('D2', '配置里没有 preciseTopK 上限 100')
+  // 🔴 v1.13.372（业主 2026-11-17）：上限 100 → 50。这个数就是「一次误操作最坏能烧多少」。
+  //    ⚠️ 断言完整对象字面量：只匹配 `max: 50` 会被别的配置（如 SATURATION_RANGE）蒙混。
+  if (!/PRECISE_TOPK = Object\.freeze\(\{\s*default:\s*30,\s*min:\s*10,\s*max:\s*50\s*\}\)/.test(f.config)) {
+    bad('D2', 'preciseTopK 上限不是 50 —— 一次误操作的最坏损失失去天花板')
+  }
 
   // ── E. 无网格必须退化、不能拒绝 ───────────────────────────────────
   if (runCoarseBody && /res\.status\(\s*400/.test(runCoarseBody)) bad('E1', 'runCoarse 内出现 400 —— 无网格城市必须退化为三维，⛔ 不允许拒绝请求')
@@ -187,6 +192,51 @@ function audit(f) {
   // 单点失败后必须 continue；不许出现重试循环
   if (/while\s*\([^)]*retry/i.test(f.siteSelect)) bad('G5', '出现重试循环（单点失败不重试，避免配额翻倍）')
   if (!/remainingBefore < needFromPool/.test(f.siteSelect)) bad('G6', '池校验未与实际需要的次数比较')
+
+  // ── P. 高消耗熔断（业主 2026-11-17 要求）────────────────────────────
+  // 这一组守的是「单次能烧多少」的最后一道闸。三个错法都能跑通、界面不报错：
+  //   ① 熔断放在 fetchPointPopulation 之后 ⇒ 先扣钱再拦人
+  //   ② 只判 confirmBurn 非空           ⇒ 输个 1 也能过，确认变摆设
+  //   ③ 前端自己硬编码阈值              ⇒ 后端调了阈值，用户点完确认仍被 400
+  if (!/SITE_BURN_CONFIRM = 30/.test(f.config)) {
+    bad('P1', '缺 SITE_BURN_CONFIRM = 30（默认精算点数即为确认阈值）')
+  }
+  const iBurn = f.siteSelect.indexOf('if (needFromPool > SITE_BURN_CONFIRM && p.confirmBurn !== needFromPool)')
+  if (iBurn < 0) bad('P2', 'rank 缺少高消耗熔断判断')
+  // ⚠️ 必须比 `===`，不能只判「有值」：用户输 40 而实际 45 时放行 = 确认失效
+  if (!/p\.confirmBurn !== needFromPool/.test(f.siteSelect)) {
+    bad('P3', '熔断未校验 confirmBurn === 实际消耗次数（只判非空会被任意数字骗过）')
+  }
+  if (iBurn >= 0 && iFetchCall >= 0 && iBurn > iFetchCall) {
+    bad('P4', '熔断在精算之后 —— 等于先扣完配额才拦人')
+  }
+  if (iBurn >= 0 && iPool >= 0 && iBurn < iPool) {
+    bad('P5', '熔断早于余额校验 —— 余额不足时会让用户先输一遍数字再被告知没钱')
+  }
+  if (!/burn_confirm_required/.test(f.siteSelect)) bad('P6', '缺 burn_confirm_required 错误码')
+  if (!/burnRequired:\s*needFromPool > SITE_BURN_CONFIRM/.test(f.siteSelect)) {
+    bad('P7', 'estimate 未回传 burnRequired —— 前端无从知道要不要弹输入框')
+  }
+  if (!/burnCount:\s*needFromPool/.test(f.siteSelect)) {
+    bad('P7', 'estimate 未回传 burnCount（要用户输入的那个数字）')
+  }
+  // 前端：阈值与次数一律读接口，⛔ 不硬编码 30
+  if (!/d\.burnRequired/.test(f.view)) {
+    bad('P8', '前端未按接口 burnRequired 分流（硬编码阈值会与后端漂移 → 点确认仍被 400）')
+  }
+  if (!/payload\(confirmBurn\)/.test(f.view)) bad('P9', '前端未把 confirmBurn 带给 rank')
+  // ⚠️ 必须锚定 preciseTopK 那个输入框：`topN` 的上限也是 50，只写 `:max="50"` 会假绿
+  if (!/v-model="form\.preciseTopK"[^>]*:max="50"/.test(f.view)) {
+    bad('P10', '前端精算点数输入框上限不是 50')
+  }
+  if (!/Number\(value\) !== need/.test(f.view)) {
+    bad('P11', '前端未校验用户输入与本次消耗一致（输入框变成摆设）')
+  }
+  // 🔴 库不自包含的坑：现网 shapefiles.city 是手工补的，代码里从没建过它。
+  //    少了这行迁移 ⇒ 新建库/灾备恢复后一选城市就 500（findGridRow 的 SELECT 带 city）。
+  if (!/ALTER TABLE shapefiles ADD COLUMN city TEXT/.test(f.database)) {
+    bad('P12', 'database.js 缺 shapefiles.city 迁移 —— 新建库/灾备库一选城市就 500')
+  }
 
   // ── H. 联通取数链路单一来源 ───────────────────────────────────────
   if (!/export async function fetchPointPopulation/.test(f.smartsteps)) bad('H1', 'smartsteps 未导出 fetchPointPopulation')
@@ -390,6 +440,47 @@ describe('J. 负变异：改坏必须报红', () => {
   it('M20 子权重改回 arpu（配置层偷偷退回旧口径）', () => {
     const body = base.config.replace('{ size: 20, visit: 10 }', '{ size: 20, arpu: 10 }')
     expect(mutate({ config: body }).some((p) => p.startsWith('A12'))).toBe(true)
+  })
+
+  it('M21 删掉高消耗熔断（50 次点一下就走）', () => {
+    const body = base.siteSelect.replace(
+      'if (needFromPool > SITE_BURN_CONFIRM && p.confirmBurn !== needFromPool) {',
+      'if (false) {'
+    )
+    const problems = mutate({ siteSelect: body })
+    expect(problems.some((p) => p.startsWith('P2'))).toBe(true)
+    expect(problems.some((p) => p.startsWith('P3'))).toBe(true)
+  })
+
+  it('M22 精算上限偷偷改回 100', () => {
+    const body = base.config.replace('max: 50', 'max: 100')
+    expect(mutate({ config: body }).some((p) => p.startsWith('D2'))).toBe(true)
+  })
+
+  it('M23 熔断只判 confirmBurn 非空（输个 1 也能过）', () => {
+    const body = base.siteSelect.replace('p.confirmBurn !== needFromPool', '!p.confirmBurn')
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('P3'))).toBe(true)
+  })
+
+  it('M24 前端不再按 burnRequired 分流（硬编码阈值会与后端漂移）', () => {
+    const body = base.view.replace('if (d.burnRequired) {', 'if (false) {')
+    expect(mutate({ view: body }).some((p) => p.startsWith('P8'))).toBe(true)
+  })
+
+  it('M25 前端把精算点数的 max 改回 100（后端仍是 50）', () => {
+    const body = base.view.replace(
+      'v-model="form.preciseTopK" :min="10" :max="50"',
+      'v-model="form.preciseTopK" :min="10" :max="100"'
+    )
+    expect(mutate({ view: body }).some((p) => p.startsWith('P10'))).toBe(true)
+  })
+
+  it('M26 熔断挪到精算之后（先扣完钱再拦人）', () => {
+    const body = base.siteSelect.replace(
+      'const coarse = runCoarse(db, user, p)\n    const preciseList',
+      'await fetchPointPopulation(db, user, { lng: 0, lat: 0, radius: 1 })\n    const coarse = runCoarse(db, user, p)\n    const preciseList'
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('P4'))).toBe(true)
   })
 })
 

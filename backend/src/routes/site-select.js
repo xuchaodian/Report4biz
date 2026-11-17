@@ -58,7 +58,7 @@ import {
 import {
   SITE_WEIGHTS, SITE_STEP_CHOICES, SITE_RADIUS_CHOICES, MAX_BBOX_AREA_KM2, MAX_GRIDS,
   PRECISE_TOPK, MIN_GAP, TOP_N, SATURATION_DEFAULT, SATURATION_RANGE,
-  REGION_MEDIAN_FLOOR, P0_ACCESS_ENABLED
+  REGION_MEDIAN_FLOOR, P0_ACCESS_ENABLED, SITE_BURN_CONFIRM
 } from '../utils/siteSelectConfig.js'
 
 const router = express.Router()
@@ -134,6 +134,10 @@ function parseParams(body) {
     return { ok: false, code: 'bad_params', errors }
   }
 
+  // 🔴 高消耗确认值（只在 rank 用；estimate 不回传它，改为回传 burnRequired/burnCount）。
+  //    ⛔ 不接受「随便给个真值」—— 漏传 / 传字符串 / 传 0 一律归一成 null。
+  const burnRaw = Number(src.confirmBurn)
+
   return {
     ok: true,
     params: {
@@ -146,7 +150,8 @@ function parseParams(body) {
       topN: clampInt(src.topN, TOP_N.default, TOP_N.min, TOP_N.max),
       preciseTopK: clampInt(src.preciseTopK, PRECISE_TOPK.default, PRECISE_TOPK.min, PRECISE_TOPK.max),
       minGapM: clampInt(src.minGapM, MIN_GAP.default, MIN_GAP.min, MIN_GAP.max),
-      saturation: normalizeSaturation(src.saturation)
+      saturation: normalizeSaturation(src.saturation),
+      confirmBurn: Number.isFinite(burnRaw) && burnRaw > 0 ? Math.round(burnRaw) : null
     }
   }
 }
@@ -498,8 +503,9 @@ router.post('/estimate', authenticate, requireAdmin, (req, res) => {
 
     const preciseCount = coarse.preciseList.length
     const remaining = getPoolRemaining(db)
+    const needFromPool = Math.max(0, preciseCount - cacheHitGuess)
     const warnings = [...coarse.warnings]
-    if (preciseCount > 0) warnings.push('更换半径或账期将重新消耗配额')
+    if (preciseCount > 0) warnings.push('更换评估半径将重新消耗配额（已购数据按半径复用）')
 
     return res.json({
       success: true,
@@ -514,6 +520,13 @@ router.post('/estimate', authenticate, requireAdmin, (req, res) => {
         preciseCount,
         quotaEstimate: preciseCount,
         cacheHitGuess,
+        // 🔴 高消耗熔断的**唯一真值来源**（前端 ⛔ 不要硬编码 30）：
+        //    burnCount   = 本次真正会从池里扣几次（已扣掉可复用点）
+        //    burnConfirm = 触发确认的阈值
+        //    burnRequired= 是否需要用户亲手输入 burnCount
+        burnCount: needFromPool,
+        burnConfirm: SITE_BURN_CONFIRM,
+        burnRequired: needFromPool > SITE_BURN_CONFIRM,
         remaining,
         belowTopN: coarse.survivorsTotal < p.topN,
         weights: SITE_WEIGHTS,
@@ -583,6 +596,28 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         message: `联通人口剩余 ${remainingBefore} 次，本次需 ${needFromPool} 次（${cacheHitGuess} 点可复用已购数据），请先采购或缩小范围（减少精算点数/框选范围）`,
         remaining: remainingBefore,
         need: needFromPool
+      })
+    }
+
+    // ── 🔴🔴 高消耗熔断（业主 2026-11-17）──────────────────────────────
+    // 放在余额校验**之后**：余额不足是更硬的问题，不该让用户先输一遍数字再被告知钱不够。
+    //
+    // 🔴 必须比对 `p.confirmBurn === needFromPool`，⛔ 不能只判「有值」：
+    //    用户在弹窗里看到 40 并输了 40，但若这期间参数被改（或 estimate 与 rank 之间
+    //    缓存被别的请求写入），实际 needFromPool 变成 45 —— 此时放行等于把确认做成装饰。
+    //    不一致就再拒一次，让前端用新数字重弹。
+    //
+    // ⚠️ 本闸门只挡「单次大额」。改半径/换框选重跑 4 次 ×30 = 120 次挡不住，
+    //    那是另一个问题（小样试跑 / 累计熔断），见立项稿 §13.3 待办。
+    if (needFromPool > SITE_BURN_CONFIRM && p.confirmBurn !== needFromPool) {
+      return res.status(400).json({
+        success: false,
+        code: 'burn_confirm_required',
+        message: `本次将从联通人口池消耗 ${needFromPool} 次（超过默认精算点数 ${SITE_BURN_CONFIRM} 次），需二次确认`,
+        need: needFromPool,
+        remaining: remainingBefore,
+        burnConfirm: SITE_BURN_CONFIRM,
+        confirmBurn: needFromPool
       })
     }
 

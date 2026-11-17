@@ -126,8 +126,33 @@ export const MAX_BBOX_AREA_KM2 = 400
 /** 单次枚举格数上限：超过 400 并提示（性能护栏，与 MAX_BBOX_AREA_KM2 双保险） */
 export const MAX_GRIDS = 800
 
-/** 精算点数：默认 30（= 出 TOP 20 的理论下限 20 + 10 冗余），服务端强制 clamp */
-export const PRECISE_TOPK = Object.freeze({ default: 30, min: 10, max: 100 })
+/**
+ * 精算点数：默认 30（= 出 TOP 20 的理论下限 20 + 10 冗余），服务端强制 clamp。
+ *
+ * 🔴 v1.13.372（业主 2026-11-17）：上限 **100 → 50**。
+ *    TOP 20 用 30 已足够，50 是冗余上限；上限就是「一次误操作最多能烧掉多少」的天花板。
+ *    100 次相当于池里 1200 次的 8%，且用户把输入框从 30 拖到 100 时没有任何阻力。
+ */
+export const PRECISE_TOPK = Object.freeze({ default: 30, min: 10, max: 50 })
+
+/**
+ * 🔴🔴 单次高消耗确认阈值（业主 2026-11-17 要求做的「熔断」）。
+ *
+ * 语义：本次**真正要从物理池扣减**的次数 > 本值时，`POST /rank` 必须收到
+ * `confirmBurn === needFromPool` 才执行，否则一律 400 `burn_confirm_required`。
+ *
+ * ── 为什么阈值取 30（= PRECISE_TOPK.default），而不是别的数 ──────────────
+ * 规则可以一句话讲清：**默认值不需要输数字，任何超过默认值的调整都必须亲手确认。**
+ * 取 50 之类的数会出现「31~50 这段悄悄能烧」，正好是用户最可能误拖的区间；
+ * 取 10 会让每次正常生成都要输数字，用户学会无脑输，保护反而失效。
+ *
+ * ⚠️ 本值是**绝对值**，不是「占剩余池的比例」。比例会让「池里 100 次跑 30 次（30%）」
+ *    也要确认，而「池里 1200 次跑 50 次（4%）」反而不确认 —— 与「防止大扣」的意图相反：
+ *    真正危险的是池子快见底时还大额消耗，那种情况由 `pool_exhausted` 前置校验兜住。
+ *
+ * ⚠️ 前端 ⛔ 不要硬编码 30，一律读 `POST /estimate` 回传的 `burnConfirm` / `burnRequired`。
+ */
+export const SITE_BURN_CONFIRM = 30
 
 /** NMS 去重最小间隔（米），请求可调 */
 export const MIN_GAP = Object.freeze({ default: 800, min: 400, max: 2000 })
