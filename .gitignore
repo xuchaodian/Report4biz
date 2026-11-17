@@ -71,3 +71,4 @@ homepage/_i18n_source.json
 homepage/_pairs.tsv
 homepage/_unique_zh.json
 homepage/i18n_keys.py
+dist.new*/

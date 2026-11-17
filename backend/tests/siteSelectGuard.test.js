@@ -291,8 +291,13 @@ function audit(f) {
   }
   // Q2 半径必须校验：半径是缓存 key 的一部分，不匹配就必然重新扣费。
   //    不校验会把「注定花钱的点」当免费点并入，反而误导用户。
-  if (!/if \(!radiusIncludes\(row\.radius, radius\)\) continue/.test(mpBody)) {
+  //    🔴 批次 374 追加：校验不过**不许静默 continue** —— 必须计数（`radiusMismatch++`）
+  //    并把那些点买过的半径收集起来（`mismatchRadii.add`）。
+  //    旧代码一句 `continue` 扔掉了：「用户改个半径，整批钱重扣，界面一个字都不提」。
+  if (!/if \(!radiusIncludes\(row\.radius, radius\)\) \{/.test(mpBody)) {
     bad('Q2', '已购点并入时未校验半径 —— 会把注定重新扣费的点当成免费点')
+  } else if (!/radiusMismatch\+\+/.test(mpBody) || !/mismatchRadii\.add\(/.test(mpBody)) {
+    bad('Q2', '半径不符的已购记录被静默丢弃 —— 用户改半径后整批重扣，界面无从得知（也不给改回去的入口）')
   }
   // Q3 「最后一公里」：格距 1000m、minGapM 800m ⇒ 任何非格心点都会被第一层 NMS 剔掉。
   //    没有这段追加，已购点并进来了却进不了精算，B 方案等于白做。
@@ -317,13 +322,52 @@ function audit(f) {
   // Q6 复用判据必须从零依赖文件取。从 smartsteps 命名导入会在「整模块被 mock」时
   //    变成 undefined —— `<= undefined` 恒 false、`radiusIncludes(...)` TypeError，
   //    两种都是**静默假绿**（本项目 373 批次真实踩过）。
-  if (!/import \{ REUSE_TOL_M, radiusIncludes \} from '\.\.\/utils\/reuseKey\.js'/.test(f.siteSelect)) {
+  if (!/import \{[^}]*\bradiusIncludes\b[^}]*\} from '\.\.\/utils\/reuseKey\.js'/.test(f.siteSelect)) {
     bad('Q6', '复用判据未从 utils/reuseKey.js 取 —— 从 smartsteps 取会在测试 mock 后变 undefined（静默失效）')
   }
   // Q7 已购点会被**免费追加**进精算 ⇒ `preciseCount` 可能大于用户设的「精算点数」。
   //    界面不解释，用户会以为"我设 30 怎么精算了 45"。这条守住那句解释文案。
   if (!/d\.purchasedInBox/.test(f.view)) {
     bad('Q7', '前端未使用 purchasedInBox —— 精算数多于设定值时用户无从理解')
+  }
+
+  // ── Q8~Q10. 「改半径重扣」专项（批次 374，业主 2026-11-17 要求）───────────
+  //
+  // Q8 `probeReusable` 是 `cacheHitGuess` 的唯一来源，「预估消耗」与「实际扣费」必须同口径。
+  //    它比取数侧**宽松一点**，预估就偏低（用户看到 10 次、实扣 25 次）——
+  //    这恰好是本功能最不能被怀疑的那件事。旧代码两处都偏松：
+  //      ① 自己复制了一份 radius 的 JSON 解析（第二份口径）
+  //      ② `if (row.result_data) return 'purchase'` —— 只判非空，
+  //         而取数侧要求 `parsePopulation1001` **解析成功**。
+  const prStart = f.siteSelect.indexOf('function probeReusable(')
+  const prEnd = f.siteSelect.indexOf("router.get('/cities'", prStart)
+  const prBody = prStart >= 0 && prEnd > prStart ? f.siteSelect.slice(prStart, prEnd) : ''
+  if (!prBody) {
+    bad('Q8', '缺 probeReusable —— estimate 无法预估可复用点数')
+  } else {
+    if (!/radiusIncludes\(row\.radius, radius\)/.test(prBody)) {
+      bad('Q8', 'probeReusable 未用 reuseKey 的 radiusIncludes —— 第二份半径解析口径迟早与取数侧漂移')
+    }
+    if (/JSON\.parse\(/.test(prBody)) {
+      bad('Q8', 'probeReusable 又在自己解析一遍 radius —— 复用判据必须单一来源（utils/reuseKey.js）')
+    }
+    if (!/parsePopulation1001\(row\.result_data\)/.test(prBody)) {
+      bad('Q8', 'probeReusable 只判 result_data 非空 ⇒ 高估可复用数 ⇒ 预估消耗低于实际扣费')
+    }
+  }
+
+  // Q9 建议改用的半径必须与「选址真能选的档位」求交。
+  //    `purchases.radius` 里可能有 5000（报告卖、智能选址不卖，见 REPORT_RADII / SITE_RADIUS_CHOICES），
+  //    直接建议「改回 5000」等于把用户领进下拉框里根本不存在的选项。
+  if (!/mismatchRadii\.filter\(\(r\) => SITE_RADIUS_CHOICES\.includes\(r\)\)/.test(f.siteSelect)) {
+    bad('Q9', '未把「已购半径」与「选址可选半径」求交 —— 会出现「建议改回 5000 米」但下拉框里没有 5000')
+  }
+
+  // Q10 前端「改用 X 米重算」那个弹窗必须开 `distinguishCancelAndClose`。
+  //    不开的话右上角 × 和 ESC 都会被判成 `cancel` ＝「仍按原半径」⇒
+  //    用户明明想放弃，系统却一路走到「确认生成」。这是最典型的「取消变成确认」。
+  if (/评估半径与已购数据不一致/.test(f.view) && !/distinguishCancelAndClose:\s*true/.test(f.view)) {
+    bad('Q10', '半径不一致弹窗未开 distinguishCancelAndClose —— 点 × 会被当成「仍按原半径」，取消变成确认')
   }
 
   return problems
@@ -565,9 +609,10 @@ describe('J. 负变异：改坏必须报红', () => {
 
   it('M30 已购点并入时不再校验半径（把注定花钱的点当免费点）', () => {
     const body = base.siteSelect.replace(
-      'if (!radiusIncludes(row.radius, radius)) continue',
-      'if (false) continue'
+      'if (!radiusIncludes(row.radius, radius)) {',
+      'if (false) {'
     )
+    expect(body).not.toBe(base.siteSelect)   // 锚点失效就是假绿
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q2'))).toBe(true)
   })
 
@@ -584,15 +629,47 @@ describe('J. 负变异：改坏必须报红', () => {
 
   it('M32 复用判据从 smartsteps 导入（测试 mock 后变 undefined，静默失效）', () => {
     const body = base.siteSelect.replace(
-      "import { REUSE_TOL_M, radiusIncludes } from '../utils/reuseKey.js'",
-      "import { REUSE_TOL_M, radiusIncludes } from './smartsteps.js'"
+      "import { REUSE_TOL_M, radiusIncludes, parseRadii } from '../utils/reuseKey.js'",
+      "import { REUSE_TOL_M, radiusIncludes, parseRadii } from './smartsteps.js'"
     )
+    expect(body).not.toBe(base.siteSelect)   // 锚点失效就是假绿
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q6'))).toBe(true)
   })
 
   it('M33 前端不再解释「精算数为何多于设定值」', () => {
     const body = base.view.replaceAll('d.purchasedInBox', 'd.__gone')
     expect(mutate({ view: body }).some((p) => p.startsWith('Q7'))).toBe(true)
+  })
+
+  // ── M34~M37. 「改半径重扣」专项（批次 374）────────────────────────────────
+  it('M34 半径不符被静默丢弃（改个半径整批重扣，界面一字不提）', () => {
+    const body = base.siteSelect.replaceAll('radiusMismatch++', 'void 0')
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q2'))).toBe(true)
+  })
+
+  it('M35 probeReusable 退回「只判 result_data 非空」（高估可复用数）', () => {
+    const body = base.siteSelect.replace(
+      'if (parsePopulation1001(row.result_data)) return',
+      'if (row.result_data) return'
+    )
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q8'))).toBe(true)
+  })
+
+  it('M36 建议半径不与选址可选档位求交（会建议改回 5000 米，而下拉框里没有）', () => {
+    const body = base.siteSelect.replace(
+      'const suggestRadii = mismatchRadii.filter((r) => SITE_RADIUS_CHOICES.includes(r))',
+      'const suggestRadii = mismatchRadii'
+    )
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q9'))).toBe(true)
+  })
+
+  it('M37 半径弹窗去掉 distinguishCancelAndClose（点 × 变成「仍按原半径」）', () => {
+    const body = base.view.replace('distinguishCancelAndClose: true,', '')
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q10'))).toBe(true)
   })
 })
 

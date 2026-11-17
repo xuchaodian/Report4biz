@@ -21,19 +21,49 @@
 export const REUSE_TOL_M = 10
 
 /**
- * `purchases.radius` 存的是 **JSON 字符串**（`"[1000]"` 或 `"[1000,3000]"`，见 /query 落库），
- * 也可能是裸数字/裸字符串。这里统一判断「是否包含目标半径」。
+ * 把 `purchases.radius` 归一成**去重升序的半径数组**。
+ *
+ * 容忍的真实形态（都在现网出现过）：
+ *   `"[1000]"` / `"[1000,3000]"`  —— JSON 字符串，`POST /api/purchase/query` 落库的标准形态
+ *   `"1000"` / `1000`             —— 裸字符串 / 裸数字（手工补数据、老版本遗留）
+ *   `[1000, 3000]`                —— 已解析数组
+ *   脏值（`null` / `""` / `"[abc]"` / `{}`）⇒ `[]`，⛔ 不抛异常
+ *   （调用方一律按「没有可复用半径」处理；为一条脏数据让整单 estimate 报 500 才是灾难）
+ *
+ * 🔴 为什么必须抽成单一函数（批次 374）：
+ *    `radiusIncludes`（判「这个点能不能复用」）与
+ *    `mismatchRadii`（告诉用户「改回哪些半径能复用」）
+ *    是**同一个解析问题的两个用途**。各写一份，一旦一边认 `"[1000,3000]"`、另一边只认裸数字，
+ *    就会出现「提示说改回 3000 米能复用、真改回 3000 米又说不能复用」——
+ *    比不提示更坏（用户按建议操作了，钱还是白花）。
+ */
+export function parseRadii(raw) {
+  if (raw === null || raw === undefined || raw === '') return []
+  let v = raw
+  if (typeof v === 'string') {
+    const s = v.trim()
+    if (!s) return []
+    try { v = JSON.parse(s) } catch { v = Number(s) }
+  }
+  const list = Array.isArray(v) ? v : [v]
+  const out = []
+  for (const x of list) {
+    const n = Number(x)
+    // ⚠️ `Number('')` 是 0、`Number(null)` 也是 0 ⇒ 必须 `n > 0` 才收，
+    //    否则空串会被当成「半径 0 米」混进建议列表。
+    if (Number.isFinite(n) && n > 0 && !out.includes(n)) out.push(n)
+  }
+  return out.sort((a, b) => a - b)
+}
+
+/**
+ * 判断该条已购记录的半径**是否包含**目标半径。
  *
  * 🔴 半径是取数缓存 key 的一部分：「半径不匹配就一定会重新扣费」。
  *    所以并入候选集之前必须先过这一关，否则会把注定花钱的点当成免费点。
  */
 export function radiusIncludes(raw, want) {
-  if (raw === null || raw === undefined || raw === '') return false
-  let v = raw
-  if (typeof v === 'string') {
-    try { v = JSON.parse(v) } catch { v = Number(raw) }
-  }
-  if (typeof v === 'number') return Number(v) === Number(want)
-  if (Array.isArray(v)) return v.map(Number).includes(Number(want))
-  return false
+  const w = Number(want)
+  if (!Number.isFinite(w)) return false
+  return parseRadii(raw).includes(w)
 }

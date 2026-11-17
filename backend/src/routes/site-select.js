@@ -40,7 +40,12 @@ import { attachGeo } from '../models/geoStore.js'
 import { fetchPointPopulation } from './smartsteps.js'
 // 🔴 复用判据从零依赖工具文件取，⛔ 不从 smartsteps.js 取：
 //    测试会把 smartsteps 整模块 mock 掉，从那里命名导入会变成 undefined ⇒ B 逻辑静默失效。
-import { REUSE_TOL_M, radiusIncludes } from '../utils/reuseKey.js'
+import { REUSE_TOL_M, radiusIncludes, parseRadii } from '../utils/reuseKey.js'
+// 🔴 `probeReusable` 的「可复用」判定必须与取数侧 `fetchPointPopulation` 完全同口径：
+//    取数侧要求 `parsePopulation1001(result_data)` **解析成功**才算命中已购数据，
+//    只判「result_data 非空」会把「只有商圈面、没有 1001」的记录也算成可复用 ⇒ 预估偏低。
+//    该文件是纯解析器（零 import），不会把 DB / express 拖进来。
+import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { getPoolRemaining } from '../utils/quotaPool.js'
 import { readableUserIds } from '../utils/visibleScope.js'
 import { resolveCompBrands, competitorWhere, isAllBrandsToken } from '../utils/competitorScope.js'
@@ -250,16 +255,41 @@ function medianInBbox(cells, bbox) {
  * ③ **与格心 10m 内重合则去重**：同一个物理位置不能出两个候选（否则 NMS 前就重复计数，
  *    用户会看到「推荐列表里两个几乎相同的点」）。重合时把该格心标记为 `purchase` 来源。
  *
- * @returns {{points:Array<{lng:number,lat:number,src:'grid'|'purchase'}>, purchasedInBox:number}}
+ * ── ④ 半径不符的记录 ⛔ 不许「静默 continue」（批次 374）──────────────────
+ * 这条不是约束而是**告知义务**。旧代码一句 `if (!radiusIncludes(...)) continue` 就把它们扔了：
+ * 用户改个半径，钱全重扣，界面上却一个字都不提「你框里有 5 个点本来能复用」。
+ * 所以这里必须**数出来**并交回 `mismatchRadii`（那些点买过哪些半径），
+ * 由 `runCoarse` 出警告、由前端弹窗给出「改用 X 米可复用」的一键入口。
+ *
+ * ── ⑤ 「可复用」的判据必须与取数侧完全一致（批次 374）──────────────────
+ * `purchasedInBox` 是要写进用户界面的（「这 N 个点不额外消耗配额」）。
+ * 而「到底免不免费」由 `fetchPointPopulation` 决定，它的四关是：
+ * SQL 粗筛矩形 → 半径匹配 → 10m 内 → `parsePopulation1001` 解析成功。
+ * 这里**少任何一关都会虚高**：说免费、实际扣钱，是这功能最不能犯的错。
+ *
+ * @returns {{
+ *   points:Array<{lng:number,lat:number,src:'grid'|'purchase'}>,
+ *   purchasedInBox:number,      // 半径匹配 + 1001 可解析 ⇒ 真正可免费复用的点数
+ *   radiusMismatch:number,      // 半径不符、无法复用的**记录条数**
+ *   mismatchRadii:number[]      // 那些记录买过的半径（去重升序，可能是选址选不到的 5000）
+ * }}
  */
 function mergePurchasedPoints(db, userId, radius, bbox, gridPoints) {
-  const empty = { points: gridPoints.map((pt) => ({ ...pt, src: 'grid' })), purchasedInBox: 0 }
+  const empty = {
+    points: gridPoints.map((pt) => ({ ...pt, src: 'grid' })),
+    purchasedInBox: 0,
+    radiusMismatch: 0,
+    mismatchRadii: []
+  }
   let rows = []
   try {
     // ⚠️ `%"1001"%` 而不是 `%1001%`：只要含 1001 服务的已购数据，
     //    否则并进来一个「只有商圈面、没有人口」的点，精算时仍会扣费。
+    // 🔴 这只是**粗筛**（字符串匹配），真正的判据在下面循环里调 `parsePopulation1001`：
+    //    取数侧 `fetchPointPopulation` 就是「SQL 粗筛矩形 + 半径 + 10m + parse 成功」四关，
+    //    这里少一关，「N 个不额外消耗配额」就会虚高（含 `"1001":{}` 空壳的记录会混进来）。
     rows = db.prepare(
-      `SELECT center_lng, center_lat, radius FROM purchases
+      `SELECT center_lng, center_lat, radius, result_data FROM purchases
         WHERE user_id = ? AND status = 'active'
           AND result_data LIKE '%"1001"%'
           AND center_lng BETWEEN ? AND ? AND center_lat BETWEEN ? AND ?
@@ -271,11 +301,21 @@ function mergePurchasedPoints(db, userId, radius, bbox, gridPoints) {
 
   const out = empty.points
   let purchasedInBox = 0
+  let radiusMismatch = 0
+  const mismatchRadii = new Set()
   for (const row of rows) {
-    if (!radiusIncludes(row.radius, radius)) continue
     const lng = Number(row.center_lng)
     const lat = Number(row.center_lat)
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+    if (!radiusIncludes(row.radius, radius)) {
+      // 🔴 不只是 `continue`：这是「改半径重扣」的现场，必须记账。
+      radiusMismatch++
+      for (const r of parseRadii(row.radius)) mismatchRadii.add(r)
+      continue
+    }
+    // 🔴 与取数侧同口径：1001 解析不出来 ⇒ 精算时照样要调联通扣费，
+    //    所以⛔ 不能按「可复用」并进来（否则界面说免费、实际扣钱）。
+    if (!parsePopulation1001(row.result_data)) continue
     purchasedInBox++
     let merged = false
     for (const pt of out) {
@@ -288,7 +328,12 @@ function mergePurchasedPoints(db, userId, radius, bbox, gridPoints) {
     }
     if (!merged) out.push({ lng, lat, src: 'purchase' })
   }
-  return { points: out, purchasedInBox }
+  return {
+    points: out,
+    purchasedInBox,
+    radiusMismatch,
+    mismatchRadii: [...mismatchRadii].sort((a, b) => a - b)
+  }
 }
 
 /**
@@ -300,11 +345,35 @@ function runCoarse(db, user, p) {
   const { points: gridPoints } = enumerateGrid(p.bbox, p.stepM)
   // 候选集 = 网格格心 + 框内已购点（批次 373）。`gridTotal` 仍只算格心，
   // ⛔ 不能把已购点算进去 —— 那个数字是给用户看「铺了多少点」，混进已购点会虚高。
-  const { points, purchasedInBox } = mergePurchasedPoints(db, user.id, p.radius, p.bbox, gridPoints)
+  const { points, purchasedInBox, radiusMismatch, mismatchRadii } =
+    mergePurchasedPoints(db, user.id, p.radius, p.bbox, gridPoints)
   const gridTotal = gridPoints.length
   if (purchasedInBox > 0) {
     const freePoints = points.filter((x) => x.src === 'purchase').length
-    warnings.push(`框内命中 ${purchasedInBox} 个已购人口点，将作为候选参与排名（精算时不消耗配额）${freePoints < purchasedInBox ? `，其中 ${purchasedInBox - freePoints} 个与网格点重合已合并` : ''}`)
+    warnings.push(`框内命中 ${purchasedInBox} 个已购人口点，将作为候选参与排名（精算时不消耗配额）${freePoints < purchasedInBox ? `，其中 ${purchasedInBox - freePoints} 个与网格点重合已合并` : ''}；更换评估半径后将不再复用`)
+  }
+
+  // ── ④ 半径不符：把「本来能省、但因为换了半径省不到」明说出来（批次 374）────
+  // 🔴 两个必须说清的事实：
+  //   ① `purchases.radius` 只可能是 `REPORT_RADII = [1000,3000,5000]`（报告购买端点校验），
+  //      而智能选址只能选 `SITE_RADIUS_CHOICES = [500,1000,1500,3000]` —— **交集只有 1000 和 3000**。
+  //      ⇒ 用户把半径从 1000 改成 1500 时，不是「换个半径重扣」，而是**换到一个联通侧根本
+  //        不存在可复用数据的半径**（1500 报告不卖）。这时⛔ 绝不能说「改回原半径」，
+  //        只能告诉他「改回 1000 或 3000」。
+  //   ② 已购半径里可能有 5000（报告买了、选址选不到）⇒ 它⛔ 不能进建议列表，
+  //      否则用户照着改，前端 `el-select` 里根本没这个选项。
+  const suggestRadii = mismatchRadii.filter((r) => SITE_RADIUS_CHOICES.includes(r))
+  if (radiusMismatch > 0) {
+    const bought = mismatchRadii.length ? `${mismatchRadii.join(' / ')} 米` : '未知半径'
+    if (suggestRadii.length) {
+      warnings.push(
+        `⚠️ 框内有 ${radiusMismatch} 个点买过人口数据，但买的是 ${bought}，与当前评估半径 ${p.radius} 米不一致，这些数据无法复用 —— 本次按全额消耗配额。改用 ${suggestRadii.join(' 或 ')} 米可复用其中一部分（重新预估不消耗配额）`
+      )
+    } else {
+      warnings.push(
+        `⚠️ 框内有 ${radiusMismatch} 个点买过人口数据（半径 ${bought}），但那些半径在智能选址里选不到，与当前评估半径 ${p.radius} 米不一致 —— 本次按全额消耗配额`
+      )
+    }
   }
 
   // ── 本地网格（初筛客群）────────────────────────────────────────────
@@ -492,6 +561,10 @@ function runCoarse(db, user, p) {
     gridTotal,
     gridCovered,
     purchasedInBox,
+    // 批次 374：「改半径重扣」的两个事实字段（estimate 直接透给前端）
+    radiusMismatch,
+    mismatchRadii,
+    reusableRadii: suggestRadii,
     crowdSource,
     regionMedianPop,
     thresholds,
@@ -527,16 +600,24 @@ function probeReusable(db, user, lng, lat, radius) {
           AND center_lat BETWEEN ? AND ? AND center_lng BETWEEN ? AND ? LIMIT 200`
     ).all(user.id, lat - box, lat + box, lng - box, lng + box)
     for (const row of rows) {
-      let r = row.radius
-      if (typeof r === 'string') { try { r = JSON.parse(r) } catch { r = Number(row.radius) } }
-      const hitRadius = Array.isArray(r) ? r.map(Number).includes(Number(radius)) : Number(r) === Number(radius)
-      if (!hitRadius) continue
+      // 🔴 半径判据必须来自 `utils/reuseKey.js`：与 `fetchPointPopulation`、`mergePurchasedPoints`
+      //    共用同一份解析。这里原先自己复制了一段 JSON.parse 逻辑 —— 那不只是重复，
+      //    而是「第二份口径」：`"[1000,3000]"` 这种形态一旦两边理解不同，
+      //    就会出现「探测说能复用、真取数又扣钱」。
+      if (!radiusIncludes(row.radius, radius)) continue
       const dLat = (Number(row.center_lat) - lat) * 111320
       const dLng = (Number(row.center_lng) - lng) * 111320 * Math.cos((lat * Math.PI) / 180)
       // ⛔ 不写 10：与 `mergePurchasedPoints` / `fetchPointPopulation` 共用同一个容差常量，
       //    否则「探测说能复用、真取数又说不能」⇒ 预估消耗与实际扣费对不上。
       if (Math.hypot(dLat, dLng) > REUSE_TOL_M) continue
-      if (row.result_data) return 'purchase'
+      // 🔴🔴 只判 `result_data` 非空是**系统性高估**（批次 374 修）：
+      //    取数侧 `fetchPointPopulation` 要求 `parsePopulation1001(row.result_data)` **解析成功**，
+      //    解析不出来（只有 1005 商圈面、脏 JSON、字段全空）会继续往下查缓存/调联通。
+      //    两处不一致的后果不是「多花一点」，而是**预估消耗偏低**：
+      //    用户看到「预计 10 次」、实际扣 25 次 —— 恰好是这个功能最不能被怀疑的那件事。
+      //    顺序讲究：半径 → 距离 → 解析。`result_data` 是整包 1001/1005 大 JSON，
+      //    放在最后解析，正常情况每次探测只解 0~2 次。
+      if (parsePopulation1001(row.result_data)) return 'purchase'
     }
   } catch { /* 探测失败按未命中处理 */ }
 
@@ -612,7 +693,14 @@ router.post('/estimate', authenticate, requireAdmin, (req, res) => {
     const remaining = getPoolRemaining(db)
     const needFromPool = Math.max(0, preciseCount - cacheHitGuess)
     const warnings = [...coarse.warnings]
-    if (preciseCount > 0) warnings.push('更换评估半径将重新消耗配额（已购数据按半径复用）')
+    // 🔴 这里原先无条件推一句「更换评估半径将重新消耗配额（已购数据按半径复用）」。
+    //    批次 374 删掉：对「框内什么都没买过」的用户，这句话是误导 ——
+    //    听起来像「不改半径就不用扣」，而实际每次都要全额扣。
+    //    半径相关的话现在一律由 `runCoarse` **按数据**出（有已购点才说，且说清能改回哪一档）。
+    if (coarse.radiusMismatch > 0 && !coarse.reusableRadii.length) {
+      // 已购半径全在选址选不到的档位（如报告买的 5000）⇒ 明确「没得选」，别让用户去翻下拉框
+      warnings.push('提示：智能选址的评估半径只有 500 / 1000 / 1500 / 3000 米四档，与报告购买的档位不完全重合')
+    }
 
     return res.json({
       success: true,
@@ -620,6 +708,11 @@ router.post('/estimate', authenticate, requireAdmin, (req, res) => {
         gridTotal: coarse.gridTotal,
         gridCovered: coarse.gridCovered,
         purchasedInBox: coarse.purchasedInBox,
+        // ── 批次 374：「改半径重扣」三件套（前端据此弹「改用 X 米」）────────────
+        radius: p.radius,                                // 当前评估半径
+        purchasedRadiusMismatch: coarse.radiusMismatch,  // 框内买过、但半径不符 ⇒ 无法复用的条数
+        purchasedRadii: coarse.mismatchRadii,            // 那些点实际买过的半径（可能含选址选不到的 5000）
+        reusableRadii: coarse.reusableRadii,             // 建议改用的半径（已过滤为选址可选项，升序）
         coarseCrowdSource: coarse.crowdSource,
         regionMedianPop: coarse.regionMedianPop,
         saturatedDropped: coarse.saturatedDropped,

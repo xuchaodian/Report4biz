@@ -144,6 +144,15 @@
         </span>
         <span v-else class="ss-muted">先点「预估消耗」，确认后再真正执行</span>
       </div>
+      <!-- 批次 374：半径不一致的常驻提示。弹窗关掉之后，用户仍能看见「这钱为什么没省下来」。 -->
+      <div v-if="estimateInfo && estimateInfo.purchasedRadiusMismatch > 0" class="ss-hint ss-warn">
+        框内有 {{ estimateInfo.purchasedRadiusMismatch }} 个点买过人口数据，但买的是
+        {{ (estimateInfo.purchasedRadii || []).join(' / ') }} 米半径，与当前评估半径
+        {{ estimateInfo.radius }} 米不一致，本次无法复用（半径是取数缓存的一部分）。
+        <template v-if="(estimateInfo.reusableRadii || []).length">
+          改用 {{ estimateInfo.reusableRadii.join(' 或 ') }} 米可复用其中一部分。
+        </template>
+      </div>
     </div>
 
     <!-- ── 结果提示条 ─────────────────────────────────────────────────── -->
@@ -487,57 +496,106 @@ async function runEstimate() {
   estimating.value = true
   estimateInfo.value = null
   try {
-    const { data } = await axios.post('/api/site-select/estimate', payload())
-    const d = data?.data || {}
-    estimateInfo.value = d
+    // 🔴 最多两轮（批次 374 的「改半径重扣」交互）：
+    //    第一轮若因「评估半径与框内已购数据不一致」被用户要求改用可复用半径，就重算一次 ——
+    //    换过之后半径必然与已购数据一致，不会再有可建议项，所以第二轮直接进确认流程。
+    //    ⛔ 不用递归：递归的终止条件一旦写错就是无限弹窗，而这里每一轮都要真调接口。
+    for (let round = 0; round < 2; round++) {
+      const { data } = await axios.post('/api/site-select/estimate', payload())
+      const d = data?.data || {}
+      estimateInfo.value = d
 
-    const parts = [
-      `框选内将铺出 ${d.gridTotal} 个候选点`,
-      `饱和保护剔除 ${d.saturatedDropped} 个`,
-      `最终精算 ${d.preciseCount} 个`
-    ]
-    // 批次 373：框内已购点会被并入候选并**免费**评估，精算数可能因此多于你设的「精算点数」。
-    // 不说清楚用户会以为「我设 30 怎么算了 45」，所以单独一行解释。
-    if (Number(d.purchasedInBox) > 0) {
-      parts.push(`其中 ${d.purchasedInBox} 个是你在框内买过的位置（不额外消耗配额）`)
-    }
-    parts.push(
-      `预计消耗 ${Math.max(0, d.quotaEstimate - d.cacheHitGuess)} 次（${d.cacheHitGuess} 点可复用已购数据）`,
-      `当前剩余 ${d.remaining} 次`
-    )
-    if (d.belowTopN) parts.push(`⚠️ 剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
-    if ((d.warnings || []).length) parts.push(...d.warnings)
-
-    // 🔴 余额不足 ⇒ 明确告诉「还差几次」，⛔ 不要让用户点完「确认生成」才吃一个 400。
-    //    `estimate` 是 0 消耗的，所以走到这里一分钱没花，正好用来算缺口。
-    const needPool = Math.max(0, Number(d.quotaEstimate || 0) - Number(d.cacheHitGuess || 0))
-    const left = Number(d.remaining || 0)
-    if (needPool > left) {
-      await ElMessageBox.alert(
-        `本次需要 ${needPool} 次联通人口，当前剩余 ${left} 次，还差 ${needPool - left} 次。\n请先采购联通人口次数后再生成推荐（本次预估未扣费）。`,
-        '配额不足',
-        { type: 'warning', confirmButtonText: '知道了', customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' } }
+      const parts = [
+        `框选内将铺出 ${d.gridTotal} 个候选点`,
+        `饱和保护剔除 ${d.saturatedDropped} 个`,
+        `最终精算 ${d.preciseCount} 个`
+      ]
+      // 批次 373：框内已购点会被并入候选并**免费**评估，精算数可能因此多于你设的「精算点数」。
+      // 不说清楚用户会以为「我设 30 怎么算了 45」，所以单独一行解释。
+      if (Number(d.purchasedInBox) > 0) {
+        parts.push(`其中 ${d.purchasedInBox} 个是你在框内买过的位置（不额外消耗配额）`)
+      }
+      parts.push(
+        `预计消耗 ${Math.max(0, d.quotaEstimate - d.cacheHitGuess)} 次（${d.cacheHitGuess} 点可复用已购数据）`,
+        `当前剩余 ${d.remaining} 次`
       )
+      if (d.belowTopN) parts.push(`⚠️ 剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
+      if ((d.warnings || []).length) parts.push(...d.warnings)
+
+      // 🔴 余额不足 ⇒ 明确告诉「还差几次」，⛔ 不要让用户点完「确认生成」才吃一个 400。
+      //    `estimate` 是 0 消耗的，所以走到这里一分钱没花，正好用来算缺口。
+      const needPool = Math.max(0, Number(d.quotaEstimate || 0) - Number(d.cacheHitGuess || 0))
+      const left = Number(d.remaining || 0)
+      if (needPool > left) {
+        await ElMessageBox.alert(
+          `本次需要 ${needPool} 次联通人口，当前剩余 ${left} 次，还差 ${needPool - left} 次。\n请先采购联通人口次数后再生成推荐（本次预估未扣费）。`,
+          '配额不足',
+          { type: 'warning', confirmButtonText: '知道了', customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' } }
+        )
+        return
+      }
+
+      // ── 「改半径重扣」显式确认（批次 374）─────────────────────────────────
+      // 🔴 为什么必须单独弹一次、而不是只写进 parts：
+      //    用户「改个半径再看看」的动机通常是**想省配额**，但半径是取数缓存 key 的一部分，
+      //    改到别的档位恰恰是**多花钱**。把这两句放在同一屏里，他才有机会改回去。
+      // ⚠️ 三点必须说准，否则提示反而坑人：
+      //    ① 只推荐 `reusableRadii`（后端已过滤成选址真能选的档位）——
+      //       报告买的 5000 米在选址下拉框里根本不存在，让用户「改回 5000」等于让他卡住；
+      //    ② ⛔ 不承诺「能省 N 次」：改回去到底命中几个，得重算才知道，编个数字就是撒谎；
+      //    ③ 「重新预估不消耗配额」必须写 —— 否则用户以为点一下就花钱，宁愿不改。
+      const mismatch = Number(d.purchasedRadiusMismatch || 0)
+      const reuse = Array.isArray(d.reusableRadii) ? d.reusableRadii : []
+      if (mismatch > 0 && reuse.length) {
+        const pick = reuse[0]
+        const bought = (d.purchasedRadii || []).join(' / ')
+        try {
+          await ElMessageBox.confirm(
+            [
+              `你框内有 ${mismatch} 个点买过联通人口数据（半径 ${bought} 米），但本次评估半径是 ${d.radius} 米。`,
+              '半径是取数缓存的一部分，不同半径的数据不能通用 —— 这 ' + mismatch + ' 个点本次要重新取数。',
+              '',
+              `改用 ${reuse.join(' 或 ')} 米可以复用其中一部分，且重新预估不消耗配额。`,
+              `仍按 ${d.radius} 米生成也可以，代价就是这 ${mismatch} 个点照常扣配额。`
+            ].join('\n'),
+            '评估半径与已购数据不一致',
+            {
+              confirmButtonText: `改用 ${pick} 米重算`,
+              cancelButtonText: `仍按 ${d.radius} 米`,
+              // 🔴 必须开：否则右上角 × 与 ESC 也会被判成「仍按原半径」⇒
+              //    用户想放弃，系统却一路走到「确认生成」。
+              distinguishCancelAndClose: true,
+              type: 'warning',
+              customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' }
+            }
+          )
+          form.radius = pick
+          continue   // 换半径后重新预估（0 消耗）
+        } catch (e) {
+          if (e === 'close') return        // ×／ESC ＝ 放弃本次生成
+          if (e !== 'cancel') throw e      // 'cancel' ＝「仍按原半径」，继续往下走
+        }
+      }
+
+      // 🔴🔴 高消耗熔断：超过默认精算点数 ⇒ 必须**亲手输入次数**（业主 2026-11-17 要求）。
+      //    走这里时不再弹普通 confirm —— 一个输入框本身就是确认，叠两个弹窗只会让人盲点。
+      if (d.burnRequired) {
+        const burned = await askBurnConfirm(parts, d, left)
+        if (burned === null) return
+        await runRank(burned)
+        return
+      }
+
+      await ElMessageBox.confirm(parts.join('\n'), '确认生成推荐', {
+        confirmButtonText: '确认生成',
+        cancelButtonText: '取消',
+        type: 'warning',
+        customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' }
+      })
+
+      await runRank()
       return
     }
-
-    // 🔴🔴 高消耗熔断：超过默认精算点数 ⇒ 必须**亲手输入次数**（业主 2026-11-17 要求）。
-    //    走这里时不再弹普通 confirm —— 一个输入框本身就是确认，叠两个弹窗只会让人盲点。
-    if (d.burnRequired) {
-      const burned = await askBurnConfirm(parts, d, left)
-      if (burned === null) return
-      await runRank(burned)
-      return
-    }
-
-    await ElMessageBox.confirm(parts.join('\n'), '确认生成推荐', {
-      confirmButtonText: '确认生成',
-      cancelButtonText: '取消',
-      type: 'warning',
-      customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' }
-    })
-
-    await runRank()
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
     ElMessage.error(fmtErr(e))
