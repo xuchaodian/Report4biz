@@ -546,7 +546,13 @@ async function runEstimate() {
       //    ③ 「重新预估不消耗配额」必须写 —— 否则用户以为点一下就花钱，宁愿不改。
       const mismatch = Number(d.purchasedRadiusMismatch || 0)
       const reuse = Array.isArray(d.reusableRadii) ? d.reusableRadii : []
-      if (mismatch > 0 && reuse.length) {
+      // 🔴 `round === 0` 这个条件是**必需**的，不是保守：
+      //    框内可能同时买过 1000 和 3000（当前 1500）。点「改用 1000」后，那批 3000 记录仍然不符，
+      //    第二轮若再弹一次，用户点「改用 3000」又会轮到 1000 不符 —— 循环用尽后静默退出，
+      //    界面上什么都不会发生（比少弹一次更糟）。
+      //    ⇒ 只给一次「改用」机会；剩余的不符记录靠 parts 里的警告如实说明，
+      //      想看第二次就再点一次「预估消耗」（那是 0 消耗的）。
+      if (round === 0 && mismatch > 0 && reuse.length) {
         const pick = reuse[0]
         const bought = (d.purchasedRadii || []).join(' / ')
         try {

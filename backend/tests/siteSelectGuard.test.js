@@ -370,6 +370,14 @@ function audit(f) {
     bad('Q10', '半径不一致弹窗未开 distinguishCancelAndClose —— 点 × 会被当成「仍按原半径」，取消变成确认')
   }
 
+  // Q11 「改用可复用半径」只给**一次**机会（第一轮）。
+  //    框内可能同时买过 1000 和 3000（当前 1500）：点「改用 1000」后那批 3000 仍然不符，
+  //    第二轮再弹一次就会来回拉扯，而循环是有上限的 —— 用尽后静默退出，界面毫无反应。
+  //    这比「少弹一次」坏得多：用户点了按钮，什么都没发生，也不知道为什么。
+  if (/评估半径与已购数据不一致/.test(f.view) && !/round === 0 && mismatch > 0 && reuse\.length/.test(f.view)) {
+    bad('Q11', '半径弹窗未限制轮次 —— 同框多档已购数据会来回弹，循环用尽后静默无响应')
+  }
+
   return problems
 }
 
@@ -670,6 +678,15 @@ describe('J. 负变异：改坏必须报红', () => {
     const body = base.view.replace('distinguishCancelAndClose: true,', '')
     expect(body).not.toBe(base.view)
     expect(mutate({ view: body }).some((p) => p.startsWith('Q10'))).toBe(true)
+  })
+
+  it('M38 半径弹窗不限制轮次（同框多档已购 ⇒ 来回弹到循环用尽，静默无响应）', () => {
+    const body = base.view.replace(
+      'if (round === 0 && mismatch > 0 && reuse.length) {',
+      'if (mismatch > 0 && reuse.length) {'
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q11'))).toBe(true)
   })
 })
 
