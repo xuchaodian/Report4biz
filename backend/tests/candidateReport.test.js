@@ -392,7 +392,12 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 
   it('🔴 坐标容差 10m（业主 2026-11-09 定），SQL 只做矩形粗筛 + haversine 精判', () => {
-    expect(SS).toContain('REUSE_TOL_M = 10')
+    // 批次 373：容差常量与 `radiusIncludes` 抽到了零依赖的 utils/reuseKey.js
+    // （智能选址的「已购点并入」要用同一份判据，且本模块在测试里会被整模块 mock）。
+    // 断言改成「唯一定义 + 本模块引用它」，⛔ 不是放宽约束。
+    const KEY = read('backend/src/utils/reuseKey.js')
+    expect(KEY).toContain('REUSE_TOL_M = 10')
+    expect(SS).toContain("from '../utils/reuseKey.js'")
     expect(SS).toContain('distMeters(')
     // 粗筛框必须存在（否则全表拉 transactions 太慢）
     expect(SS).toMatch(/center_lat BETWEEN \? AND \?/)

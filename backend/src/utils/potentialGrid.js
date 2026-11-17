@@ -52,8 +52,22 @@ export function isBboxValid(bbox) {
 /**
  * bbox → 网格中心点。
  *
- * 口径：以 bbox 的西南角为起点，按步长铺满，取每格的**中心**。
- * 步长按纬度换算成度：经向步长随纬度收缩（cos），否则高纬会多铺一列。
+ * 🔴🔴 **格心对齐「绝对经纬度网格」，⛔ 不是从 bbox 西南角起算**（批次 373，业主 2026-11-17 要求）
+ *
+ * 为什么必须这样（这条改动的唯一目的就是省钱）：
+ *   旧口径 `lat = s + degLat * (j + 0.5)` 以框的南边界为原点 —— 用户在徐家汇拖框，
+ *   这次拖到 31.1800、下次手一抖到 31.1809（差 100m），**所有格心整体平移 100m**。
+ *   而联通人口数据的复用判据是「同坐标 10m 内 + 同半径」（见 smartsteps.js 取数优先级 ①），
+ *   平移 100m 后 12 个点全部落空 ⇒ 范围明明重叠 95%，却整批重新扣配额。
+ *   改成本函数后，格心 = 全球固定网格的整格倍数 `(k + 0.5) * deg`，**同一步长下任何框选
+ *   的重叠区域都会得到逐字节相同的坐标** ⇒ 自然命中复用，拖多少次框都只付一次钱。
+ *
+ * ⚠️ 经向步长 `degLng` 的参考纬度**必须量化到整度**，⛔ 不能用 bbox 的 midLat：
+ *   框高稍微一变 midLat 就变，cos 跟着变，经度格心立刻不对齐（纬度方向对了经度又错开）。
+ *   量化到整度后，同一纬度带（±0.5°，约 55km）永远用同一个 cos，代价是格子的长宽比
+ *   有 < 1% 的偏差 —— 对「圆内人口」这种用途完全无所谓。
+ *
+ * 口径：取**格心落在 bbox 内**的整格，覆盖整个框；框比一格还小时退化为一格（含框中心）。
  *
  * @param {number[]} bbox [lngW, latS, lngE, latN]
  * @param {number} stepM ∈ SITE_STEP_CHOICES
@@ -65,17 +79,31 @@ export function enumerateGrid(bbox, stepM) {
 
   const [w, s, e, n] = bbox.map(Number)
   const midLat = (s + n) / 2
+  const midLng = (w + e) / 2
   const degLat = step / M_PER_DEG_LAT
-  const degLng = step / (M_PER_DEG_LAT * Math.max(0.2, Math.cos((midLat * Math.PI) / 180)))
+  const refLat = Math.round(midLat)   // 🔴 量化到整度，见上方注释
+  const degLng = step / (M_PER_DEG_LAT * Math.max(0.2, Math.cos((refLat * Math.PI) / 180)))
 
-  const cols = Math.max(1, Math.floor((e - w) / degLng + 1e-9))
-  const rows = Math.max(1, Math.floor((n - s) / degLat + 1e-9))
+  // 绝对网格索引：格心 = (k + 0.5) * deg，k 为整数，与 bbox 无关
+  let latK0 = Math.ceil(s / degLat - 0.5 - 1e-9)
+  let latK1 = Math.floor(n / degLat - 0.5 + 1e-9)
+  let lngK0 = Math.ceil(w / degLng - 0.5 - 1e-9)
+  let lngK1 = Math.floor(e / degLng - 0.5 + 1e-9)
+
+  // 保底：框比一格还小时，取包含框中心的那一格（否则会退化成 0 个候选点）
+  if (latK1 < latK0) latK0 = latK1 = Math.round(midLat / degLat - 0.5)
+  if (lngK1 < lngK0) lngK0 = lngK1 = Math.round(midLng / degLng - 0.5)
+
+  const cols = lngK1 - lngK0 + 1
+  const rows = latK1 - latK0 + 1
 
   const points = []
   for (let j = 0; j < rows; j++) {
-    const lat = s + degLat * (j + 0.5)
+    // ⚠️ 浮点必须写成 (k + 0.5) * deg 这一种形式 —— 换个等价写法（如 a + deg*j）
+    //    就会因运算顺序不同产生末位差异，10m 容差虽能兜住，但「逐字节相同」才是可测的保证。
+    const lat = (latK0 + j + 0.5) * degLat
     for (let i = 0; i < cols; i++) {
-      const lng = w + degLng * (i + 0.5)
+      const lng = (lngK0 + i + 0.5) * degLng
       points.push({ lng: Math.round(lng * 1e6) / 1e6, lat: Math.round(lat * 1e6) / 1e6 })
     }
   }

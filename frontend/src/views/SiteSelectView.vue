@@ -494,10 +494,17 @@ async function runEstimate() {
     const parts = [
       `框选内将铺出 ${d.gridTotal} 个候选点`,
       `饱和保护剔除 ${d.saturatedDropped} 个`,
-      `最终精算 ${d.preciseCount} 个`,
+      `最终精算 ${d.preciseCount} 个`
+    ]
+    // 批次 373：框内已购点会被并入候选并**免费**评估，精算数可能因此多于你设的「精算点数」。
+    // 不说清楚用户会以为「我设 30 怎么算了 45」，所以单独一行解释。
+    if (Number(d.purchasedInBox) > 0) {
+      parts.push(`其中 ${d.purchasedInBox} 个是你在框内买过的位置（不额外消耗配额）`)
+    }
+    parts.push(
       `预计消耗 ${Math.max(0, d.quotaEstimate - d.cacheHitGuess)} 次（${d.cacheHitGuess} 点可复用已购数据）`,
       `当前剩余 ${d.remaining} 次`
-    ]
+    )
     if (d.belowTopN) parts.push(`⚠️ 剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
     if ((d.warnings || []).length) parts.push(...d.warnings)
 

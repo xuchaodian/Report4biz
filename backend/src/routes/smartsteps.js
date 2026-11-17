@@ -637,7 +637,13 @@ router.post('/convert', (req, res) => {
 //   要不要刷新。强行要求同月等于"过期就重新收费"，那是坑用户。
 // ============================================================================
 const REPORT_RADII = [1000, 3000, 5000]   // 报告只开放这三档：面积 3.1/28.3/78.5 km²（联通限制 0.3~80）
-const REUSE_TOL_M = 10                    // 坐标容差 —— 业主 2026-11-09 定为 10m
+// 🔴 `REUSE_TOL_M`（坐标容差 10m）与 `radiusIncludes`（purchases.radius 解析）已抽到
+//    `utils/reuseKey.js` —— 批次 373 起 `routes/site-select.js::mergePurchasedPoints`
+//    也要用同一份判据，且本模块在测试里会被整模块 mock：留在这里会变成 `undefined`
+//    而静默失效（详见该文件头部注释）。这里 import 进来自己用，并原样 re-export
+//    给历史调用方，避免任何 `from 'smartsteps.js'` 的老引用断掉。
+import { REUSE_TOL_M, radiusIncludes } from '../utils/reuseKey.js'
+export { REUSE_TOL_M, radiusIncludes }
 
 /** 球面距离（米） */
 function distMeters(lng1, lat1, lng2, lat2) {
@@ -647,21 +653,6 @@ function distMeters(lng1, lat1, lng2, lat2) {
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
   return 2 * R * Math.asin(Math.sqrt(a))
-}
-
-/**
- * purchases.radius 存的是 **JSON 字符串**（`"[1000]"` 或 `"[1000,3000]"`，见 /query 落库），
- * 也可能是裸数字/裸字符串。这里统一判断「是否包含目标半径」。
- */
-function radiusIncludes(raw, want) {
-  if (raw === null || raw === undefined || raw === '') return false
-  let v = raw
-  if (typeof v === 'string') {
-    try { v = JSON.parse(v) } catch { v = Number(raw) }
-  }
-  if (typeof v === 'number') return Number(v) === Number(want)
-  if (Array.isArray(v)) return v.map(Number).includes(Number(want))
-  return false
 }
 
 /** 本地推算最新数据月份（兜底用；前端一般会先调免费的 /months 传进来） */

@@ -38,6 +38,9 @@ import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
 import { attachGeo } from '../models/geoStore.js'
 import { fetchPointPopulation } from './smartsteps.js'
+// 🔴 复用判据从零依赖工具文件取，⛔ 不从 smartsteps.js 取：
+//    测试会把 smartsteps 整模块 mock 掉，从那里命名导入会变成 undefined ⇒ B 逻辑静默失效。
+import { REUSE_TOL_M, radiusIncludes } from '../utils/reuseKey.js'
 import { getPoolRemaining } from '../utils/quotaPool.js'
 import { readableUserIds } from '../utils/visibleScope.js'
 import { resolveCompBrands, competitorWhere, isAllBrandsToken } from '../utils/competitorScope.js'
@@ -49,7 +52,7 @@ import {
   loadGridIndex, listGridCities, circlePopulation, percentileThresholds, percentileScore, median
 } from '../utils/gridPopulation.js'
 import {
-  enumerateGrid, bboxAreaKm2, isBboxValid, buildPointIndex,
+  enumerateGrid, bboxAreaKm2, isBboxValid, buildPointIndex, planarMeters,
   countWithin, nearestDistance, sameBrandEffectiveCount, nms
 } from '../utils/potentialGrid.js'
 import {
@@ -226,10 +229,83 @@ function medianInBbox(cells, bbox) {
  *    在缩小后的集合上算会让分位漂移 —— 同一片地两次框选（一次开饱和、一次没开）
  *    会得到不同的分，用户必然质疑。
  */
+/**
+ * B（批次 373，业主 2026-11-17 要求）：「框内已经花过钱的点」并入候选集。
+ *
+ * ── 为什么需要（这是纯省钱，没有任何算法上的新东西）────────────────────
+ * 业主问的原话：「我地图上勾画了徐家汇范围，这个范围内我已经买过 2 个位置的联通人口数据」。
+ * 事实是旧逻辑下**复用不了**：取数复用的判据是「同坐标 10m 内 + 同半径」
+ * （`smartsteps.js` 取数优先级 ①），而那 2 个点是报告/单点买的，坐标与撒点格心
+ * 通常差几百米 ⇒ 花过的钱一分都吃不到，本次仍然全额重扣。
+ *
+ * 本函数把那 2 个点**直接塞进候选集**，让它们走同一套粗排→精算：
+ *   · 若进了 TOP preciseTopK ⇒ 精算时坐标完全相同 ⇒ 必定命中 `purchases` ⇒ **0 消耗**；
+ *   · 若分数不够没进榜 ⇒ 不精算、也不花钱（⛔ 不因为「付过费」就强行上榜，
+ *     那会把排名可信度做废 —— 付过钱只说明当初看好，不代表今天分数高）。
+ *
+ * ── 三条硬约束（每条都有守卫）────────────────────────────────────────
+ * ① **只取本账号**：`user_id = ?`。跨账号取＝踩数据隐私红线（同 §7.2.2 拍板 A 口径）。
+ * ② **半径必须匹配**（`radiusIncludes`）：半径是缓存 key 的一部分，不匹配就必然重扣，
+ *    并进来只会让用户误以为「这个点免费」，实际精算时照样扣 1 次。
+ * ③ **与格心 10m 内重合则去重**：同一个物理位置不能出两个候选（否则 NMS 前就重复计数，
+ *    用户会看到「推荐列表里两个几乎相同的点」）。重合时把该格心标记为 `purchase` 来源。
+ *
+ * @returns {{points:Array<{lng:number,lat:number,src:'grid'|'purchase'}>, purchasedInBox:number}}
+ */
+function mergePurchasedPoints(db, userId, radius, bbox, gridPoints) {
+  const empty = { points: gridPoints.map((pt) => ({ ...pt, src: 'grid' })), purchasedInBox: 0 }
+  let rows = []
+  try {
+    // ⚠️ `%"1001"%` 而不是 `%1001%`：只要含 1001 服务的已购数据，
+    //    否则并进来一个「只有商圈面、没有人口」的点，精算时仍会扣费。
+    rows = db.prepare(
+      `SELECT center_lng, center_lat, radius FROM purchases
+        WHERE user_id = ? AND status = 'active'
+          AND result_data LIKE '%"1001"%'
+          AND center_lng BETWEEN ? AND ? AND center_lat BETWEEN ? AND ?
+        LIMIT 500`
+    ).all(userId, bbox[0], bbox[2], bbox[1], bbox[3])
+  } catch {
+    return empty   // 表不存在/字段缺失 ⇒ 退化成「不含已购点」，⛔ 不能让选址整单失败
+  }
+
+  const out = empty.points
+  let purchasedInBox = 0
+  for (const row of rows) {
+    if (!radiusIncludes(row.radius, radius)) continue
+    const lng = Number(row.center_lng)
+    const lat = Number(row.center_lat)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+    purchasedInBox++
+    let merged = false
+    for (const pt of out) {
+      if (pt.src === 'purchase') continue
+      if (planarMeters(pt.lng, pt.lat, lng, lat) <= REUSE_TOL_M) {
+        pt.src = 'purchase'    // 已有格心就在这个点上 ⇒ 只改来源标记，不新增候选
+        merged = true
+        break
+      }
+    }
+    if (!merged) out.push({ lng, lat, src: 'purchase' })
+  }
+  return { points: out, purchasedInBox }
+}
+
+/**
+ * 粗排：bbox → 候选点 → 四维打分 → 饱和剔除 → NMS → TOP preciseTopK。
+ * 🔴 全程零外部调用；`fetchPointPopulation` 只在阶段 2（rank）里出现。
+ */
 function runCoarse(db, user, p) {
   const warnings = []
-  const { points } = enumerateGrid(p.bbox, p.stepM)
-  const gridTotal = points.length
+  const { points: gridPoints } = enumerateGrid(p.bbox, p.stepM)
+  // 候选集 = 网格格心 + 框内已购点（批次 373）。`gridTotal` 仍只算格心，
+  // ⛔ 不能把已购点算进去 —— 那个数字是给用户看「铺了多少点」，混进已购点会虚高。
+  const { points, purchasedInBox } = mergePurchasedPoints(db, user.id, p.radius, p.bbox, gridPoints)
+  const gridTotal = gridPoints.length
+  if (purchasedInBox > 0) {
+    const freePoints = points.filter((x) => x.src === 'purchase').length
+    warnings.push(`框内命中 ${purchasedInBox} 个已购人口点，将作为候选参与排名（精算时不消耗配额）${freePoints < purchasedInBox ? `，其中 ${purchasedInBox - freePoints} 个与网格点重合已合并` : ''}`)
+  }
 
   // ── 本地网格（初筛客群）────────────────────────────────────────────
   const grid = loadGridIndex(db, user, p.city)
@@ -310,6 +386,9 @@ function runCoarse(db, user, p) {
 
     coarse.push({
       center: [pt.lng, pt.lat],
+      // 批次 373：该候选来自「框内已购点」⇒ 精算时必定命中 purchases（0 消耗）。
+      // ⚠️ 只作内部标记，⛔ 不进粗分、⛔ 不影响排序（付过钱不等于今天分数高）。
+      fromPurchase: pt.src === 'purchase',
       circlePop,
       comp,
       district: dist ? { name: districtName, score: districtScoreVal } : null,
@@ -384,9 +463,35 @@ function runCoarse(db, user, p) {
   const ranked = nms(survivors, p.minGapM)
   const preciseList = ranked.slice(0, p.preciseTopK)
 
+  // ── B 的最后一公里：已购点必须真的进入精算 ──────────────────────────
+  // 🔴 不补这一段，B 就是白做。原因：格距 1000m 而 `minGapM` 默认 800m，
+  //    框内**任何非格心点**离最近格心都 ≤ 707m（半对角线）⇒ 必定被上面的 NMS 剔掉。
+  //    而「报告里单点买的点」坐标是门店地址，几乎不会正好落在格心上。
+  //    于是：钱花过了、候选也并进来了，最后一秒被去重丢掉 —— 用户什么都得不到。
+  //
+  // 口径：已购点**必定获得一次评估**（它们不消耗配额），但：
+  //   ① 追加数量上限 = ⌈preciseTopK / 2⌉ —— ⛔ 不能让「买过的点」把 TOP 名额全占满，
+  //      那会把这个功能从「发现新点位」变成「复读你买过的点」；
+  //   ② 已购点之间也要过一遍 NMS —— 用户可能在同一片买了相邻的 3 个点，
+  //      三个都评估就是 3 条几乎一样的推荐；
+  //   ③ 追加点放在列表**末尾**（不插队）：排序仍是分数说了算，
+  //      「付过费」只在「是否评估」上生效，⛔ 不在「排名先后」上生效。
+  const purchasedSurvivors = survivors.filter((c) => c.fromPurchase)
+  if (purchasedSurvivors.length) {
+    const extraCap = Math.max(1, Math.ceil(p.preciseTopK / 2))
+    let extraAdded = 0
+    for (const c of nms(purchasedSurvivors, p.minGapM)) {
+      if (extraAdded >= extraCap) break
+      if (preciseList.includes(c)) continue
+      preciseList.push(c)
+      extraAdded++
+    }
+  }
+
   return {
     gridTotal,
     gridCovered,
+    purchasedInBox,
     crowdSource,
     regionMedianPop,
     thresholds,
@@ -428,7 +533,9 @@ function probeReusable(db, user, lng, lat, radius) {
       if (!hitRadius) continue
       const dLat = (Number(row.center_lat) - lat) * 111320
       const dLng = (Number(row.center_lng) - lng) * 111320 * Math.cos((lat * Math.PI) / 180)
-      if (Math.hypot(dLat, dLng) > 10) continue
+      // ⛔ 不写 10：与 `mergePurchasedPoints` / `fetchPointPopulation` 共用同一个容差常量，
+      //    否则「探测说能复用、真取数又说不能」⇒ 预估消耗与实际扣费对不上。
+      if (Math.hypot(dLat, dLng) > REUSE_TOL_M) continue
       if (row.result_data) return 'purchase'
     }
   } catch { /* 探测失败按未命中处理 */ }
@@ -512,6 +619,7 @@ router.post('/estimate', authenticate, requireAdmin, (req, res) => {
       data: {
         gridTotal: coarse.gridTotal,
         gridCovered: coarse.gridCovered,
+        purchasedInBox: coarse.purchasedInBox,
         coarseCrowdSource: coarse.crowdSource,
         regionMedianPop: coarse.regionMedianPop,
         saturatedDropped: coarse.saturatedDropped,
@@ -677,6 +785,8 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         a1,
         a2,
         crowd: combineCrowd(a1, a2),
+        // purchase = 命中框内已购数据（0 消耗）/ cache = 同点同半径已查过 / fresh = 本次真扣
+        dataSource: body.source || '',
         dataMonth: body.dataMonth || ''
       }
       precise.push(c)
@@ -737,6 +847,9 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         district: c.district,
         nearestOwnM: c.nearestOwnM,
         ownWithin2km: c.ownWithin2km,
+        // purchase/cache = 该点 0 消耗；前端据此打「已购数据」标签。
+        // 🔴 这不是分数，可以透；⛔ 但 roughScore 仍然绝不外泄（铁律 19）。
+        dataSource: c.precise.dataSource,
         radius: p.radius,
         cityMonth: month
       }
@@ -771,6 +884,8 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
           cannibal: Number.isFinite(it.dims.cannibal) ? it.dims.cannibal : null
         },
         raw,
+        // 该点人口数据的来源：purchase（框内已购，0 消耗）/ cache（同点同半径查过）/ fresh（本次扣费）
+        dataSource: it.dataSource || '',
         reason: buildReason(raw, {
           radius: it.radius,
           cityMonth: it.cityMonth,
@@ -797,6 +912,7 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         stepM: p.stepM,
         gridTotal: coarse.gridTotal,
         gridCovered: coarse.gridCovered,
+        purchasedInBox: coarse.purchasedInBox,
         coarseCrowdSource: coarse.crowdSource,
         regionMedianPop: coarse.regionMedianPop,
         saturatedDropped: coarse.saturatedDropped,

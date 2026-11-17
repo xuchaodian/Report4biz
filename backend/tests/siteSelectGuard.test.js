@@ -71,6 +71,9 @@ function loadAll() {
   return {
     siteSelect: stripJsComments(read('backend/src/routes/site-select.js')),
     gridPop: stripJsComments(read('backend/src/utils/gridPopulation.js')),
+    // 撒点（格心绝对网格对齐）+ 复用判据（零依赖，测试 mock smartsteps 也不受影响）
+    potentialGrid: stripJsComments(read('backend/src/utils/potentialGrid.js')),
+    reuseKey: stripJsComments(read('backend/src/utils/reuseKey.js')),
     config: stripJsComments(read('backend/src/utils/siteSelectConfig.js')),
     score: stripJsComments(read('backend/src/utils/siteScore.js')),
     database: stripJsComments(read('backend/src/models/database.js')),
@@ -270,6 +273,54 @@ function audit(f) {
   }
   if (!/还差 \$\{needPool - left\} 次/.test(f.view)) bad('N2', '余额不足时未告知缺口（应明确「还差 Z 次」并拦住 rank）')
 
+  // ── Q. 重复付费防护（批次 373，业主 2026-11-17 要求）──────────────────
+  // 业主原话：「我地图上勾画了徐家汇范围，这个范围内我已经买过 2 个位置的联通人口数据」
+  // —— 旧实现里这笔钱一分吃不到。以下每一条都是「删掉就白花钱」的代码。
+  //
+  // Q1 已购点必须按**本账号**取。跨账号取已购数据＝踩隐私红线（同 A11 的口径）。
+  //    ⚠️ 必须切片到函数体内断言：`probeReusable` 里**也有**一段
+  //    `FROM purchases ... WHERE user_id = ?`，扫全文会让变异应用在第一处、
+  //    而正则被第二处满足 ⇒ 负变异 M31 报假绿。
+  const mpStart = f.siteSelect.indexOf('function mergePurchasedPoints(')
+  const mpEnd = f.siteSelect.indexOf('function runCoarse(')
+  const mpBody = mpStart >= 0 && mpEnd > mpStart ? f.siteSelect.slice(mpStart, mpEnd) : ''
+  if (!mpBody) {
+    bad('Q1', '缺 mergePurchasedPoints —— 框内已购点无法并入候选，花过的钱吃不到')
+  } else if (!/FROM purchases[\s\S]{0,200}WHERE user_id = \?/.test(mpBody)) {
+    bad('Q1', '已购点未按当前账号过滤（跨用户读已购数据违反隐私红线）')
+  }
+  // Q2 半径必须校验：半径是缓存 key 的一部分，不匹配就必然重新扣费。
+  //    不校验会把「注定花钱的点」当免费点并入，反而误导用户。
+  if (!/if \(!radiusIncludes\(row\.radius, radius\)\) continue/.test(mpBody)) {
+    bad('Q2', '已购点并入时未校验半径 —— 会把注定重新扣费的点当成免费点')
+  }
+  // Q3 「最后一公里」：格距 1000m、minGapM 800m ⇒ 任何非格心点都会被第一层 NMS 剔掉。
+  //    没有这段追加，已购点并进来了却进不了精算，B 方案等于白做。
+  //    ⚠️ 必须断言 `nms(purchasedSurvivors`：只判 `purchasedSurvivors` 存在会被
+  //    「声明了但循环写成空数组」骗过（负变异 M29 就是这种改法）。
+  if (!/nms\(purchasedSurvivors, p\.minGapM\)/.test(f.siteSelect) || !/preciseList\.push\(c\)/.test(f.siteSelect)) {
+    bad('Q3', '已购点未追加进 preciseList —— 会被 NMS 整批剔掉，并入也白并')
+  }
+  // Q4 经向步长的参考纬度必须**量化到整度**。用 bbox 的 midLat 会让框高变化连带改变
+  //    经度步长 ⇒ 纬度对齐了经度又错开（这是最隐蔽的一种失真，负变异 M27 专门测它）。
+  const grid = f.potentialGrid || ''
+  if (!/const refLat = Math\.round\(midLat\)/.test(grid)) {
+    bad('Q4', '经向步长的参考纬度未量化到整度 —— 框高变化会连带改变经度步长，格心对不齐')
+  }
+  // Q5 格心必须是绝对网格的整格倍数（⛔ 写成 `w + deg * (i + 0.5)` 就退回旧口径）
+  if (!/\(\s*latK0\s*\+\s*j\s*\+\s*0\.5\s*\)\s*\*\s*degLat/.test(grid)) {
+    bad('Q5', '格心未按绝对网格计算（纬度仍从 bbox 西南角起算 ⇒ 拖框差 100m 就整批重扣）')
+  }
+  if (!/\(\s*lngK0\s*\+\s*i\s*\+\s*0\.5\s*\)\s*\*\s*degLng/.test(grid)) {
+    bad('Q5', '格心未按绝对网格计算（经度仍从 bbox 西边界起算）')
+  }
+  // Q6 复用判据必须从零依赖文件取。从 smartsteps 命名导入会在「整模块被 mock」时
+  //    变成 undefined —— `<= undefined` 恒 false、`radiusIncludes(...)` TypeError，
+  //    两种都是**静默假绿**（本项目 373 批次真实踩过）。
+  if (!/import \{ REUSE_TOL_M, radiusIncludes \} from '\.\.\/utils\/reuseKey\.js'/.test(f.siteSelect)) {
+    bad('Q6', '复用判据未从 utils/reuseKey.js 取 —— 从 smartsteps 取会在测试 mock 后变 undefined（静默失效）')
+  }
+
   return problems
 }
 
@@ -367,9 +418,11 @@ describe('J. 负变异：改坏必须报红', () => {
   })
 
   it('M10 site-select 自己写 getData（绕过缓存与闸门）', () => {
+    // ⚠️ 锚点⛔ 用 import 语句：那是会变的（373 给它加了 REUSE_TOL_M / radiusIncludes），
+    //    一变负变异就静默失配、报"假绿"。改用永不变的文件骨架做锚点。
     const body = base.siteSelect.replace(
-      'import { fetchPointPopulation } from',
-      "const openApiUrl = '/server/openApi/getData'\nimport { fetchPointPopulation } from"
+      'const router = express.Router()',
+      "const openApiUrl = '/server/openApi/getData'\nconst router = express.Router()"
     )
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('H2'))).toBe(true)
   })
@@ -482,6 +535,55 @@ describe('J. 负变异：改坏必须报红', () => {
     )
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('P4'))).toBe(true)
   })
+
+  // ── 批次 373：重复付费防护的负变异 ──────────────────────────────────
+  it('M27 参考纬度不再量化到整度（框高变了经度就错开）', () => {
+    const body = base.potentialGrid.replace('const refLat = Math.round(midLat)', 'const refLat = midLat')
+    expect(mutate({ potentialGrid: body }).some((p) => p.startsWith('Q4'))).toBe(true)
+  })
+
+  it('M28 格心退回「从 bbox 西南角起算」（拖框 100m 就整批重扣）', () => {
+    const body = base.potentialGrid.replace(
+      'const lat = (latK0 + j + 0.5) * degLat',
+      'const lat = s + degLat * (j + 0.5)'
+    )
+    expect(mutate({ potentialGrid: body }).some((p) => p.startsWith('Q5'))).toBe(true)
+  })
+
+  it('M29 删掉「已购点追加进精算」（并入了却被 NMS 剔掉，等于白做）', () => {
+    const body = base.siteSelect.replace(
+      'for (const c of nms(purchasedSurvivors, p.minGapM)) {',
+      'for (const c of []) {'
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q3'))).toBe(true)
+  })
+
+  it('M30 已购点并入时不再校验半径（把注定花钱的点当免费点）', () => {
+    const body = base.siteSelect.replace(
+      'if (!radiusIncludes(row.radius, radius)) continue',
+      'if (false) continue'
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q2'))).toBe(true)
+  })
+
+  it('M31 已购点改按全平台取（跨用户读已购数据＝隐私红线）', () => {
+    // ⚠️ 锚点必须带上 `AND result_data LIKE`：`probeReusable` 里也有一句
+    //    `WHERE user_id = ? AND status = 'active'`，用短锚点会改错地方。
+    const body = base.siteSelect.replace(
+      /WHERE user_id = \? AND status = 'active'(\s+)AND result_data LIKE/,
+      "WHERE (user_id = ? OR 1=1) AND status = 'active'$1AND result_data LIKE"
+    )
+    expect(body).not.toBe(base.siteSelect)   // 变异必须真的生效，否则就是假绿
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q1'))).toBe(true)
+  })
+
+  it('M32 复用判据从 smartsteps 导入（测试 mock 后变 undefined，静默失效）', () => {
+    const body = base.siteSelect.replace(
+      "import { REUSE_TOL_M, radiusIncludes } from '../utils/reuseKey.js'",
+      "import { REUSE_TOL_M, radiusIncludes } from './smartsteps.js'"
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q6'))).toBe(true)
+  })
 })
 
 describe('K. 接口约定（前端 ←→ 后端字段名必须一致）', () => {
@@ -518,4 +620,5 @@ describe('K. 接口约定（前端 ←→ 后端字段名必须一致）', () =>
     // estimate 的返回值必须被拼进确认弹窗
     expect(files.view).toContain('预计消耗')
   })
+
 })
