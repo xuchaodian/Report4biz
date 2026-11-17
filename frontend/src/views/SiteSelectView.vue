@@ -349,14 +349,20 @@ const bboxArea = computed(() => {
   return Math.round(h * wd)
 })
 
-const canRun = computed(() => bboxArea.value > 0 && bboxArea.value <= 400 && remaining.value > 0)
+/**
+ * 🔴 「预估消耗」必须**始终可点**（只要框选合法），⛔ 不要把 `remaining > 0` 当前置条件。
+ *    2026-11-17 生产实测：平台物理池余额 0，按旧写法按钮直接灰掉 ⇒ 用户**看不到「要花几次」**，
+ *    也就不知道该采购多少 —— 而 `POST /estimate` 本来就不查联通、不扣配额。
+ *    正确做法：预估照跑，把「需要 X / 剩余 Y / 还差 Z」摆出来，再拦住 rank。
+ */
+const canRun = computed(() => bboxArea.value > 0 && bboxArea.value <= 400)
 
 const quotaAlert = computed(() => {
   if (remaining.value > 0) return null
   return {
-    type: 'error',
-    title: '联通人口未采购，无法生成推荐',
-    desc: '智能选址的客群维度必须使用联通人口（本地网格只能做初筛，没有消费能力档）。请先采购联通人口次数。'
+    type: 'warning',
+    title: '联通人口余额为 0，暂时无法生成推荐',
+    desc: '仍可点「预估消耗」查看本次要花几次（不扣费、不调联通），再按缺口采购。'
   }
 })
 
@@ -491,6 +497,19 @@ async function runEstimate() {
     ]
     if (d.belowTopN) parts.push(`⚠️ 剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
     if ((d.warnings || []).length) parts.push(...d.warnings)
+
+    // 🔴 余额不足 ⇒ 明确告诉「还差几次」，⛔ 不要让用户点完「确认生成」才吃一个 400。
+    //    `estimate` 是 0 消耗的，所以走到这里一分钱没花，正好用来算缺口。
+    const needPool = Math.max(0, Number(d.quotaEstimate || 0) - Number(d.cacheHitGuess || 0))
+    const left = Number(d.remaining || 0)
+    if (needPool > left) {
+      await ElMessageBox.alert(
+        `本次需要 ${needPool} 次联通人口，当前剩余 ${left} 次，还差 ${needPool - left} 次。\n请先采购联通人口次数后再生成推荐（本次预估未扣费）。`,
+        '配额不足',
+        { type: 'warning', confirmButtonText: '知道了', customStyle: { whiteSpace: 'pre-line', lineHeight: '1.7' } }
+      )
+      return
+    }
 
     await ElMessageBox.confirm(parts.join('\n'), '确认生成推荐', {
       confirmButtonText: '确认生成',

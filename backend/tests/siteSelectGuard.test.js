@@ -112,6 +112,9 @@ function audit(f) {
     if (!/satCount\s*>=\s*p\.saturation\.maxOwn/.test(runCoarseBody)) bad('A7', '缺少饱和门限判定')
     if (!/saturatedDropped\+\+/.test(runCoarseBody)) bad('A8', '饱和剔除未计数（必须回传 saturatedDropped）')
     if (!/saturatedSamples/.test(runCoarseBody)) bad('A9', '饱和剔除未给样本（前 3 个坐标）')
+    // 🔴 空门店集必须报警：否则「本账号 0 家门店」会让饱和保护与自牌维度静默不生效，
+    //    而界面只看到 saturatedDropped: 0 —— 看起来像「查过了、没有饱和」。
+    if (!/本账号名下没有门店数据/.test(runCoarseBody)) bad('A10', '门店集为空时未给 warning（饱和保护会静默失效）')
   }
 
   // ── B. 粗分绝不外泄 ───────────────────────────────────────────────
@@ -186,6 +189,16 @@ function audit(f) {
   }
   if (!/:fixed="isNarrow \? false : 'right'"/.test(f.view)) bad('L2', '结果表固定列未按窄屏切换')
   if (!/max-width:\s*900px/.test(f.view)) bad('L3', '缺 900px 窄屏判断（isNarrow 与 @media 断点必须一致）')
+
+  // ── N. 「预估消耗」0 消耗，必须始终可达 ─────────────────────────────
+  // 生产实测：物理池余额 0 时，若 canRun 带 `remaining > 0`，按钮直接灰掉 ⇒
+  // 用户连「要花几次」都看不到，也就不知道该采购多少。
+  const canRunDef = f.view.match(/const canRun = computed\(\(\) =>[^\n]*/)
+  if (!canRunDef) bad('N1', '找不到 canRun 定义')
+  else if (/remaining\.value\s*>\s*0/.test(canRunDef[0])) {
+    bad('N1', 'canRun 把余额当门禁 —— 余额 0 时「预估消耗」会灰掉，用户看不到缺口')
+  }
+  if (!/还差 \$\{needPool - left\} 次/.test(f.view)) bad('N2', '余额不足时未告知缺口（应明确「还差 Z 次」并拦住 rank）')
 
   return problems
 }
@@ -318,6 +331,24 @@ describe('J. 负变异：改坏必须报红', () => {
       'fixed="right"'
     )
     expect(mutate({ view: body }).some((p) => p.startsWith('L1'))).toBe(true)
+  })
+
+  it('M15 门店集为空时不报警（饱和保护与自牌维度静默失效）', () => {
+    const body = base.siteSelect.replace('本账号名下没有门店数据', '（静默）')
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A10'))).toBe(true)
+  })
+
+  it('M16 把余额塞回 canRun（余额 0 时预估按钮变灰）', () => {
+    const body = base.view.replace(
+      'const canRun = computed(() => bboxArea.value > 0 && bboxArea.value <= 400)',
+      'const canRun = computed(() => bboxArea.value > 0 && bboxArea.value <= 400 && remaining.value > 0)'
+    )
+    expect(mutate({ view: body }).some((p) => p.startsWith('N1'))).toBe(true)
+  })
+
+  it('M17 余额不足时静默吞掉（不告诉用户还差几次）', () => {
+    const body = base.view.replace('还差 ${needPool - left} 次', '余额不足')
+    expect(mutate({ view: body }).some((p) => p.startsWith('N2'))).toBe(true)
   })
 })
 

@@ -250,6 +250,17 @@ function runCoarse(db, user, p) {
   const ownForE = ownForSat
   const ownLabel = hasBrand ? '同品牌' : '自有门店'
 
+  // 🔴 空门店集必须如实说，⛔ 不能回 `saturatedDropped: 0` 让人以为「查过了、没有饱和」。
+  //    2026-11-17 生产实测：唯一可用的管理员账号（user_id=1）名下 **0 家门店**，
+  //    而「食其家」在上海有 390 家 —— 那些门店属于别的账号。
+  //    按本账号取门店是本功能既有口径（数据隐私：⛔ 不做跨账号聚合），但**结果必须写明白**，
+  //    否则饱和保护与「自牌蚕食」维度会「静默不生效」：能跑通、不报错、只是这两个维度白算。
+  if (!ownAll.length) {
+    warnings.push('本账号名下没有门店数据：饱和保护与「自牌蚕食」维度都不生效，排名只由客群/竞品/商圈决定')
+  } else if (hasBrand && !ownForSat.length) {
+    warnings.push(`本账号名下没有「${p.myBrand}」的门店：饱和保护已跳过，自牌维度按「无自有门店」处理`)
+  }
+
   const scopeIds = readableUserIds(db, user.id)
   const { sql: compBrandSql, params: compBrandParams } = competitorWhere(resolveCompBrands(db, user.id, p.myBrand))
   const comps = scopeIds.length
