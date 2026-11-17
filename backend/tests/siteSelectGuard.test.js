@@ -115,6 +115,13 @@ function audit(f) {
     // 🔴 空门店集必须报警：否则「本账号 0 家门店」会让饱和保护与自牌维度静默不生效，
     //    而界面只看到 saturatedDropped: 0 —— 看起来像「查过了、没有饱和」。
     if (!/本账号名下没有门店数据/.test(runCoarseBody)) bad('A10', '门店集为空时未给 warning（饱和保护会静默失效）')
+    // 🔴🔴 自有门店必须按账号过滤（老板 11-17 拍板：维持 A 案，绝不跨用户聚合）。
+    //    诱因：管理员名下 0 家门店时饱和/自牌两维恒未评，后人很容易「为了让维度生效」
+    //    改成按品牌取全平台门店 —— 那是跨用户读门店，违反隐私红线。
+    //    ⚠️ 断言完整 SQL 条件，只断言「含 user_id」会被 `WHERE user_id = ? OR 1=1` 骗过。
+    if (!/FROM markers WHERE user_id = \? AND merged_into IS NULL/.test(f.siteSelect)) {
+      bad('A11', '自有门店未按账号过滤（跨用户聚合门店违反隐私红线）')
+    }
   }
 
   // ── B. 粗分绝不外泄 ───────────────────────────────────────────────
@@ -349,6 +356,14 @@ describe('J. 负变异：改坏必须报红', () => {
   it('M17 余额不足时静默吞掉（不告诉用户还差几次）', () => {
     const body = base.view.replace('还差 ${needPool - left} 次', '余额不足')
     expect(mutate({ view: body }).some((p) => p.startsWith('N2'))).toBe(true)
+  })
+
+  it('M18 门店改按品牌取全平台（跨用户聚合，为了让饱和/自牌维度生效）', () => {
+    const body = base.siteSelect.replace(
+      'FROM markers WHERE user_id = ? AND merged_into IS NULL',
+      'FROM markers WHERE brand = ? AND merged_into IS NULL'
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A11'))).toBe(true)
   })
 })
 
