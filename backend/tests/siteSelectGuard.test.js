@@ -443,6 +443,79 @@ function audit(f) {
     if (/\brunRank\(/.test(pfBody)) bad('Q16', '初筛→精算直接调了 runRank —— 绕过付费确认，违反"付费前必明"')
   }
 
+  // ── Q17~Q20. 375c：真机 UI 验证暴露的 4 处口径/文案缺陷 ────────────────────
+  // 背景：375 上线后做生产真机渲染验证，接口 10 条硬断言全过，但页面上有 5 处不对。
+  // F1（根容器不滚）是纯 CSS，守在 `viewRootScrollGuard.test.js`；这里钉住 F2~F5。
+  // 🔴 这四条的价值不在"现在是对的"，而在"下次改文案不会悄悄漂回去"——
+  //    这四处全都是**改完不报错、只是界面在说假话**的类型，代码评审看不见。
+
+  // Q17 余额 0 的警告条 ⛔ 不能再写「暂时无法生成推荐」。
+  //    仅初筛已能在余额 0 时出榜（真机实测 16 条），这句会把用户直接劝退，
+  //    而这恰恰是「0 消耗出榜」这个功能唯一要解决的问题。
+  const qaStart = f.view.indexOf('const quotaAlert = computed(')
+  const qaEnd = f.view.indexOf('const missingLabel = computed(')
+  const qaBody = qaStart >= 0 && qaEnd > qaStart ? f.view.slice(qaStart, qaEnd) : ''
+  if (!qaBody) {
+    bad('Q17', '找不到 quotaAlert 定义')
+  } else {
+    if (/暂时无法生成推荐/.test(qaBody)) {
+      bad('Q17', '余额 0 的警告条仍写「暂时无法生成推荐」—— 与「仅初筛 0 消耗出榜」自相矛盾')
+    }
+    if (!/仅初筛/.test(qaBody)) {
+      bad('Q17', '余额 0 的警告条没提「仅初筛」—— 用户不知道还有免费这条路')
+    }
+  }
+
+  // Q18 仅初筛的「商圈」列必须显示「—」。
+  //    ⛔ 不能落到「未覆盖」分支：那句的语义是"算了，但点位不在任何商圈面内"。
+  //    仅初筛压根没算商圈（它依赖本市图层、跨城不可比）⇒ 没算说成没覆盖，
+  //    与 375 修掉的 `fmtPop(null)→「0 人」`（没数据说成没人）是同一类谎报。
+  const dcStart = f.view.indexOf('label="商圈"')
+  const dcEnd = f.view.indexOf('label="坐标"')
+  const dcBody = dcStart >= 0 && dcEnd > dcStart ? f.view.slice(dcStart, dcEnd) : ''
+  if (!dcBody) {
+    bad('Q18', '找不到「商圈」列')
+  } else {
+    if (!/v-if="isCoarse"[\s\S]{0,40}?—/.test(dcBody)) {
+      bad('Q18', '仅初筛的商圈列没有走「—」分支 —— 会显示成「未覆盖」')
+    }
+    if (!/<template v-else>[\s\S]*未覆盖/.test(dcBody)) {
+      bad('Q18', '「未覆盖」没有收进 v-else —— 仅初筛也会命中，与上一行互相打架')
+    }
+  }
+
+  // Q19 口径声明 ⛔ 不要重复后端 warning（375 真机里两条并排、措辞还不一致）。
+  //    「本次哪一维没评」是**动态事实**，唯一知道真相的是后端（runCoarse 出 warning）；
+  //    前端那条常驻说明只讲**静态事实**（尺子怎么算、哪些字段根本不存在）。
+  //    ⚠️ 所以这条是"两段都必须对"：前端不许重复说，后端不许不说 —— 只查一边等于让信息消失。
+  const cnStart = f.view.indexOf('const coarseNote = computed(')
+  const cnEnd = f.view.indexOf('const coarsePreciseCount = computed(')
+  const cnBody = cnStart >= 0 && cnEnd > cnStart ? f.view.slice(cnStart, cnEnd) : ''
+  if (!cnBody) {
+    bad('Q19', '找不到 coarseNote 定义')
+  } else {
+    if (/客群维度未评/.test(cnBody)) {
+      bad('Q19', 'coarseNote 又写了「客群维度未评」—— 与后端 warning 重复播报')
+    }
+    if (!/客群维度未评/.test(runCoarseBody)) {
+      bad('Q19', '后端 coarse 模式不再发「客群维度未评」warning —— 前端又删了那句，信息就彻底丢了')
+    }
+    // 🔴 375c 差点踩的坑：为了"去重"把 `denominatorUsed` 一起删掉 ⇒ 无网格城市会把
+    //    35 分权重的结果按 65 解释，而这正是 Q14 要防的事。去重只能删"哪一维没评"，
+    //    **不能删"本次计入多少权重"** —— 后者是刻度，不是结论。
+    if (!/denominatorUsed/.test(cnBody)) {
+      bad('Q19', 'coarseNote 没消费 denominatorUsed —— 无网格城市会把 35 权重算出的分按 65 解释')
+    }
+  }
+
+  // Q20 界面文案不带 emoji / 工程标记（174 起口径）。
+  //    注释在 loadAll 里已剥，扫到的都是用户真会看到的字符串。
+  //    ⛔ 别把 `⛔ 不要这样做` 这类**注释**判成违规 —— 那正是要剥注释的原因。
+  const MARKS = /[⛔✅⚠🔴🟡❗❌]/
+  if (MARKS.test(f.view)) {
+    bad('Q20', '界面可见文案里残留 ⛔/⚠️ 之类工程标记 —— 174 起界面文案不带 emoji')
+  }
+
   return problems
 }
 
@@ -790,6 +863,53 @@ describe('J. 负变异：改坏必须报红', () => {
     )
     expect(body).not.toBe(base.view)
     expect(mutate({ view: body }).some((p) => p.startsWith('Q15'))).toBe(true)
+  })
+
+  // ── M43~M46. 375c：真机验证暴露的 F2~F5，每处都要能被抓回来 ────────────────
+
+  it('M43 余额 0 的警告条改回「暂时无法生成推荐」（把用户从免费入口劝退）', () => {
+    const body = base.view.replace(
+      '联通人口余额为 0：精算推荐暂不可用',
+      '联通人口余额为 0，暂时无法生成推荐'
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q17'))).toBe(true)
+  })
+
+  it('M44 仅初筛的商圈列退回「未覆盖」（把"没算"说成"没覆盖"）', () => {
+    const body = base.view.replace(
+      '<span v-if="isCoarse" class="ss-muted">—</span>',
+      '<span class="ss-muted">—</span>'
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q18'))).toBe(true)
+  })
+
+  it('M45 口径声明又写一遍「客群维度未评」（与警告条重复播报）', () => {
+    const body = base.view.replace(
+      "let base = '分数为 0–100 相对分'",
+      "let base = '分数为 0–100 相对分（本次客群维度未评）'"
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q19'))).toBe(true)
+  })
+
+  it('M46 界面文案塞回 ⛔（174 起界面已去 emoji）', () => {
+    const body = base.view.replace(
+      '初筛只回答「这块地里哪些位置值得进一步看」',
+      '⛔ 初筛只回答「这块地里哪些位置值得进一步看」'
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q20'))).toBe(true)
+  })
+
+  it('M47 为了"去重"把 denominatorUsed 一起删了（无网格城市按 65 解释 35 权重的分）', () => {
+    const body = base.view.replace(
+      'const used = Number(d.denominatorUsed || 0)',
+      'const used = Number(d.denominator || 0)'
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q19'))).toBe(true)
   })
 })
 

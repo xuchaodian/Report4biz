@@ -483,7 +483,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cand-page { padding: 20px 24px 40px; max-width: 1280px; margin: 0 auto; }
+/* 🔴 375c：这三行与 SiteSelectView 的 `.ss-page` 是同一个缺陷（同一套模板配方复制出来的）。
+   父级 `.main-content` 是 `overflow:hidden`，页面不自己滚 ⇒ 超出部分永远不可达。
+   候选池是一张会长的表（分页 20 条 + 头部 + 筛选），1366×768 下必然超屏。 */
+.cand-page { height: 100%; overflow-y: auto; box-sizing: border-box; padding: 20px 24px 40px; max-width: 1280px; margin: 0 auto; }
 .cd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .cd-head-l h2 { margin: 4px 0 6px; font-size: 20px; font-weight: 500; }
 .cd-sub { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-regular); max-width: 720px; }

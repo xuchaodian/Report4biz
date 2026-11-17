@@ -294,11 +294,17 @@
         </el-table-column>
         <el-table-column label="商圈" width="120">
           <template #default="{ row }">
-            <span v-if="row.raw.districtName">{{ row.raw.districtName }}</span>
-            <span v-else class="ss-muted">未覆盖</span>
-            <!-- 🔴 必须用 Number.isFinite 而不是 `!== null`：仅初筛的 dims 里**没有 district 键**，
-                 `undefined !== null` 为真 ⇒ 会渲染出「undefined 分」。 -->
-            <div v-if="Number.isFinite(row.dims.district)" class="ss-muted">{{ row.dims.district }} 分</div>
+            <!-- 375c：仅初筛压根不算商圈维度（它依赖「本市有没有商圈图层」，跨城不可比）⇒ 一律「—」。
+                 ⛔ 不能落到下面的「未覆盖」分支：那句的语义是「算了，但点位不在任何商圈面内」。
+                 没算却说没覆盖，与 375 修掉的 `fmtPop(null)→「0 人」` 是同一类谎报。 -->
+            <span v-if="isCoarse" class="ss-muted">—</span>
+            <template v-else>
+              <span v-if="row.raw.districtName">{{ row.raw.districtName }}</span>
+              <span v-else class="ss-muted">未覆盖</span>
+              <!-- 🔴 必须用 Number.isFinite 而不是 `!== null`：仅初筛的 dims 里**没有 district 键**，
+                   `undefined !== null` 为真 ⇒ 会渲染出「undefined 分」。 -->
+              <div v-if="Number.isFinite(row.dims.district)" class="ss-muted">{{ row.dims.district }} 分</div>
+            </template>
           </template>
         </el-table-column>
         <!-- 坐标宽度 176：`31.21800, 121.42000` 共 20 字符，等宽字体下单行约 144px，
@@ -331,7 +337,7 @@
       <p class="ss-foot-note">
         <template v-if="isCoarse">
           初筛只回答「这块地里哪些位置值得进一步看」，不回答「能开多少生意」：
-          人口来自本地 1km 网格（静态底图，只有常住人口，⛔ 无工作人数 / 收入分档 / 到访），
+          人口来自本地 1km 网格（静态底图，只有常住人口；没有工作人数 / 收入分档 / 到访），
           竞品来自竞品库，自牌距离按你名下门店算。要拿到绝对评分与人口/到访实测，需要精算。
         </template>
         <template v-else>
@@ -349,7 +355,7 @@
           对前 {{ coarsePreciseCount }} 个做精算
         </el-button>
         <span class="ss-muted">
-          点完会先弹「预计消耗 X 次 / 剩余 Y 次」再确认，⛔ 不会直接扣。
+          点完会先弹「预计消耗 X 次 / 剩余 Y 次」再确认，不会直接扣费。
           精算名额按同一套参数重新初排取前 N 个，与本榜顺序可能有个别差异。
         </span>
       </div>
@@ -409,17 +415,42 @@ const isCoarse = computed(() => result.value?.mode === 'coarse')
  * ⚠️ 数字一律从响应取（`denominator` / `denominatorUsed`），⛔ 前端硬编码 65/35 ——
  *    后端改权重而前端没跟，会变成"界面说 65 分制、实际按 35 算"。
  */
+/**
+ * 仅初筛的口径声明 —— 常驻在结果区顶部，只讲**不会随本次参数变化的静态事实**
+ * 加上**本榜的刻度数字**：
+ *   ① 尺子怎么算的：0–100 相对分，权重来自响应；
+ *   ② 本次实际计入多少权重（`denominatorUsed`）—— 少了哪一维、为什么少，由后端 warning 说；
+ *   ③ 哪几维不参与初筛、哪些字段根本不存在（不是精度下降，是字段没有）。
+ *
+ * 🔴 375c 去重：这里**不再**说「本次客群维度未评」。
+ *    那句是**动态事实**（取决于本次选没选城市、该市有没有网格），唯一知道真相的是后端
+ *    ⇒ 由 `result.warnings` 的黄色条负责。上一版两处各说一遍，真机截图里两条并排、
+ *    措辞还不一致（灰字说「实际只按 35 分权重排序」、黄条说「只按竞品 + 自牌两项排序」）。
+ *    ⛔ 别为了"兜底"再搬回来：兜底靠测试钉住后端一定发那条 warning（siteSelectCoarse C3）。
+ *
+ * 🔴 375c 修正一处**术语谎言**：原来写「分数按 65 分制换算」，但 `scoreSite` 算的是
+ *    `加权和 / 已评权重和`，返回的是 **0–100 相对分**（`siteScore.js:154`）。
+ *    65 只是**标称权重合计**，不是满分 —— 所以「93 分」出现在「65 分制」里是自相矛盾的。
+ *    无网格时已评权重只有 35，同一个 93 分的含义也跟着变 ⇒ 必须把「本次计入 X / 标称 Y」写出来。
+ *    ⛔ 更不能像上一版那样把它删掉：Q14 防的就是"把 35 权重的分按 65 解释"。
+ *
+ * ⚠️ 数字一律从响应取（`denominator` / `denominatorUsed` / `weights`），⛔ 前端硬编码 65/35 ——
+ *    后端改权重而前端没跟，会变成"界面说 65 分制、实际按 35 算"。
+ */
 const coarseNote = computed(() => {
   const d = result.value || {}
   const total = Number(d.denominator || 0)
   const used = Number(d.denominatorUsed || 0)
-  const base = total
-    ? `分数按 ${total} 分制换算（客群 ${d.weights?.crowd} + 竞品 ${d.weights?.competition} + 自牌 ${d.weights?.cannibal}）`
-    : '分数按免费维度换算'
-  const miss = total && used && used < total
-    ? `；本次客群维度未评（该城市无本地 1km 网格），实际只按 ${used} 分权重排序，参考价值有限`
-    : ''
-  return `${base}${miss}。本地网格只有常住人口，不含工作人数、收入分档与到访 —— 这些字段要买联通人口才有。`
+  const w = d.weights || {}
+  let base = '分数为 0–100 相对分'
+  if (total) {
+    base += `（权重：客群 ${w.crowd} + 竞品 ${w.competition} + 自牌 ${w.cannibal}`
+    // 只有"本次计入"真的少于标称时才写出来 —— 满了还写「65 / 65」是噪音。
+    if (used > 0 && used < total) base += `；本次计入 ${used} / ${total}`
+    base += '）'
+  }
+  return `${base}；商圈与可达配套不参与初筛（分别依赖本市商圈图层与路网，跨城不可比）。`
+    + '本地网格只有常住人口，不含工作人数、收入分档与到访 —— 这些字段要买联通人口才有。'
 })
 
 /** 「对前 N 个做精算」的 N：不超过本榜条数，且落在后端允许的 [10, 50] 内 */
@@ -479,10 +510,14 @@ const canRun = computed(() => bboxArea.value > 0 && bboxArea.value <= 400)
 
 const quotaAlert = computed(() => {
   if (remaining.value > 0) return null
+  // 🔴 375c：标题必须限定在「精算」上。
+  //    375 之前这里写的是「暂时无法生成推荐」—— 那句在仅初筛上线后就变成**假话**了：
+  //    真机实测余额 0 时点「仅初筛」直接出了 16 条榜，用户被这句话劝退就走了。
+  //    ⛔ 不要为了措辞稳妥写成「部分功能受限」，用户看不出到底哪条路还能走。
   return {
     type: 'warning',
-    title: '联通人口余额为 0，暂时无法生成推荐',
-    desc: '仍可点「预估消耗」查看本次要花几次（不扣费、不调联通），再按缺口采购。'
+    title: '联通人口余额为 0：精算推荐暂不可用',
+    desc: '仍可点「仅初筛」免费出榜（不调用联通、不扣配额，分数只按客群/竞品/自牌三项）；要跑精算请先点「预估消耗」看清本次要花几次，再按缺口采购。'
   }
 })
 
@@ -630,7 +665,9 @@ async function runEstimate() {
         `预计消耗 ${Math.max(0, d.quotaEstimate - d.cacheHitGuess)} 次（${d.cacheHitGuess} 点可复用已购数据）`,
         `当前剩余 ${d.remaining} 次`
       )
-      if (d.belowTopN) parts.push(`⚠️ 剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
+      // 375c：去掉行首 `⚠️`。174 起界面文案统一不带 emoji（弹窗本身已有 warning 图标，
+      //   再加一个符号是重复；而且它在窄屏弹窗里会换行成孤零零一个符号）。
+      if (d.belowTopN) parts.push(`剩余候选不足 ${form.topN} 条，推荐数会少于目标`)
       if ((d.warnings || []).length) parts.push(...d.warnings)
 
       // 🔴 余额不足 ⇒ 明确告诉「还差几次」，⛔ 不要让用户点完「确认生成」才吃一个 400。
@@ -740,7 +777,8 @@ async function askBurnConfirm(parts, d, left) {
   const msg = [
     ...parts,
     '',
-    `⚠️ 本次消耗 ${need} 次，超过默认精算点数 ${limit} 次（占当前剩余 ${left} 次的 ${pct}%）。`,
+    // 375c：同理去 emoji —— 弹窗标题就是「高消耗确认」，不需要再来一个警示符号。
+    `本次消耗 ${need} 次，超过默认精算点数 ${limit} 次（占当前剩余 ${left} 次的 ${pct}%）。`,
     `确认无误解后，请输入 ${need} 继续：`
   ].join('\n')
   try {
@@ -900,6 +938,17 @@ watch(() => form.city, () => applyCityBox())
 
 <style scoped>
 .ss-page {
+  /* 🔴🔴 375c：这两行 + box-sizing 一个都不能省。
+     父级 `.main-content` 是 `overflow:hidden`（MainLayout:1078），也就是说**滚动责任在页面自己身上**。
+     本页 369 上线时就漏了这三行，只是一直没人把按钮放在下半屏，所以没暴露；
+     375 把「预估消耗 / 仅初筛」加进操作行后，真机 1280×577 实测：
+     内容高 953 / 可用 476，按钮落在 y=657 ⇒ **整块被裁且鼠标滚不动**（390×844 下更是只看得到第一屏）。
+     对照 `StoreCheckupView` / `DataView` / `SalesForecastView` / `SharedPurchaseView` 都有这三行。
+     ⛔ 不要图省事写 `min-height:100%`：那样元素高度随内容长，`overflow` 永不触发，等于没写。
+     ⛔ 也不要给 `.main-content` 改成 auto —— 全站约定是「内容区固定高、页面各自滚」。 */
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 20px 24px 40px;
   max-width: 1400px;
   margin: 0 auto;

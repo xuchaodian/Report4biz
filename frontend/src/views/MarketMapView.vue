@@ -308,6 +308,12 @@ onMounted(loadData)
 
 <style scoped>
 .market-map-view {
+  /* 🔴 375c：与 SiteSelectView `.ss-page` 同一缺陷（裸 padding 无滚动容器）。
+     父级 `.main-content` 是 `overflow:hidden`；本页 = 页头 + 图例 + 640px 榜单块 + 说明，
+     1366×768 下可用高约 660 ⇒ 必然超屏。内部那块 `height:640px;overflow-y:auto` 只管它自己。 */
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 20px;
 }
 .mm-header {
