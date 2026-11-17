@@ -320,6 +320,11 @@ function audit(f) {
   if (!/import \{ REUSE_TOL_M, radiusIncludes \} from '\.\.\/utils\/reuseKey\.js'/.test(f.siteSelect)) {
     bad('Q6', '复用判据未从 utils/reuseKey.js 取 —— 从 smartsteps 取会在测试 mock 后变 undefined（静默失效）')
   }
+  // Q7 已购点会被**免费追加**进精算 ⇒ `preciseCount` 可能大于用户设的「精算点数」。
+  //    界面不解释，用户会以为"我设 30 怎么精算了 45"。这条守住那句解释文案。
+  if (!/d\.purchasedInBox/.test(f.view)) {
+    bad('Q7', '前端未使用 purchasedInBox —— 精算数多于设定值时用户无从理解')
+  }
 
   return problems
 }
@@ -583,6 +588,11 @@ describe('J. 负变异：改坏必须报红', () => {
       "import { REUSE_TOL_M, radiusIncludes } from './smartsteps.js'"
     )
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q6'))).toBe(true)
+  })
+
+  it('M33 前端不再解释「精算数为何多于设定值」', () => {
+    const body = base.view.replaceAll('d.purchasedInBox', 'd.__gone')
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q7'))).toBe(true)
   })
 })
 
