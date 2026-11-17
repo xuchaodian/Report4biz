@@ -122,6 +122,19 @@ function audit(f) {
     if (!/FROM markers WHERE user_id = \? AND merged_into IS NULL/.test(f.siteSelect)) {
       bad('A11', '自有门店未按账号过滤（跨用户聚合门店违反隐私红线）')
     }
+    // 🔴🔴 A2 必须是「到访活跃」，⛔ 不能退回话费代理（业主 2026-11-17 拍板 A 案）。
+    //    话费档的分母是联通在网用户（不是全人口），且受家庭共享套餐/企业报销/
+    //    老年低话费高资产三重误判 ⇒ 不配 10 分权重。见 §6.128.15。
+    if (!/const a2 = visitScore\(pop\?\.visit\)/.test(f.siteSelect)) {
+      bad('A12', '精算 A2 未使用到访活跃（visitScore）')
+    }
+    // ⚠️ 只拦 arpuScore（纯评分函数）；arpuHighPct 仍允许出现 —— 它只做展示参考。
+    if (/arpuScore\s*\(/.test(f.siteSelect)) {
+      bad('A12', '精算仍在调用 arpuScore —— 话费代理不得参与评分')
+    }
+    if (!/SITE_CROWD_SUB = Object\.freeze\(\{\s*size:\s*20,\s*visit:\s*10\s*\}\)/.test(f.config)) {
+      bad('A12', 'SITE_CROWD_SUB 子权重不是 size:20 + visit:10')
+    }
   }
 
   // ── B. 粗分绝不外泄 ───────────────────────────────────────────────
@@ -364,6 +377,19 @@ describe('J. 负变异：改坏必须报红', () => {
       'FROM markers WHERE brand = ? AND merged_into IS NULL'
     )
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A11'))).toBe(true)
+  })
+
+  it('M19 A2 退回话费代理（弱代理重新占 10 分权重）', () => {
+    const body = base.siteSelect.replace(
+      'const a2 = visitScore(pop?.visit)',
+      'const a2 = arpuScore(arpuHighPct(pop))'
+    )
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A12'))).toBe(true)
+  })
+
+  it('M20 子权重改回 arpu（配置层偷偷退回旧口径）', () => {
+    const body = base.config.replace('{ size: 20, visit: 10 }', '{ size: 20, arpu: 10 }')
+    expect(mutate({ config: body }).some((p) => p.startsWith('A12'))).toBe(true)
   })
 })
 

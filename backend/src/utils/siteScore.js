@@ -17,6 +17,7 @@
 
 import {
   SITE_WEIGHTS, SITE_CROWD_SUB, SITE_CROWD_STEPS, SITE_CROWD_FLOOR,
+  SITE_VISIT_STEPS, SITE_VISIT_FLOOR,
   ARPU_STEPS, ARPU_FLOOR, CANNIBAL_STEPS, CANNIBAL_FAR, ACCESS_STEPS, ACCESS_FLOOR
 } from './siteSelectConfig.js'
 
@@ -44,9 +45,26 @@ export function siteCrowdScore(pop) {
 }
 
 /**
- * A2 消费能力：居住人口月话费「150 元以上」占比（%）→ 分。
- * 🔴 这是**代理指标**：联通只给话费分档，没有收入字段。
- *    文案必须写「消费能力（话费档位代理）」，⛔ 不得写成"收入水平"。
+ * 精算 A2：1km 圆内**月度到访人次** → 分（v1.13.371 起，业主 11-17 拍板 A 案）。
+ *
+ * 为什么换成到访：话费档的分母是「联通在网用户」而非全人口，且家庭共享套餐/企业报销/
+ * 老年低话费高资产三重误判会让它反向 —— 拿它当购买力代理不配 10 分权重。
+ * 到访人次衡量的是「这个点被多少人使用」，对选址比「住的人话费多高」更接近客流。
+ *
+ * ⚠️ 0 是**有效值**（真实无到访 ⇒ 最低档），⛔ 不要当成未评；
+ *    只有 null / undefined / 空串 / 非数字 才算未评（⇒ 退回 A1，不拉低总分）。
+ */
+export function visitScore(visit) {
+  if (visit === null || visit === undefined || visit === '') return null
+  const v = Number(visit)
+  if (!Number.isFinite(v)) return null
+  return stepScore(v, SITE_VISIT_STEPS, SITE_VISIT_FLOOR)
+}
+
+/**
+ * A2 旧口径：居住人口月话费「150 元以上」占比（%）→ 分。
+ * 🔴 **自 v1.13.371 起不再参与评分**，仅保留给历史数据与展示参考。
+ *    ⛔ 不要接回 A2（原因见 visitScore 上方与 siteSelectConfig.SITE_CROWD_SUB）。
  * @param {number|null} pct 0~100
  */
 export function arpuScore(pct) {
@@ -72,13 +90,14 @@ export function arpuHighPct(pop) {
 }
 
 /**
- * A 维度合成：A1（规模，权重 20）+ A2（消费力，权重 10）→ 0~100。
- * A2 缺失时退回 A1（并把 ratio 标出来），⛔ 不按 0 拉低总分。
+ * A 维度合成：A1（规模，权重 20）+ A2（到访活跃，权重 10）→ 0~100。
+ * A2 缺失时退回 A1（⛔ 不按 0 拉低总分）。
+ * ⚠️ 子权重的键名是 `size` / `visit`（旧版是 `arpu`）—— 改键名是为了让"谁在算分"一目了然。
  */
 export function combineCrowd(a1, a2) {
   if (Number.isFinite(a1) && Number.isFinite(a2)) {
-    const { size, arpu } = SITE_CROWD_SUB
-    return Math.round((a1 * size + a2 * arpu) / (size + arpu))
+    const { size, visit } = SITE_CROWD_SUB
+    return Math.round((a1 * size + a2 * visit) / (size + visit))
   }
   if (Number.isFinite(a1)) return a1
   return null
@@ -154,6 +173,16 @@ export function fmtKm(m) {
 }
 
 /**
+ * 到访人次（带单位）。
+ * ⚠️ 不能直接复用 fmtWan：它产出「9569 人」，再拼「人次」会变成「9569 人人次」。
+ */
+export function fmtVisitCount(v) {
+  const n = Number(v) || 0
+  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)} 万人次`
+  return `${Math.round(n)} 人次`
+}
+
+/**
  * 推荐理由（**确定性生成，不调 LLM**）。
  * 每条都必须在系统里可复核 —— 数字直接来自 raw，⛔ 不许出现「潜力巨大」这类话术。
  *
@@ -171,9 +200,11 @@ export function buildReason(raw, meta = {}) {
     const month = meta.cityMonth ? `（联通 ${meta.cityMonth}）` : ''
     out.push(`半径 ${radius}m 内居住 ${fmtWan(r.live)} + 工作 ${fmtWan(r.work)}${month}`)
   }
-  // ② 消费力代理（必须带「代理」字样）
-  if (Number.isFinite(r.arpuHighPct)) {
-    out.push(`居住人口月话费 150 元以上占 ${r.arpuHighPct}%（消费能力代理）`)
+  // ② 到访活跃（v1.13.371 起参与 A2 打分，必须出现在理由里）
+  // ⚠️ 话费占比（r.arpuHighPct）自 371 起**不进分** ⇒ ⛔ 不要写进理由，
+  //    否则客户会以为"话费高所以排名高"（理由只讲真正参与打分的因素）。
+  if (Number.isFinite(r.visit)) {
+    out.push(`半径 ${radius}m 内月度到访 ${fmtVisitCount(r.visit)}`)
   }
   // ③ 竞品
   if (Number.isFinite(r.competitors)) {

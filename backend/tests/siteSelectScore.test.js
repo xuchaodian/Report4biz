@@ -25,7 +25,7 @@ import {
   countWithin, nearestDistance, sameBrandEffectiveCount, nms
 } from '../src/utils/potentialGrid.js'
 import {
-  siteCrowdScore, arpuScore, arpuHighPct, combineCrowd, cannibalScore,
+  siteCrowdScore, visitScore, arpuScore, arpuHighPct, combineCrowd, cannibalScore, fmtVisitCount,
   scoreSite, buildReason, accessScore
 } from '../src/utils/siteScore.js'
 import {
@@ -308,11 +308,30 @@ describe('G. 分档打分边界', () => {
     expect(siteCrowdScore(NaN)).toBe(null)
   })
 
-  it('A2 消费力：45% 命中 95（文档是 ≥，不是 >）', () => {
+  it('A2 到访活跃：分档边界（≥ 命中，不是 >）', () => {
+    expect(visitScore(2000000)).toBe(95)
+    expect(visitScore(1999999)).toBe(85)
+    expect(visitScore(800000)).toBe(85)
+    expect(visitScore(300000)).toBe(72)
+    expect(visitScore(100000)).toBe(58)
+    expect(visitScore(30000)).toBe(40)
+    expect(visitScore(29999)).toBe(30)
+  })
+
+  it('🔴 A2 到访：0 是有效值（最低档），只有缺字段才是未评', () => {
+    // 1001 返回字符串 "0" / "9569" ⇒ 必须能转
+    expect(visitScore(0)).toBe(30)
+    expect(visitScore('0')).toBe(30)
+    expect(visitScore('9569')).toBe(30)
+    // ⛔ 以下必须 null ⇒ 退回 A1，不按 0 分拉低
+    expect(visitScore(null)).toBe(null)
+    expect(visitScore(undefined)).toBe(null)
+    expect(visitScore('')).toBe(null)
+    expect(visitScore('abc')).toBe(null)
+  })
+
+  it('A2 旧口径 arpuScore 保留（历史/展示），但已不参与评分', () => {
     expect(arpuScore(45)).toBe(95)
-    expect(arpuScore(44.9)).toBe(80)
-    expect(arpuScore(15)).toBe(50)
-    expect(arpuScore(1)).toBe(35)
     expect(arpuScore(null)).toBe(null)
   })
 
@@ -337,7 +356,7 @@ describe('G. 分档打分边界', () => {
   })
 
   it('A 合成：A2 缺失时退回 A1（⛔ 不按 0 拉低）', () => {
-    expect(combineCrowd(90, 80)).toBe(87)     // (90*20 + 80*10)/30 = 86.67
+    expect(combineCrowd(90, 80)).toBe(87)     // (90*20 + 80*10)/30 = 86.67，A2 权重 10（到访）
     expect(combineCrowd(90, null)).toBe(90)
     expect(combineCrowd(null, 80)).toBe(null)
   })
@@ -394,7 +413,7 @@ describe('H. 归一化：未评维度不进分母', () => {
 
 describe('I. 推荐理由', () => {
   const raw = {
-    live: 142000, work: 44000, arpuHighPct: 31.4,
+    live: 142000, work: 44000, visit: 320000, arpuHighPct: 31.4,
     competitors: 5, competitorBrands: { 肯德基: 3, 麦当劳: 2 },
     nearestOwnM: 1420, ownWithin2km: 0, districtName: '五角场'
   }
@@ -406,10 +425,27 @@ describe('I. 推荐理由', () => {
     expect(r[0]).toContain('202609')
   })
 
-  it('🔴 消费力句必须写「代理」', () => {
+  it('🔴 到访人次文案：「万人次」/「人次」二选一，⛔ 不能出「人人次」', () => {
+    expect(fmtVisitCount(0)).toBe('0 人次')
+    expect(fmtVisitCount(9569)).toBe('9569 人次')
+    expect(fmtVisitCount(10000)).toBe('1.0 万人次')
+    expect(fmtVisitCount(862000)).toBe('86.2 万人次')
+  })
+
+  it('🔴 到访句必须出现（它是 A2 的实际打分依据）', () => {
     const r = buildReason(raw, { radius: 1000, cityMonth: '202609' })
-    const line = r.find((x) => x.includes('话费'))
-    expect(line).toContain('代理')
+    const line = r.find((x) => x.includes('到访'))
+    expect(line).toContain('32.0 万')
+  })
+
+  it('🔴 话费占比不进理由（不参与打分的因素不得出现在「为什么推荐」里）', () => {
+    const r = buildReason(raw, { radius: 1000, cityMonth: '202609' })
+    expect(r.some((x) => x.includes('话费'))).toBe(false)
+  })
+
+  it('到访缺失时不写该句（⛔ 不写「到访 0 人次」）', () => {
+    const r = buildReason({ ...raw, visit: null }, { radius: 1000 })
+    expect(r.some((x) => x.includes('到访'))).toBe(false)
   })
 
   it('竞品句带品牌构成；0 家时明确写「无竞品」', () => {

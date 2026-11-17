@@ -53,7 +53,7 @@ import {
   countWithin, nearestDistance, sameBrandEffectiveCount, nms
 } from '../utils/potentialGrid.js'
 import {
-  siteCrowdScore, arpuHighPct, arpuScore, combineCrowd, cannibalScore, scoreSite, buildReason
+  siteCrowdScore, visitScore, arpuHighPct, combineCrowd, cannibalScore, scoreSite, buildReason
 } from '../utils/siteScore.js'
 import {
   SITE_WEIGHTS, SITE_STEP_CHOICES, SITE_RADIUS_CHOICES, MAX_BBOX_AREA_KM2, MAX_GRIDS,
@@ -627,11 +627,17 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
       if (!(sizePop > 0)) { crowdDropped++; continue }
 
       const a1 = siteCrowdScore(sizePop)
+      // A2 = 到访活跃（v1.13.371 起，业主 11-17 拍板 A 案）
+      // ⚠️ pop.visit 可能是字符串（1001 返回 "9569"）或 0（真实无到访，⇒ 最低档）；
+      //    visitScore 内部区分「0 = 有效值」与「null/缺字段 = 未评」，这里⛔ 不要再 `|| 0`。
+      const a2 = visitScore(pop?.visit)
+      // 话费占比从此只做展示参考，⛔ 不进分（旧口径，见 siteSelectConfig.ARPU_STEPS）
       const highPct = arpuHighPct(pop)
-      const a2 = arpuScore(highPct)
       c.precise = {
         live: Number(pop.live) || 0,
         work: Number(pop.work) || 0,
+        visit: Number.isFinite(Number(pop?.visit)) && pop?.visit !== null && pop?.visit !== undefined
+          ? Number(pop.visit) : null,
         arpuHighPct: highPct,
         a1,
         a2,
@@ -658,6 +664,19 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         message: '联通未返回可用人口数据，无法生成推荐（本次未消耗配额或已按实际调用计费）',
         quota: { estimate: need, used: quotaUsed, fromCacheCount, remaining: getPoolRemaining(db) }
       })
+    }
+
+    // ── A2 到访分档自检（v1.13.371）──────────────────────────────────
+    // 阈值用上海 hd 数据标定，且**假设**联通 p0_sum 同为月度到访。假设若不成立，
+    // 全批会挤在同一档 —— 那等于 A2 白占 10 分权重，必须如实告知（⛔ 不能静默）。
+    const visitScores = [...new Set(precise.map((c) => c.precise.a2).filter((v) => Number.isFinite(v)))]
+    if (precise.length >= 5 && visitScores.length === 0) {
+      coarse.warnings.push('联通未返回到访人次：本次客群仅按人口规模评分（到访活跃未评）')
+    } else if (precise.length >= 5 && visitScores.length === 1) {
+      coarse.warnings.push(
+        `本次所有点的「到访活跃」得分相同（${visitScores[0]} 分）—— 分档阈值可能与联通实际量级不匹配，`
+        + '排序主要由人口/竞品/商圈决定；阈值见 siteSelectConfig.SITE_VISIT_STEPS（待真实数据回测）'
+      )
     }
 
     // ── 阶段 3：合成 → 二次 NMS（真实总分）→ TOP N ───────────────────
@@ -694,6 +713,7 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
       const raw = {
         live: it.crowdInfo.live,
         work: it.crowdInfo.work,
+        visit: it.crowdInfo.visit,
         arpuHighPct: it.crowdInfo.arpuHighPct,
         competitors: it.comp.count,
         competitorBrands: it.comp.byBrand,

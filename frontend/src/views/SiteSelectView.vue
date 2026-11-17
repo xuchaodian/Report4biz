@@ -212,13 +212,11 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="圆内人口（联通）" width="170">
+        <el-table-column label="圆内人口 / 到访" width="170">
           <template #default="{ row }">
             <div>居住 {{ fmtWan(row.raw.live) }}</div>
             <div>工作 {{ fmtWan(row.raw.work) }}</div>
-            <div v-if="row.raw.arpuHighPct !== null" class="ss-muted">
-              话费 150+ 占 {{ row.raw.arpuHighPct }}%（代理）
-            </div>
+            <div class="ss-visit">到访 {{ fmtVisit(row.raw.visit) }}</div>
           </template>
         </el-table-column>
         <el-table-column label="竞品" width="110">
@@ -573,6 +571,19 @@ function fmtKm(m) {
   return `${km >= 10 ? km.toFixed(1) : km.toFixed(2)}km`
 }
 
+/**
+ * 到访人次：null ⇒ '—'（未评），⛔ 不能走 fmtWan —— 那会把 null 显示成「0 人」，
+ * 看起来像"这里没人来"，实际是"联通没返回该字段"。
+ * 注意 0 是有效值（真实无到访），必须显示「0 人次」而不是「—」。
+ * 单位统一带「人次」：到访是**累计流量**，写成「人」会被误读成时点存量。
+ */
+function fmtVisit(v) {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v) || 0
+  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)} 万人次`
+  return `${Math.round(n)} 人次`
+}
+
 function fmtDim(v) {
   return Number.isFinite(v) ? v : '—'
 }
@@ -649,6 +660,11 @@ watch(() => form.city, () => applyCityBox())
 }
 .ss-num {
   font-size: 18px;
+  font-weight: 600;
+  color: var(--el-color-primary, #2563eb);
+}
+/* 到访人次参与 A2 打分（v1.13.371 起）⇒ 与居住/工作区分开，避免"三个数一样重"的误读 */
+.ss-visit {
   font-weight: 600;
   color: var(--el-color-primary, #2563eb);
 }
