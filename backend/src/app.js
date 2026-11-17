@@ -29,6 +29,8 @@ import geocodeRoutes from './routes/geocode.js'
 import aiRoutes from './routes/ai.js'
 import poiRoutes from './routes/poi.js'
 import smartstepsRoutes from './routes/smartsteps.js'
+// v1.13.369：智能选址（点位自动推荐 + 评分排序）—— 仅管理员，见 routes/site-select.js 头注释
+import siteSelectRoutes from './routes/site-select.js'
 import purchaseRoutes from './routes/purchase.js'
 import purchaseImportRoutes from './routes/purchase-import.js'
 import streetviewRoutes from './routes/streetview.js'
@@ -137,6 +139,7 @@ async function start() {
     app.use('/api/ai', aiRoutes)
     app.use('/api/poi', poiRoutes)
     app.use('/api/smartsteps', smartstepsRoutes)
+    app.use('/api/site-select', siteSelectRoutes)
     // 外部联通 Excel 批量导入须先于 /api/purchase 注册（/import/* 不被 purchase 子路由吞）
     app.use('/api/purchase/import', purchaseImportRoutes)
     app.use('/api/purchase', purchaseRoutes)

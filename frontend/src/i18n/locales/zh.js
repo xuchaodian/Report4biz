@@ -17,6 +17,7 @@ export default {
     //    本批只改显示名与 key，未动路由地址。
     baseData: '基础数据',
     siteWorkbench: '选址工作台',
+    siteSelect: '智能选址',
     cityInsight: '城市洞察',
     districtInsight: '商圈洞察',
     salesForecast: '销售预测',

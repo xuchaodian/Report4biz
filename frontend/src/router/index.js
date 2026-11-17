@@ -129,6 +129,15 @@ const routes = [
         meta: { requiresAdmin: true, titleKey: 'nav.candidates' }
       },
       {
+        // v1.13.369：智能选址（点位自动推荐 + 评分排序）。
+        // 🔴 三处门禁之一（另两处：MainLayout 菜单 v-if / 后端 requireAdmin）。
+        //    343 的教训是「只管可见不管可用」，本次后端**真加**了 requireAdmin。
+        path: 'site-select',
+        name: 'SiteSelect',
+        component: () => import('@/views/SiteSelectView.vue'),
+        meta: { requiresAdmin: true, titleKey: 'nav.siteSelect' }
+      },
+      {
         path: 'market-map',
         name: 'MarketMap',
         component: () => import('@/views/MarketMapView.vue'),

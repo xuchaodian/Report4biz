@@ -94,6 +94,11 @@
               <el-dropdown-item v-if="userStore.isAdmin" :class="{ 'dd-active': $route.path === '/candidates' }" @click="$router.push('/candidates')">
                 <el-icon><Flag /></el-icon>{{ $t('nav.candidates') }}
               </el-dropdown-item>
+              <!-- v1.13.369：智能选址。仅管理员（与 candidates 同款 UI 门禁）。
+                   🔴 会消耗联通付费配额 ⇒ 门禁必须三处齐落，后端 requireAdmin 已加。 -->
+              <el-dropdown-item v-if="userStore.isAdmin" :class="{ 'dd-active': $route.path === '/site-select' }" @click="$router.push('/site-select')">
+                <el-icon><Aim /></el-icon>{{ $t('nav.siteSelect') }}
+              </el-dropdown-item>
               <!-- v1.13.209：销售预测升为 VIP 专属。非 VIP 显示 🔒VIP 角标
                    （判据与「AI 选址建议 / 开店余地 / 网点优化」共用 userStore.isVipActive，
                     切勿就地写 role 判等 —— backend/tests/vipGateGuard.test.js 会判红） -->
@@ -347,7 +352,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { captureMapToCanvas, captureMapOnlyCanvas, captureShoppingCenterMap } from '@/utils/mapCapture'
 import { useRouter, useRoute } from 'vue-router'
-import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, Flag, Menu, Close } from '@element-plus/icons-vue'
+import { MapLocation, DataAnalysis, DataLine, Shop, User, UserFilled, SwitchButton, ArrowDown, Setting, Document, DocumentCopy, Upload, Odometer, Download, Key, DataBoard, TrendCharts, RefreshRight, Reading, ChatDotRound, Flag, Menu, Close, Aim } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'

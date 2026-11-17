@@ -13,6 +13,7 @@ export default {
     // 空間データファイル（人口・商圏・都市データ）の管理。
     baseData: '基礎データ',
     siteWorkbench: '立地ワークベンチ',
+    siteSelect: 'スマート立地選定',
     cityInsight: '都市インサイト',
     districtInsight: '商圏インサイト',
     salesForecast: '売上予測',

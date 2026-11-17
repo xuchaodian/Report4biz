@@ -47,7 +47,9 @@ export function authenticate(req, res, next) {
 //    本函数不自行认证，只判角色。
 export function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ message: '需要管理员权限' })
+    // v1.13.369：补 `code` —— 前端按 code 分流（⛔ 不靠 message 字符串匹配，
+    // 与 buildGateError 的纪律一致）。message 保持原文，不影响既有调用方。
+    return res.status(403).json({ success: false, code: 'admin_only', message: '需要管理员权限' })
   }
   next()
 }

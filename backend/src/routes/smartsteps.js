@@ -678,21 +678,44 @@ function latestMonthLocal() {
  * 报告取人口主端点。
  * POST /api/smartsteps/population  { lng, lat, radius, cityMonth?, storeName? }
  */
-router.post('/population', authenticate, async (req, res) => {
-  const body = req.body || {}
-  const gLng = Number(body.lng)
-  const gLat = Number(body.lat)
-  const radius = Number(body.radius)
-  const storeName = String(body.storeName || '').slice(0, 100)
+/**
+ * 单点人口取数 —— **唯一实现**，报告（/population）与智能选址（/api/site-select）共用。
+ *
+ * v1.13.369 从 /population 的 handler 里原样抽出。为什么要抽：
+ *   智能选址要对 30 个候选点各取一次人口，若再写一份「缓存 → 配额 → 联通 → 落库」，
+ *   必然出现「/population 会复用已购数据、选址不会」这种口径漂移 —— 用户会看到同一点位
+ *   在报告里 0 消耗、在选址里扣了 1 次。项目铁律：派生取数链路单一来源。
+ *
+ * 取数优先级（①② 都 0 费用）：
+ *   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001
+ *   ② smartsteps_cache —— 同坐标（5 位小数）+ 同半径 + services 含 1001
+ *   ③ 都没有 → 配额闸门 → 调联通（扣 1 次）→ 同事务写 purchases + cache
+ *
+ * 🔴 复用**不要求同月份**：已购数据就是那个月的事实，把 dataMonth 如实回传让调用方判断
+ *    要不要刷新。强行要求同月等于「过期就重新收费」，那是坑用户。
+ *
+ * @returns {Promise<{ok:boolean, status?:number, body:object}>} 不直接写 res，便于批量串行调用
+ */
+export async function fetchPointPopulation(db, user, opts = {}) {
+  const gLng = Number(opts.lng)
+  const gLat = Number(opts.lat)
+  const radius = Number(opts.radius)
+  const storeName = String(opts.storeName || '').slice(0, 100)
+  const storeType = String(opts.storeType || '').slice(0, 40)
+  const probeOnly = !!opts.probeOnly
 
   if (!Number.isFinite(gLng) || !Number.isFinite(gLat) || !gLng || !gLat) {
-    return res.status(400).json({ message: '缺少有效坐标' })
+    return { ok: false, status: 400, body: { message: '缺少有效坐标' } }
   }
-  if (!REPORT_RADII.includes(radius)) {
-    return res.status(400).json({ message: `半径只支持 ${REPORT_RADII.map((r) => r / 1000 + 'km').join(' / ')}` })
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return { ok: false, status: 400, body: { message: '缺少有效半径' } }
+  }
+  // 联通硬约束（与 /query 同一条）：圆面积必须落在 0.3~80 km²
+  const areaKm2 = Math.PI * (radius / 1000) ** 2
+  if (areaKm2 < 0.3 || areaKm2 > 80) {
+    return { ok: false, status: 400, body: { message: `圆形面积 ${areaKm2.toFixed(2)} km² 超出允许范围（0.3~80 km²），请调整半径` } }
   }
 
-  const db = getDb()
   initCacheTable(db)
 
   // ── ① 复用已购买：同账号 + 同半径 + 10m 内 + 含 1001 ──────────────────
@@ -705,7 +728,7 @@ router.post('/population', authenticate, async (req, res) => {
          AND center_lat BETWEEN ? AND ? AND center_lng BETWEEN ? AND ?
        ORDER BY city_month DESC, id DESC
        LIMIT 200
-    `).all(req.user.id, gLat - box, gLat + box, gLng - box, gLng + box)
+    `).all(user.id, gLat - box, gLat + box, gLng - box, gLng + box)
 
     for (const row of rows) {
       if (!radiusIncludes(row.radius, radius)) continue
@@ -717,23 +740,26 @@ router.post('/population', authenticate, async (req, res) => {
 
       const pop = parsePopulation1001(row.result_data)
       if (!pop) continue          // 那笔购买里没有 1001（只买了 1005 之类）⇒ 不算命中
-      return res.json({
-        success: true,
-        source: 'purchase',
-        radius,
-        population: pop,
-        dataMonth: row.city_month || '',
-        reused: {
-          purchaseId: row.id,
-          storeName: row.store_name || '',
-          purchasedAt: row.created_at || ''
-        },
-        quotaUsed: 0,
-        message: '已复用该位置购买过的联通人口数据，本次未消耗配额'
-      })
+      return {
+        ok: true,
+        body: {
+          success: true,
+          source: 'purchase',
+          radius,
+          population: pop,
+          dataMonth: row.city_month || '',
+          reused: {
+            purchaseId: row.id,
+            storeName: row.store_name || '',
+            purchasedAt: row.created_at || ''
+          },
+          quotaUsed: 0,
+          message: '已复用该位置购买过的联通人口数据，本次未消耗配额'
+        }
+      }
     }
   } catch (e) {
-    console.error('[ReportPopulation] 查询已购数据失败:', e.message)
+    console.error('[fetchPointPopulation] 查询已购数据失败:', e.message)
   }
 
   // ── ② 复用共享缓存（同坐标 5 位小数 + 同半径 + services 含 1001）──────
@@ -751,43 +777,49 @@ router.post('/population', authenticate, async (req, res) => {
     if (cached) {
       const pop = parsePopulation1001(cached.result_data)
       if (pop) {
-        return res.json({
-          success: true,
-          source: 'cache',
-          radius,
-          population: pop,
-          dataMonth: cached.city_month || '',
-          reused: { storeName: '', purchasedAt: '' },
-          quotaUsed: 0,
-          message: '已命中同位置缓存，本次未消耗配额'
-        })
+        return {
+          ok: true,
+          body: {
+            success: true,
+            source: 'cache',
+            radius,
+            population: pop,
+            dataMonth: cached.city_month || '',
+            reused: { storeName: '', purchasedAt: '' },
+            quotaUsed: 0,
+            message: '已命中同位置缓存，本次未消耗配额'
+          }
+        }
       }
     }
   } catch (e) {
-    console.error('[ReportPopulation] 查询缓存失败:', e.message)
+    console.error('[fetchPointPopulation] 查询缓存失败:', e.message)
   }
 
-  // 只探测：报告一打开就调这里（免费），命中就展示，没命中让用户自己点按钮
-  if (body.probeOnly) {
-    return res.json({
-      success: true,
-      source: 'none',
-      radius,
-      population: null,
-      dataMonth: '',
-      reused: null,
-      quotaUsed: 0
-    })
+  // 只探测：命中就展示，没命中让调用方自己决定要不要花钱
+  if (probeOnly) {
+    return {
+      ok: true,
+      body: {
+        success: true,
+        source: 'none',
+        radius,
+        population: null,
+        dataMonth: '',
+        reused: null,
+        quotaUsed: 0
+      }
+    }
   }
 
   // ── ③ 都没有：配额闸门 → 调联通（扣 1 次）───────────────────────────
-  const gate = checkQuota(db, req.user?.id, 1, { role: req.user?.role })
+  const gate = checkQuota(db, user?.id, 1, { role: user?.role })
   if (!gate.ok) {
     const err = buildGateError(gate)
-    return res.status(err.status).json(err.body)
+    return { ok: false, status: err.status, body: err.body }
   }
 
-  const cityMonth = String(body.cityMonth || '') || latestMonthLocal()
+  const cityMonth = String(opts.cityMonth || '') || latestMonthLocal()
   let result
   try {
     const token = await getAuthorization()
@@ -806,14 +838,14 @@ router.post('/population', authenticate, async (req, res) => {
     if (api.code !== 200 || !api.data) throw new Error(`联通返回错误: ${api.message || api.info || api.code}`)
     result = api.data
   } catch (e) {
-    console.error('[ReportPopulation] 联通取数失败:', e.message)
-    return res.status(502).json({ message: '人口数据服务暂不可用，请稍后重试' })
+    console.error('[fetchPointPopulation] 联通取数失败:', e.message)
+    return { ok: false, status: 502, body: { message: '人口数据服务暂不可用，请稍后重试' } }
   }
 
   const pop = parsePopulation1001(result)
   if (!pop) {
     // 上游成功但没数据 ⇒ **不扣费**（与 /query 的"空数据返还配额"同口径）
-    return res.status(502).json({ message: '联通未返回可用人口数据（本次未消耗配额）' })
+    return { ok: false, status: 502, body: { message: '联通未返回可用人口数据（本次未消耗配额）' } }
   }
 
   // 扣费 + 写 purchases + 写 cache，同一事务
@@ -826,7 +858,7 @@ router.post('/population', authenticate, async (req, res) => {
                              city_month, quota_used, status, result_data)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?)
     `).run(
-      req.user.id, storeName, 'report',
+      user.id, storeName, storeType || 'report',
       gLng, gLat, JSON.stringify([radius]),
       cityMonth,
       JSON.stringify({ querySuccess: true, apiResult: result, refunded: false })
@@ -835,21 +867,46 @@ router.post('/population', authenticate, async (req, res) => {
     db.commitTx()
   } catch (txErr) {
     try { db.rollbackTx() } catch { /* 忽略 */ }
-    console.error('[ReportPopulation] 落库失败:', txErr.message)
-    return res.status(500).json({ message: '人口数据已取到但落库失败，请重试' })
+    console.error('[fetchPointPopulation] 落库失败:', txErr.message)
+    return { ok: false, status: 500, body: { message: '人口数据已取到但落库失败，请重试' } }
   }
 
-  res.json({
-    success: true,
-    source: 'fresh',
+  return {
+    ok: true,
+    body: {
+      success: true,
+      source: 'fresh',
+      radius,
+      population: pop,
+      dataMonth: cityMonth,
+      reused: null,
+      quotaUsed: 1,
+      remainingQuota: remaining,
+      message: '已从联通获取人口数据（消耗 1 次配额）'
+    }
+  }
+}
+
+/**
+ * 报告取人口主端点（薄壳，v1.13.369 起全部逻辑在 fetchPointPopulation）。
+ * POST /api/smartsteps/population  { lng, lat, radius, cityMonth?, storeName?, probeOnly? }
+ */
+router.post('/population', authenticate, async (req, res) => {
+  const body = req.body || {}
+  const radius = Number(body.radius)
+  if (!REPORT_RADII.includes(radius)) {
+    return res.status(400).json({ message: `半径只支持 ${REPORT_RADII.map((r) => r / 1000 + 'km').join(' / ')}` })
+  }
+  const r = await fetchPointPopulation(getDb(), req.user, {
+    lng: body.lng,
+    lat: body.lat,
     radius,
-    population: pop,
-    dataMonth: cityMonth,
-    reused: null,
-    quotaUsed: 1,
-    remainingQuota: remaining,
-    message: '已从联通获取人口数据（消耗 1 次配额）'
+    cityMonth: body.cityMonth,
+    storeName: body.storeName,
+    storeType: 'report',
+    probeOnly: !!body.probeOnly
   })
+  return res.status(r.ok ? 200 : (r.status || 500)).json(r.body)
 })
 
 export default router

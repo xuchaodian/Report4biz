@@ -13,6 +13,7 @@ export default {
     // files (population, districts, city data), not statistics/reports.
     baseData: 'Base Data',
     siteWorkbench: 'Site Workbench',
+    siteSelect: 'Site Selector',
     cityInsight: 'City Insight',
     districtInsight: 'District Insight',
     salesForecast: 'Sales Forecast',

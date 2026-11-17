@@ -372,11 +372,15 @@ describe('G. 人口只认联通配额，且与「我的门店」打通（点位+
 
 describe('H. 打通「我的门店」已购数据（后端取数优先级）', () => {
   const SS = read('backend/src/routes/smartsteps.js')
+  // v1.13.369：取数主流程从 /population 的 handler 抽成 fetchPointPopulation（报告与智能选址共用）。
+  // 断言锚点随之改为「函数体」；不变量（复用优先于闸门 / 不要求同月 / 写两处 / 无数据不扣费）一字未改。
+  const FN_START = SS.indexOf('export async function fetchPointPopulation')
+  const FN_END = SS.indexOf("router.post('/population'", FN_START)
+  const fetchBody = FN_START >= 0 ? SS.slice(FN_START, FN_END > FN_START ? FN_END : undefined) : ''
 
   it('🔴 顺序必须是 purchases → cache → 配额闸门（复用优先，⛔ 先拦配额）', () => {
-    const i = SS.indexOf("router.post('/population'")
-    expect(i).toBeGreaterThan(-1)
-    const body = SS.slice(i, SS.indexOf('export default router', i))
+    expect(FN_START).toBeGreaterThan(-1)
+    const body = fetchBody
     const iP = body.indexOf('FROM purchases')
     const iC = body.indexOf('smartsteps_cache')
     const iG = body.indexOf('checkQuota(')
@@ -407,7 +411,7 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 
   it('🔴 probeOnly 必须只查复用 —— ⛔ 不碰闸门、不调上游', () => {
-    const i = SS.indexOf('if (body.probeOnly)')
+    const i = SS.indexOf('if (probeOnly)')
     expect(i).toBeGreaterThan(-1)
     const body = SS.slice(i, SS.indexOf('// ── ③', i))
     expect(body).toContain("source: 'none'")
@@ -416,8 +420,7 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 
   it('🔴 复用不要求同月份（过期就重新收费＝坑用户），但必须回传期次', () => {
-    const i = SS.indexOf("router.post('/population'")
-    const body = SS.slice(i, i + 6000)
+    const body = fetchBody
     expect(body).toContain('dataMonth: row.city_month')
     expect(body).toContain('dataMonth: cached.city_month')
     // 查已购时不许出现 city_month = ? 这种同月限制
@@ -426,15 +429,13 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 
   it('取到数据必须同时写 purchases 与 cache（否则下次不能复用）', () => {
-    const i = SS.indexOf("router.post('/population'")
-    const body = SS.slice(i, i + 6000)
+    const body = fetchBody
     expect(body).toContain('INSERT INTO purchases')
     expect(body).toContain('saveToCache')
   })
 
   it('上游成功但无数据 ⇒ 不扣费（与 /query 的空数据返还同口径）', () => {
-    const i = SS.indexOf("router.post('/population'")
-    const body = SS.slice(i, i + 6000)
+    const body = fetchBody
     expect(body).toMatch(/联通未返回可用人口数据（本次未消耗配额）/)
   })
 })
