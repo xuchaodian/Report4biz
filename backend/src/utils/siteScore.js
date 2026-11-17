@@ -183,6 +183,18 @@ export function fmtVisitCount(v) {
 }
 
 /**
+ * 商圈短语：`名称` 可能自带「商圈」后缀。
+ * 🔴 2026-11-17 生产实测：`districtName = "彭浦新村商圈"`，旧写法机械拼成
+ *    「位于「彭浦新村商圈」商圈」—— 生成日志里一眼能看到，但界面上很容易被当成排版问题忽略。
+ * ⛔ 不要在调用处各自 `+ '商圈'`，两处（精算/初筛）必须共用这一份。
+ */
+function districtPhrase(name) {
+  const n = String(name || '').trim()
+  if (!n) return ''
+  return /商圈$/.test(n) ? `位于「${n}」` : `位于「${n}」商圈`
+}
+
+/**
  * 推荐理由（**确定性生成，不调 LLM**）。
  * 每条都必须在系统里可复核 —— 数字直接来自 raw，⛔ 不许出现「潜力巨大」这类话术。
  *
@@ -224,7 +236,7 @@ export function buildReason(raw, meta = {}) {
   }
   // ⑤ 商圈
   if (meta.districtName) {
-    out.push(`位于「${meta.districtName}」商圈${Number.isFinite(meta.districtScore) ? `（综合 ${meta.districtScore} 分）` : ''}`)
+    out.push(`${districtPhrase(meta.districtName)}${Number.isFinite(meta.districtScore) ? `（综合 ${meta.districtScore} 分）` : ''}`)
   }
 
   return out.filter(Boolean).slice(0, 4)
@@ -270,7 +282,7 @@ export function buildCoarseReason(raw, meta = {}) {
     out.push(`800m 内无同品牌门店；2km 内 ${r.ownWithin2km} 家`)
   }
   // ④ 商圈（只做位置说明 —— 商圈分不进初筛尺子，⛔ 不要在这里报分数，否则等于暗示它参与了）
-  if (meta.districtName) out.push(`位于「${meta.districtName}」商圈`)
+  if (meta.districtName) out.push(districtPhrase(meta.districtName))
 
   return out.filter(Boolean).slice(0, 4)
 }

@@ -341,8 +341,13 @@ function mergePurchasedPoints(db, userId, radius, bbox, gridPoints) {
 /**
  * 粗排：bbox → 候选点 → 四维打分 → 饱和剔除 → NMS → TOP preciseTopK。
  * 🔴 全程零外部调用；`fetchPointPopulation` 只在阶段 2（rank）里出现。
+ *
+ * @param {'precise'|'coarse'} [mode] 只影响**警告文案**（口径不同），不影响任何计算。
+ *   `'coarse'` ＝ 仅初筛模式：排名只由客群/竞品决定，⛔ 不能对用户说「最终评分仍使用联通人口」，
+ *   因为那个模式根本不存在"最终评分"。
  */
-function runCoarse(db, user, p) {
+function runCoarse(db, user, p, mode = 'precise') {
+  const coarseOnly = mode === 'coarse'
   const warnings = []
   const { points: gridPoints } = enumerateGrid(p.bbox, p.stepM)
   // 候选集 = 网格格心 + 框内已购点（批次 373）。`gridTotal` 仍只算格心，
@@ -408,7 +413,11 @@ function runCoarse(db, user, p) {
   //    按本账号取门店是本功能既有口径（数据隐私：⛔ 不做跨账号聚合），但**结果必须写明白**，
   //    否则饱和保护与「自牌蚕食」维度会「静默不生效」：能跑通、不报错、只是这两个维度白算。
   if (!ownAll.length) {
-    warnings.push('本账号名下没有门店数据：饱和保护与「自牌蚕食」维度都不生效，排名只由客群/竞品/商圈决定')
+    // ⚠️ 文案必须随模式变：仅初筛里没有"商圈"这一维（尺子固定 65），
+    //    照抄精算那句「只由客群/竞品/商圈决定」等于告诉用户一个没发生的事。
+    warnings.push(coarseOnly
+      ? '本账号名下没有门店数据：「自牌蚕食」维度不生效，初筛排名只由客群/竞品决定'
+      : '本账号名下没有门店数据：饱和保护与「自牌蚕食」维度都不生效，排名只由客群/竞品/商圈决定')
   } else if (hasBrand && !ownForSat.length) {
     warnings.push(`本账号名下没有「${p.myBrand}」的门店：饱和保护已跳过，自牌维度按「无自有门店」处理`)
   }
@@ -485,7 +494,13 @@ function runCoarse(db, user, p) {
       warnings.push('该区域人口密度偏低，建议扩大范围或更换区域')
     }
   } else {
-    if (p.city) {
+    if (coarseOnly) {
+      // 🔴 仅初筛必须说清「实际分母降到了 35」：标称 65 而只算了两个维度，不给数字就是撒谎。
+      warnings.push(p.city
+        ? '本城市暂无本地 1km 网格数据 ⇒ 客群维度未评，初筛只按「竞品 + 自牌距离」两项排序'
+          + `（实际分母 ${COARSE_ONLY_DENOMINATOR - COARSE_ONLY_WEIGHTS.crowd}），参考价值有限`
+        : '未指定城市，无法使用本地 1km 网格 ⇒ 客群维度未评，初筛只按「竞品 + 自牌距离」两项排序')
+    } else if (p.city) {
       warnings.push('本城市暂无本地 1km 网格数据，初筛按 3 个维度进行；最终评分仍使用联通人口')
     } else {
       warnings.push('未指定城市，无法使用本地网格初筛；最终评分仍使用联通人口')
@@ -715,8 +730,9 @@ router.post('/coarse', authenticate, requireAdmin, (req, res) => {
     const db = getDb()
     const user = req.user
 
-    const coarse = runCoarse(db, user, p)
+    const coarse = runCoarse(db, user, p, 'coarse')
 
+    // ── 排序与去重：⛔ 复用 `survivors` 原数组（里面 score 是 roughScore）──
     const picked = coarse.survivors
       .filter((c) => Number.isFinite(c.coarseScore) && Array.isArray(c.center))
       .map((c) => ({ ...c, score: c.coarseScore }))
@@ -728,16 +744,12 @@ router.post('/coarse', authenticate, requireAdmin, (req, res) => {
     const finalList = nms(picked, p.minGapM, p.topN)
 
     const warnings = [...coarse.warnings]
-    // 无网格城市：crowd 维度未评 ⇒ 分母只剩 35，必须如实说（否则"68 分"其实只算了竞品和自牌）
+    // 本批实际已评权重和：无网格城市只剩 35。
+    // ⚠️ 这里**不再重复喊话**：「客群维度未评」那条已由 `runCoarse(mode='coarse')` 按口径推出来，
+    //    再 push 一条就是生产实测见过的「同一件事说两遍」（两条 1km 网格警告并排显示）。
     const denominatorUsed = coarse.gridCovered
       ? COARSE_ONLY_DENOMINATOR
       : COARSE_ONLY_DENOMINATOR - COARSE_ONLY_WEIGHTS.crowd
-    if (!coarse.gridCovered) {
-      warnings.push(
-        '本城市没有本地 1km 网格数据 ⇒ 客群维度未评，初筛只按「竞品 + 自牌距离」两项排序'
-        + `（实际分母 ${denominatorUsed}），参考价值有限`
-      )
-    }
 
     const items = finalList.map((c, idx) => {
       const raw = {

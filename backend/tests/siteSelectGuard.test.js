@@ -471,10 +471,13 @@ describe('J. 负变异：改坏必须报红', () => {
   }
 
   it('M1 把联通取数塞进 runCoarse（免费阶段开始花钱）', () => {
+    // ⚠️ 锚点用正则，⛔ 不要写死参数表：375 加了 `mode` 参数后，写死的
+    //    `function runCoarse(db, user, p) {` 直接失配 ⇒ 变异不生效却报绿（M32 同类教训）。
     const body = base.siteSelect.replace(
-      'function runCoarse(db, user, p) {',
-      'function runCoarse(db, user, p) {\n  void fetchPointPopulation;'
+      /function runCoarse\([^)]*\) \{/,
+      (m) => `${m}\n  void fetchPointPopulation;`
     )
+    expect(body).not.toBe(base.siteSelect)
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A5'))).toBe(true)
   })
 
@@ -579,7 +582,10 @@ describe('J. 负变异：改坏必须报红', () => {
   })
 
   it('M15 门店集为空时不报警（饱和保护与自牌维度静默失效）', () => {
-    const body = base.siteSelect.replace('本账号名下没有门店数据', '（静默）')
+    // ⚠️ 必须 replaceAll：375 起这句文案按模式分了两支（精算/仅初筛各一句），
+    //    只换第一处会让守卫被第二处满足 ⇒ 变异静默失效。
+    const body = base.siteSelect.replaceAll('本账号名下没有门店数据', '（静默）')
+    expect(body).not.toBe(base.siteSelect)
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('A10'))).toBe(true)
   })
 
@@ -758,8 +764,8 @@ describe('J. 负变异：改坏必须报红', () => {
 
   it('M39 仅初筛里"顺手精算一下"（余额 0 时必然失败，用户以为点了个假按钮）', () => {
     const body = base.siteSelect.replace(
-      '    const coarse = runCoarse(db, user, p)\n\n    const picked = coarse.survivors',
-      '    const coarse = runCoarse(db, user, p)\n    await fetchPointPopulation(db, user, { lng: 0, lat: 0, radius: 1000 })\n\n    const picked = coarse.survivors'
+      "const coarse = runCoarse(db, user, p, 'coarse')",
+      "const coarse = runCoarse(db, user, p, 'coarse')\n    await fetchPointPopulation(db, user, { lng: 0, lat: 0, radius: 1000 })"
     )
     expect(body).not.toBe(base.siteSelect)
     expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q12'))).toBe(true)
