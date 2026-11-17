@@ -229,3 +229,48 @@ export function buildReason(raw, meta = {}) {
 
   return out.filter(Boolean).slice(0, 4)
 }
+
+/**
+ * **仅初筛模式**的推荐理由（批次 375）—— ⛔ 不能复用 `buildReason`。
+ *
+ * 为什么必须分开写：`buildReason` 讲的是联通 1001 的「居住 / 工作 / 月度到访」，
+ * 而仅初筛一个子请求都不发，手里只有本地 1km 网格的**常住人口**。
+ * 用同一句话术会直接摧毁「0 消耗」这个承诺 —— 用户看到「居住 8.2 万」会认为查过联通。
+ * ⇒ 这里只用「常住人口（本地网格底图，未查联通）」这一个口径，
+ *   且⛔ 不出现「工作」「到访」「话费」任何联通字段名。
+ *
+ * @param {object} raw {gridPop, competitors, competitorBrands, nearestOwnM, ownWithin2km, districtName}
+ * @param {object} meta {radius}
+ * @returns {string[]} 1~4 句
+ */
+export function buildCoarseReason(raw, meta = {}) {
+  const r = raw || {}
+  const radius = Number(meta.radius) || 1000
+  const out = []
+
+  // ① 常住人口：⚠️ 先判 isFinite，`fmtWan(null)` 会输出「0 人」，
+  //    那在无网格城市会变成"这里没人"的假结论。
+  if (Number.isFinite(r.gridPop)) {
+    out.push(`半径 ${radius}m 内常住 ${fmtWan(r.gridPop)}（本地 1km 网格底图，未查联通）`)
+  }
+  // ② 竞品
+  if (Number.isFinite(r.competitors)) {
+    const brands = r.competitorBrands && typeof r.competitorBrands === 'object'
+      ? Object.entries(r.competitorBrands).sort((a, b) => b[1] - a[1]).slice(0, 2)
+        .map(([b, n]) => `${b} ${n}`).join(' / ')
+      : ''
+    out.push(r.competitors > 0
+      ? `${radius}m 内竞品 ${r.competitors} 家${brands ? `（${brands}）` : ''}`
+      : `${radius}m 内无竞品`)
+  }
+  // ③ 自有门店（与精算口径同一组 300/800，⛔ 不给客户两套阈值）
+  if (Number.isFinite(r.nearestOwnM)) {
+    out.push(`800m 内无同品牌门店，最近 ${fmtKm(r.nearestOwnM)}${Number.isFinite(r.ownWithin2km) ? `；2km 内 ${r.ownWithin2km} 家` : ''}`)
+  } else if (Number.isFinite(r.ownWithin2km)) {
+    out.push(`800m 内无同品牌门店；2km 内 ${r.ownWithin2km} 家`)
+  }
+  // ④ 商圈（只做位置说明 —— 商圈分不进初筛尺子，⛔ 不要在这里报分数，否则等于暗示它参与了）
+  if (meta.districtName) out.push(`位于「${meta.districtName}」商圈`)
+
+  return out.filter(Boolean).slice(0, 4)
+}

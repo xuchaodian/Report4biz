@@ -61,12 +61,14 @@ import {
   countWithin, nearestDistance, sameBrandEffectiveCount, nms
 } from '../utils/potentialGrid.js'
 import {
-  siteCrowdScore, visitScore, arpuHighPct, combineCrowd, cannibalScore, scoreSite, buildReason
+  siteCrowdScore, visitScore, arpuHighPct, combineCrowd, cannibalScore, scoreSite, buildReason,
+  buildCoarseReason
 } from '../utils/siteScore.js'
 import {
   SITE_WEIGHTS, SITE_STEP_CHOICES, SITE_RADIUS_CHOICES, MAX_BBOX_AREA_KM2, MAX_GRIDS,
   PRECISE_TOPK, MIN_GAP, TOP_N, SATURATION_DEFAULT, SATURATION_RANGE,
-  REGION_MEDIAN_FLOOR, P0_ACCESS_ENABLED, SITE_BURN_CONFIRM
+  REGION_MEDIAN_FLOOR, P0_ACCESS_ENABLED, SITE_BURN_CONFIRM,
+  COARSE_ONLY_WEIGHTS, COARSE_ONLY_DENOMINATOR
 } from '../utils/siteSelectConfig.js'
 
 const router = express.Router()
@@ -509,6 +511,22 @@ function runCoarse(db, user, p) {
     // 🔴 铁律 19：这个值⛔ 不进响应、⛔ 不进界面（初筛第 1、最终第 8 无法向用户解释）。
     c.score = c.roughScore
 
+    // ── 批次 375：仅初筛的「65 分尺子」────────────────────────────────
+    // 同一批 dims 里只取 3 个**本地免费**维度，分母恒为 65（⛔ 不含商圈，跨城不漂移）。
+    // ⚠️ 与 `roughScore` 是两把尺子，⛔ 不可互相比较：roughScore 分母是 85/65/55，
+    //    只用于「挑哪 N 个点去花钱」；coarseScore 只在 `/coarse` 端点对外。
+    const cOnly = scoreSite(
+      { crowd: dims.crowd, competition: dims.competition, cannibal: dims.cannibal },
+      COARSE_ONLY_WEIGHTS
+    )
+    c.coarseScore = Number.isFinite(cOnly.score) ? cOnly.score : null
+    c.coarseDims = {
+      crowd: Number.isFinite(dims.crowd) ? dims.crowd : null,
+      competition: Number.isFinite(dims.competition) ? dims.competition : null,
+      cannibal: Number.isFinite(dims.cannibal) ? dims.cannibal : null
+    }
+    c.coarseMissingDims = cOnly.missingDims
+
     if (hasBrand && p.saturation.enabled && Number.isFinite(c.satCount) && c.satCount >= p.saturation.maxOwn) {
       c.saturated = true
       saturatedDropped++
@@ -571,6 +589,9 @@ function runCoarse(db, user, p) {
     saturatedDropped,
     saturatedSamples,
     survivorsTotal: survivors.length,
+    // ⚠️ 内部字段：只给 `/coarse`（仅初筛）用，⛔ 绝不能整包 `res.json` 出去 ——
+    //    里面带 `roughScore`（铁律 19：粗分不外泄）与全部候选点，序列化就是外泄。
+    survivors,
     preciseList,
     warnings,
     ownLabel,
@@ -664,6 +685,114 @@ router.get('/quota', authenticate, requireAdmin, (req, res) => {
     return res.json({ success: true, data: { remaining: getPoolRemaining(getDb()) } })
   } catch (e) {
     console.error('[site-select/quota]', e)
+    return res.status(500).json({ success: false, code: 'internal', message: e.message })
+  }
+})
+
+/**
+ * POST /api/site-select/coarse —— **仅初筛模式**（批次 375）· 0 消耗 · 0 外网请求
+ *
+ * ── 它解决什么问题 ─────────────────────────────────────────────────────
+ * 2026-11-17 生产实测：物理池余额 0 ⇒ `POST /rank` 被 `pool_exhausted` 挡住，
+ * 用户连"这块地大概怎么样"都看不到，必须先掏钱买配额才能试一次。
+ * 而阶段 0/1（网格撒点 + 四维粗排）**本来就是免费的**，卡住它的只是 rank 里的余额闸门。
+ * ⇒ 本端点把免费的阶段 0/1 单独放出来。
+ *
+ * ── ⛔ 四条硬边界（每条都有守卫 + 行为测试）───────────────────────────
+ * ① **一个子请求都不发**：不调 `fetchPointPopulation`、不查池余额、不写库。
+ *    余额 0 正是它的使用场景，任何"顺手校验一下"都会把这条路堵死。
+ * ② **⛔ 不叫「选址评分」**：分数是「本次框选内的相对水平」（分母恒 65），
+ *    精算分才是绝对好坏。响应里 `scored: false`，界面必须据此改口径。
+ * ③ **必须说明缺什么**：本地 1km 网格只有常住人口，⛔ 无工作人数 / 收入分档 / 到访。
+ * ④ **排序与出分同源**：NMS 与截断都按 `coarseScore`，⛔ 不能按 `roughScore` 排、
+ *    再拿 `coarseScore` 展示 —— 那会出现「第 1 名 62 分、第 2 名 71 分」。
+ */
+router.post('/coarse', authenticate, requireAdmin, (req, res) => {
+  try {
+    const parsed = parseParams(req.body)
+    if (!parsed.ok) return res.status(400).json({ success: false, code: parsed.code, errors: parsed.errors })
+    const p = parsed.params
+    const db = getDb()
+    const user = req.user
+
+    const coarse = runCoarse(db, user, p)
+
+    const picked = coarse.survivors
+      .filter((c) => Number.isFinite(c.coarseScore) && Array.isArray(c.center))
+      .map((c) => ({ ...c, score: c.coarseScore }))
+    // 🔴🔴 已购点**不特殊追加**（与精算模式刻意不同）。
+    //    精算模式追加的理由是「花了钱必须给它一次评估」；仅初筛不花钱，没有这个债。
+    //    若照抄那段追加，会出现「第 12 名 55 分、第 13 名 78 分」—— 追加点排在末尾但分数更高，
+    //    因为 nms 的返回顺序已固定，而追加是 push 到尾部。这个榜无法向用户解释。
+    //    ⇒ 已购点与格心点**同尺同权**一起过 nms：分高自然进榜，分低就说明周边有更优点位。
+    const finalList = nms(picked, p.minGapM, p.topN)
+
+    const warnings = [...coarse.warnings]
+    // 无网格城市：crowd 维度未评 ⇒ 分母只剩 35，必须如实说（否则"68 分"其实只算了竞品和自牌）
+    const denominatorUsed = coarse.gridCovered
+      ? COARSE_ONLY_DENOMINATOR
+      : COARSE_ONLY_DENOMINATOR - COARSE_ONLY_WEIGHTS.crowd
+    if (!coarse.gridCovered) {
+      warnings.push(
+        '本城市没有本地 1km 网格数据 ⇒ 客群维度未评，初筛只按「竞品 + 自牌距离」两项排序'
+        + `（实际分母 ${denominatorUsed}），参考价值有限`
+      )
+    }
+
+    const items = finalList.map((c, idx) => {
+      const raw = {
+        // ⚠️ 只给网格常住人口，⛔ 不要塞 live/work/visit —— 那三个字段本次不存在，
+        //    填 null 比填数字安全，但前端要按 `mode==='coarse'` 换列，不会读它们。
+        gridPop: Number.isFinite(c.circlePop) ? Math.round(c.circlePop) : null,
+        competitors: c.comp?.count ?? null,
+        competitorBrands: c.comp?.byBrand || {},
+        nearestOwnM: Number.isFinite(c.nearestOwnM) ? Math.round(c.nearestOwnM) : null,
+        ownWithin2km: c.ownWithin2km,
+        districtName: c.district?.name || ''
+      }
+      return {
+        rank: idx + 1,
+        center: c.center.map((x) => Math.round(x * 1e6) / 1e6),
+        radius: p.radius,
+        // 🔴 字段名刻意用 `coarseScore` 而不是 `score`：它不是选址评分，⛔ 不进任何"评分"口径。
+        coarseScore: c.coarseScore,
+        dims: c.coarseDims,
+        raw,
+        // 该点是不是框内已购位置（只是提示"你来过这里"，⛔ 不影响分，也不消耗配额）
+        fromPurchase: !!c.fromPurchase,
+        reason: buildCoarseReason(raw, { radius: p.radius, districtName: c.district?.name })
+      }
+    })
+
+    return res.json({
+      success: true,
+      data: {
+        mode: 'coarse',
+        // ⛔ 界面据此禁止出现「评分」二字：本次没有联通精算，分数是相对水平
+        scored: false,
+        denominator: COARSE_ONLY_DENOMINATOR,
+        // 本批实际已评权重和：无网格城市只剩 35 ⇒ 界面必须换成「仅竞品+自牌」口径
+        denominatorUsed,
+        weights: COARSE_ONLY_WEIGHTS,
+        dataBasis: ['grid-1km', 'competitors', 'own-stores', 'saturation'],
+        bbox: p.bbox,
+        stepM: p.stepM,
+        radius: p.radius,
+        gridTotal: coarse.gridTotal,
+        gridCovered: coarse.gridCovered,
+        purchasedInBox: coarse.purchasedInBox,
+        saturatedDropped: coarse.saturatedDropped,
+        saturatedSamples: coarse.saturatedSamples,
+        survivorsTotal: coarse.survivorsTotal,
+        returned: items.length,
+        warnings,
+        // 🔴 明确 0 消耗：本次不查池、不扣费，`remaining` 原样带出只为界面显示一致
+        quota: { estimate: 0, used: 0, fromCacheCount: 0, remaining: getPoolRemaining(db) },
+        items
+      }
+    })
+  } catch (e) {
+    console.error('[site-select/coarse]', e)
     return res.status(500).json({ success: false, code: 'internal', message: e.message })
   }
 })

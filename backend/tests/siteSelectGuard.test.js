@@ -378,6 +378,71 @@ function audit(f) {
     bad('Q11', '半径弹窗未限制轮次 —— 同框多档已购数据会来回弹，循环用尽后静默无响应')
   }
 
+  // ── Q12~Q16. 「仅初筛模式」专项（批次 375，业主 2026-11-17 要求）──────────
+  //
+  // Q12 这是本功能唯一的存在理由：**一个子请求都不发**。
+  //    余额 0 正是它的使用场景（生产实测 `remaining_quota = 0`），
+  //    任何"顺手也精算一下"的改动都会让它变成"点一下照样烧钱"。
+  //    ⚠️ 必须剥注释后再判：本端点的注释里多次提到 `fetchPointPopulation`（说明为什么不调它），
+  //    不剥就会把说明文字当成代码 ⇒ 恒报红。
+  const cStart = f.siteSelect.indexOf("router.post('/coarse'")
+  const cEnd = f.siteSelect.indexOf("router.post('/estimate'")
+  const cBody = cStart >= 0 && cEnd > cStart ? f.siteSelect.slice(cStart, cEnd) : ''
+  if (!cBody) {
+    bad('Q12', '缺 POST /coarse 端点 —— 余额 0 时用户连"这块地怎么样"都看不到')
+  } else if (/fetchPointPopulation/.test(stripJsComments(cBody))) {
+    bad('Q12', '/coarse 里出现 fetchPointPopulation —— 仅初筛变成"偷偷精算"，余额 0 时必然失败')
+  }
+  if (cBody && !/mode:\s*'coarse'/.test(cBody)) {
+    bad('Q12', '/coarse 响应缺 mode:"coarse" —— 前端无法切换口径，会把初筛分当选址评分展示')
+  }
+
+  // Q13 初筛分必须用**固定分母 65 的三维权重**，⛔ 不能复用 SITE_WEIGHTS（分母 85/65/55 会漂）。
+  //    同一句「78 分」在上海（有商圈）和无商圈城市含义必须一致，否则跨城不可比。
+  if (!/COARSE_ONLY_WEIGHTS/.test(f.config)) {
+    bad('Q13', '配置缺 COARSE_ONLY_WEIGHTS —— 仅初筛没有独立的尺子，会退化成 SITE_WEIGHTS 的浮分母')
+  }
+  if (!/scoreSite\(\s*\n?\s*\{\s*crowd:[^}]*competition:[^}]*cannibal:[^}]*\}\s*,\s*COARSE_ONLY_WEIGHTS/.test(f.siteSelect)) {
+    bad('Q13', '初筛分未按 COARSE_ONLY_WEIGHTS 计算 —— 分母会随商圈图层有无漂移')
+  }
+
+  // Q14 「⛔ 不叫选址评分」必须写进响应，而不只是注释里的君子协定。
+  //    `scored:false` 是界面切口径的开关；`denominatorUsed` 是无网格城市降级的唯一依据
+  //    （标称 65 而实际只算了 35，不区分就是撒谎）。
+  if (cBody) {
+    if (!/scored:\s*false/.test(cBody)) {
+      bad('Q14', '/coarse 未声明 scored:false —— 初筛结果会被当成选址评分')
+    }
+    if (!/^\s*denominatorUsed,\s*$/m.test(cBody)) {
+      bad('Q14', '/coarse 未回传 denominatorUsed —— 无网格城市会把 35 分权重的结果按 65 分制解释')
+    }
+    if (!/denominator:\s*COARSE_ONLY_DENOMINATOR/.test(cBody)) {
+      bad('Q14', '/coarse 未回传标称分母 —— 界面只能硬编码 65，后端改权重后必然漂移')
+    }
+  }
+
+  // Q15 前端必须**有一个统一开关**切口径，⛔ 各处重复写 `result.mode === 'coarse'`（漏一处就自相矛盾）。
+  if (!/result\.value\?\.mode\s*===\s*'coarse'/.test(f.view)) {
+    bad('Q15', '前端缺 isCoarse 统一开关 —— 初筛结果会沿用精算的列名与消耗文案')
+  }
+  //    仅初筛只有「常住人口」一个字段。⛔ 不能走 `fmtWan(null)`：它返回「0 人」，
+  //    在无网格城市等于告诉用户"这里没人住"，而真实含义是"该城市没有网格数据"。
+  if (!/function fmtPop\(/.test(f.view)) {
+    bad('Q15', '前端缺 fmtPop —— null 人口会被显示成「0 人」，把"没数据"说成"没人"')
+  }
+
+  // Q16 初筛 → 精算必须走 `runEstimate`（会弹「消耗 X / 剩余 Y」），⛔ 不能直奔 runRank。
+  //    直奔等于绕过"付费前必明"这条产品铁律。
+  const pfStart = f.view.indexOf('async function preciseFromCoarse(')
+  const pfEnd = f.view.indexOf('async function saveCandidate(')
+  const pfBody = pfStart >= 0 && pfEnd > pfStart ? f.view.slice(pfStart, pfEnd) : ''
+  if (!pfBody) {
+    bad('Q16', '缺 preciseFromCoarse —— 初筛榜是死路，用户拿不到绝对分')
+  } else {
+    if (!/runEstimate\(/.test(pfBody)) bad('Q16', '初筛→精算未走 runEstimate —— 跳过了"消耗 X / 剩余 Y"的确认')
+    if (/\brunRank\(/.test(pfBody)) bad('Q16', '初筛→精算直接调了 runRank —— 绕过付费确认，违反"付费前必明"')
+  }
+
   return problems
 }
 
@@ -687,6 +752,38 @@ describe('J. 负变异：改坏必须报红', () => {
     )
     expect(body).not.toBe(base.view)
     expect(mutate({ view: body }).some((p) => p.startsWith('Q11'))).toBe(true)
+  })
+
+  // ── M39~M42. 「仅初筛模式」专项（批次 375）────────────────────────────────
+
+  it('M39 仅初筛里"顺手精算一下"（余额 0 时必然失败，用户以为点了个假按钮）', () => {
+    const body = base.siteSelect.replace(
+      '    const coarse = runCoarse(db, user, p)\n\n    const picked = coarse.survivors',
+      '    const coarse = runCoarse(db, user, p)\n    await fetchPointPopulation(db, user, { lng: 0, lat: 0, radius: 1000 })\n\n    const picked = coarse.survivors'
+    )
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q12'))).toBe(true)
+  })
+
+  it('M40 仅初筛声称是选址评分（scored:true）', () => {
+    const body = base.siteSelect.replace('scored: false,', 'scored: true,')
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q14'))).toBe(true)
+  })
+
+  it('M41 不回传 denominatorUsed（无网格城市把 35 分权重按 65 分制解释）', () => {
+    const body = base.siteSelect.replace('        denominatorUsed,\n', '')
+    expect(body).not.toBe(base.siteSelect)
+    expect(mutate({ siteSelect: body }).some((p) => p.startsWith('Q14'))).toBe(true)
+  })
+
+  it('M42 前端去掉 isCoarse 统一开关（初筛结果沿用精算列名与消耗文案）', () => {
+    const body = base.view.replace(
+      "const isCoarse = computed(() => result.value?.mode === 'coarse')",
+      "const isCoarse = computed(() => false)"
+    )
+    expect(body).not.toBe(base.view)
+    expect(mutate({ view: body }).some((p) => p.startsWith('Q15'))).toBe(true)
   })
 })
 

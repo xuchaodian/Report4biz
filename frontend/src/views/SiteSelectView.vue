@@ -138,11 +138,19 @@
         <el-button type="primary" :loading="estimating" :disabled="!canRun" @click="runEstimate">
           预估消耗
         </el-button>
+        <!--
+          批次 375：仅初筛 —— 0 消耗探路。
+          🔴 这不是"次级功能"的视觉降级，而是**另一条路**：池里有 0 次也能点。
+             所以它 ⛔ 不跟 estimateInfo 联动、⛔ 不进二次确认流程（没有任何可确认的花费）。
+        -->
+        <el-button :loading="coarseRunning" :disabled="!canRun" @click="runCoarseOnly">
+          仅初筛（不消耗配额）
+        </el-button>
         <span v-if="estimateInfo" class="ss-muted">
           将精算 {{ estimateInfo.preciseCount }} 点 · 预计消耗 {{ estimateInfo.quotaEstimate - estimateInfo.cacheHitGuess }} 次
           （{{ estimateInfo.cacheHitGuess }} 点可复用已购数据）· 剩余 {{ estimateInfo.remaining }} 次
         </span>
-        <span v-else class="ss-muted">先点「预估消耗」，确认后再真正执行</span>
+        <span v-else class="ss-muted">先点「预估消耗」看要花几次，或直接「仅初筛」看候选（都不扣费）</span>
       </div>
       <!-- 批次 374：半径不一致的常驻提示。弹窗关掉之后，用户仍能看见「这钱为什么没省下来」。 -->
       <div v-if="estimateInfo && estimateInfo.purchasedRadiusMismatch > 0" class="ss-hint ss-warn">
@@ -157,6 +165,22 @@
 
     <!-- ── 结果提示条 ─────────────────────────────────────────────────── -->
     <div v-if="result" class="ss-notes">
+      <!--
+        批次 375：仅初筛的**口径声明**。这一段不是客套话，是四件必须同时说清的事：
+        ① 一个子请求都没发、配额一分没扣（否则用户以为是"先跑再扣"）；
+        ② 分数是「本次框选内的相对水平」，⛔ 不是选址评分 —— 精算后才有绝对分；
+        ③ 本地网格只有常住人口，⛔ 无工作人数 / 收入分档 / 到访（字段不存在，不是精度下降）；
+        ④ 想拿绝对分怎么办：给一键入口，把 N 个点送进精算。
+      -->
+      <el-alert
+        v-if="isCoarse"
+        type="info"
+        :closable="false"
+        show-icon
+        class="ss-note-item"
+        title="本次未调用联通、未消耗配额 —— 分数是「本次框选内的相对水平」，不是选址评分"
+        :description="coarseNote"
+      />
       <el-alert
         v-for="(w, i) in result.warnings || []"
         :key="`w${i}`"
@@ -191,43 +215,69 @@
         class="ss-note-item"
       />
       <div class="ss-quota-used">
-        本次消耗 <b>{{ result.quota.used }}</b> 次
-        <span v-if="result.quota.fromCacheCount">（{{ result.quota.fromCacheCount }} 点命中已购/缓存，未扣费）</span>
-        · 剩余 <b>{{ result.quota.remaining }}</b> 次
+        <template v-if="isCoarse">
+          本次消耗 <b>0</b> 次（仅初筛不调用联通）· 剩余 <b>{{ result.quota.remaining }}</b> 次
+        </template>
+        <template v-else>
+          本次消耗 <b>{{ result.quota.used }}</b> 次
+          <span v-if="result.quota.fromCacheCount">（{{ result.quota.fromCacheCount }} 点命中已购/缓存，未扣费）</span>
+          · 剩余 <b>{{ result.quota.remaining }}</b> 次
+        </template>
       </div>
     </div>
 
     <!-- ── 结果表 ─────────────────────────────────────────────────────── -->
     <div v-if="result" class="ss-card ss-result">
       <div class="ss-result-head">
-        <span>
+        <span v-if="isCoarse">
+          共 {{ result.gridTotal }} 个候选点 → 初筛出 <b>{{ result.returned }}</b> 个
+          <span class="ss-muted">（未精算，按 {{ result.denominatorUsed }} 分权重排序）</span>
+        </span>
+        <span v-else>
           共 {{ result.gridTotal }} 个候选点 → 精算 {{ result.coarseTopK }} 个 → 推荐
           <b>{{ result.returned }}</b> 个
         </span>
         <span class="ss-muted">
-          权重 客群 {{ result.weights.crowd }} / 竞品 {{ result.weights.competition }} / 商圈
-          {{ result.weights.district }} / 配套 {{ result.weights.access }} / 自牌 {{ result.weights.cannibal }}
+          <template v-if="isCoarse">
+            初筛权重 客群 {{ result.weights.crowd }} / 竞品 {{ result.weights.competition }} / 自牌 {{ result.weights.cannibal }}
+            （共 {{ result.denominator }} 分制，不含商圈与可达配套）
+          </template>
+          <template v-else>
+            权重 客群 {{ result.weights.crowd }} / 竞品 {{ result.weights.competition }} / 商圈
+            {{ result.weights.district }} / 配套 {{ result.weights.access }} / 自牌 {{ result.weights.cannibal }}
+          </template>
         </span>
       </div>
 
       <el-table v-loading="ranking" :data="result.items" stripe size="small" class="ss-table">
         <el-table-column prop="rank" label="#" width="48" />
-        <el-table-column label="评分" width="110">
+        <el-table-column :label="isCoarse ? '初筛分' : '评分'" width="110">
           <template #default="{ row }">
-            <div class="ss-score">{{ row.score }}</div>
+            <div class="ss-score">{{ isCoarse ? row.coarseScore : row.score }}</div>
             <div class="ss-dims">
               <span :title="`客群 ${fmtDim(row.dims.crowd)}`">客{{ fmtDim(row.dims.crowd) }}</span>
               <span :title="`竞品 ${fmtDim(row.dims.competition)}`">竞{{ fmtDim(row.dims.competition) }}</span>
-              <span :title="`商圈 ${fmtDim(row.dims.district)}`">商{{ fmtDim(row.dims.district) }}</span>
+              <!-- 仅初筛不含商圈维度 ⇒ ⛔ 不要渲染空的「商—」，那会让人以为商圈没数据 -->
+              <span v-if="!isCoarse" :title="`商圈 ${fmtDim(row.dims.district)}`">商{{ fmtDim(row.dims.district) }}</span>
               <span :title="`自牌 ${fmtDim(row.dims.cannibal)}`">自{{ fmtDim(row.dims.cannibal) }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="圆内人口 / 到访" width="170">
+        <el-table-column :label="isCoarse ? '常住人口（本地网格）' : '圆内人口 / 到访'" width="170">
           <template #default="{ row }">
-            <div>居住 {{ fmtWan(row.raw.live) }}</div>
-            <div>工作 {{ fmtWan(row.raw.work) }}</div>
-            <div class="ss-visit">到访 {{ fmtVisit(row.raw.visit) }}</div>
+            <!--
+              🔴 仅初筛只有「常住人口」一个字段，⛔ 不能复用居住/工作/到访三行 ——
+                 那三个本次根本不存在，显示成「0 人」等于谎报"这里没人住/没人来"。
+            -->
+            <template v-if="isCoarse">
+              <div>{{ fmtPop(row.raw.gridPop) }}</div>
+              <div class="ss-muted">静态底图，未查联通</div>
+            </template>
+            <template v-else>
+              <div>居住 {{ fmtWan(row.raw.live) }}</div>
+              <div>工作 {{ fmtWan(row.raw.work) }}</div>
+              <div class="ss-visit">到访 {{ fmtVisit(row.raw.visit) }}</div>
+            </template>
           </template>
         </el-table-column>
         <el-table-column label="竞品" width="110">
@@ -246,7 +296,9 @@
           <template #default="{ row }">
             <span v-if="row.raw.districtName">{{ row.raw.districtName }}</span>
             <span v-else class="ss-muted">未覆盖</span>
-            <div v-if="row.dims.district !== null" class="ss-muted">{{ row.dims.district }} 分</div>
+            <!-- 🔴 必须用 Number.isFinite 而不是 `!== null`：仅初筛的 dims 里**没有 district 键**，
+                 `undefined !== null` 为真 ⇒ 会渲染出「undefined 分」。 -->
+            <div v-if="Number.isFinite(row.dims.district)" class="ss-muted">{{ row.dims.district }} 分</div>
           </template>
         </el-table-column>
         <!-- 坐标宽度 176：`31.21800, 121.42000` 共 20 字符，等宽字体下单行约 144px，
@@ -277,13 +329,37 @@
       </el-table>
 
       <p class="ss-foot-note">
-        推荐只给「这块地里哪个位置最好」，不替你决定开不开店。每个数字都能在系统里复核：
-        人口来自联通（账期见理由句）、竞品来自竞品库、商圈分来自商圈洞察同一套算法。
+        <template v-if="isCoarse">
+          初筛只回答「这块地里哪些位置值得进一步看」，不回答「能开多少生意」：
+          人口来自本地 1km 网格（静态底图，只有常住人口，⛔ 无工作人数 / 收入分档 / 到访），
+          竞品来自竞品库，自牌距离按你名下门店算。要拿到绝对评分与人口/到访实测，需要精算。
+        </template>
+        <template v-else>
+          推荐只给「这块地里哪个位置最好」，不替你决定开不开店。每个数字都能在系统里复核：
+          人口来自联通（账期见理由句）、竞品来自竞品库、商圈分来自商圈洞察同一套算法。
+        </template>
       </p>
+
+      <!--
+        批次 375：初筛 → 精算的衔接。⛔ 不能只是一句"想更准就去精算" ——
+        用户已经在看榜了，必须就地给按钮，且按钮上写明**会消耗配额**。
+      -->
+      <div v-if="isCoarse && result.returned > 0" class="ss-actions ss-coarse-next">
+        <el-button type="primary" @click="preciseFromCoarse">
+          对前 {{ coarsePreciseCount }} 个做精算
+        </el-button>
+        <span class="ss-muted">
+          点完会先弹「预计消耗 X 次 / 剩余 Y 次」再确认，⛔ 不会直接扣。
+          精算名额按同一套参数重新初排取前 N 个，与本榜顺序可能有个别差异。
+        </span>
+      </div>
     </div>
 
     <!-- ── 空态 ───────────────────────────────────────────────────────── -->
-    <el-empty v-if="!result && !ranking && !estimating" description="填好参数后点「预估消耗」开始" />
+    <el-empty
+      v-if="!result && !ranking && !estimating && !coarseRunning"
+      description="填好参数后点「预估消耗」看要花几次，或直接「仅初筛」看候选（两者都不扣费）"
+    />
   </div>
 </template>
 
@@ -314,8 +390,43 @@ const remaining = ref(0)
 const loadingCities = ref(false)
 const estimating = ref(false)
 const ranking = ref(false)
+const coarseRunning = ref(false)
 const result = ref(null)
 const estimateInfo = ref(null)
+
+/**
+ * 批次 375：当前结果是不是「仅初筛」。
+ * 🔴 这个判断决定**整块界面的口径**（列名、权重行、消耗文案、底部按钮）——
+ *    ⛔ 不要用 `result.scored === false` 之类更隐晦的条件，
+ *    也⛔ 不要在模板里各处重复写 `result.mode === 'coarse'`（漏一处就会出现
+ *    「标题写初筛、表头写精算」的自相矛盾）。
+ */
+const isCoarse = computed(() => result.value?.mode === 'coarse')
+
+/**
+ * 仅初筛的口径声明（标题下面那段）。
+ * 三件事缺一不可：尺子怎么算的、本次少了哪一维、哪些字段根本不存在。
+ * ⚠️ 数字一律从响应取（`denominator` / `denominatorUsed`），⛔ 前端硬编码 65/35 ——
+ *    后端改权重而前端没跟，会变成"界面说 65 分制、实际按 35 算"。
+ */
+const coarseNote = computed(() => {
+  const d = result.value || {}
+  const total = Number(d.denominator || 0)
+  const used = Number(d.denominatorUsed || 0)
+  const base = total
+    ? `分数按 ${total} 分制换算（客群 ${d.weights?.crowd} + 竞品 ${d.weights?.competition} + 自牌 ${d.weights?.cannibal}）`
+    : '分数按免费维度换算'
+  const miss = total && used && used < total
+    ? `；本次客群维度未评（该城市无本地 1km 网格），实际只按 ${used} 分权重排序，参考价值有限`
+    : ''
+  return `${base}${miss}。本地网格只有常住人口，不含工作人数、收入分档与到访 —— 这些字段要买联通人口才有。`
+})
+
+/** 「对前 N 个做精算」的 N：不超过本榜条数，且落在后端允许的 [10, 50] 内 */
+const coarsePreciseCount = computed(() => {
+  const n = Number(result.value?.returned || 0)
+  return Math.min(Math.max(n, 10), 50)
+})
 
 /**
  * 窄屏标记（与下方 @media (max-width: 900px) 同断点）。
@@ -678,6 +789,41 @@ async function runRank(confirmBurn) {
   }
 }
 
+/**
+ * 批次 375：仅初筛 —— 0 消耗、0 外网请求。
+ *
+ * 🔴 刻意**不进二次确认流程**：没有任何可确认的花费，弹窗只会训练用户盲目点"确认"。
+ *    与「预估消耗」的区别是：那个只算消耗不出榜，这个直接出榜但不算消耗。
+ * ⚠️ 也不设「余额 > 0」前置条件 —— 余额 0 正是它的主场景。
+ */
+async function runCoarseOnly() {
+  if (!canRun.value) return
+  coarseRunning.value = true
+  result.value = null
+  estimateInfo.value = null
+  try {
+    const { data } = await axios.post('/api/site-select/coarse', payload())
+    if (!data?.success) throw new Error(data?.message || '初筛失败')
+    result.value = data.data
+    remaining.value = Number(data.data?.quota?.remaining ?? remaining.value) || 0
+    ElMessage.success(`已初筛 ${data.data.returned} 个候选点（未消耗配额）`)
+  } catch (e) {
+    ElMessage.error(fmtErr(e))
+  } finally {
+    coarseRunning.value = false
+  }
+}
+
+/**
+ * 初筛 → 精算的衔接：把「精算点数」设成本榜条数后走正常预估流程。
+ * 🔴 必须走 `runEstimate`（它会弹「消耗 X / 剩余 Y」），⛔ 不能直接 `runRank` ——
+ *    那等于绕过"付费前必明"这条铁律。
+ */
+async function preciseFromCoarse() {
+  form.preciseTopK = coarsePreciseCount.value
+  await runEstimate()
+}
+
 async function saveCandidate(row) {
   try {
     await axios.post('/api/candidates', {
@@ -700,6 +846,17 @@ function fmtWan(n) {
   const v = Number(n) || 0
   if (Math.abs(v) >= 10000) return `${(v / 10000).toFixed(1)} 万`
   return `${Math.round(v)} 人`
+}
+
+/**
+ * 仅初筛的常住人口：null ⇒ '—'。
+ * 🔴 不能直接走 `fmtWan` —— 那会把 null 显示成「0 人」，
+ *    在无网格城市等于告诉用户"这里没人住"，而真实含义是"这个城市没有网格数据"。
+ * 注意 0 是**有效值**（网格覆盖了、圆内确实没人），必须显示「0 人」。
+ */
+function fmtPop(v) {
+  if (!Number.isFinite(v)) return '—'
+  return fmtWan(v)
 }
 
 function fmtKm(m) {
@@ -841,6 +998,15 @@ watch(() => form.city, () => applyCityBox())
   padding-top: 12px;
   border-top: 1px dashed var(--el-border-color-lighter, #e6e8eb);
   margin-top: 8px;
+}
+/* 仅初筛 → 精算的衔接条：紧贴在表格下方，与表单上方的按钮区区分开 */
+.ss-coarse-next {
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.ss-coarse-next .ss-muted {
+  flex: 1 1 320px;
+  line-height: 1.6;
 }
 .ss-notes {
   margin-bottom: 12px;
