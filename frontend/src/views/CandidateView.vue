@@ -6,14 +6,15 @@
         <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon>返回地图</el-button>
         <h2>候选点位</h2>
         <p class="cd-sub">
-          还没开的点位：<b>存下来 → 标状态 → 留一句推进记录</b>。
-          四档是「待评估 / 已勘踏 / 立项 / 放弃」，<b>只本人可见</b>，不进门店台账、不影响体检与预测。
+          这里列出<b>「我的门店」里门店类型为重点候选 / 一般候选的门店</b>，
+          在这套流程里推进：<b>标状态 → 留一句推进记录 → 出立项报告</b>。
+          四档是「待评估 / 已勘踏 / 立项 / 放弃」，<b>只本人可见</b>，不改门店台账、不影响体检与预测。
         </p>
       </div>
       <div class="cd-head-r">
         <el-button :loading="loading" @click="reload">刷新</el-button>
         <el-button type="primary" @click="openCreate">
-          <el-icon><Plus /></el-icon>新建点位
+          <el-icon><Plus /></el-icon>新建独立点位
         </el-button>
       </div>
     </div>
@@ -36,6 +37,12 @@
         共 <b>{{ total }}</b> 个点位
         <a v-if="filterStage" class="cd-clear" @click="clearFilter">清除筛选</a>
       </div>
+    </div>
+
+    <!-- 来源构成：376 起列表有两个来源，混在一起不说明的话，用户会以为「独立点位」是脏数据 -->
+    <div v-if="total && originCounts.candidate" class="cd-origins">
+      其中「我的门店」候选门店 <b>{{ originCounts.store }}</b> 家
+      · 独立点位 <b>{{ originCounts.candidate }}</b> 个（早先手工建/地图右键存下来、没有对应门店的）
     </div>
 
     <!-- 筛选 -->
@@ -64,19 +71,33 @@
         <el-button link type="primary" @click="clearFilter">清除筛选</el-button>
       </template>
       <template v-else>
+        <!-- 🔴 376 起主数据源是「我的门店」⇒ 空列表的最可能原因是门店类型还没标，
+             不再是「你还没存过点位」。提示必须指对地方，否则用户会一直点「新建」。 -->
         <p>还没有候选点位。</p>
-        <p class="cd-empty-hint">在地图页<b>右键</b>物色到的位置 →「加入候选点位」，或者点下面的「新建点位」手填。</p>
-        <el-button type="primary" @click="openCreate">新建第一个点位</el-button>
+        <p class="cd-empty-hint">
+          去「<b>我的门店</b>」把门店的<b>门店类型</b>改成「重点候选」或「一般候选」，它就会出现在这里；
+          推进阶段与流水存在这边，不改门店本身的资料。
+        </p>
+        <div class="cd-empty-btns">
+          <el-button type="primary" @click="router.push('/data')">去我的门店设置</el-button>
+          <el-button @click="openCreate">新建独立点位</el-button>
+        </div>
+        <p class="cd-empty-hint cd-empty-hint-sub">
+          「新建独立点位」用于还没进门店台账的铺位（比如商场里刚谈的一个位置），
+          它不会写进「我的门店」，只在这里推进。
+        </p>
       </template>
     </div>
 
     <!-- 列表 -->
+    <!-- 🔴 row-key 不能用 id：376 起门店驱动的行 id 可能是 null，多行 null 会让
+         el-table 的行复用错乱（展开/选中/滚动位置会串行）。用 markerId 兜一层。 -->
     <el-table
       v-else
       :data="list"
       v-loading="loading"
       class="cd-table"
-      row-key="id"
+      :row-key="(row) => (row.id ? 'c' + row.id : 'm' + row.markerId)"
       @row-click="openDetail"
     >
       <el-table-column label="点位" min-width="200">
@@ -89,6 +110,13 @@
         <template #default="{ row }">
           <div>{{ [row.city, row.district].filter(Boolean).join(' · ') || '—' }}</div>
           <div v-if="row.address" class="cd-addr">{{ row.address }}</div>
+        </template>
+      </el-table-column>
+      <!-- 376：门店类型来自「我的门店」；独立点位没有类型可言，显示「独立点位」而不是空白 -->
+      <el-table-column label="来源" width="112" align="center">
+        <template #default="{ row }">
+          <span v-if="row.origin === 'store'" class="cd-type">{{ row.storeType || '候选门店' }}</span>
+          <span v-else class="cd-type cd-type-solo">独立点位</span>
         </template>
       </el-table-column>
       <el-table-column label="半径" width="90" align="right">
@@ -104,10 +132,12 @@
       <el-table-column label="最近更新" width="160">
         <template #default="{ row }">{{ fmt(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="120" align="center">
+      <el-table-column label="操作" width="130" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
-          <el-button link type="danger" @click.stop="remove(row)">删除</el-button>
+          <!-- 🔴 来自「我的门店」的行不能删（后端也会 400）：删了门店还在，刷新就"复活" -->
+          <el-button v-if="row.origin !== 'store'" link type="danger" @click.stop="remove(row)">删除</el-button>
+          <span v-else class="cd-lock" title="来自「我的门店」：要让它消失，请到我的门店把门店类型改回「已开业」">门店视图</span>
         </template>
       </el-table-column>
     </el-table>
@@ -123,10 +153,19 @@
         </div>
 
         <dl class="cd-info">
+          <div>
+            <dt>来源</dt>
+            <dd>
+              <template v-if="detail.origin === 'store'">
+                我的门店 · {{ detail.storeType || '候选门店' }}<span v-if="detail.storeCode" class="cd-muted">（{{ detail.storeCode }}）</span>
+              </template>
+              <span v-else>独立点位（未关联门店）</span>
+            </dd>
+          </div>
           <div><dt>品牌</dt><dd>{{ detail.brand || '—' }}</dd></div>
           <div><dt>城市 / 区县</dt><dd>{{ [detail.city, detail.district].filter(Boolean).join(' · ') || '—' }}</dd></div>
           <div class="cd-info-wide"><dt>地址</dt><dd>{{ detail.address || '—' }}</dd></div>
-          <div><dt>坐标</dt><dd>{{ detail.latitude.toFixed(6) }}, {{ detail.longitude.toFixed(6) }}</dd></div>
+          <div><dt>坐标</dt><dd>{{ fmtLatLng(detail.latitude) }}, {{ fmtLatLng(detail.longitude) }}</dd></div>
           <div><dt>评估半径</dt><dd>{{ detail.radius }} m</dd></div>
           <div><dt>面积</dt><dd>{{ detail.area ? detail.area + ' ㎡' : '—' }}</dd></div>
           <div><dt>月租金</dt><dd>{{ detail.rent ? detail.rent + ' 元' : '—' }}</dd></div>
@@ -195,46 +234,64 @@
         </div>
 
         <div class="cd-detail-actions">
-          <el-button type="primary" @click="reportVisible = true">生成立项报告</el-button>
+          <el-button type="primary" :loading="reportOpening" @click="openReport">生成立项报告</el-button>
           <el-button @click="openEdit">编辑信息</el-button>
-          <el-button type="danger" plain @click="remove(detail)">删除点位</el-button>
+          <el-button v-if="detail.origin !== 'store'" type="danger" plain @click="remove(detail)">删除点位</el-button>
+          <span v-else class="cd-muted cd-detail-lock">
+            来自「我的门店」：要让它从候选点位里消失，请到我的门店把门店类型改回「已开业」
+          </span>
         </div>
       </div>
     </el-drawer>
 
     <!-- 新建 / 编辑 -->
-    <el-dialog v-model="dialog" :title="editingId ? '编辑点位' : '新建候选点位'" width="560px" append-to-body>
+    <el-dialog
+      v-model="dialog"
+      :title="formFromStore ? '编辑评估半径' : (editingId ? '编辑点位' : '新建独立点位')"
+      width="560px"
+      append-to-body
+    >
+      <!-- 🔴 门店来源只能改半径：其余字段属于门店台账，在这改不同步回门店 ⇒ 两边不一致 -->
+      <el-alert
+        v-if="formFromStore"
+        type="info"
+        :closable="false"
+        show-icon
+        class="cd-form-tip"
+        title="这个点位来自「我的门店」"
+        description="名称、品牌、地址、坐标、面积、租金都跟着门店台账走，这里只能改评估半径。要改门店资料请到「我的门店」。"
+      />
       <el-form :model="form" label-width="88px" label-position="right">
-        <el-form-item label="点位名称" required>
-          <el-input v-model="form.name" maxlength="60" placeholder="例：五角场万达 3F 中庭铺位" />
+        <el-form-item label="点位名称" :required="!formFromStore">
+          <el-input v-model="form.name" maxlength="60" :disabled="formFromStore" placeholder="例：五角场万达 3F 中庭铺位" />
         </el-form-item>
         <el-form-item label="拟入驻品牌">
-          <el-input v-model="form.brand" maxlength="40" placeholder="例：食其家" />
+          <el-input v-model="form.brand" maxlength="40" :disabled="formFromStore" placeholder="例：食其家" />
         </el-form-item>
         <el-form-item label="城市 / 区县">
           <div class="cd-row">
-            <el-input v-model="form.city" maxlength="20" placeholder="上海" />
-            <el-input v-model="form.district" maxlength="20" placeholder="杨浦区" />
+            <el-input v-model="form.city" maxlength="20" :disabled="formFromStore" placeholder="上海" />
+            <el-input v-model="form.district" maxlength="20" :disabled="formFromStore" placeholder="杨浦区" />
           </div>
         </el-form-item>
         <el-form-item label="地址">
-          <el-input v-model="form.address" maxlength="200" placeholder="邯郸路 600 号" />
+          <el-input v-model="form.address" maxlength="200" :disabled="formFromStore" placeholder="邯郸路 600 号" />
         </el-form-item>
-        <el-form-item label="经纬度" required>
+        <el-form-item label="经纬度" :required="!formFromStore">
           <div class="cd-row">
-            <el-input v-model="form.latitude" placeholder="纬度 31.30..." />
-            <el-input v-model="form.longitude" placeholder="经度 121.51..." />
+            <el-input v-model="form.latitude" :disabled="formFromStore" placeholder="纬度 31.30..." />
+            <el-input v-model="form.longitude" :disabled="formFromStore" placeholder="经度 121.51..." />
           </div>
           <div class="cd-tip">GCJ-02（与地图上看到的一致）；可从地图页或已有门店抄过来。</div>
         </el-form-item>
         <el-form-item label="评估半径">
           <el-input-number v-model="form.radius" :min="100" :max="50000" :step="100" />
-          <span class="cd-tip-inline">米</span>
+          <span class="cd-tip-inline">米（候选点位自己用的口径，不改门店）</span>
         </el-form-item>
         <el-form-item label="面积 / 租金">
           <div class="cd-row">
-            <el-input v-model="form.area" placeholder="面积 ㎡" />
-            <el-input v-model="form.rent" placeholder="月租金 元" />
+            <el-input v-model="form.area" :disabled="formFromStore" placeholder="面积 ㎡" />
+            <el-input v-model="form.rent" :disabled="formFromStore" placeholder="月租金 元" />
           </div>
         </el-form-item>
       </el-form>
@@ -268,6 +325,8 @@ const errorMsg = ref('')
 const list = ref([])
 const counts = ref({})
 const total = ref(0)
+// 来源构成（376）：store＝我的门店里的候选门店，candidate＝没有对应门店的独立点位
+const originCounts = ref({ store: 0, candidate: 0 })
 const keyword = ref('')
 const filterStage = ref('')
 
@@ -277,11 +336,14 @@ const notes = ref([])
 const stageNote = ref('')
 const remark = ref('')
 const remarkLoading = ref(false)
+const reportOpening = ref(false)
 
 const reportVisible = ref(false)
 const dialog = ref(false)
 const editingId = ref(null)
 const form = ref(emptyForm())
+// 编辑对象是否来自「我的门店」：是则名称/地址/坐标/面积/租金一律只读（它们属于门店台账）
+const formFromStore = ref(false)
 // 入口来源：manual（页面内新建）/ map（地图右键选点）—— **必须在清 query 之前捕获**，
 // 否则 router.replace 之后 route.query.source 就没了，来源全落成 manual（踩过）
 const entrySource = ref('manual')
@@ -295,6 +357,12 @@ function emptyForm() {
 
 /** 库里是 UTC（SQLite CURRENT_TIMESTAMP），统一走 utils/datetime.js 转本地 */
 const fmt = formatUtcDateTime
+
+/** 经纬度展示：null/NaN 一律「—」（⛔ 不能让 `null.toFixed` 把整个抽屉炸掉） */
+function fmtLatLng(v) {
+  const n = Number(v)
+  return Number.isFinite(n) && n !== 0 ? n.toFixed(6) : '—'
+}
 
 function goBack() {
   router.push('/')
@@ -310,12 +378,44 @@ async function reload() {
     list.value = data.list || []
     counts.value = data.counts || {}
     total.value = data.total || 0
+    originCounts.value = data.originCounts || { store: 0, candidate: 0 }
   } catch (e) {
     errorMsg.value = e?.response?.data?.message || '加载候选点位失败'
     list.value = []
+    originCounts.value = { store: 0, candidate: 0 }
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 🔴🔴 写操作前必须确保这行有 `store_candidates.id`（376）。
+ *
+ * 列表现在以「我的门店」驱动，**刚标成候选的门店还没有推进记录**（`id === null`）。
+ * 后端 `POST /ensure` 幂等建行（已有就返回原件），拿到 id 之后
+ * /stage、/notes、/:id、DELETE 这些老接口一条都不用改。
+ *
+ * ⚠️ 只在**真要写**的时候调（改阶段 / 记一笔 / 出报告 / 编辑），
+ *    ⛔ 不要放进 `openDetail` 或 `reload`：读一眼就在库里留一行，等于把浏览行为变成写操作。
+ */
+async function ensureRow(row) {
+  if (row?.id) return { ...row }
+  if (!row?.markerId) throw new Error('该点位缺少关联信息，请刷新后重试')
+  const { data } = await axios.post('/api/candidates/ensure', { markerId: row.markerId })
+  const id = data?.candidate?.id
+  if (!id) throw new Error('建立推进记录失败')
+  const merged = {
+    ...row,
+    ...data.candidate,
+    origin: row.origin,
+    markerId: row.markerId,
+    storeType: row.storeType,
+    storeCode: row.storeCode
+  }
+  // 同步回列表：否则用户再点一次会重复 ensure（幂等但会闪）
+  const hit = list.value.find((x) => x.markerId === row.markerId && !x.id)
+  if (hit) Object.assign(hit, { id, stage: merged.stage, stageStored: true })
+  return merged
 }
 
 function toggleStage(s) {
@@ -329,15 +429,45 @@ function clearFilter() {
   reload()
 }
 
+/**
+ * 打开详情。
+ * 🔴 读操作**不建行**（376）：只是看一眼不该在库里留痕迹。
+ *    需要 id 的动作（改阶段 / 记一笔 / 出报告 / 编辑）各自调 `ensureRow`。
+ * ⚠️ 没有 id 时 `notes` 就是空 —— 界面显示「还没有记录」，这是**真话**（该门店确实没推进过）。
+ */
 async function openDetail(row) {
+  detail.value = { ...row }
+  notes.value = []
+  stageNote.value = ''
+  lastClickedStage.value = ''
+  remark.value = ''
+  drawer.value = true
+  if (!row.id) return
   try {
     const { data } = await axios.get(`/api/candidates/${row.id}`)
-    detail.value = data.candidate
+    // 🔴 展示字段一律取 `row`（与列表同构，值来自门店台账），
+    //    ⛔ 不用 `candidate` 的同名字段：那是 store_candidates 里当年手工录的旧值，
+    //    现网两者确实不同（门店台账「浦锦路309弄6号」vs 候选表「江月路」），
+    //    混用会出现「列表显示一个地址、点开变另一个地址」。
+    //    `candidate` 仍整体铺开，因为立项报告读的是它的下划线字段（drop_reason 等）。
+    const base = data.row || data.candidate || {}
+    detail.value = {
+      ...data.candidate,
+      name: base.name,
+      city: base.city,
+      district: base.district,
+      address: base.address,
+      latitude: base.latitude,
+      longitude: base.longitude,
+      area: base.area,
+      rent: base.rent,
+      radius: base.radius,
+      storeType: base.storeType || row.storeType,
+      storeCode: base.storeCode || row.storeCode,
+      origin: row.origin,
+      markerId: row.markerId
+    }
     notes.value = data.notes || []
-    stageNote.value = ''
-    lastClickedStage.value = ''
-    remark.value = ''
-    drawer.value = true
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '加载详情失败')
   }
@@ -351,19 +481,21 @@ async function changeStage(stage) {
     return
   }
   try {
-    const { data } = await axios.patch(`/api/candidates/${detail.value.id}/stage`, {
+    const row = await ensureRow(detail.value)
+    detail.value = { ...detail.value, id: row.id }
+    const { data } = await axios.patch(`/api/candidates/${row.id}/stage`, {
       stage,
       note: stageNote.value.trim(),
       drop_reason: stage === '放弃' ? stageNote.value.trim() : ''
     })
-    detail.value = data.candidate
+    detail.value = { ...detail.value, ...data.candidate }
     notes.value = data.notes || []
     stageNote.value = ''
     lastClickedStage.value = ''
     ElMessage.success(`已改为「${stage}」`)
     reload()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '更新阶段失败')
+    ElMessage.error(e?.response?.data?.message || e?.message || '更新阶段失败')
   }
 }
 
@@ -372,59 +504,101 @@ async function addRemark() {
   if (!note) return ElMessage.warning('先写点什么')
   remarkLoading.value = true
   try {
-    const { data } = await axios.post(`/api/candidates/${detail.value.id}/notes`, { note })
+    const row = await ensureRow(detail.value)
+    detail.value = { ...detail.value, id: row.id }
+    const { data } = await axios.post(`/api/candidates/${row.id}/notes`, { note })
     notes.value = data.notes || []
     remark.value = ''
     await reload()
     ElMessage.success('已记一笔')
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '添加备注失败')
+    ElMessage.error(e?.response?.data?.message || e?.message || '添加备注失败')
   } finally {
     remarkLoading.value = false
   }
 }
 
+/**
+ * 出立项报告：需要 id（报告导出会写一条留痕流水）⇒ 先 ensure。
+ * ⚠️ 这里建行是合理的：用户已经决定要为这个点位出一份报告，那就是"推进了一步"。
+ */
+async function openReport() {
+  reportOpening.value = true
+  try {
+    const row = await ensureRow(detail.value)
+    detail.value = { ...detail.value, id: row.id }
+    reportVisible.value = true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '打开报告失败')
+  } finally {
+    reportOpening.value = false
+  }
+}
+
 function openCreate() {
   editingId.value = null
+  formFromStore.value = false
   form.value = emptyForm()
   dialog.value = true
 }
 
-function openEdit() {
-  const d = detail.value
-  editingId.value = d.id
-  form.value = {
-    name: d.name, brand: d.brand || '', city: d.city || '', district: d.district || '',
-    address: d.address || '', latitude: String(d.latitude), longitude: String(d.longitude),
-    radius: d.radius, area: d.area ?? '', rent: d.rent ?? ''
+/**
+ * 编辑信息。
+ * 🔴 来自「我的门店」的行**只允许改评估半径**：名称/品牌/城市/地址/坐标/面积/租金
+ *    都是门店台账的字段，在这里改一份不会同步回门店（376 刻意不做双向写），
+ *    改完两边不一致，比不让改更糟。所以弹窗里其余字段全部 disabled 并说明去哪改。
+ */
+async function openEdit() {
+  try {
+    const d = await ensureRow(detail.value)
+    detail.value = { ...detail.value, id: d.id }
+    editingId.value = d.id
+    formFromStore.value = detail.value.origin === 'store'
+    form.value = {
+      name: d.name,
+      brand: d.brand || '',
+      city: d.city || '',
+      district: d.district || '',
+      address: d.address || '',
+      latitude: d.latitude === null || d.latitude === undefined ? '' : String(d.latitude),
+      longitude: d.longitude === null || d.longitude === undefined ? '' : String(d.longitude),
+      radius: d.radius,
+      area: d.area ?? '',
+      rent: d.rent ?? ''
+    }
+    dialog.value = true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '打开编辑失败')
   }
-  dialog.value = true
 }
 
 async function save() {
   const f = form.value
-  if (!f.name.trim()) return ElMessage.warning('请填写点位名称')
-  if (!f.latitude || !f.longitude) return ElMessage.warning('请填写经纬度')
+  // 门店来源只提交半径；其余字段disabled，但这里再挡一次（防有人用 devtools 改了再提交）
+  if (!formFromStore.value && !f.name.trim()) return ElMessage.warning('请填写点位名称')
+  if (!formFromStore.value && (!f.latitude || !f.longitude)) return ElMessage.warning('请填写经纬度')
   saving.value = true
-  const payload = {
-    name: f.name, brand: f.brand, city: f.city, district: f.district, address: f.address,
-    latitude: f.latitude, longitude: f.longitude, radius: f.radius,
-    area: f.area === '' ? null : f.area,
-    rent: f.rent === '' ? null : f.rent
-  }
+  const payload = formFromStore.value
+    ? { radius: f.radius }
+    : {
+        name: f.name, brand: f.brand, city: f.city, district: f.district, address: f.address,
+        latitude: f.latitude, longitude: f.longitude, radius: f.radius,
+        area: f.area === '' ? null : f.area,
+        rent: f.rent === '' ? null : f.rent
+      }
   try {
     if (editingId.value) {
       await axios.patch(`/api/candidates/${editingId.value}`, payload)
       ElMessage.success('已保存')
       dialog.value = false
-      if (detail.value?.id === editingId.value) await openDetail({ id: editingId.value })
+      if (detail.value?.id === editingId.value) await openDetail({ ...detail.value, id: editingId.value })
       await reload()
     } else {
       const { data } = await axios.post('/api/candidates', { ...payload, source: entrySource.value })
       ElMessage.success('已创建')
       dialog.value = false
       await reload()
-      if (data?.candidate?.id) await openDetail({ id: data.candidate.id })
+      if (data?.candidate?.id) await openDetail({ ...data.candidate, origin: 'candidate', markerId: null })
     }
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '保存失败')
@@ -434,6 +608,10 @@ async function save() {
 }
 
 async function remove(row) {
+  // 🔴 门店视图不能删：删了门店还在，刷新就"复活"，用户会反复点（后端同样 400 兜底）
+  if (row.origin === 'store') {
+    return ElMessage.warning('这个点位来自「我的门店」，不能在这里删除。要让它消失，请到我的门店把门店类型改回「已开业」。')
+  }
   try {
     await ElMessageBox.confirm(
       `删除「${row.name}」？推进流水会一并删除，不可恢复。`,
@@ -469,6 +647,7 @@ onMounted(() => {
   const q = route.query
   if (q.lat && q.lng) {
     entrySource.value = String(q.source || 'map')
+    formFromStore.value = false
     form.value = {
       ...emptyForm(),
       latitude: String(q.lat),
@@ -510,13 +689,25 @@ onMounted(() => {
 .cd-error { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #fef0f0; color: #f56c6c; border-radius: 6px; font-size: 13px; }
 .cd-empty { padding: 56px 0; text-align: center; color: var(--text-regular); font-size: 14px; }
 .cd-empty p { margin: 0 0 8px; }
-.cd-empty-hint { font-size: 13px; color: var(--text-secondary); }
+.cd-empty-hint { font-size: 13px; color: var(--text-secondary); line-height: 1.8; max-width: 560px; margin: 0 auto 8px !important; }
+.cd-empty-hint-sub { font-size: 12px; margin-top: 14px !important; }
+.cd-empty-btns { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+
+/* 来源构成（376）：两个来源混在一张表里，必须先说明白 */
+.cd-origins { margin: -4px 0 12px; font-size: 12px; color: var(--text-secondary); }
+.cd-origins b { color: #303133; font-weight: 500; }
 
 .cd-table { cursor: pointer; }
 .cd-name { font-size: 14px; color: #303133; }
 .cd-name-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .cd-addr { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
 .cd-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
+.cd-type { font-size: 12px; color: #303133; }
+.cd-type-solo { color: var(--text-secondary); }
+/* 门店视图不可删：给一句灰字而不是禁用的红按钮（禁用按钮说不出原因） */
+.cd-lock { font-size: 12px; color: var(--text-secondary); cursor: help; }
+.cd-detail-lock { display: block; margin-top: 8px; line-height: 1.7; }
+.cd-form-tip { margin-bottom: 14px; }
 
 .cd-detail-top { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .cd-detail-hint { font-size: 12px; color: var(--text-secondary); }

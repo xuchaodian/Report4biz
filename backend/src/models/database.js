@@ -1302,6 +1302,7 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS store_candidates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,              -- 归属：只本人可见（与 /api/markers 同口径，admin 也不放大）
+      store_code TEXT,                       -- 关联 markers.store_code（v1.13.376）；可空：手工录的点位没有编码
       name TEXT NOT NULL,                    -- 点位名（如"五角场万达 3F 铺位"）
       brand TEXT DEFAULT '',                 -- 拟入驻品牌
       city TEXT DEFAULT '',
@@ -1324,6 +1325,15 @@ export async function initDatabase() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_cand_user_stage ON store_candidates(user_id, stage, updated_at DESC)`)
   // 地图图层按城市取全部候选点
   db.run(`CREATE INDEX IF NOT EXISTS idx_cand_user_city ON store_candidates(user_id, city)`)
+
+  // 🔴🔴 v1.13.376：store_code 幂等补列（老库必须走 ALTER —— CREATE TABLE IF NOT EXISTS
+  //     对已存在的表**完全不执行**，光改建表语句等于只给新库建了列）。
+  //     这是 `shapefiles.city` 那个事故的翻版：当时代码没建、现网手工补的列，
+  //     结果新库/灾备一选城市就 500（详见记忆附录 §6.129）。
+  try { db.run(`ALTER TABLE store_candidates ADD COLUMN store_code TEXT`) } catch (e) { /* 列已存在 */ }
+  // 关联查询按 (user_id, store_code)；⚠️ 非唯一索引 —— 历史数据里同一门店可能已经存在多条推进记录，
+  // 建唯一索引会让启动直接失败（宁可关联时贪心分配，也不能让服务起不来）
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_cand_user_code ON store_candidates(user_id, store_code)`) } catch (e) { /* 索引已存在 */ }
 
   // 推进流水：一条 = 一次「谁在什么时候把状态从哪改到哪 + 一句说明」
   // 🔴 备注**只追加不改写**（⛔ 不做可编辑的备注框：选址推进过程要能回溯，改了就失真）

@@ -12,25 +12,60 @@
  *   ② **`markers.status` 是经营状态**（正常/关注/暂停/关闭），与推进阶段是两套语义，⛔ 不复用字段。
  *   ③ **备注只追加、不改写**：选址推进过程要能回溯。⛔ 不做可编辑备注框。
  *
+ * 🔴🔴 v1.13.376（P0）**数据源反转**：列表改为**读 `markers` 里的候选门店**
+ *   （`store_type ∈ 重点候选/一般候选`），`store_candidates` 降级为「阶段 + 流水」的叠加层。
+ *   业主原话：「候选点位读取『我的门店』中登录的一般候选与重要候选门店」。
+ *
+ *   合成规则（`buildRows`）：
+ *     · 每个候选门店 ⇒ 一行，`origin:'store'`，stage/radius/area/rent 由关联的
+ *       `store_candidates` 行覆盖（关联判据见 `utils/candidateLink.js`）
+ *     · 没被任何门店认领的 `store_candidates` 行 ⇒ 仍单独显示，`origin:'candidate'`
+ *       （＝333~375 期间手工建/地图右键存的点位。⛔ 不许静默吞掉：那是用户的推进记录）
+ *    ⇒ 所以 `id` **可能为 null**（门店还没有推进记录）。前端要写操作前先调 `POST /ensure`。
+ *
+ *   🔴 三个必须守住的边界：
+ *     1. 列表**只读**：`GET /` 不建行、不改行。惰性建行只在 `POST /ensure`（用户真要写时才发生）。
+ *     2. `origin:'store'` 的行**不可删除**（`DELETE` 会 400）：候选点位页是门店的**视图**，
+ *        删视图不能删源数据。不想看到它 ⇒ 去「我的门店」把门店类型改掉。
+ *     3. 筛选（stage/city/keyword）改在 JS 里做：两个来源要合并后才能正确分页与计数，
+ *        放在 SQL 里就只能筛其中一个来源，会出现「筛选后计数和列表对不上」。
+ *
  * 🔴 可见性：一律 `WHERE user_id = ?` —— 只本人可见，`admin` 也**不放大**
  *    （与 `/api/markers` 同口径：体检、点位都是"我这批店"的自我检查，混进别人的会误判）。
  *    ⛔ 不要顺手接 visibleScope / readableUserIds。
+ *    ⚠️ 现网有 3 条 `markers.user_id IS NULL` 的候选门店（BJ003/BJ005/SH002，见 376 核查），
+ *       `user_id = ?` 天然把它们排除 —— 这是**有意**的：没有归属的门店不属于任何人，
+ *       在这里出现等于把别人的店显示给你。
  *
  * ⚠️ STAGES 这四个字符串是**落库值**：改动必须同步
  *    `frontend/src/utils/candidateStage.js`（前端唯一来源）与 database.js 的建表默认值，
  *    守卫 `tests/candidateWorkflow.test.js` 三处对比，改一处就红。
  *
  * ⚠️ 幂等零迁移：两张表由 models/database.js 的 CREATE TABLE IF NOT EXISTS 在启动时建，
- *    生产 `pm2 restart` 即生效，无需手工脚本。
+ *    生产 `pm2 restart` 即生效，无需手工脚本。（`store_code` 列走 ALTER 补，见 database.js）
  */
 import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { linkAll, matchCandidate } from '../utils/candidateLink.js'
+import { planarMeters } from '../utils/potentialGrid.js'
 
 const router = express.Router()
 
 /** 推进四档（业主 2026-11-09 定；顺序＝推进正序，⛔ 不要重排：前端统计条按此顺序渲染） */
 const STAGES = ['待评估', '已勘踏', '立项', '放弃']
+
+/**
+ * 哪些 `markers.store_type` 算「候选门店」。
+ * 🔴 与前端 `stores/marker.js::storeTypes`、`utils/importSpecs.js` 必须同口径（都是
+ *    `['已开业','重点候选','一般候选']` 里的后两个）。业主口语说的「重要候选」＝库里的「重点候选」，
+ *    ⛔ 不要为了对齐口语去改枚举值：那个字符串是**落库值**，改它要迁 data、改 map.js 配色、
+ *    改 importSpecs，且历史上写进库的老值是「重点候选」。
+ */
+const CANDIDATE_STORE_TYPES = ['重点候选', '一般候选']
+
+/** 门店没有推进记录时的默认评估半径（与 store_candidates.radius 的建表默认值一致） */
+const DEFAULT_RADIUS = 1000
 
 /** 字段长度上限（服务端兜底，防超长文本撑库；与前端 maxlength 同口径） */
 const FIELD_MAX = { name: 60, brand: 40, city: 20, district: 20, address: 200, drop_reason: 200, note: 500 }
@@ -75,8 +110,126 @@ function notesOf(db, candidateId) {
 }
 
 /**
+ * 本人名下的**候选门店**（`markers` 里 store_type 为候选的那批）。
+ *
+ * 🔴 `merged_into IS NULL` 不能少：门店合并是软删（只写墓碑指针），
+ *    被合并掉的那条若也列出来，一次合并在候选点位页就会凭空多一条。
+ *
+ * 🔴 字段只取这里用得到的：`markers` 有 30+ 列（含集团同步的 origin_* 与 sync_*），
+ *    `SELECT *` 会把它们全带给前端，既有隐私面也有体积问题。
+ */
+function candidateStores(db, userId) {
+  const ph = CANDIDATE_STORE_TYPES.map(() => '?').join(',')
+  return db.prepare(
+    `SELECT id, store_code, name, brand, store_type, city, district, address,
+            latitude, longitude, area, rent, status, created_at, updated_at
+       FROM markers
+      WHERE user_id = ? AND store_type IN (${ph}) AND merged_into IS NULL
+      ORDER BY updated_at DESC, id DESC`
+  ).all(userId, ...CANDIDATE_STORE_TYPES)
+}
+
+/** 本人全部推进记录（带流水条数；用于列表的「N 条记录」角标） */
+function allCandidates(db, userId) {
+  return db.prepare(
+    `SELECT c.*, (SELECT COUNT(*) FROM candidate_notes n WHERE n.candidate_id = c.id) AS note_count
+       FROM store_candidates c WHERE c.user_id = ? ORDER BY c.updated_at DESC, c.id DESC`
+  ).all(userId)
+}
+
+/**
+ * 把「门店」与「推进记录」合成列表行（**纯读**：不建行、不改行）。
+ *
+ * 行结构（前端契约，改动要同步 CandidateView）：
+ *   id         store_candidates.id，**可能为 null**（该门店还没有推进记录）
+ *   markerId   markers.id，独立点位为 null
+ *   origin     'store'（来自我的门店）| 'candidate'（333~375 的独立点位 / 手工新建）
+ *   stage      叠加后的阶段（无记录时给「待评估」）
+ *   stageStored 该阶段是库里存的（true）还是补的默认值（false）
+ *
+ * ⚠️ 面积/租金优先取门店台账（它是准的），台账没填才回落到候选点位当年手填的值。
+ */
+function buildRows(db, userId) {
+  const stores = candidateStores(db, userId)
+  const cands = allCandidates(db, userId)
+  const { pairs, orphans } = linkAll(stores, cands, planarMeters)
+  const byMarker = new Map(pairs.map((p) => [p.marker.id, p.candidate]))
+
+  const rows = stores.map((m) => {
+    const c = byMarker.get(m.id) || null
+    const radius = c ? Number(c.radius) : NaN
+    return {
+      id: c ? c.id : null,
+      markerId: m.id,
+      origin: 'store',
+      storeCode: str(m.store_code),
+      storeType: str(m.store_type),
+      name: str(m.name),
+      brand: str(m.brand),
+      city: str(m.city),
+      district: str(m.district),
+      address: str(m.address),
+      latitude: m.latitude === null ? null : Number(m.latitude),
+      longitude: m.longitude === null ? null : Number(m.longitude),
+      area: m.area ?? (c ? c.area : null),
+      rent: m.rent ?? (c ? c.rent : null),
+      radius: Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_RADIUS,
+      stage: c ? str(c.stage) : STAGES[0],
+      stageStored: !!c,
+      noteCount: c ? Number(c.note_count || 0) : 0,
+      source: c ? str(c.source) : '',
+      dropReason: c ? str(c.drop_reason) : '',
+      created_at: c ? c.created_at : m.created_at,
+      updated_at: c ? c.updated_at : m.updated_at
+    }
+  })
+
+  for (const c of orphans) {
+    const radius = Number(c.radius)
+    rows.push({
+      id: c.id,
+      markerId: null,
+      origin: 'candidate',
+      storeCode: str(c.store_code),
+      storeType: '',
+      name: str(c.name),
+      brand: str(c.brand),
+      city: str(c.city),
+      district: str(c.district),
+      address: str(c.address),
+      latitude: c.latitude === null ? null : Number(c.latitude),
+      longitude: c.longitude === null ? null : Number(c.longitude),
+      area: c.area ?? null,
+      rent: c.rent ?? null,
+      radius: Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_RADIUS,
+      stage: str(c.stage),
+      stageStored: true,
+      noteCount: Number(c.note_count || 0),
+      source: str(c.source),
+      dropReason: str(c.drop_reason),
+      created_at: c.created_at,
+      updated_at: c.updated_at
+    })
+  }
+
+  // 最近动过的在前。updated_at 是 SQLite 的 'YYYY-MM-DD HH:MM:SS'（UTC）⇒ 字符串比较即可；
+  // 空值（老数据）落到底部，⛔ 不要当 0 参与比较（会跑到最前，看着像"刚更新过"）
+  rows.sort((a, b) => {
+    const x = String(a.updated_at || '')
+    const y = String(b.updated_at || '')
+    if (x !== y) return y.localeCompare(x)
+    return Number(b.id || b.markerId || 0) - Number(a.id || a.markerId || 0)
+  })
+
+  return { rows, stores, cands, pairs, orphans }
+}
+
+/**
  * 列表 + 四档计数
  * GET /api/candidates?stage=待评估&keyword=五角场&city=上海
+ *
+ * 🔴 筛选在 **JS** 里做（不在 SQL）：列表是两个来源合成的，SQL 只能筛其中一个，
+ *    会出现「筛选后列表 3 条、计数 5 条」这种自相矛盾。
  */
 router.get('/', authenticate, (req, res) => {
   try {
@@ -86,37 +239,129 @@ router.get('/', authenticate, (req, res) => {
     const keyword = str(req.query.keyword)
     const city = str(req.query.city)
 
+    const { rows } = buildRows(db, uid)
+
     // 计数始终按**全量**算（不受 stage/keyword 影响）⇒ 顶部四个格子才不会因为筛选而变空
-    const countRows = db.prepare(
-      'SELECT stage, COUNT(*) AS c FROM store_candidates WHERE user_id = ? GROUP BY stage'
-    ).all(uid)
     const counts = {}
     for (const s of STAGES) counts[s] = 0
-    let total = 0
-    for (const r of countRows) {
-      // 历史脏值（手改库/旧版本写进来的）不让它把 interface 搞崩：归到"待评估"之外单独计数
+    for (const r of rows) {
+      // 历史脏值（手改库/旧版本写进来的）不让它把界面搞崩：单独占一格，不进四档
       if (counts[r.stage] === undefined) counts[r.stage] = 0
-      counts[r.stage] = r.c
-      total += r.c
+      counts[r.stage] += 1
     }
 
-    let sql = 'SELECT * FROM store_candidates WHERE user_id = ?'
-    const params = [uid]
-    if (stage && STAGES.includes(stage)) { sql += ' AND stage = ?'; params.push(stage) }
-    if (city) { sql += ' AND city = ?'; params.push(city) }
-    if (keyword) {
-      // 名称/地址/品牌任一命中；⚠️ LIKE 通配符要转义，否则用户搜 "%" 会全表命中
-      const kw = `%${keyword.replace(/[%_\\]/g, (m) => '\\' + m)}%`
-      sql += ` AND (name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR brand LIKE ? ESCAPE '\\')`
-      params.push(kw, kw, kw)
-    }
-    sql += ' ORDER BY updated_at DESC, id DESC'
+    const kw = keyword.toLowerCase()
+    const list = rows.filter((r) => {
+      if (stage && STAGES.includes(stage) && r.stage !== stage) return false
+      if (city && r.city !== city) return false
+      if (kw && !`${r.name} ${r.address} ${r.brand}`.toLowerCase().includes(kw)) return false
+      return true
+    })
 
-    const list = db.prepare(sql).all(...params)
-    res.json({ list, counts, total, stages: STAGES })
+    res.json({
+      list,
+      counts,
+      total: rows.length,
+      stages: STAGES,
+      // 前端用来区分「我的门店」与「独立点位」（空态提示、删除按钮的可用性都靠它）
+      originCounts: {
+        store: rows.filter((r) => r.origin === 'store').length,
+        candidate: rows.filter((r) => r.origin === 'candidate').length
+      }
+    })
   } catch (e) {
     console.error('[Candidates] 列表失败:', e)
     res.status(500).json({ message: '获取候选点位失败' })
+  }
+})
+
+/**
+ * 为某条候选门店「确保」一条推进记录 POST /api/candidates/ensure  body: { markerId }
+ *
+ * 为什么需要它：376 起列表以 `markers` 驱动，**新加进「我的门店」的候选店还没有推进记录**
+ *   （列表里 `id === null`）。用户第一次点「改为已勘踏 / 记一笔」时才建行 ——
+ *   而不是在列表接口里偷偷建（`GET` 带写副作用会让缓存、预取、爬虫都变成写操作）。
+ *
+ * 🔴 幂等：已有记录 ⇒ 原样返回（`created:false`）；没有才建行。
+ * 🔴 回填 `store_code` 时 **不动 `updated_at`**：补一个关联键不是「推进了一步」，
+ *    不能让它把列表排序顶上去（同 `/report` 留痕的取舍，333 已定）。
+ * ⛔ 不做反向同步：这里的 name/address 是从门店台账抄的一份**初始快照**，
+ *    之后再改门店不会回写、改这里也不会回写门店 —— 两边各自独立，P2 再谈联动。
+ */
+router.post('/ensure', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const uid = req.user.id
+    const mid = Number(req.body?.markerId)
+    if (!mid) return res.status(400).json({ message: '缺少 markerId' })
+
+    // `merged_into IS NULL`：被合并掉的店是墓碑（软删），列表里本来就不显示；
+    // 这里不挡就能给它建出一条永远看不见的候选点位行（脏数据）。
+    const m = db.prepare('SELECT * FROM markers WHERE id = ? AND user_id = ? AND merged_into IS NULL').get(mid, uid)
+    if (!m) return res.status(404).json({ message: '未找到该门店' })
+    if (!CANDIDATE_STORE_TYPES.includes(str(m.store_type))) {
+      return res.status(400).json({ message: '该门店不是候选门店（门店类型需为「重点候选」或「一般候选」）' })
+    }
+
+    const code = str(m.store_code)
+    let c = code
+      ? db.prepare('SELECT * FROM store_candidates WHERE user_id = ? AND store_code = ?').get(uid, code)
+      : null
+    if (!c) c = matchCandidate(m, allCandidates(db, uid), planarMeters)
+
+    if (c) {
+      if (!str(c.store_code) && code) {
+        db.prepare('UPDATE store_candidates SET store_code = ? WHERE id = ?').run(code, c.id)
+        db.saveNow()
+        c = db.prepare('SELECT * FROM store_candidates WHERE id = ?').get(c.id)
+      }
+      return res.json({ success: true, candidate: c, notes: notesOf(db, c.id), created: false })
+    }
+
+    const lat = num(m.latitude)
+    const lng = num(m.longitude)
+    if (lat === null || lng === null) {
+      return res.status(400).json({ message: '该门店没有有效坐标，无法建立候选点位' })
+    }
+
+    let newId = null
+    db.beginTx()
+    try {
+      newId = db.prepare(
+        `INSERT INTO store_candidates (user_id, store_code, name, brand, city, district, address,
+                                       latitude, longitude, radius, area, rent, stage, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        uid, code || null,
+        str(m.name).slice(0, FIELD_MAX.name) || `门店 ${mid}`,
+        str(m.brand).slice(0, FIELD_MAX.brand),
+        str(m.city).slice(0, FIELD_MAX.city),
+        str(m.district).slice(0, FIELD_MAX.district),
+        str(m.address).slice(0, FIELD_MAX.address),
+        lat, lng,
+        DEFAULT_RADIUS, num(m.area), num(m.rent),
+        STAGES[0], 'store-sync'
+      ).lastInsertRowid
+
+      db.prepare('INSERT INTO candidate_notes (candidate_id, user_id, from_stage, to_stage, note) VALUES (?, ?, ?, ?, ?)')
+        .run(newId, uid, '', STAGES[0], code
+          ? `从「我的门店」关联（门店编码 ${code}）`
+          : '从「我的门店」关联（该门店没有编码，按名称与坐标匹配）')
+      db.commitTx()
+    } catch (e) {
+      try { db.rollbackTx() } catch (e2) { /* 忽略 */ }
+      throw e
+    }
+
+    res.json({
+      success: true,
+      candidate: db.prepare('SELECT * FROM store_candidates WHERE id = ?').get(newId),
+      notes: notesOf(db, newId),
+      created: true
+    })
+  } catch (e) {
+    console.error('[Candidates] 建立推进记录失败:', e)
+    res.status(500).json({ message: '建立推进记录失败' })
   }
 })
 
@@ -124,9 +369,34 @@ router.get('/', authenticate, (req, res) => {
 router.get('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const c = ownCandidate(db, req.params.id, req.user.id)
+    const uid = req.user.id
+    const c = ownCandidate(db, req.params.id, uid)
     if (!c) return res.status(404).json({ message: '未找到该候选点位' })
-    res.json({ candidate: c, notes: notesOf(db, c.id) })
+
+    // 顺带把对应的候选门店带出来（详情里要显示「门店类型 / 门店编码」，
+    // 也用来判断这行到底能不能删 —— 前端不用再猜）
+    let marker = null
+    if (str(c.store_code)) {
+      marker = db.prepare(
+        `SELECT id, store_code, name, store_type, city, district, address, latitude, longitude, area, rent
+           FROM markers WHERE user_id = ? AND store_code = ? AND merged_into IS NULL`
+      ).get(uid, str(c.store_code)) || null
+    }
+    if (!marker) {
+      const stores = candidateStores(db, uid)
+      const hit = matchCandidate(c, stores, planarMeters)
+      if (hit) marker = hit
+    }
+
+    // 🔴 再返回一份**与列表同构**的行（`row`）：
+    //    列表的 name/address/坐标/面积/租金取自门店台账，而 `store_candidates` 里存的是
+    //    当年手工录的旧值 —— 两个值现网确实不一样（例：markers 地址「浦锦路309弄6号」、
+    //    候选表地址「江月路」）。只返回 candidate 会让「列表显示 A 地址、点开变 B 地址」，
+    //    用户第一反应是数据显示错了。所以展示层统一用 `row`，`candidate` 保持原样
+    //    给报告组件用（它读的是下划线字段 + 完整 row）。
+    const row = buildRows(db, uid).rows.find((r) => r.id === c.id) || null
+
+    res.json({ candidate: c, notes: notesOf(db, c.id), marker, row })
   } catch (e) {
     console.error('[Candidates] 详情失败:', e)
     res.status(500).json({ message: '获取候选点位失败' })
@@ -319,17 +589,32 @@ router.post('/:id/notes', authenticate, (req, res) => {
  * 真删（不软删）：候选点位不是台账，没有"保留痕迹"的业务要求；
  * 若将来要审计，改软删即可，但**必须同时**改 /list 的过滤条件。
  * 两次写（流水 + 主表）⇒ 包事务。
+ *
+ * 🔴🔴 376：**关联到「我的门店」的行一律不可删**（400）。
+ *   这一页现在是门店的**视图**：删掉推进记录 ≠ 删掉门店，刷新后门店仍在（阶段回到「待评估」），
+ *   用户会以为"删不掉"，反复点。真想让它从这里消失 ⇒ 去「我的门店」把门店类型改回「已开业」。
+ *   判据必须与列表的关联判据**同源**（都走 `matchCandidate`），否则会出现
+ *   「列表里显示它属于某某门店、点删除却说它不属于任何门店」这种自相矛盾。
  */
 router.delete('/:id', authenticate, (req, res) => {
   try {
     const db = getDb()
-    const c = ownCandidate(db, req.params.id, req.user.id)
+    const uid = req.user.id
+    const c = ownCandidate(db, req.params.id, uid)
     if (!c) return res.status(404).json({ message: '未找到该候选点位' })
+
+    const linkedStore = matchCandidate(c, candidateStores(db, uid), planarMeters)
+    if (linkedStore) {
+      return res.status(400).json({
+        message: `「${str(linkedStore.name) || '该门店'}」来自「我的门店」，不能在这里删除。`
+          + '如果不想让它出现在候选点位里，请到「我的门店」把门店类型改为「已开业」。'
+      })
+    }
 
     db.beginTx()
     try {
       db.prepare('DELETE FROM candidate_notes WHERE candidate_id = ?').run(c.id)
-      db.prepare('DELETE FROM store_candidates WHERE id = ? AND user_id = ?').run(c.id, req.user.id)
+      db.prepare('DELETE FROM store_candidates WHERE id = ? AND user_id = ?').run(c.id, uid)
       db.commitTx()
     } catch (e) {
       try { db.rollbackTx() } catch (e2) { /* 忽略 */ }

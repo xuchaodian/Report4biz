@@ -68,7 +68,8 @@ describe('B. 鉴权：每个端点都必须登录，且只能碰自己的点位'
   const endpoints = [...ROUTE.matchAll(/router\.(get|post|patch|delete)\(\s*'([^']+)'\s*,\s*([A-Za-z]+)/g)]
 
   it('端点数量与预期一致（漏一个就说明有人加了没挂鉴权的接口）', () => {
-    expect(endpoints.length).toBe(8)  // 7 业务 + 1 报告留痕
+    // 8 = 333 的 7 业务 + 1 报告留痕；376 加了 POST /ensure（惰性建推进记录）
+    expect(endpoints.length).toBe(9)
   })
 
   it('全部挂在 authenticate 之后', () => {
@@ -79,8 +80,15 @@ describe('B. 鉴权：每个端点都必须登录，且只能碰自己的点位'
   it('🔴 每条按 id 取数据的查询都带 user_id（⛔ admin 不放大 —— 与 /api/markers 同口径）', () => {
     // ownCandidate 是唯一的"取单条"入口，必须同时判 id 与 user_id
     expect(ROUTE).toContain('SELECT * FROM store_candidates WHERE id = ? AND user_id = ?')
-    // 列表必带 user_id 过滤
-    expect(ROUTE).toContain("'SELECT * FROM store_candidates WHERE user_id = ?'")
+    // 列表侧的两个取数入口都必须带 user_id 过滤。
+    // ⚠️ 别改回「断言某一句 SQL 字面量」：376 把数据源换成 markers 后，那种断言就从
+    //    「守住可见性约束」退化成「守住某次改动的写法」，改一个别名就假红、绕过别名就假绿。
+    for (const fn of ['candidateStores', 'allCandidates']) {
+      const i = ROUTE.indexOf(`function ${fn}(db, userId)`)
+      expect(i, `找不到取数函数 ${fn}`).toBeGreaterThan(-1)
+      const body = ROUTE.slice(i, ROUTE.indexOf('\n}', i))
+      expect(body, `${fn} 没带 user_id 过滤`).toMatch(/user_id = \?/)
+    }
     // ⛔ 不要顺手接集团可见域：候选点位是"我这批点位"的自我管理
     expect(ROUTE).not.toContain('visibleScope')
     expect(ROUTE).not.toContain('readableUserIds')
