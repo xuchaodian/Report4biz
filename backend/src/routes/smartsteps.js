@@ -629,9 +629,12 @@ router.post('/convert', (req, res) => {
 //   两者 result_data 结构相同（都是 getData 返回的 `{ apiResult: { '1001': … } }`），
 //   但覆盖范围完全不同 ⇒ ⛔ 绝不许拿半径数据冒充商圈面人口（报告里那栏叫"商圈人口"）。
 //
-// 取数优先级（①② 都 0 费用）：
-//   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001
+// 取数优先级（v1.13.381 起 ② 不再是免费档）：
+//   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001 ⇒ **0 费用**
 //   ② smartsteps_cache —— 同坐标（5 位小数）+ 同半径 + services 含 1001
+//                         ⇒ **照常扣 1 次，并写「本人」的 purchases**
+//                         缓存只省平台的上游调用费，⛔ 不是免单凭据 ——
+//                         否则 A 买过的点，B 落上去就能白拿数据（P3 实测发现，业主 11-19 拍板禁掉）
 //   ③ 都没有 → 配额闸门 → 调联通（扣 1 次）→ 同事务写 purchases + cache
 //
 // 🔴 复用**不要求同月份**：已购数据就是那个月的事实，把 `dataMonth` 如实回传让用户自己判断
@@ -669,6 +672,46 @@ function latestMonthLocal() {
 }
 
 /**
+ * 扣 1 次配额 + 写「本次请求账号」的 purchases —— 缓存命中与真调上游**共用同一段**。
+ *
+ * 🔴 为什么必须抽出来（v1.13.381）：`smartsteps_cache` 命中若照旧返回 `quotaUsed:0`，
+ *    A 买过的位置 B 落上去就能白拿数据（P3 实测：B 探测 source=cache、不扣费、无履历）。
+ *    业主 11-19 拍板：缓存只用来省平台的上游调用成本，**不是免单凭据**。
+ *    两处（缓存 / 上游）各写一遍「扣费 + 落库」必然漂移 —— 最怕漂成
+ *    「扣了钱没写履历」或「写了履历没扣钱」，用户对不上账。
+ *
+ * @param {object} opts.gate     `checkQuota` 的成功结果（含 pool），必须在调用前拿到
+ * @param {boolean} opts.cacheHit 数据来自缓存 ⇒ 不再重复写 cache 表
+ * @returns {{ok:true, remaining:number} | {ok:false, message:string}}
+ */
+function chargeAndRecord(db, user, opts = {}) {
+  const { gate, lng, lat, radius, cityMonth, storeName, storeType, resultData, cacheHit } = opts
+  const remaining = Number(gate?.pool) - 1
+  db.beginTx()
+  try {
+    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+    db.prepare(`
+      INSERT INTO purchases (user_id, store_name, store_type, center_lng, center_lat, radius,
+                             city_month, quota_used, status, result_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?)
+    `).run(
+      user.id, String(storeName || '').slice(0, 100), storeType || 'report',
+      lng, lat, JSON.stringify([radius]),
+      cityMonth,
+      JSON.stringify({ querySuccess: true, apiResult: resultData, refunded: false })
+    )
+    // ⚠️ 只有真调上游才写缓存；缓存命中再写一次是空转（且会覆盖同 key 的期次）
+    if (!cacheHit) saveToCache(db, lng, lat, radius, cityMonth, '1001', resultData)
+    db.commitTx()
+    return { ok: true, remaining }
+  } catch (txErr) {
+    try { db.rollbackTx() } catch { /* 忽略 */ }
+    console.error('[fetchPointPopulation] 落库失败:', txErr.message)
+    return { ok: false, message: '人口数据已取到但落库失败，请重试' }
+  }
+}
+
+/**
  * 报告取人口主端点。
  * POST /api/smartsteps/population  { lng, lat, radius, cityMonth?, storeName? }
  */
@@ -680,9 +723,10 @@ function latestMonthLocal() {
  *   必然出现「/population 会复用已购数据、选址不会」这种口径漂移 —— 用户会看到同一点位
  *   在报告里 0 消耗、在选址里扣了 1 次。项目铁律：派生取数链路单一来源。
  *
- * 取数优先级（①② 都 0 费用）：
- *   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001
+ * 取数优先级：
+ *   ① purchases        —— 同账号 + 同半径 + 坐标 10m 内 + status=active + 含 1001 ⇒ **0 费用**
  *   ② smartsteps_cache —— 同坐标（5 位小数）+ 同半径 + services 含 1001
+ *                         ⇒ **照常扣 1 次并写本人的 purchases**（缓存只省上游调用费，不是免单凭据）
  *   ③ 都没有 → 配额闸门 → 调联通（扣 1 次）→ 同事务写 purchases + cache
  *
  * 🔴 复用**不要求同月份**：已购数据就是那个月的事实，把 dataMonth 如实回传让调用方判断
@@ -756,7 +800,10 @@ export async function fetchPointPopulation(db, user, opts = {}) {
     console.error('[fetchPointPopulation] 查询已购数据失败:', e.message)
   }
 
-  // ── ② 复用共享缓存（同坐标 5 位小数 + 同半径 + services 含 1001）──────
+  // ── ② 命中平台缓存：数据已经存在，但**这一账号照样要付 1 次** ─────────
+  // 🔴 v1.13.381（业主 11-19 拍板）：缓存只省平台的上游调用成本，⛔ 不是免单凭据。
+  //    旧实现命中即 `quotaUsed:0` 并把 population 直接返回 ⇒
+  //    A 买过的位置，B 落上去就白拿数据（P3 实测：B 探测 source=cache、无扣费、无履历）。
   try {
     const precision = 100000      // 与 findCache/saveToCache 同规则
     const lngKey = Math.round(gLng * precision) / precision
@@ -771,17 +818,51 @@ export async function fetchPointPopulation(db, user, opts = {}) {
     if (cached) {
       const pop = parsePopulation1001(cached.result_data)
       if (pop) {
-        return {
-          ok: true,
-          body: {
-            success: true,
-            source: 'cache',
-            radius,
-            population: pop,
-            dataMonth: cached.city_month || '',
-            reused: { storeName: '', purchasedAt: '' },
-            quotaUsed: 0,
-            message: '已命中同位置缓存，本次未消耗配额'
+        const cacheMonth = cached.city_month || ''
+        // 探测：只告知「有数据可查」，⛔ 绝不把 population 回给前端 —— 回了就等于白拿
+        if (probeOnly) {
+          return {
+            ok: true,
+            body: {
+              success: true,
+              source: 'cache',
+              radius,
+              population: null,
+              dataMonth: cacheMonth,
+              reused: null,
+              quotaUsed: 0,
+              message: '该位置已有可查数据，取数消耗 1 次配额（无需重复调用联通）'
+            }
+          }
+        }
+        let apiResult = null
+        try { apiResult = JSON.parse(cached.result_data) } catch { /* 坏缓存 ⇒ 落到 ③ 重新取 */ }
+        if (apiResult) {
+          // 真取数：与调上游走**同一道闸门 + 同一段落库**（chargeAndRecord）
+          const gate = checkQuota(db, user?.id, 1, { role: user?.role })
+          if (!gate.ok) {
+            const err = buildGateError(gate)
+            return { ok: false, status: err.status, body: err.body }
+          }
+          const month = cacheMonth || latestMonthLocal()
+          const rec = chargeAndRecord(db, user, {
+            gate, lng: gLng, lat: gLat, radius, cityMonth: month,
+            storeName, storeType, resultData: apiResult, cacheHit: true
+          })
+          if (!rec.ok) return { ok: false, status: 500, body: { message: rec.message } }
+          return {
+            ok: true,
+            body: {
+              success: true,
+              source: 'cache',
+              radius,
+              population: pop,
+              dataMonth: month,
+              reused: null,
+              quotaUsed: 1,
+              remainingQuota: rec.remaining,
+              message: '该位置已有数据（未重复调用联通），本次消耗 1 次配额，已记入你的购买履历'
+            }
           }
         }
       }
@@ -842,28 +923,12 @@ export async function fetchPointPopulation(db, user, opts = {}) {
     return { ok: false, status: 502, body: { message: '联通未返回可用人口数据（本次未消耗配额）' } }
   }
 
-  // 扣费 + 写 purchases + 写 cache，同一事务
-  const remaining = Number(gate.pool) - 1
-  db.beginTx()
-  try {
-    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
-    db.prepare(`
-      INSERT INTO purchases (user_id, store_name, store_type, center_lng, center_lat, radius,
-                             city_month, quota_used, status, result_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?)
-    `).run(
-      user.id, storeName, storeType || 'report',
-      gLng, gLat, JSON.stringify([radius]),
-      cityMonth,
-      JSON.stringify({ querySuccess: true, apiResult: result, refunded: false })
-    )
-    saveToCache(db, gLng, gLat, radius, cityMonth, '1001', result)
-    db.commitTx()
-  } catch (txErr) {
-    try { db.rollbackTx() } catch { /* 忽略 */ }
-    console.error('[fetchPointPopulation] 落库失败:', txErr.message)
-    return { ok: false, status: 500, body: { message: '人口数据已取到但落库失败，请重试' } }
-  }
+  // 扣费 + 写 purchases + 写 cache，同一事务（与 ② 缓存命中共用 chargeAndRecord）
+  const rec = chargeAndRecord(db, user, {
+    gate, lng: gLng, lat: gLat, radius, cityMonth,
+    storeName, storeType, resultData: result, cacheHit: false
+  })
+  if (!rec.ok) return { ok: false, status: 500, body: { message: rec.message } }
 
   return {
     ok: true,
@@ -875,7 +940,7 @@ export async function fetchPointPopulation(db, user, opts = {}) {
       dataMonth: cityMonth,
       reused: null,
       quotaUsed: 1,
-      remainingQuota: remaining,
+      remainingQuota: rec.remaining,
       message: '已从联通获取人口数据（消耗 1 次配额）'
     }
   }

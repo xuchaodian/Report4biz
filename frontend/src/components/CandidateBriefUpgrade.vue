@@ -4,7 +4,7 @@
   ── 定位 ────────────────────────────────────────────────────────────────
   初步分析给的是**免费结论**；这个面板负责「值不值得花钱把它看清楚」这一跳：
     ① 挂载 / 换半径 ⇒ `probeOnly: true` 探测（**0 消耗**，只查 purchases + smartsteps_cache）
-    ② 明示真实成本：已购 ⇒ 免费复用；未购 ⇒ 消耗 1 次 / 当前剩余 N 次
+    ② 明示真实成本：**本人已购** ⇒ 免费复用；只有平台缓存 / 都没有 ⇒ 消耗 1 次 / 当前剩余 N 次
     ③ 用户点按钮 + 二次确认后才真正取数（POST /api/smartsteps/population）
     ④ 取到后就在本页展示「到访 / 居住 / 工作」与年龄、话费分档
 
@@ -17,6 +17,10 @@
      ⛔ 前端自己定档：报告可以选 500/1500，拿这些值直接打联通会被 400 顶回来。
   ⑤ 初步分析（`CandidateBriefReport.vue`）必须保持 0 消耗 ⇒ 付费代码只放在本文件，
      ⛔ 不要把那边的守卫放宽来「顺手」加个自动取数。
+  ⑥ 🔴🔴 **缓存命中 ≠ 免单**（v1.13.381，业主 11-19 拍板）：`source === 'cache'` 只说明
+     平台有这份数据、取数不用再调联通，**费用照扣 1 次**并写本账号履历。
+     `reusable` 只认 `source === 'purchase'` —— 把 cache 也算进来就会「界面说免费、点下去扣钱」。
+     守卫 `cacheNotFreeGuard.test.js` 钉死这条。
 -->
 <template>
   <div class="bu-panel" :class="'is-' + (plan?.tier || 'optional')">
@@ -51,6 +55,15 @@
         <template v-else-if="reusable">
           <span class="bu-ok">✅ {{ probeText }}，可免费复用</span>
           <span class="bu-muted">点右侧按钮只读回这份已购数据，本次不消耗配额</span>
+        </template>
+        <!-- v1.13.381：数据在库里 ≠ 本账号买过。取数照扣 1 次，但不用等上游、即时返回。 -->
+        <template v-else-if="cacheReady">
+          <span class="bu-warn">{{ probeText }}，但你的账号没有购买记录</span>
+          <span class="bu-muted">
+            取数仍消耗 {{ plan?.quotaPerFetch || 1 }} 次配额（命中已有数据，不再调用联通，即时返回）
+            <template v-if="quota.loaded">· 当前剩余 {{ quota.available }} 次</template>
+            <template v-else>· 配额读取失败，取数前请先确认</template>
+          </span>
         </template>
         <template v-else>
           <span class="bu-warn">该位置尚未购买</span>
@@ -159,6 +172,7 @@ const probe = ref({ source: 'none', population: null, dataMonth: '', reused: nul
 const quota = ref({ available: 0, remaining: 0, loaded: false })
 const evidence = ref(null)
 const evidenceSource = ref('')
+const evidenceQuotaUsed = ref(0)
 const dataMonth = ref('')
 
 const hasCoord = computed(() => {
@@ -167,7 +181,12 @@ const hasCoord = computed(() => {
   return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0)
 })
 
-const reusable = computed(() => !!probe.value.population && probe.value.source !== 'none')
+// 🔴 v1.13.381：只有「**本人买过**」才叫可复用。缓存命中（source==='cache'）不是免单 ——
+//    它只证明平台有这份数据、取数不用再调上游，费用照扣。把 cache 也算进来的后果是
+//    「界面说免费、点下去扣 1 次」，用户会认为系统骗人。
+const reusable = computed(() => probe.value.source === 'purchase' && !!probe.value.population)
+// 有现成数据可查（别人买过 / 平台缓存），取数即时返回但要计费
+const cacheReady = computed(() => probe.value.source === 'cache')
 
 const probeText = computed(() => {
   const p = probe.value
@@ -175,7 +194,7 @@ const probeText = computed(() => {
     const who = p.reused?.storeName ? `「${p.reused.storeName}」已购` : '该位置已购'
     return `${who}${p.dataMonth ? `（期次 ${p.dataMonth}）` : ''}`
   }
-  if (p.source === 'cache') return `命中同位置缓存${p.dataMonth ? `（期次 ${p.dataMonth}）` : ''}`
+  if (p.source === 'cache') return `该位置已有可查数据${p.dataMonth ? `（期次 ${p.dataMonth}）` : ''}`
   return ''
 })
 
@@ -187,13 +206,19 @@ const tierTag = computed(() => {
 const buttonText = computed(() => {
   const n = props.plan?.quotaPerFetch || 1
   if (reusable.value) return '读取已购人口（0 配额）'
+  if (cacheReady.value) return `读取该位置人口（${n} 次配额）`
   return props.plan?.tier === 'recommend' ? `取联通人口（${n} 次配额）` : `仍要取数（${n} 次配额）`
 })
 
 const evidenceNote = computed(() => {
   if (evidenceSource.value === 'purchase') return '复用已购数据，本次未消耗配额'
-  if (evidenceSource.value === 'cache') return '命中同位置缓存，本次未消耗配额'
-  return `本次消耗 ${props.plan?.quotaPerFetch || 1} 次配额`
+  // 🔴 缓存命中≠免费：数据在库里，但这次是记在本账号名下的 1 次消耗
+  if (evidenceSource.value === 'cache') {
+    return evidenceQuotaUsed.value
+      ? '命中同位置已有数据（未重复调用联通），本次消耗 1 次配额'
+      : '命中同位置已有数据，本次未消耗配额'
+  }
+  return `本次消耗 ${evidenceQuotaUsed.value || (props.plan?.quotaPerFetch || 1)} 次配额`
 })
 
 const workLive = computed(() => {
@@ -226,8 +251,10 @@ const ageTop = computed(() => topSeries(evidence.value?.ages?.live))
 const arpuTop = computed(() => topSeries(evidence.value?.arpu?.live))
 
 /**
- * 免费探测：只查「有没有可复用的已购 / 缓存」。
+ * 免费探测：只查「有没有**本人的**已购 / 平台缓存」。
  * 🔴 必须 `probeOnly: true` —— 少了这个字段，后端就会走配额闸门并真的取数（扣钱）。
+ * 🔴 v1.13.381：`source === 'cache'` 时后端**不回 population**（回了就是白拿数据），
+ *    只回「有数据可查 + 期次」。所以这里不能用 `population` 是否存在来判「可免费复用」。
  */
 let probeSeq = 0
 async function probeReuse() {
@@ -278,15 +305,19 @@ async function loadQuota() {
 async function fetchPopulation() {
   if (fetching.value || !hasCoord.value) return
   const n = props.plan?.quotaPerFetch || 1
+  const avail = quota.value.loaded ? `${quota.value.available} 次` : '未知'
   const cost = reusable.value
     ? `该位置已有可复用的已购数据（${probeText.value}），本次预计不消耗配额。`
-    : `该位置尚未购买 ⇒ 将消耗 ${n} 次联通人口配额（当前剩余 ${quota.value.loaded ? quota.value.available : '未知'} 次）。`
+    : cacheReady.value
+    // ⚠️ `probeText` 本身已含「该位置已有可查数据（期次 X）」，这里⛔ 不要再包一层前缀
+      ? `${probeText.value}，但你的账号没有购买记录 ⇒ 本次将消耗 ${n} 次配额（命中已有数据，不再重复调用联通，即时返回；当前剩余 ${avail}）。`
+      : `该位置尚未购买 ⇒ 将消耗 ${n} 次联通人口配额（当前剩余 ${avail}）。`
   try {
     await ElMessageBox.confirm(
       `${cost}\n\n`
       + `取数口径：${radiusText(props.plan?.radiusM)}\n`
       + `报告口径：${radiusText(props.reportRadius)}${Number(props.plan?.radiusM) === Number(props.reportRadius) ? '' : '（联通只支持 1/3/5km，已自动换算，见上方口径说明）'}\n`
-      + '取到的是到访 / 居住 / 工作人口与年龄、话费分档；同一位置同半径的已购数据会自动复用，不会重复扣费。',
+      + '取到的是到访 / 居住 / 工作人口与年龄、话费分档；同一位置同半径已经买过的数据会自动复用，不会重复扣费。',
       '确认取联通人口',
       { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
     )
@@ -314,8 +345,9 @@ async function fetchPopulation() {
     if (data?.population) {
       evidence.value = data.population
       evidenceSource.value = data.source || ''
+      evidenceQuotaUsed.value = Number(data.quotaUsed) || 0
       dataMonth.value = data.dataMonth || ''
-      ElMessage.success(data.quotaUsed ? '已取到联通人口（消耗 1 次配额）' : (data.message || '已复用已购数据，未消耗配额'))
+      ElMessage.success(data.quotaUsed ? (data.message || '已取到人口数据（消耗 1 次配额）') : (data.message || '已复用已购数据，未消耗配额'))
       // 取完再探一次：让成本行立刻变成「已购可复用」，避免用户以为每次都要花钱
       probeReuse()
       loadQuota()
@@ -347,6 +379,7 @@ onMounted(() => {
 watch(() => props.plan?.radiusM, () => {
   evidence.value = null
   evidenceSource.value = ''
+  evidenceQuotaUsed.value = 0
   dataMonth.value = ''
   probeReuse()
 })

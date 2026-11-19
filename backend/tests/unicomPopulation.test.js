@@ -73,6 +73,18 @@ describe('C. 三种入参外壳都能解析', () => {
   it('裸 1001 dict（没有外层 key）', () => {
     expect(parsePopulation1001(sampleLower()).live).toBe(399275)
   })
+
+  // 🔴 v1.13.381：`purchases.result_data` 的落库形态是 `{ querySuccess, apiResult: api.data }`，
+  //    若 `api.data` 自身还带一层 apiResult，就成了双层外壳。旧实现只剥一层 ⇒ 返回 null
+  //    ⇒ 「我的门店买过、报告说没买过、再点一次又扣钱」。batch 381 的行为测试实测暴露。
+  it('🔴 双层外壳（purchases 真调上游的落库形态）', () => {
+    const row = { querySuccess: true, apiResult: { apiResult: { '1001': sampleLower() } }, refunded: false }
+    expect(parsePopulation1001(row).live).toBe(399275)
+  })
+  it('🔴 三层外壳也不炸（防上游再包一层）', () => {
+    const row = { apiResult: { apiResult: { apiResult: { '1001': sampleLower() } } } }
+    expect(parsePopulation1001(row).live).toBe(399275)
+  })
 })
 
 describe('D. 取不到就返 null（⛔ 不返 0 冒充有数据）', () => {

@@ -432,19 +432,44 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
     expect(SS).toContain('JSON.parse')
   })
 
+  /**
+   * 取 `needle` 之后那个 `if (...) { … }` 的大括号块（配平）。
+   * v1.13.381 引入：缓存命中也要计费后，函数里出现**两处** `if (probeOnly)`，
+   * 用 indexOf 切到 `// ── ③` 的老写法会把缓存分支后续的闸门也算进来（守卫假红）。
+   */
+  function ifBlockAt(text, needle) {
+    const i = text.indexOf(needle)
+    if (i < 0) return ''
+    let depth = 0
+    for (let k = text.indexOf('{', i); k < text.length; k++) {
+      if (text[k] === '{') depth++
+      else if (text[k] === '}') { depth--; if (depth === 0) return text.slice(i, k + 1) }
+    }
+    return ''
+  }
+  const stripLineComments = (s) => s.replace(/(^|[^:])\/\/.*$/gm, '$1')
+
   it('🔴 probeOnly 必须只查复用 —— ⛔ 不碰闸门、不调上游', () => {
-    const i = SS.indexOf('if (probeOnly)')
-    expect(i).toBeGreaterThan(-1)
-    const body = SS.slice(i, SS.indexOf('// ── ③', i))
-    expect(body).toContain("source: 'none'")
-    expect(body).not.toContain('checkQuota')
-    expect(body).not.toContain('getData')
+    // ① 缓存分支里的探测：只报「有数据可查」，⛔ 不许回 population
+    const cacheProbe = stripLineComments(ifBlockAt(SS, 'if (probeOnly) {'))
+    expect(cacheProbe).toContain('source: \'cache\'')
+    expect(cacheProbe, '缓存探测回了数据就等于白拿').toContain('population: null')
+    expect(cacheProbe).not.toContain('checkQuota')
+    expect(cacheProbe).not.toContain('getData')
+
+    // ② 外层（①② 都没命中）的探测返回：仍必须是 source:'none' 且不带数据
+    const outer = stripLineComments(ifBlockAt(SS, 'if (probeOnly) {\n    return {\n      ok: true'))
+      || stripLineComments(SS.slice(SS.lastIndexOf('if (probeOnly)'), SS.indexOf('// ── ③')))
+    expect(outer).toContain("source: 'none'")
+    expect(outer).toContain('population: null')
+    expect(outer).not.toContain('checkQuota')
   })
 
   it('🔴 复用不要求同月份（过期就重新收费＝坑用户），但必须回传期次', () => {
     const body = fetchBody
     expect(body).toContain('dataMonth: row.city_month')
-    expect(body).toContain('dataMonth: cached.city_month')
+    // 缓存分支的期次变量（缓存表里那份 city_month），⛔ 不许用「当前月」冒充
+    expect(body).toMatch(/dataMonth:\s*cacheMonth/)
     // 查已购时不许出现 city_month = ? 这种同月限制
     const purchaseQuery = body.slice(body.indexOf('FROM purchases') - 400, body.indexOf('FROM purchases'))
     expect(purchaseQuery).not.toMatch(/city_month\s*=\s*\?/)
@@ -452,7 +477,10 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
 
   it('取到数据必须同时写 purchases 与 cache（否则下次不能复用）', () => {
     const body = fetchBody
-    expect(body).toContain('INSERT INTO purchases')
+    // v1.13.381：扣费 + 落库抽成 chargeAndRecord（缓存命中与真调上游共用），
+    // INSERT 语句因此移到函数外 —— 断言改成「全文件有 INSERT + 主流程真的调它」。
+    expect(SS).toContain('INSERT INTO purchases')
+    expect(body).toContain('chargeAndRecord(')
     expect(body).toContain('saveToCache')
   })
 

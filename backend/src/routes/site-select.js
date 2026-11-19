@@ -42,6 +42,8 @@ import { REUSE_TOL_M, radiusIncludes, parseRadii } from '../utils/reuseKey.js'
 // 🔴 `probeReusable` 的「可复用」判定必须与取数侧 `fetchPointPopulation` 完全同口径：
 //    取数侧要求 `parsePopulation1001(result_data)` **解析成功**才算命中已购数据，
 //    只判「result_data 非空」会把「只有商圈面、没有 1001」的记录也算成可复用 ⇒ 预估偏低。
+//    🔴 v1.13.381 同理：缓存命中**不再算可复用**（取数仍扣 1 次），
+//    若这里把 `smartsteps_cache` 算进来，预估就会比实际扣费低 —— 用户会认为系统骗人。
 //    该文件是纯解析器（零 import），不会把 DB / express 拖进来。
 import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { getPoolRemaining } from '../utils/quotaPool.js'
@@ -549,10 +551,11 @@ function computeCompetition(compCount) {
 }
 
 /**
- * 只读探测「该点是否已有可复用人口数据」—— 用于 estimate 的 `cacheHitGuess`。
- * ⚠️ 只查 purchases / smartsteps_cache，**不调用联通、不扣配额**。
- *    与 `fetchPointPopulation` 的 ①② 同口径；实际消耗以 fetchPointPopulation 为准
- *    （它会在真正取数时再做一次判定，可能因期间新增数据而更省）。
+ * 只读探测「该点是否**免单**可复用」—— 用于 estimate / execute 的 `cacheHitGuess`（预估消耗）。
+ * ⚠️ 只查 purchases，**不调用联通、不扣配额**。
+ * 🔴 v1.13.381：`smartsteps_cache` 命中**不再算可复用** —— 缓存只省平台的上游调用费，
+ *    取数时仍要扣 1 次（业主 11-19 拍板禁止「没买过的人白拿」）。
+ *    把它算进来的后果不是「多花一点」而是**预估消耗偏低**：界面说「N 点可复用」、实际照扣 N 次。
  */
 function probeReusable(db, user, lng, lat, radius) {
   try {
@@ -583,17 +586,6 @@ function probeReusable(db, user, lng, lat, radius) {
       if (parsePopulation1001(row.result_data)) return 'purchase'
     }
   } catch { /* 探测失败按未命中处理 */ }
-
-  try {
-    const precision = 100000
-    const lngKey = Math.round(lng * precision) / precision
-    const latKey = Math.round(lat * precision) / precision
-    const cached = db.prepare(
-      `SELECT 1 AS ok FROM smartsteps_cache
-        WHERE center_lng = ? AND center_lat = ? AND radius = ? AND services LIKE '%1001%' LIMIT 1`
-    ).get(lngKey, latKey, radius)
-    if (cached) return 'cache'
-  } catch { /* 同上 */ }
 
   return null
 }
@@ -923,8 +915,12 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
 
       const body = r.body || {}
       const pop = body.population
-      if (body.source === 'fresh') quotaUsed += 1
-      else fromCacheCount += 1
+      // 🔴 v1.13.381：缓存命中也要扣 1 次 ⇒ 消耗以服务端返回的 quotaUsed 为准。
+      //    旧写法「非 fresh 即免费」会把缓存命中算成 0 消耗，前端「本次用了 N 次」偏低。
+      quotaUsed += Number(body.quotaUsed) || 0
+      // ⚠️ `fromCacheCount` 统计的是「**没有调上游**的点数」（purchase + cache），
+      //    ⛔ 不等于「免费点数」—— cache 命中照样扣 1 次，免费点数看 purchase / quotaUsed。
+      if (body.source !== 'fresh') fromCacheCount += 1
 
       const sizePop = (Number(pop?.live) || 0) + (Number(pop?.work) || 0)
       // 🔴 居住+工作都为 0 ⇒ 客群未评 ⇒ **剔除该点**（⛔ 不按 0 分算，那会把好点位排到最后）
@@ -946,7 +942,7 @@ router.post('/rank', authenticate, requireAdmin, async (req, res) => {
         a1,
         a2,
         crowd: combineCrowd(a1, a2),
-        // purchase = 命中框内已购数据（0 消耗）/ cache = 同点同半径已查过 / fresh = 本次真扣
+        // purchase = 命中本人已购（0 消耗）/ cache = 平台有该点数据、仍需扣 1 次 / fresh = 本次真调上游
         dataSource: body.source || '',
         dataMonth: body.dataMonth || ''
       }

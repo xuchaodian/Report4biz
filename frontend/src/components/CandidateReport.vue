@@ -40,16 +40,18 @@
         <template v-if="popData">
           <span class="rp-popbar-ok">
             <template v-if="popSource === 'purchase'">已复用「我的门店」已购数据</template>
-            <template v-else-if="popSource === 'cache'">命中同位置缓存</template>
+            <template v-else-if="popSource === 'cache'">命中同位置已有数据（未重复调用联通）</template>
             <template v-else>已获取联通数据</template>
             <template v-if="popMonth"> · 期次 {{ popMonth }}</template>
-            · 本次未消耗配额
+            · {{ popQuotaUsed ? `本次消耗 ${popQuotaUsed} 次配额` : '本次未消耗配额' }}
           </span>
           <span v-if="popReused && popReused.storeName" class="rp-popbar-note">（{{ popReused.storeName }}）</span>
         </template>
         <template v-else>
           <span class="rp-popbar-miss">尚未获取</span>
-          <span class="rp-popbar-note">联通智慧足迹 · 点位半径口径 · 已购数据自动复用</span>
+          <!-- v1.13.381：平台有数据 ≠ 本账号买过 ⇒ 只提示「有数据可查」，取数照样计费 -->
+          <span v-if="popCachedMonth" class="rp-popbar-note">该位置已有数据可查（期次 {{ popCachedMonth }}），取数消耗 1 次配额</span>
+          <span v-else class="rp-popbar-note">联通智慧足迹 · 点位半径口径 · 同半径已购自动复用</span>
         </template>
       </span>
       <span class="rp-popbar-r">
@@ -243,11 +245,13 @@ const mapImg = ref('')
 
 // ── 联通人口（1001）────────────────────────────────────────
 // 🔴 业主 2026-11-09 定：报告人口**不再用商圈边界面属性**，改用按次计费的联通人口配额。
-//    ⇒ 打开报告只「查缓存」（免费），要花钱必须用户点按钮明确确认。
+//    ⇒ 打开报告只做免费探测，要花钱必须用户点按钮明确确认。
 const popData = ref(null)                       // 联通 1001 解析结果
 const popMonth = ref('')                        // 期次，如 202510
 const popLoading = ref(false)
-const popSource = ref('')                       // purchase | cache | fresh
+const popSource = ref('')                       // purchase（本人已购）| cache（平台有数据，仍计费）| fresh
+const popQuotaUsed = ref(0)                     // 本次实际扣了几次（0 = 复用本人已购）
+const popCachedMonth = ref('')                  // 探测到「有缓存可查」时的期次（仅提示，不展示数据）
 const popReused = ref(null)                     // { storeName, purchasedAt }
 const quotaInfo = ref({ available: 0, remaining: 0, loaded: false })
 
@@ -370,6 +374,8 @@ async function probePopulation() {
   popData.value = null
   popMonth.value = ''
   popSource.value = ''
+  popQuotaUsed.value = 0
+  popCachedMonth.value = ''
   popReused.value = null
   const c = props.candidate
   if (!c || !Number(c.latitude) || !Number(c.longitude)) return
@@ -386,6 +392,9 @@ async function probePopulation() {
       popMonth.value = data.dataMonth || ''
       popSource.value = data.source
       popReused.value = data.reused
+    } else if (data?.source === 'cache') {
+      // 🔴 后端按新规**不回 population**（回了就是白拿），只告知「有数据可查」
+      popCachedMonth.value = data.dataMonth || '未知'
     }
   } catch (e) {
     console.warn('[立项报告] 探测人口数据失败:', e?.message || e)
@@ -419,11 +428,11 @@ async function loadQuota() {
 }
 
 /**
- * 取联通人口数据（按「点位 + 半径」，**可能免费**）。
+ * 取联通人口数据（按「点位 + 半径」；**本人同半径买过才免费**）。
  *
- * 🔴 这里**不做前端配额预检**：已购复用与同位置缓存都是 0 费用的，
- *   一旦先拦「剩余 0 次」，用户明明能免费拿到数据也点不了。
- *   闸门交给后端：先查复用 → 再查缓存 → 最后才判配额。
+ * 🔴 这里**不做前端配额预检**：本人已购复用的 0 费用路径不该被「剩余 0」拦掉；
+ *   🔴 v1.13.381 起「命中平台缓存」不再免费（只省上游调用、仍扣 1 次），
+ *   预检放在前端只会误导 —— 闸门统一交给后端：先查本人已购 → 再查缓存（计费）→ 最后判配额。
  */
 async function fetchPopulation() {
   if (popLoading.value) return
@@ -446,7 +455,8 @@ async function fetchPopulation() {
     await ElMessageBox.confirm(
       `将按「点位半径 ${radiusText(popRadius.value)}」向联通取人口数据` +
       `${monthLabel ? '（期次 ' + monthLabel + '）' : ''}。\n\n` +
-      `· 若该位置在「我的门店」里买过、或命中同位置缓存 ⇒ 不消耗配额，直接复用\n` +
+      `· 若该位置在「我的门店」里**同半径**买过 ⇒ 不消耗配额，直接复用\n` +
+      `· 若平台上已有该位置数据（别人买过）⇒ 仍消耗 1 次配额，但不重复调用联通、即时返回\n` +
       `· 否则消耗 1 次联通人口配额（当前剩余 ${quotaInfo.value.available} 次）`,
       '确认取数',
       { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
@@ -468,6 +478,8 @@ async function fetchPopulation() {
       popData.value = data.population
       popMonth.value = data.dataMonth || ''
       popSource.value = data.source
+      popQuotaUsed.value = Number(data.quotaUsed) || 0
+      popCachedMonth.value = ''
       popReused.value = data.reused
       ElMessage.success(data.message || '已获取联通人口数据')
       loadQuota()

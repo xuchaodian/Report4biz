@@ -36,14 +36,25 @@ export const ARPU_GROUPS = [
   ['150-200元', '200'], ['200-250元', '250'], ['250元以上', 'up']
 ]
 
-/** 剥外壳：兼容 JSON 字符串 / { apiResult } / apiResult 裸对象 */
+/** 剥外壳：兼容 JSON 字符串 / 多层 `{ apiResult }` / apiResult 裸对象 */
 function unwrap(resultData) {
   let api = resultData
   if (typeof api === 'string') {
     try { api = JSON.parse(api) } catch { return null }
   }
-  if (api && typeof api === 'object' && api.apiResult && typeof api.apiResult === 'object') {
-    api = api.apiResult
+  // 🔴 v1.13.381：**多层剥壳**。真调上游写 purchases 的形态是
+  //    `{ querySuccess, apiResult: api.data }`，而 `api.data` 自身可能已带一层 `apiResult`
+  //    ⇒ 落库就成了 `{apiResult:{apiResult:{'1001':…}}}`。
+  //    旧实现只剥一层 ⇒ `dict1001` 找不到 `'1001'` 键 ⇒ 返回 null。
+  //    后果不是「少个字段」而是**买了的钱白花**：① purchases 判不出命中 ⇒ 走缓存/调上游再扣一次，
+  //    用户看到「我的门店买过、报告却说没买过」（batch 381 测试实测暴露）。
+  //    单层形态不受影响（剥一次就没 apiResult 了）。
+  for (let i = 0; i < 3; i++) {
+    if (api && typeof api === 'object' && api.apiResult && typeof api.apiResult === 'object') {
+      api = api.apiResult
+    } else {
+      break
+    }
   }
   return api && typeof api === 'object' ? api : null
 }
