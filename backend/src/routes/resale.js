@@ -144,6 +144,51 @@ function saveToCache(db, centerLng, centerLat, radius, cityMonth, services, resu
   }
 }
 
+// ===== 单次计费落库（缓存命中与真调上游共用同一实现）=====
+/**
+ * v1.13.382：**缓存 ≠ 免单**。
+ *
+ * 背景：`smartsteps_cache` 唯一的价值是「省掉平台的上游调用费」（一次 60 元），
+ * 它**不能**作为第三方客户的免单凭据。旧实现缓存命中走 `cost = 0` + `deducted: 0`，
+ * 于是任何持有 Key 的客户只要踩到别人买过的坐标，就能无限次白拿真实数据 ——
+ * 与内部账号 381 批次定下的口径（缓存命中照扣 1 次并写本人履历）不一致。
+ *
+ * 本函数把「扣客户余额 + 扣物理池 + 写用量流水（+ 选择性写缓存）」收敛为**单事务**，
+ * 缓存分支与真调上游分支共用，杜绝两条路各写一遍后漂移成「扣了钱没流水」。
+ *
+ * ⚠️ 调用前必须已过 `checkQuota`（池不足时不得进入）——否则 remaining_quota 会被扣成负数。
+ *
+ * @returns {{ ok: true, balance: number } | { ok: false, error: Error }}
+ */
+function chargeUsageAndRecord(db, client, opts = {}) {
+  const {
+    services, lng, lat, radius, cityMonth,
+    fromCache = false,     // true ⇒ 流水 from_cache=1（数据来自缓存，但仍计费）
+    resultData = null,     // 上游原始数据；仅真调成功且非空时才写缓存
+    writeCache = false
+  } = opts
+
+  db.beginTx()
+  try {
+    db.prepare(`UPDATE api_keys SET balance = balance - 1 WHERE id = ?`).run(client.id)
+    db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
+    db.prepare(`
+      INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(client.id, services.join(','), lng, lat, radius, cityMonth || null, fromCache ? 1 : 0)
+    if (writeCache && resultData) {
+      // saveToCache 自身吞异常：缓存非账目，写缓存失败不应回滚已发生的扣费
+      saveToCache(db, lng, lat, radius, cityMonth, services, resultData)
+    }
+    db.commitTx()
+  } catch (e) {
+    db.rollbackTx()
+    return { ok: false, error: e }
+  }
+  const balance = db.prepare(`SELECT balance FROM api_keys WHERE id = ?`).get(client.id)?.balance
+  return { ok: true, balance }
+}
+
 // ===== 检测空数据 =====
 function checkIfDataIsEmpty(data) {
   if (data === null || data === undefined) return true
@@ -516,6 +561,12 @@ adminRouter.get('/usage', authenticate, async (req, res) => {
  *   indicators,          // 业务指标数组，如 ["population","residence","work","hourly_flow","spend"]
  *   cityMonth            // 可选，数据年月 YYYYMM
  * }
+ *
+ * 计费口径（v1.13.382 起，与内部账号 381 批次一致）：
+ *   · 出数据就计 1 次 —— **缓存命中同样扣 1 次**（`fromCache:true, deducted:1`）。
+ *     缓存只省平台的上游调用费，⛔ 不是客户的免单凭据。
+ *   · 上游失败 / 空数据 ⇒ `deducted:0`、只记流水不扣费。
+ *   · 测试模式（mock=1）⇒ 不调上游、不扣费、不占池。
  */
 router.post('/', requireApiKey, async (req, res) => {
   const { lng, lat, radius, indicators, cityMonth } = req.body
@@ -631,32 +682,41 @@ router.post('/', requireApiKey, async (req, res) => {
   }
 
   try {
+    // 0. 上游真实配额门禁（v1.13.105 A1 → v0.9 P0 收敛为统一闸门）：第三方真实调用同样烧同一批
+    //    联通配额（admin_quota），校验剩余次数，不足即拒绝——避免 remaining 恒虚高、
+    //    超卖内部查询直到上游真实额度耗尽。
+    //    ★ 第三方走 X-Api-Key 认证、**无平台用户身份** → 传 isApiKey:true，只校验物理池，
+    //      不触发「组织成员授权闸门」（成员闸门对它们无意义），行为与改动前逐字一致。
+    //    ★ v1.13.382：闸门**前移到缓存查询之前**。缓存命中同样要扣 1 次（见 chargeUsageAndRecord），
+    //      若仍把闸门放在缓存之后，池耗尽时会把 remaining_quota 扣成负数、并让「缓存命中」绕过额度。
+    //      mock 分支（上方 return）不占池、不计费，不受本闸门约束。
+    const gate = checkQuota(db, null, 1, { isApiKey: true })
+    if (!gate.ok) {
+      return res.status(429).json({ code: 429, message: '上游数据配额已耗尽，请联系管理员充值后再试' })
+    }
+
     // 1. 查缓存
     const cachedData = findCache(db, cLng, cLat, r, cityMonth, services)
     if (cachedData) {
-      // 命中缓存：不消耗余额（上游未调用）
-      db.prepare(`
-        INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 0)
-      `).run(client.id, services.join(','), cLng, cLat, r, cityMonth || null)
+      // ★ v1.13.382：缓存命中**不再免单** —— 缓存只省平台的上游调用费（60 元/次），
+      //   不能当客户的免单凭据，否则任何人踩到别人买过的坐标就能无限白拿真实数据。
+      //   与内部账号同一口径：照扣 1 次，并写入客户自己的用量流水（from_cache=1, cost=1）。
+      const rec = chargeUsageAndRecord(db, client, {
+        services, lng: cLng, lat: cLat, radius: r, cityMonth, fromCache: true
+      })
+      if (!rec.ok) {
+        console.error('转售缓存命中计费失败:', rec.error)
+        return res.status(500).json({ code: 500, message: '数据已取到但计费落库失败，请重试' })
+      }
       return res.json({
         code: 200,
         success: true,
         fromCache: true,
         data: cachedData,
-        message: '数据来自缓存，未消耗次数'
+        balance: rec.balance,
+        deducted: 1,
+        message: '数据来自平台已有缓存，仍计入 1 次（未调用上游，即时返回）'
       })
-    }
-
-    // 上游真实配额门禁（v1.13.105 A1 → v0.9 P0 收敛为统一闸门）：第三方真实调用同样烧同一批
-    // 联通配额（admin_quota），调上游前校验剩余次数，不足即拒绝——避免 remaining 恒虚高、
-    // 超卖内部查询直到上游真实额度耗尽。
-    // ★ 第三方走 X-Api-Key 认证、**无平台用户身份** → 传 isApiKey:true，只校验物理池，
-    //   不触发「组织成员授权闸门」（成员闸门对它们无意义），行为与改动前逐字一致。
-    // 注意：仅真实分支需此门禁；mock（L579-622）/缓存命中（上文）不经上游不消耗，不受影响。
-    const gate = checkQuota(db, null, 1, { isApiKey: true })
-    if (!gate.ok) {
-      return res.status(429).json({ code: 429, message: '上游数据配额已耗尽，请联系管理员充值后再试' })
     }
 
     // 2. 调用上游
@@ -696,53 +756,39 @@ router.post('/', requireApiKey, async (req, res) => {
 
     // 3. 空数据判断：查询失败或空数据不扣次数
     const isEmpty = !querySuccess ? true : checkIfDataIsEmpty(result)
-    const deducted = isEmpty ? 0 : 1
 
-    // 4. 扣费 + 记录（v1.13.105 A1：同一批联通配额双轨扣减——客户 balance 与 admin remaining_quota 同步 -1。
-    //    仅真实上游调用成功且非空数据才扣；缓存命中 / mock / 空数据失败（deducted=0）不扣 remaining）
-    // v1.13.144：账目「扣余额 + 扣池 + 写流水 (+ 写缓存)」合并为**单事务** ⇒ 单次落盘，
-    // 且彻底消除「扣了钱没流水」的中间态（进程崩溃时整体回滚，账目自洽）。
-    // 仅在**写点 >1** 时开事务：单写点若也开事务，反而变成「run 落盘 + commit 落盘」两次。
-    const multiWrite = deducted > 0
-    if (multiWrite) db.beginTx()
-    try {
-      if (deducted > 0) {
-        db.prepare(`UPDATE api_keys SET balance = balance - 1 WHERE id = ?`).run(client.id)
-        db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
-      }
+    // 4. 空数据/上游失败：只记流水、不扣费。
+    //    单写点（1 次 run ⇒ 1 次落盘），刻意**不开事务** —— 开了反而变成 2 次落盘。
+    if (isEmpty) {
       db.prepare(`
         INSERT INTO api_usage (api_key_id, services, center_lng, center_lat, radius, city_month, from_cache, cost)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-      `).run(client.id, services.join(','), cLng, cLat, r, cityMonth || null, deducted)
-
-      // 5. 成功后写缓存（saveToCache 自身吞异常：缓存非账目，失败不应回滚扣费）
-      if (querySuccess && !isEmpty) {
-        saveToCache(db, cLng, cLat, r, cityMonth, services, result)
-      }
-      if (multiWrite) db.commitTx()
-    } catch (e) {
-      if (multiWrite) db.rollbackTx()
-      throw e
-    }
-
-    const updatedClient = db.prepare(`SELECT balance FROM api_keys WHERE id = ?`).get(client.id)
-
-    if (isEmpty) {
+        VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+      `).run(client.id, services.join(','), cLng, cLat, r, cityMonth || null)
+      const bal = db.prepare(`SELECT balance FROM api_keys WHERE id = ?`).get(client.id)?.balance
       return res.json({
         code: 200,
         success: false,
         message: '查询成功但无数据（未扣次数）',
         data: result,
-        balance: updatedClient.balance
+        balance: bal,
+        deducted: 0
       })
     }
+
+    // 5. 计费 + 记录 + 写缓存：与「缓存命中」共用 chargeUsageAndRecord（单事务，落盘 1 次）
+    //    v1.13.105 A1：同一批联通配额双轨扣减——客户 balance 与 admin remaining_quota 同步 -1
+    const rec = chargeUsageAndRecord(db, client, {
+      services, lng: cLng, lat: cLat, radius: r, cityMonth,
+      fromCache: false, resultData: result, writeCache: true
+    })
+    if (!rec.ok) throw rec.error   // 交给外层 catch ⇒ 500（事务已整体回滚，不会「扣了钱没流水」）
 
     return res.json({
       code: 200,
       success: true,
       fromCache: false,
       data: result,
-      balance: updatedClient.balance,
+      balance: rec.balance,
       deducted: 1
     })
   } catch (e) {

@@ -4,7 +4,7 @@
  * 被测行为（src/routes/resale.js 的 POST /api/v1/population）：
  *  1. 真实计费路径「扣客户余额 + 扣物理池 + 写流水 + 写缓存」= 4 个写点 ⇒ **落盘恰 1 次**
  *  2. 三本账同事务：任一写点失败 ⇒ 扣费**整体回滚**（不再出现「扣了钱没流水」）
- *  3. 缓存命中路径 = 单写点 ⇒ **不开事务**（开了反而 2 次落盘），仍为 1 次
+ *  3. 缓存命中路径（v1.13.382 起同样计费）= 3 写点合并单事务 ⇒ 仍为 1 次落盘
  *  4. 源码守卫：routes/ai.js 不再有 db.saveNow() 调用（run() 已负责落盘）
  *
  * 安全边界：
@@ -180,7 +180,7 @@ describe('resale.js 计费路径：4 写点合并为单事务（v1.13.144）', (
     expect(usageCount()).toBe(before.usage)
   })
 
-  it('缓存命中：单写点不开事务 ⇒ 仍 1 次落盘，且不扣余额/不扣池', async () => {
+  it('缓存命中：不再免单 ⇒ 3 写点合并单事务，仍 1 次落盘，且余额/池同步 -1', async () => {
     dbMod.getDb()
       .prepare(`INSERT OR REPLACE INTO smartsteps_cache (center_lng, center_lat, radius, city_month, services, result_data) VALUES (?, ?, ?, NULL, ?, ?)`)
       .run(121.49, 31.25, 1000, '1001', JSON.stringify({ cached: true, mark: 'hit' }))
@@ -190,10 +190,13 @@ describe('resale.js 计费路径：4 写点合并为单事务（v1.13.144）', (
 
     expect(r.status).toBe(200)
     expect(r.body.fromCache).toBe(true)
-    expect(r.body.message).toContain('未消耗次数')  // 缓存命中分支响应不含 deducted 字段，以 fromCache+文案表达
+    // v1.13.382：缓存只省上游调用费，不当免单凭据 —— 客户照付 1 次
+    expect(r.body.deducted).toBe(1)
+    expect(r.body.message).toContain('仍计入 1 次')
+    expect(r.body.message).not.toContain('未消耗次数')
     expect(r.writes).toBe(1)
-    expect(balanceOf()).toBe(before.balance)
-    expect(poolOf()).toBe(before.pool)
+    expect(balanceOf()).toBe(before.balance - 1)
+    expect(poolOf()).toBe(before.pool - 1)
   })
 
   it('删除客户：删流水 + 删 Key 同事务 ⇒ 1 次落盘，不留孤儿用量记录', async () => {

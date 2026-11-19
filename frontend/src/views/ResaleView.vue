@@ -163,8 +163,12 @@
           </div>
         </div>
       </template>
-      <div style="margin-bottom:12px;font-size:13px;color:var(--text-regular);">
+      <div style="margin-bottom:6px;font-size:13px;color:var(--text-regular);">
         客户：<b>{{ currentClient?.company_name }}</b>
+      </div>
+      <div style="margin-bottom:12px;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+        「缓存」表示数据取自平台已有数据、本次未调用联通上游，但<b>仍按 1 次计费</b> ——
+        缓存只省平台的上游成本，不是客户的免单凭据。
       </div>
       <el-table :data="usageList" stripe border size="small" style="width:100%" max-height="380">
         <el-table-column label="时间" width="160">
@@ -181,7 +185,8 @@
         </el-table-column>
         <el-table-column label="来源" width="90" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.from_cache ? 'info' : 'success'" size="small">{{ row.from_cache ? '缓存' : '上游' }}</el-tag>
+            <el-tag :type="row.from_cache ? 'info' : 'success'" size="small"
+                    :title="row.from_cache ? '取自平台已有数据，未调用联通上游，但仍按 1 次计费' : '本次真实调用联通上游'">{{ row.from_cache ? '缓存' : '上游' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="扣费" width="80" align="center">
