@@ -33,10 +33,8 @@
  */
 
 import express from 'express'
-import * as turf from '@turf/turf'
 import { getDb } from '../models/database.js'
 import { authenticate, requireAdmin } from '../middleware/auth.js'
-import { attachGeo } from '../models/geoStore.js'
 import { fetchPointPopulation } from './smartsteps.js'
 // 🔴 复用判据从零依赖工具文件取，⛔ 不从 smartsteps.js 取：
 //    测试会把 smartsteps 整模块 mock 掉，从那里命名导入会变成 undefined ⇒ B 逻辑静默失效。
@@ -47,14 +45,14 @@ import { REUSE_TOL_M, radiusIncludes, parseRadii } from '../utils/reuseKey.js'
 //    该文件是纯解析器（零 import），不会把 DB / express 拖进来。
 import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { getPoolRemaining } from '../utils/quotaPool.js'
-import { readableUserIds } from '../utils/visibleScope.js'
-import { resolveCompBrands, competitorWhere, isAllBrandsToken } from '../utils/competitorScope.js'
+import { isAllBrandsToken } from '../utils/competitorScope.js'
+import { loadCompetitorIndex } from '../utils/competitorPoints.js'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
-import { normalizeDistrictProps } from '../utils/districtProps.js'
 import { computeScore, competitionScore } from '../utils/districtScore.js'
+import { loadDistrictPieces, findDistrict, medianInBbox } from '../utils/districtPieces.js'
 import { normalizeBrand } from '../utils/storeDedup.js'
 import {
-  loadGridIndex, listGridCities, circlePopulation, percentileThresholds, percentileScore, median
+  loadGridIndex, listGridCities, circlePopulation, percentileThresholds, percentileScore
 } from '../utils/gridPopulation.js'
 import {
   enumerateGrid, bboxAreaKm2, isBboxValid, buildPointIndex, planarMeters,
@@ -164,69 +162,6 @@ function parseParams(body) {
       confirmBurn: Number.isFinite(burnRaw) && burnRaw > 0 ? Math.round(burnRaw) : null
     }
   }
-}
-
-/**
- * 加载商圈面（category='other'，按城市名匹配）。
- * 属性一律经 `normalizeDistrictProps` 归一 —— 商圈面有两代产物（2022 年度版 / 联通人口版），
- * 字段名不同；不归一会让 `computeScore` 拿到 undefined ⇒ 人口项恒 22 分且不报错。
- * @returns {Array<{name:string, props:object, feature:object, bbox:number[]}>}
- */
-function loadDistrictPieces(db, city) {
-  const key = String(city || '').trim().replace(/市$/, '')
-  if (!key) return []
-  let rows = []
-  try {
-    rows = db.prepare(`SELECT id, name, field_names FROM shapefiles WHERE category = 'other' AND name LIKE ?`).all(`%${key}%`)
-  } catch {
-    return []
-  }
-  const out = []
-  for (const row of rows) {
-    const withGeo = { ...row }
-    try { attachGeo(withGeo) } catch { continue }
-    let geo = withGeo.geojson
-    if (typeof geo === 'string') {
-      try { geo = JSON.parse(geo) } catch { geo = null }
-    }
-    for (const f of geo?.features || []) {
-      const geom = f?.geometry
-      if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue
-      const props = normalizeDistrictProps(f.properties || {})
-      let box
-      try { box = turf.bbox(turf.feature(geom)) } catch { continue }
-      out.push({
-        name: String(props['名称'] || props['商圈名'] || '').trim(),
-        props,
-        feature: turf.feature(geom),
-        bbox: box
-      })
-    }
-  }
-  return out
-}
-
-/** 点是否落在商圈面内（先 bbox 粗筛，再做 PIP） */
-function findDistrict(pieces, lng, lat) {
-  for (const p of pieces) {
-    const [w, s, e, n] = p.bbox
-    if (lng < w || lng > e || lat < s || lat > n) continue
-    try {
-      if (turf.booleanPointInPolygon(turf.point([lng, lat]), p.feature)) return p
-    } catch { /* 几何异常跳过该面 */ }
-  }
-  return null
-}
-
-/** 框选内有效格（常住人口 > 0）的单格人口中位数 */
-function medianInBbox(cells, bbox) {
-  const [w, s, e, n] = bbox
-  const vals = []
-  for (const c of cells) {
-    if (c.lng < w || c.lng > e || c.lat < s || c.lat > n) continue
-    if (Number.isFinite(c.pop) && c.pop > 0) vals.push(c.pop)
-  }
-  return median(vals)
 }
 
 /**
@@ -422,17 +357,9 @@ function runCoarse(db, user, p, mode = 'precise') {
     warnings.push(`本账号名下没有「${p.myBrand}」的门店：饱和保护已跳过，自牌维度按「无自有门店」处理`)
   }
 
-  const scopeIds = readableUserIds(db, user.id)
-  const { sql: compBrandSql, params: compBrandParams } = competitorWhere(resolveCompBrands(db, user.id, p.myBrand))
-  const comps = scopeIds.length
-    ? db.prepare(
-      `SELECT id, brand, latitude, longitude FROM competitors
-        WHERE user_id IN (${scopeIds.map(() => '?').join(',')})${compBrandSql}
-          AND (status IS NULL OR status NOT IN ('店铺已关', '尚未营业'))`
-    ).all(...scopeIds, ...compBrandParams)
-    : []
-
-  const compIndex = buildPointIndex(comps)
+  // 竞品点集走 utils/competitorPoints.js（与候选点位初步分析共用）：
+  // 可见域 + 品牌映射 + 在营过滤三段口径只能有一份，否则同一点位在两处竞品数会不一致。
+  const compIndex = loadCompetitorIndex(db, user.id, p.myBrand)
   const ownIndex = buildPointIndex(ownForE)
   const satIndex = buildPointIndex(ownForSat)
   const districts = loadDistrictPieces(db, p.city)

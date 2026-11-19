@@ -1,5 +1,11 @@
 <template>
   <div class="cand-page">
+    <!-- 初步分析（378 · P1）：**页面内视图切换**，不是弹窗 ——
+         业主拍板「页面内嵌 + 可导出 PDF」。弹窗会遮住地图，长内容还要在 62vh 里滚两层。
+         ⚠️ v-else 必须紧邻这个 v-if（中间不能插注释），所以说明写在上面。 -->
+    <CandidateBriefReport v-if="briefRow" :row="briefRow" @close="briefRow = null" />
+
+    <template v-else>
     <!-- 头部 -->
     <div class="cd-head">
       <div class="cd-head-l">
@@ -132,9 +138,11 @@
       <el-table-column label="最近更新" width="160">
         <template #default="{ row }">{{ fmt(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="130" align="center">
+      <el-table-column label="操作" width="196" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
+          <!-- 初步分析是 0 消耗的，所以对每行都开放（含门店视图与独立点位） -->
+          <el-button link type="primary" @click.stop="openBrief(row)">初步分析</el-button>
           <!-- 🔴 来自「我的门店」的行不能删（后端也会 400）：删了门店还在，刷新就"复活" -->
           <el-button v-if="row.origin !== 'store'" link type="danger" @click.stop="remove(row)">删除</el-button>
           <span v-else class="cd-lock" title="来自「我的门店」：要让它消失，请到我的门店把门店类型改回「已开业」">门店视图</span>
@@ -234,7 +242,10 @@
         </div>
 
         <div class="cd-detail-actions">
-          <el-button type="primary" :loading="reportOpening" @click="openReport">生成立项报告</el-button>
+          <!-- 🔴 顺序有意：先「初步分析」（0 消耗），再「立项报告」（可能消耗联通配额）。
+               主按钮给免费的这条路 —— 产品方向是「免费层给结论、付费层给证据」。 -->
+          <el-button type="primary" @click="openBrief(detail)">初步分析</el-button>
+          <el-button plain :loading="reportOpening" @click="openReport">生成立项报告</el-button>
           <el-button @click="openEdit">编辑信息</el-button>
           <el-button v-if="detail.origin !== 'store'" type="danger" plain @click="remove(detail)">删除点位</el-button>
           <span v-else class="cd-muted cd-detail-lock">
@@ -303,6 +314,7 @@
 
     <!-- 立项报告（P1-5）：默认不含 AI 建议，勾选后才调 AI -->
     <CandidateReport v-model="reportVisible" :candidate="detail" />
+    </template>
   </div>
 </template>
 
@@ -315,6 +327,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { STAGES, stageMeta } from '@/utils/candidateStage.js'
 import { formatUtcDateTime } from '@/utils/datetime.js'
 import CandidateReport from '@/components/CandidateReport.vue'
+import CandidateBriefReport from '@/components/CandidateBriefReport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -339,6 +352,9 @@ const remarkLoading = ref(false)
 const reportOpening = ref(false)
 
 const reportVisible = ref(false)
+// 初步分析（378）：非 null ⇒ 页面切换到报告视图。只带报告要用的四个字段，
+// 不整行塞进去（列表行有 20+ 字段，报告组件不该知道「阶段/流水/来源构成」这些事）。
+const briefRow = ref(null)
 const dialog = ref(false)
 const editingId = ref(null)
 const form = ref(emptyForm())
@@ -516,6 +532,23 @@ async function addRemark() {
   } finally {
     remarkLoading.value = false
   }
+}
+
+/**
+ * 打开初步分析（0 消耗）。
+ * 🔴 这里**不调 ensureRow**：后端 `GET /brief` 接受 markerId，门店驱动的行
+ *    （id 为 null）也能直接分析。看一眼就在库里建一行，等于把浏览变成写操作。
+ * 关掉抽屉再切视图：抽屉是 fixed 层，留着会盖在新视图上面。
+ */
+function openBrief(row) {
+  briefRow.value = {
+    id: row?.id ?? null,
+    markerId: row?.markerId ?? null,
+    name: row?.name || '',
+    origin: row?.origin || '',
+    radius: Number(row?.radius) || 1000
+  }
+  drawer.value = false
 }
 
 /**

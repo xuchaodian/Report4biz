@@ -119,7 +119,13 @@ describe('G4. 候选门店的取数口径', () => {
 
   it('详情接口带出关联门店（前端靠它显示门店类型/判断能否删）', () => {
     expect(DETAIL).toContain('marker')
-    expect(DETAIL).toContain('matchCandidate(')
+    // 377：反查门店抽成 linkedStoreFor（详情与初步分析共用），判据仍必须走 matchCandidate
+    expect(DETAIL, '详情不反查门店 ⇒ 前端不知道这行来自哪家店、能不能删').toContain('linkedStoreFor(')
+    const body = fnBody(ROUTE, 'linkedStoreFor')
+    expect(body, '找不到 linkedStoreFor').toBeTruthy()
+    expect(body, '⛔ 只判 store_code 会漏掉「名字差一个店字」的现网数据（376 实测 118m 同名店）')
+      .toContain('matchCandidate(')
+    expect(body).toContain('merged_into IS NULL')
   })
 })
 

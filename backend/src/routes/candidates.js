@@ -48,7 +48,23 @@ import express from 'express'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
 import { linkAll, matchCandidate } from '../utils/candidateLink.js'
-import { planarMeters } from '../utils/potentialGrid.js'
+import {
+  planarMeters, buildPointIndex, countWithin, sameBrandEffectiveCount
+} from '../utils/potentialGrid.js'
+import {
+  findGridRow, loadGridIndex, circlePopulation
+} from '../utils/gridPopulation.js'
+import { loadDistrictPieces, findDistrict } from '../utils/districtPieces.js'
+import { computeScore } from '../utils/districtScore.js'
+import { normalizeBrand } from '../utils/storeDedup.js'
+import { isAllBrandsToken, resolveBrandScope } from '../utils/competitorScope.js'
+import { loadCompetitorIndex } from '../utils/competitorPoints.js'
+import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
+import { dstr } from '../utils/districtProps.js'
+import {
+  buildBriefModel, densityThresholds, BRIEF_CONST
+} from '../utils/candidateBrief.js'
+import { SATURATION_DEFAULT } from '../utils/siteSelectConfig.js'
 
 const router = express.Router()
 
@@ -225,6 +241,79 @@ function buildRows(db, userId) {
 }
 
 /**
+ * 从一条候选记录反查它对应的「我的门店」行。
+ *
+ * 🔴 判据必须与列表**同源**（都走 `matchCandidate`）：否则会出现
+ *    「列表说它属于某某门店、点开详情说它不属于任何门店」这种自相矛盾（376 踩过）。
+ *    先按 `store_code` 走一次精确匹配（最硬的键，也避免全量扫），没命中再走三级判据。
+ */
+function linkedStoreFor(db, uid, cand) {
+  const code = str(cand?.store_code)
+  if (code) {
+    const hit = db.prepare(
+      `SELECT id, store_code, name, store_type, city, district, address, latitude, longitude, area, rent
+         FROM markers WHERE user_id = ? AND store_code = ? AND merged_into IS NULL`
+    ).get(uid, code)
+    if (hit) return hit
+  }
+  return matchCandidate(cand, candidateStores(db, uid), planarMeters)
+}
+
+/** 取点位的「源数据行」：门店台账优先，没有门店才用候选记录自己那份（与 376「视图≠源数据」同口径） */
+function briefPointOf(marker, cand, radiusOverride) {
+  const src = marker || cand || {}
+  const numOf = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v))
+  const mLat = numOf(marker?.latitude)
+  const mLng = numOf(marker?.longitude)
+  return {
+    name: str(src.name),
+    brand: str(marker?.brand) || str(cand?.brand),
+    city: str(marker?.city) || str(cand?.city),
+    district: str(marker?.district) || str(cand?.district),
+    address: str(marker?.address) || str(cand?.address),
+    lat: Number.isFinite(mLat) ? mLat : numOf(cand?.latitude),
+    lng: Number.isFinite(mLng) ? mLng : numOf(cand?.longitude),
+    radius: radiusOverride
+  }
+}
+
+/**
+ * 按城市名找本地 1km 网格，**容许「市」字差异**。
+ *
+ * 🔴 `findGridRow` 是全等比较（`resolveGridCity(r) === want`），而库里网格的城市名来自
+ *    文件名（「南宁1km网格人口.zip」⇒ 南宁），门店台账里却常写「南宁市」或「上海市」。
+ *    不兜这一层，用户会看到「本市暂无网格」而实际有 —— 而且**不报错**，最难发现的一类。
+ *    先只探测（findGridRow，纯 SQL、毫秒级），确认有再 loadGridIndex（要读整份 geojson）。
+ */
+function gridForCity(db, user, city) {
+  const raw = String(city || '').trim()
+  if (!raw) return { covered: false, reason: 'no_city', index: null, row: null, city: '' }
+  const tries = [raw]
+  const bare = raw.replace(/市$/, '')
+  if (bare && bare !== raw) tries.push(bare)
+  if (!/市$/.test(raw)) tries.push(`${raw}市`)
+  for (const c of tries) {
+    if (!findGridRow(db, user, c)) continue
+    return { ...loadGridIndex(db, user, c), city: c }
+  }
+  return { covered: false, reason: 'no_grid_row', index: null, row: null, city: raw }
+}
+
+/** 半径内最近的自有门店（返回实体，报告要显示名字与编码）；窗外一律不算 */
+function nearestStore(index, lng, lat, capM) {
+  if (!index?.arr?.length) return null
+  const capDeg = capM / 111320
+  let best = null
+  for (const it of index.arr) {
+    if (Math.abs(it.lat - lat) > capDeg) continue
+    const d = planarMeters(lng, lat, it.lng, it.lat)
+    if (d > capM) continue
+    if (!best || d < best.m) best = { m: d, store: it.src }
+  }
+  return best
+}
+
+/**
  * 列表 + 四档计数
  * GET /api/candidates?stage=待评估&keyword=五角场&city=上海
  *
@@ -365,6 +454,156 @@ router.post('/ensure', authenticate, (req, res) => {
   }
 })
 
+/**
+ * 初步分析（P1 · v1.13.378）GET /api/candidates/brief?markerId=12540 或 ?id=11[&radius=1000]
+ *
+ * ── 它是什么 ───────────────────────────────────────────────────────────
+ * 把地图页那几个**免费**能力（本地 1km 网格常住人口、竞品分布、自有门店距离、商圈覆盖）
+ * 收到一个点位上，出一份可导出的初步分析 —— 让业主先判断「值不值得花钱买联通人口」。
+ *
+ * ── 🔴 为什么单开端点、且必须手动触发 ───────────────────────────────────
+ * ① 本接口要解析**整个城市**的 1km 网格：上海 3,263 格约 150ms，重庆 59,862 格约 1.5s
+ *    且峰值内存增加一两百 MB。⛔ 不能塞进 `GET /:id` 跟着抽屉一起跑。
+ * ② 它是「只看不算」的只读端点：⛔ 不写库（不建 store_candidates 行、不写流水）、
+ *    ⛔ 不调联通/高德。所以门店驱动的行（`id === null`）也能直接用 `markerId` 分析，
+ *    不需要先 `POST /ensure` —— 看一眼不该在库里留痕迹。
+ *
+ * 🔴 路由顺序：必须注册在 `GET /:id` **之前**，否则 `/brief` 会被当成 id。
+ */
+router.get('/brief', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const uid = req.user.id
+    const q = req.query || {}
+
+    let marker = null
+    let cand = null
+    const markerId = Number(q.markerId)
+    const cid = Number(q.id)
+    if (markerId) {
+      marker = db.prepare(
+        `SELECT id, store_code, name, brand, store_type, city, district, address,
+                latitude, longitude, area, rent
+           FROM markers WHERE id = ? AND user_id = ? AND merged_into IS NULL`
+      ).get(markerId, uid) || null
+      if (!marker) return res.status(404).json({ message: '未找到该门店' })
+      if (!CANDIDATE_STORE_TYPES.includes(str(marker.store_type))) {
+        return res.status(400).json({ message: '该门店不是候选门店（门店类型需为「重点候选」或「一般候选」）' })
+      }
+    } else if (cid) {
+      cand = ownCandidate(db, cid, uid)
+      if (!cand) return res.status(404).json({ message: '未找到该候选点位' })
+      marker = linkedStoreFor(db, uid, cand)
+    } else {
+      return res.status(400).json({ message: '缺少 id 或 markerId' })
+    }
+
+    // 半径：请求可覆盖（同一点位想看 1km 与 3km 的差别），默认取候选点位自己的评估半径
+    const radiusM = clampInt(q.radius, RADIUS_MIN, RADIUS_MAX, Number(cand?.radius) || DEFAULT_RADIUS)
+    const point = briefPointOf(marker, cand, radiusM)
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || (point.lat === 0 && point.lng === 0)) {
+      return res.status(400).json({ message: '该点位没有有效坐标，无法做空间分析。请先到「我的门店」补上经纬度。' })
+    }
+
+    // ── ① 客群：本地 1km 网格（0 消耗）────────────────────────────────
+    const grid = gridForCity(db, req.user, point.city)
+    let density = null
+    if (grid.covered) {
+      const cp = circlePopulation(grid.index, point.lng, point.lat, radiusM)
+      density = {
+        circlePop: cp.pop,
+        whole: cp.whole,
+        partial: cp.partial,
+        thresholds: densityThresholds(grid.index.cells)
+      }
+    }
+
+    // ── ② 竞品：与智能选址同口径（同一个 util，避免两处数字不一致）──────
+    // scope 单独解析一次只为**说明口径**（报告要写清「这 N 家是按映射收窄还是全量」）
+    const brandScope = resolveBrandScope(db, uid, point.brand)
+    const compIndex = loadCompetitorIndex(db, uid, point.brand)
+    const cnt = countWithin(compIndex, point.lng, point.lat, radiusM)
+    const byBrand = Object.entries(cnt.byBrand || {})
+      .map(([brand, n]) => ({ brand, count: n }))
+      .sort((a, b) => b.count - a.count)
+
+    // ── ③ 自有门店 / 饱和（只算已开业门店，与仪表盘同口径）──────────────
+    const ownAll = db.prepare(
+      `SELECT id, name, brand, store_code, store_area, latitude, longitude
+         FROM markers WHERE user_id = ? AND merged_into IS NULL ${IN_BUSINESS_SQL}`
+    ).all(uid, ...IN_BUSINESS_PARAMS)
+    const hasBrand = !!point.brand && !isAllBrandsToken(point.brand)
+    const brandKey = hasBrand ? normalizeBrand(point.brand) : ''
+    const ownPool = hasBrand ? ownAll.filter((s) => normalizeBrand(s.brand) === brandKey) : ownAll
+    const ownIndex = buildPointIndex(ownPool)
+    const near = nearestStore(ownIndex, point.lng, point.lat, 20000)
+    const withinR = ownPool.length
+      ? sameBrandEffectiveCount(ownIndex, point.lng, point.lat, SATURATION_DEFAULT.radiusM)
+      : 0
+
+    // ── ④ 商圈：与智能选址共用 loadDistrictPieces / findDistrict ────────
+    const pieces = loadDistrictPieces(db, point.city)
+    let district = { covered: false, contained: false, name: '', score: null, crowd: '', level: '' }
+    if (pieces.length) {
+      const hit = findDistrict(pieces, point.lng, point.lat)
+      district = {
+        covered: true,
+        contained: !!hit,
+        name: hit ? hit.name : '',
+        score: null,
+        crowd: hit ? dstr(hit.props, '客群') : '',
+        level: hit ? dstr(hit.props, '能级') : ''
+      }
+      if (hit) {
+        try {
+          // 与智能选址一致：竞品数用**本点半径内**的，比「整个商圈」更贴近该点位
+          district.score = computeScore(hit.props, cnt.count, 0).score
+        } catch { district.score = null }
+      }
+    }
+
+    const brief = buildBriefModel({
+      point,
+      grid: { covered: grid.covered, reason: grid.reason },
+      density,
+      comp: {
+        count: cnt.count,
+        byBrand,
+        scope: {
+          configured: Array.isArray(brandScope.compBrands),
+          source: brandScope.source,
+          brands: Array.isArray(brandScope.compBrands) ? brandScope.compBrands : []
+        }
+      },
+      own: {
+        hasBrand,
+        brand: point.brand,
+        nearestM: near ? Math.round(near.m) : null,
+        nearestName: str(near?.store?.name),
+        nearestCode: str(near?.store?.store_code),
+        withinR,
+        radiusM: SATURATION_DEFAULT.radiusM,
+        maxOwn: SATURATION_DEFAULT.maxOwn
+      },
+      district
+    })
+
+    res.json({
+      brief,
+      // 点位来源（前端要显示「来自我的门店 / 独立点位」与门店类型）
+      origin: marker
+        ? { kind: 'store', markerId: marker.id, storeCode: str(marker.store_code), storeType: str(marker.store_type) }
+        : { kind: 'candidate', markerId: null, storeCode: str(cand?.store_code), storeType: '' },
+      generatedAt: new Date().toISOString(),
+      // 口径常量（前端 ⛔ 不许自己硬编码 2000/2/35 这些数）
+      consts: BRIEF_CONST
+    })
+  } catch (e) {
+    console.error('[Candidates] 初步分析失败:', e)
+    res.status(500).json({ message: '生成初步分析失败' })
+  }
+})
+
 /** 详情 + 流水 GET /api/candidates/:id */
 router.get('/:id', authenticate, (req, res) => {
   try {
@@ -375,18 +614,7 @@ router.get('/:id', authenticate, (req, res) => {
 
     // 顺带把对应的候选门店带出来（详情里要显示「门店类型 / 门店编码」，
     // 也用来判断这行到底能不能删 —— 前端不用再猜）
-    let marker = null
-    if (str(c.store_code)) {
-      marker = db.prepare(
-        `SELECT id, store_code, name, store_type, city, district, address, latitude, longitude, area, rent
-           FROM markers WHERE user_id = ? AND store_code = ? AND merged_into IS NULL`
-      ).get(uid, str(c.store_code)) || null
-    }
-    if (!marker) {
-      const stores = candidateStores(db, uid)
-      const hit = matchCandidate(c, stores, planarMeters)
-      if (hit) marker = hit
-    }
+    const marker = linkedStoreFor(db, uid, c)
 
     // 🔴 再返回一份**与列表同构**的行（`row`）：
     //    列表的 name/address/坐标/面积/租金取自门店台账，而 `store_candidates` 里存的是

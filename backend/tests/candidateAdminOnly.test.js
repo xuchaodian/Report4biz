@@ -117,8 +117,12 @@ describe('C. /candidates 深链受 requiresAdmin 守卫', () => {
 
 describe('D. 立项报告随页面一起 admin-only（无独立入口）', () => {
   it('⑦ CandidateReport 只被 CandidateView.vue 引用', () => {
+    // ⚠️ 必须判 **import 语句**，不能判「文件里出现过这个字符串」：
+    //    377 把 PDF 导出抽到 utils/exportPaperPdf.js，它的文件头注释里写了
+    //    「从 CandidateReport.vue 抽出」⇒ 纯字符串匹配会把这个 util 当成"引用方"（假阳性）。
+    const IMPORT_RE = /(?:from\s+|import\s*\(\s*)['"][^'"]*CandidateReport\.vue['"]/
     const users = frontendSources()
-      .filter((f) => read(f).includes('CandidateReport.vue'))
+      .filter((f) => IMPORT_RE.test(read(f)))
       .sort()
     expect(
       users,

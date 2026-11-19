@@ -68,8 +68,9 @@ describe('B. 鉴权：每个端点都必须登录，且只能碰自己的点位'
   const endpoints = [...ROUTE.matchAll(/router\.(get|post|patch|delete)\(\s*'([^']+)'\s*,\s*([A-Za-z]+)/g)]
 
   it('端点数量与预期一致（漏一个就说明有人加了没挂鉴权的接口）', () => {
-    // 8 = 333 的 7 业务 + 1 报告留痕；376 加了 POST /ensure（惰性建推进记录）
-    expect(endpoints.length).toBe(9)
+    // 8 = 333 的 7 业务 + 1 报告留痕；376 加了 POST /ensure（惰性建推进记录）；
+    // 377 加了 GET /brief（初步分析：只读、0 消耗）
+    expect(endpoints.length).toBe(10)
   })
 
   it('全部挂在 authenticate 之后', () => {

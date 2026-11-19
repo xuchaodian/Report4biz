@@ -20,6 +20,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..', '..')
 const read = (p) => fs.readFileSync(path.join(REPO, p), 'utf8')
 
+/** 377：PDF 导出（A4 版式 / 分页 / 切页）已抽到 frontend/src/utils/exportPaperPdf.js ——
+ *  立项报告与初步分析共用同一份。版式断言一律打在这个文件上。 */
+const PDF_UTIL = read('frontend/src/utils/exportPaperPdf.js')
+
 /** 正方形面：lng 121.50~121.52，lat 31.29~31.31 */
 const square = {
   type: 'Polygon',
@@ -246,24 +250,24 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
   })
 
   it('🔴 PDF 必须严格 A4 纵向（⛔ 不许回到按内容高度自定义纸张）', () => {
-    expect(COMP).toContain('A4_H = 297')
-    expect(COMP).toMatch(/format: \[A4_W, A4_H\]/)
+    expect(PDF_UTIL).toContain('A4_H = 297')
+    expect(PDF_UTIL).toMatch(/format: \[A4_W, A4_H\]/)
     // 旧写法：按内容高度出纸 ⇒ 一张超长页
-    expect(COMP).not.toMatch(/format: \[imgWidth, imgHeight/)
-    expect(COMP).toMatch(/availH \/ rawH/)
+    expect(PDF_UTIL).not.toMatch(/format: \[imgWidth, imgHeight/)
+    expect(PDF_UTIL).toMatch(/availH \/ rawH/)
   })
 
   it('🔴 缩放不下就分页，⛔ 不许一路缩到 4~5pt（业主 2026-11-09 定「含 AI 出两页」）', () => {
     // 可读阈值必须存在且为 0.72（低于此正文字号 ≈4~5pt）
-    expect(COMP).toMatch(/MIN_READABLE = 0\.72/)
-    expect(COMP).toContain('MIN_READABLE')
+    expect(PDF_UTIL).toMatch(/MIN_READABLE = 0\.72/)
+    expect(PDF_UTIL).toContain('MIN_READABLE')
     // 必须真的有分页：addPage + 切点找空白行
-    expect(COMP).toContain('pdf.addPage')
-    expect(COMP).toContain('findCutY')
+    expect(PDF_UTIL).toContain('pdf.addPage')
+    expect(PDF_UTIL).toContain('findCutY')
     // 分页必须走「均分缩放」，⛔ 不是把一张缩到很小的图查成 N 页
-    expect(COMP).toMatch(/\(rawH \/ pages\) \/ availH/)
+    expect(PDF_UTIL).toMatch(/\(rawH \/ pages\) \/ availH/)
     // 页数要有兜底上限（防止异常高度出几十页）
-    expect(COMP).toContain('MAX_PAGES')
+    expect(PDF_UTIL).toContain('MAX_PAGES')
   })
 
   it('🔴 地图图必须固定 height 才能用 object-fit（否则高度被压、宽度不变 ⇒ 圆变椭圆）', () => {
@@ -279,9 +283,12 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
   })
 
 
+  // 🔴 v1.13.377：切页与导出逻辑抽到 utils/exportPaperPdf.js（初步分析报告共用同一份），
+  //    所以下面两条断言的对象从组件改成那个 util —— 意图一字未变。
+
   it('🔴 切点候选必须是区块级（⛔ 不许把标题留在上页、正文翻到下页）', () => {
-    // 实测踩到：候选里收了 `.rp-ai-body` ⇒ 切点落在「AI 选址建议」标题与正文之间
-    const fn = COMP.slice(COMP.indexOf('function collectCutCandidates'), COMP.indexOf('function pickCutY'))
+    expect(PDF_UTIL, '找不到共用导出 util').toBeTruthy()
+    const fn = PDF_UTIL.slice(PDF_UTIL.indexOf('function collectCutCandidates'), PDF_UTIL.indexOf('function pickCutY'))
     expect(fn).toBeTruthy()
     const sel = fn.match(/querySelectorAll\('([^']+)'\)/)
     expect(sel).toBeTruthy()
@@ -289,13 +296,18 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
     expect(sel[1]).toContain('.rp-table tr')
     expect(sel[1]).not.toContain('.rp-ai-body')
     // 调色板：DOM 边界优先于像素扫描
-    expect(COMP).toContain('pickCutY')
-    expect(COMP).toMatch(/cuts\.filter/)
+    expect(PDF_UTIL).toContain('pickCutY')
+    expect(PDF_UTIL).toMatch(/cuts\.filter/)
+    // 组件必须真的在用这个 util（抽了不用＝两份实现）
+    expect(COMP).toContain('exportPaperPdf(paper.value')
   })
 
   it('导出走 html2canvas + jsPDF 动态 import（不把 pdf 库拖进首屏）', () => {
-    expect(COMP).toContain("await import('html2canvas')")
-    expect(COMP).toContain("await import('jspdf')")
+    expect(PDF_UTIL).toContain("await import('html2canvas')")
+    expect(PDF_UTIL).toContain("await import('jspdf')")
+    // ⛔ 组件里不许再静态 import 这两个库
+    expect(COMP).not.toContain("from 'html2canvas'")
+    expect(COMP).not.toContain("from 'jspdf'")
   })
 })
 
