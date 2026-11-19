@@ -58,6 +58,9 @@ import { loadDistrictPieces, findDistrict } from '../utils/districtPieces.js'
 import { computeScore } from '../utils/districtScore.js'
 import { normalizeBrand } from '../utils/storeDedup.js'
 import { isAllBrandsToken, resolveBrandScope } from '../utils/competitorScope.js'
+// 已购半径读取（v1.13.380）：判据与取数侧同源，⛔ 不许各写一份
+import { REUSE_TOL_M, parseRadii } from '../utils/reuseKey.js'
+import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { loadCompetitorIndex } from '../utils/competitorPoints.js'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 import { dstr } from '../utils/districtProps.js'
@@ -297,6 +300,58 @@ function gridForCity(db, user, city) {
     return { ...loadGridIndex(db, user, c), city: c }
   }
   return { covered: false, reason: 'no_grid_row', index: null, row: null, city: raw }
+}
+
+/**
+ * 读出「本账号在这个位置买过哪些半径」（**只读**，v1.13.380）。
+ *
+ * ── 用途单一 ───────────────────────────────────────────────────────────
+ *   只喂给初步分析的升级文案：判「同位置买过别的档 ⇒ 本次要另买 1 次」。
+ *   ⛔ 不参与计费、不写库、不发请求；读失败就返回空（少一句提示，不影响报告）。
+ *
+ * ── 🔴 五关必须与取数侧 `smartsteps.js::fetchPointPopulation` 逐关对齐 ──
+ *   ① `user_id = ?`         —— 复用是**按账号**的，别人的购买不算
+ *   ② `status = 'active'`   —— 作废/退款的不算
+ *   ③ `result_data IS NOT NULL`
+ *   ④ 10m 内（`REUSE_TOL_M`）—— ⚠️ SQL 只做 ±0.0003° 矩形粗筛，必须再精判一次；
+ *      只靠粗筛会把 30m 外的点算成同址
+ *   ⑤ 能解析出 1001 —— 只买过 1005 之类的那笔购买对「客群」没有可复用内容
+ *   少任何一关，报告就会出现「说能复用、真取数又扣钱」（§6.130 同类坑）。
+ *
+ * @returns {{radii:number[]}} 已购半径去重升序（空数组＝没买过）
+ */
+function readPurchasedRadii(db, uid, lng, lat) {
+  const out = { radii: [] }
+  const gLng = Number(lng)
+  const gLat = Number(lat)
+  if (!Number.isFinite(gLng) || !Number.isFinite(gLat) || (!gLng && !gLat)) return out
+  try {
+    const box = 0.0003   // ≈33m 粗筛（与 fetchPointPopulation 同值）
+    const rows = db.prepare(`
+      SELECT radius, result_data, center_lng, center_lat
+        FROM purchases
+       WHERE user_id = ? AND status = 'active' AND result_data IS NOT NULL
+         AND center_lat BETWEEN ? AND ? AND center_lng BETWEEN ? AND ?
+       ORDER BY city_month DESC, id DESC
+       LIMIT 200
+    `).all(uid, gLat - box, gLat + box, gLng - box, gLng + box)
+    for (const row of rows) {
+      const lat2 = Number(row.center_lat)
+      const lng2 = Number(row.center_lng)
+      if (!Number.isFinite(lat2) || !Number.isFinite(lng2)) continue
+      if (planarMeters(gLng, gLat, lng2, lat2) > REUSE_TOL_M) continue
+      let pop = null
+      try { pop = parsePopulation1001(row.result_data) } catch { pop = null }
+      if (!pop) continue
+      for (const r of parseRadii(row.radius)) {
+        if (!out.radii.includes(r)) out.radii.push(r)
+      }
+    }
+    out.radii.sort((a, b) => a - b)
+  } catch (e) {
+    console.error('[brief] 读取已购半径失败（本次不提示，不影响报告）:', e.message)
+  }
+  return out
 }
 
 /** 半径内最近的自有门店（返回实体，报告要显示名字与编码）；窗外一律不算 */
@@ -562,6 +617,9 @@ router.get('/brief', authenticate, (req, res) => {
       }
     }
 
+    // ── ⑤ 该位置已购哪些半径（只读；仅用于「买过别的档」提示）────────────
+    const purchased = readPurchasedRadii(db, uid, point.lng, point.lat)
+
     const brief = buildBriefModel({
       point,
       grid: { covered: grid.covered, reason: grid.reason },
@@ -585,7 +643,8 @@ router.get('/brief', authenticate, (req, res) => {
         radiusM: SATURATION_DEFAULT.radiusM,
         maxOwn: SATURATION_DEFAULT.maxOwn
       },
-      district
+      district,
+      purchased
     })
 
     res.json({

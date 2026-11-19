@@ -77,6 +77,11 @@
       </div>
     </div>
 
+    <!-- v1.13.380：同一位置买过**别的**半径（复用要求同半径 ⇒ 本次仍要另买 1 次）。
+         ⚠️ 只在「不能复用」时显示：若已命中可复用档，成本行已经写明「可免费复用」，
+            再出现这句会自相矛盾。 -->
+    <p v-if="!reusable && plan?.reuseHint" class="bu-reuse">{{ plan.reuseHint }}</p>
+
     <p v-if="plan?.tier === 'not_now'" class="bu-hold">
       规则结论是「先别买」，但按钮仍然保留 —— 如果这是「关一家开一家」的替换计划，由你自己决定要不要取数。
     </p>
@@ -281,7 +286,7 @@ async function fetchPopulation() {
       `${cost}\n\n`
       + `取数口径：${radiusText(props.plan?.radiusM)}\n`
       + `报告口径：${radiusText(props.reportRadius)}${Number(props.plan?.radiusM) === Number(props.reportRadius) ? '' : '（联通只支持 1/3/5km，已自动换算，见上方口径说明）'}\n`
-      + '取到的是到访 / 居住 / 工作人口与年龄、话费分档；已购数据会自动复用，不会重复扣费。',
+      + '取到的是到访 / 居住 / 工作人口与年龄、话费分档；同一位置同半径的已购数据会自动复用，不会重复扣费。',
       '确认取联通人口',
       { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
     )
@@ -386,6 +391,10 @@ watch(() => props.plan?.radiusM, () => {
 .bu-warn { color: #b45309; font-weight: 500; }
 .bu-muted { color: var(--text-secondary); font-size: 12px; }
 .bu-hold { margin: 10px 0 0; font-size: 12px; color: #b45309; background: #fdf6ec; border-radius: 6px; padding: 7px 10px; }
+/* v1.13.380：同位置买过别的半径 ⇒ 与 bu-hold 同视觉层级（都是「先看这句再决定」），
+   但用左竖线区分：hold 是规则结论，这条是计费口径说明 */
+.bu-reuse { margin: 10px 0 0; font-size: 12px; line-height: 1.65; color: #8a5a00;
+  background: #fff8e6; border-left: 3px solid #e6a23c; border-radius: 4px; padding: 7px 10px; }
 .bu-err { margin: 10px 0 0; font-size: 13px; color: #f56c6c; }
 
 .bu-ev { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4e7ed; }

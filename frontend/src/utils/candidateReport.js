@@ -301,7 +301,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     facts.push({
       label: '半径内人口',
       value: '未获取',
-      note: '需购买联通人口配额后按「点位 + 半径」取数（若该位置已购买过则自动复用、不重复扣费）'
+      note: '需购买联通人口配额后按「点位 + 半径」取数（同一位置同半径买过的自动复用、不重复扣费）'
     })
     risks.push('本报告尚未获取联通人口数据 —— 人口规模、性别、年龄与消费档位均缺失，人口相关结论不成立。')
   }

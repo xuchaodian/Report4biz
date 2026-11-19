@@ -255,6 +255,33 @@ export function pickUnicomRadius(radiusM) {
   return { radiusM: fallback, exact: false, covers: false }
 }
 
+/**
+ * 「同一位置买过**别的**半径」的提示（业主 2026-11-19 拍板补的文案）。
+ *
+ * ── 为什么需要它 ────────────────────────────────────────────────────────
+ * P3 实测：先买过 1km，把报告切到 1.5km（联通按 3km 取）后，面板只说
+ *   「该位置尚未购买、将消耗 1 次」—— 技术上完全正确，但用户刚为这个位置花过钱，
+ *   极容易读成「系统要我再买一次」＝重复扣费。
+ *
+ * 🔴 复用是**同半径**语义（`radiusIncludes`：已购 1km 顶不了 3km 的请求）。
+ *   所以「买过别的档」≠「能复用」，必须把「本次要另买」写明白；
+ *   ⛔ 不许含糊成「你可能已经买过」，那会让人以为点下去不花钱。
+ *
+ * @param {number[]} purchasedRadii 该位置已购的半径（已解析；可重复、可含脏值；空＝没买过）
+ * @param {number} pickM 本次要取的联通档位
+ * @returns {string} 空串 = 无需提示（没买过，或正好命中可复用档）
+ */
+export function purchasedReuseText(purchasedRadii, pickM) {
+  const list = (Array.isArray(purchasedRadii) ? purchasedRadii : [])
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+  const want = Number(pickM)
+  if (!list.length || !Number.isFinite(want) || want <= 0) return ''
+  if (list.includes(want)) return ''   // 正好能复用 ⇒ 成本行自己会说「可免费复用」
+  const have = [...new Set(list)].sort((a, b) => a - b).map(radiusText).join(' / ')
+  return `该位置已购 ${have}（可免费看），但复用要求同半径 ⇒ 本次按 ${radiusText(want)} 需另买 1 次`
+}
+
 /** 升级口径的一句话说明（三种情形必须分得开，⛔ 不能共用一句） */
 function upgradeRadiusNote(reportM, pick) {
   const r = radiusText(reportM)
@@ -280,10 +307,11 @@ function upgradeRadiusNote(reportM, pick) {
  *   optional —— 其余：先把免费层的短板核验完再决定
  *
  * @param {object} m buildBriefModel 的中间结果（population / competition / own / point …）
+ * @param {{radii:number[]}|null} purchased 该位置已购半径（由路由只读查出；null＝未查/没买过）
  * @returns {{tier:'not_now'|'recommend'|'optional', title:string, why:string[],
  *            buys:string[], radiusM:number, radiusNote:string, quotaPerFetch:number, service:string}}
  */
-export function buildUpgradePlan(m = {}) {
+export function buildUpgradePlan(m = {}, purchased = null) {
   const reportM = Number(m.point?.radius) || 1000
   const pick = pickUnicomRadius(reportM)
   const plan = {
@@ -293,6 +321,8 @@ export function buildUpgradePlan(m = {}) {
     buys: [...UPGRADE_BUYS],
     radiusM: pick.radiusM,
     radiusNote: upgradeRadiusNote(reportM, pick),
+    // 同位置买过别的档 ⇒ 明说「要另买」；空串＝无需提示（判据与取数侧复用关同源）
+    reuseHint: purchasedReuseText(purchased?.radii, pick.radiusM),
     // 一次取数消耗几次配额（后端 fetchPointPopulation 固定 1）——前端 ⛔ 不许自己写 1
     quotaPerFetch: 1,
     service: '1001'
@@ -362,6 +392,8 @@ export function buildUpgradePlan(m = {}) {
  * @param {object} input.comp    { count, byBrand: Array<{brand,count}> } | null
  * @param {object} input.own     { hasBrand, nearestM, nearestName, nearestCode, withinR, radiusM, maxOwn }
  * @param {object} input.district { name, contained, score, crowd, level, competitorCount } | null
+ * @param {{radii:number[]}|null} input.purchased 该位置已购半径（同账号 + 10m + 可解析 1001，
+ *        由路由只读查出）；**只用于升级文案**，⛔ 不参与任何计费判定
  * @returns {object} 报告模型（**只含事实与结论，不含任何猜测值**）
  */
 export function buildBriefModel(input = {}) {
@@ -465,8 +497,8 @@ export function buildBriefModel(input = {}) {
   }
 
   out.verdict = buildVerdict({ ...out, saturation: out.saturation })
-  // 升级建议：花钱能买到什么、按哪个半径买。⛔ 只算不查（配额/已购由前端探测，见 P2 组件）
-  out.upgrade = buildUpgradePlan(out)
+  // 升级建议：花钱能买到什么、按哪个半径买。⛔ 只算不查（配额由前端探测，已购半径由路由传入）
+  out.upgrade = buildUpgradePlan(out, input.purchased)
 
   // ── 风险与待确认（每条都对应一个可核验的事实）──────────────────────
   const risks = []

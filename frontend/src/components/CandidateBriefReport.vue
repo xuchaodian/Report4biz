@@ -264,10 +264,13 @@
               <dt>成本</dt>
               <dd>
                 一次取数 {{ brief.upgrade.quotaPerFetch }} 次联通人口配额；
-                已在「我的门店」买过的位置自动复用，不重复扣费
+                同一位置<b>同半径</b>买过的自动复用，不重复扣费
               </dd>
             </div>
           </dl>
+          <!-- v1.13.380：同位置买过**别的**半径时，明说「复用要同半径、本次要另买」。
+               没有这句时，用户刚为该点位花过钱，会把「尚未购买」读成重复扣费（P3 实测）。 -->
+          <p v-if="brief.upgrade.reuseHint" class="bf-reuse">{{ brief.upgrade.reuseHint }}</p>
           <p class="bf-gap">
             ⚠ 本报告没有购买联通人口 —— 所有数字都是站内免费数据。
             纸张下方的操作区才会真正取数，且取数前会明示「消耗几次 / 剩余几次」。
@@ -525,6 +528,9 @@ onMounted(load)
 .bf-miss.is-soft b { color: #303133; }
 
 .bf-gap { margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; color: #8a9099; }
+/* v1.13.380：同位置买过别的半径 ⇒ 紧贴在成本说明下方，用警示色避免被当成普通脚注 */
+.bf-reuse { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid #e6a23c; background: #fff8e6;
+  border-radius: 4px; font-size: 11.5px; line-height: 1.65; color: #8a5a00; }
 .bf-risks { margin: 0; padding-left: 18px; }
 .bf-risks li { font-size: 12.5px; line-height: 1.6; margin-bottom: 3px; color: #1f2329; }
 

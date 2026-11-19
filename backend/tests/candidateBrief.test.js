@@ -29,7 +29,7 @@ process.env.R4B_GEO_DIR = tmpGeo
 
 import {
   cellDensity, densityThresholds, densityLevel, competitionLevel, buildVerdict, buildBriefModel,
-  buildUpgradePlan, pickUnicomRadius, UPGRADE_BUYS
+  buildUpgradePlan, pickUnicomRadius, UPGRADE_BUYS, purchasedReuseText
 } from '../src/utils/candidateBrief.js'
 
 let server, token, userId, otherUserId
@@ -162,6 +162,8 @@ function clearAll() {
   db.prepare('DELETE FROM markers').run()
   db.prepare('DELETE FROM competitors').run()
   db.prepare('DELETE FROM shapefiles').run()
+  // v1.13.380：/brief 会读已购半径 ⇒ 用例之间必须清干净，否则「上一条插的购买」会渗进来
+  db.prepare('DELETE FROM purchases').run()
 }
 
 beforeAll(async () => {
@@ -565,8 +567,9 @@ describe('P5. 竞争 / 自有门店 / 商圈', () => {
     expect(['recommend', 'optional', 'not_now']).toContain(up.tier)
     expect(up.buys.length).toBeGreaterThan(0)
     // ⛔ 不许把「剩余配额」算进报告：那是用户状态，报告是快照（只有 quotaPerFetch 这个常量可以）
+    // v1.13.380 加入 reuseHint（「同位置买过别的档」提示）—— 它同样**不含**任何配额余额
     expect(Object.keys(up).sort()).toEqual(
-      ['buys', 'quotaPerFetch', 'radiusM', 'radiusNote', 'service', 'tier', 'title', 'why'].sort()
+      ['buys', 'quotaPerFetch', 'radiusM', 'radiusNote', 'reuseHint', 'service', 'tier', 'title', 'why'].sort()
     )
   })
 })
@@ -581,7 +584,8 @@ describe('P6. 升级建议与半径映射', () => {
     density: over.density || { circlePop: 30000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } },
     comp: over.comp || { count: 4, byBrand: [] },
     own: over.own || { hasBrand: true, brand: '食其家', nearestM: 3000, withinR: 0, radiusM: 2000, maxOwn: 2 },
-    district: over.district || { covered: true, contained: true, name: 'D', score: 70 }
+    district: over.district || { covered: true, contained: true, name: 'D', score: 70 },
+    ...(over.purchased ? { purchased: over.purchased } : {})
   })
 
   it('半径映射：同档原样、缺口向上取（⛔ 不许取更小的档）', () => {
@@ -669,6 +673,188 @@ describe('P6. 升级建议与半径映射', () => {
   it('🔴 升级建议不许夹带「总分」或评分字段（单点没有可比集合）', () => {
     const up = mk().upgrade
     expect(JSON.stringify(up)).not.toMatch(/score|total|rank/i)
+  })
+})
+
+/**
+ * P7（v1.13.380）：同一位置买过**别的**半径时的计费口径提示。
+ *
+ * 触发这件事的是一次实测（P3）：先买 1km，报告切到 1.5km（联通按 3km 取）后，
+ * 面板只说「该位置尚未购买、将消耗 1 次」—— 技术上正确，但用户刚为这个点位花过钱，
+ * 会读成「要我再买一次」。所以补一句：已购哪档 + 复用要同半径 + 本次另买 1 次。
+ */
+describe('P7. 同位置已购别的半径 ⇒ 明说要另买', () => {
+  it('没买过（空 / null / undefined）⇒ 不提示', () => {
+    expect(purchasedReuseText([], 3000)).toBe('')
+    expect(purchasedReuseText(null, 3000)).toBe('')
+    expect(purchasedReuseText(undefined, 3000)).toBe('')
+  })
+
+  it('正好命中可复用档 ⇒ 不提示（成本行自己会说「可免费复用」，再来一句会自相矛盾）', () => {
+    expect(purchasedReuseText([1000], 1000)).toBe('')
+    expect(purchasedReuseText([1000, 3000], 3000)).toBe('')
+  })
+
+  it('🔴 买过 1km、本次要 3km ⇒ 必须同时出现「已购 1km」「同半径」「另买 1 次」', () => {
+    const t = purchasedReuseText([1000], 3000)
+    expect(t).toContain('已购 1km')
+    expect(t).toContain('3km')
+    expect(t).toContain('同半径')
+    expect(t).toContain('另买 1 次')
+  })
+
+  it('🔴 买过更大的档也不能反推可复用（复用是精确包含，不是「买大的送小的」）', () => {
+    const t = purchasedReuseText([3000], 1000)
+    expect(t).toContain('已购 3km')
+    expect(t).toContain('另买')
+  })
+
+  it('多档 / 重复 / 脏值 ⇒ 去重升序，脏值不参与', () => {
+    const t = purchasedReuseText([3000, 1000, 1000, '', null, 'abc', 0, -5], 5000)
+    expect(t).toContain('1km / 3km')
+    expect((t.match(/1km/g) || []).length, '重复档不许在文案里出现两次').toBe(1)
+  })
+
+  it('目标档位非法 ⇒ 不提示（⚠️ Number("")===0 / Number(null)===0，先判空再转数）', () => {
+    expect(purchasedReuseText([1000], null)).toBe('')
+    expect(purchasedReuseText([1000], 0)).toBe('')
+    expect(purchasedReuseText([1000], '')).toBe('')
+    expect(purchasedReuseText([1000], 'abc')).toBe('')
+  })
+
+  it('集成：报告 1.5km（按 3km 取）+ 已购 1km ⇒ upgrade.reuseHint 有内容', () => {
+    const m = buildBriefModel({
+      point: { name: 'X', brand: '食其家', city: CITY, lat: PT.lat, lng: PT.lng, radius: 1500 },
+      grid: { covered: true, reason: '' },
+      density: { circlePop: 30000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } },
+      comp: { count: 4, byBrand: [] },
+      own: { hasBrand: true, brand: '食其家', nearestM: 3000, withinR: 0, radiusM: 2000, maxOwn: 2 },
+      district: { covered: true, contained: true, name: 'D', score: 70 },
+      purchased: { radii: [1000] }
+    })
+    expect(m.upgrade.radiusM).toBe(3000)
+    expect(m.upgrade.reuseHint).toContain('已购 1km')
+    expect(m.upgrade.reuseHint).toContain('另买')
+  })
+
+  it('集成：已购正好是本次档位 ⇒ reuseHint 为空', () => {
+    const m = buildBriefModel({
+      point: { name: 'X', brand: '食其家', city: CITY, lat: PT.lat, lng: PT.lng, radius: 1000 },
+      grid: { covered: true, reason: '' },
+      density: { circlePop: 30000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } },
+      comp: { count: 4, byBrand: [] },
+      own: { hasBrand: true, brand: '食其家', nearestM: 3000, withinR: 0, radiusM: 2000, maxOwn: 2 },
+      district: { covered: true, contained: true, name: 'D', score: 70 },
+      purchased: { radii: [1000] }
+    })
+    expect(m.upgrade.reuseHint).toBe('')
+  })
+
+  it('🔴 三条 return 分支（not_now / recommend / optional）都要带上 reuseHint', () => {
+    const sat = buildBriefModel({
+      point: { name: 'X', brand: '食其家', city: CITY, lat: PT.lat, lng: PT.lng, radius: 1500 },
+      grid: { covered: true, reason: '' },
+      density: { circlePop: 30000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } },
+      comp: { count: 4, byBrand: [] },
+      own: { hasBrand: true, brand: '食其家', nearestM: 400, withinR: 2, radiusM: 2000, maxOwn: 2 },
+      district: { covered: true, contained: true, name: 'D', score: 70 },
+      purchased: { radii: [1000] }
+    })
+    expect(sat.upgrade.tier, '这里要的是 not_now 分支').toBe('not_now')
+    expect(sat.upgrade.reuseHint).toContain('另买')
+
+    const noPop = buildBriefModel({
+      point: { name: 'X', brand: '食其家', city: CITY, lat: PT.lat, lng: PT.lng, radius: 1500 },
+      grid: { covered: false, reason: 'no_grid_row' },
+      density: null,
+      comp: { count: 4, byBrand: [] },
+      own: { hasBrand: true, brand: '食其家', nearestM: 3000, withinR: 0, radiusM: 2000, maxOwn: 2 },
+      district: { covered: true, contained: true, name: 'D', score: 70 },
+      purchased: { radii: [1000] }
+    })
+    expect(noPop.upgrade.tier, '这里要的是 recommend 分支').toBe('recommend')
+    expect(noPop.upgrade.reuseHint).toContain('另买')
+  })
+
+  // ── 路由层：证明 readPurchasedRadii 真被调用、且五关判据都咬得住 ──────────
+  // ⚠️ 只测纯函数是不够的：函数写得再对，路由没调用一样全绿。
+
+  /** 造一条已购记录（默认落在点位坐标上，radius 存成现网形态 "[1000]"） */
+  function insertPurchase({
+    radius = 1000, lng = PT.lng, lat = PT.lat, uid = userId,
+    status = 'active', withPop = true, lngShift = 0
+  } = {}) {
+    const data = withPop
+      ? JSON.stringify({ '1001': { p0_sum: 1200, p1_sum: 800, p2_sum: 300, pall_sum: 2300 } })
+      : JSON.stringify({ '1005': { foo: 1 } })
+    return Number(getDb().prepare(
+      `INSERT INTO purchases (user_id, store_name, center_lng, center_lat, radius, city_month, quota_used, status, result_data)
+       VALUES (?, '接口测试已购', ?, ?, ?, '202609', 1, ?, ?)`
+    ).run(uid, lng + lngShift, lat, JSON.stringify([radius]), status, data).lastInsertRowid)
+  }
+
+  it('🔴 路由真把「已购 1km」读出来：报告 1.5km（按 3km 取）⇒ reuseHint 出现', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000 })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.status, r.raw).toBe(200)
+    expect(r.body.brief.upgrade.radiusM).toBe(3000)
+    expect(r.body.brief.upgrade.reuseHint).toContain('已购 1km')
+    expect(r.body.brief.upgrade.reuseHint).toContain('另买')
+  })
+
+  it('已购正好是本次档位 ⇒ reuseHint 为空（前端走「可免费复用」）', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000 })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1000`)
+    expect(r.body.brief.upgrade.reuseHint).toBe('')
+  })
+
+  it('🔴 别人的购买不算（复用按账号）', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000, uid: otherUserId })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.body.brief.upgrade.reuseHint, '别人的已购不能让我的报告说「你买过」').toBe('')
+  })
+
+  it('🔴 14m 外的同账号已购不算（±33m 粗筛之后再精判 10m）', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    // 经度偏 0.00015° ≈ 14m：落在 SQL 粗筛窗（±0.0003°）内，但超过 10m 容差
+    insertPurchase({ radius: 1000, lngShift: 0.00015 })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.body.brief.upgrade.reuseHint, '只做矩形粗筛会把 14m 外算成同址').toBe('')
+  })
+
+  it('🔴 只买过 1005（报文里没有 1001）⇒ 不算「已购客群」', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000, withPop: false })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.body.brief.upgrade.reuseHint, '那笔购买对客群没有可复用内容，⛔ 不能说「买过」').toBe('')
+  })
+
+  it('已作废（status≠active）⇒ 不算', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000, status: 'void' })
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.body.brief.upgrade.reuseHint).toBe('')
+  })
+
+  it('🔴 读已购不许改变 /brief 的「0 消耗」性质：不扣配额、不写库', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    insertPurchase({ radius: 1000 })
+    const db = getDb()
+    const before = db.prepare('SELECT COUNT(*) n FROM purchases').get().n
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}&radius=1500`)
+    expect(r.status).toBe(200)
+    expect(db.prepare('SELECT COUNT(*) n FROM purchases').get().n).toBe(before)
+    expect(r.body.brief.provenance.cost).toContain('0 配额消耗')
   })
 })
 
