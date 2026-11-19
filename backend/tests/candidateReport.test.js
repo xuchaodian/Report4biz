@@ -416,7 +416,12 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 
   it('半径只开放 1/3/5km 三档（面积 3.1/28.3/78.5 km²，都在联通 0.3~80 限制内）', () => {
-    expect(SS).toContain('REPORT_RADII = [1000, 3000, 5000]')
+    // 🔴 v1.13.379：档位收归 siteSelectConfig 单一来源（初步分析的「升级取数」要按同一组档位映射），
+    //    路由改 import，⛔ 不许再写一份字面量 —— 两处各写一份，联通开新档时会「买得到 / 买不到」不一致。
+    const CFG = read('backend/src/utils/siteSelectConfig.js')
+    expect(CFG).toMatch(/UNICOM_REPORT_RADII = Object\.freeze\(\[1000, 3000, 5000\]\)/)
+    expect(SS).toContain('UNICOM_REPORT_RADII')
+    expect(SS).not.toMatch(/const REPORT_RADII = \[/)
     // 前端选项必须与后端一致
     const comp = read('frontend/src/components/CandidateReport.vue')
     expect(comp).toContain('RADIUS_OPTIONS = [1000, 3000, 5000]')

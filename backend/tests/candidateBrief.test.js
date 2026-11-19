@@ -28,7 +28,8 @@ const tmpGeo = path.join(os.tmpdir(), `r4b-brief-geo-${process.pid}-${Date.now()
 process.env.R4B_GEO_DIR = tmpGeo
 
 import {
-  cellDensity, densityThresholds, densityLevel, competitionLevel, buildVerdict, buildBriefModel
+  cellDensity, densityThresholds, densityLevel, competitionLevel, buildVerdict, buildBriefModel,
+  buildUpgradePlan, pickUnicomRadius, UPGRADE_BUYS
 } from '../src/utils/candidateBrief.js'
 
 let server, token, userId, otherUserId
@@ -551,5 +552,123 @@ describe('P5. 竞争 / 自有门店 / 商圈', () => {
     expect(r.body.consts.SATURATION_MAX_OWN).toBe(2)
     expect(r.body.consts.COMPETITION_DENSE_MAX).toBe(35)
     expect(r.body.brief.provenance.cost).toContain('0 配额')
+    // v1.13.379：联通可取档位也要回传（前端做升级口径提示，⛔ 自己写 [1000,3000,5000]）
+    expect(r.body.consts.UNICOM_RADII).toEqual([1000, 3000, 5000])
+  })
+
+  it('🔴 报告里必须带升级建议（P2 的规则判定），且它本身不产生任何配额数字', async () => {
+    seedGrid()
+    const mid = insertCandidateMarker()
+    const r = await call('GET', `/api/candidates/brief?markerId=${mid}`)
+    const up = r.body.brief.upgrade
+    expect(up).toBeTruthy()
+    expect(['recommend', 'optional', 'not_now']).toContain(up.tier)
+    expect(up.buys.length).toBeGreaterThan(0)
+    // ⛔ 不许把「剩余配额」算进报告：那是用户状态，报告是快照（只有 quotaPerFetch 这个常量可以）
+    expect(Object.keys(up).sort()).toEqual(
+      ['buys', 'quotaPerFetch', 'radiusM', 'radiusNote', 'service', 'tier', 'title', 'why'].sort()
+    )
   })
 })
+
+// ────────────────────────────────────────────────────────────────────────
+// P6. 升级建议（P2：规则判定 —— 要不要花钱深入、按哪个半径买）
+// ────────────────────────────────────────────────────────────────────────
+describe('P6. 升级建议与半径映射', () => {
+  const mk = (over = {}) => buildBriefModel({
+    point: { name: 'X', brand: '食其家', city: CITY, lat: PT.lat, lng: PT.lng, radius: 1000, ...(over.point || {}) },
+    grid: over.grid || { covered: true, reason: '' },
+    density: over.density || { circlePop: 30000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } },
+    comp: over.comp || { count: 4, byBrand: [] },
+    own: over.own || { hasBrand: true, brand: '食其家', nearestM: 3000, withinR: 0, radiusM: 2000, maxOwn: 2 },
+    district: over.district || { covered: true, contained: true, name: 'D', score: 70 }
+  })
+
+  it('半径映射：同档原样、缺口向上取（⛔ 不许取更小的档）', () => {
+    expect(pickUnicomRadius(1000)).toEqual({ radiusM: 1000, exact: true, covers: true })
+    expect(pickUnicomRadius(3000)).toEqual({ radiusM: 3000, exact: true, covers: true })
+    expect(pickUnicomRadius(500), '500m 报告要按 1km 买，否则报告里的人口买不到').toEqual({ radiusM: 1000, exact: false, covers: true })
+    expect(pickUnicomRadius(1500), '1.5km 报告要按 3km 买').toEqual({ radiusM: 3000, exact: false, covers: true })
+    expect(pickUnicomRadius(2000), '2km 报告要按 3km 买').toEqual({ radiusM: 3000, exact: false, covers: true })
+  })
+
+  it('🔴 报告半径 > 5km ⇒ 明说「范围小于本报告」，⛔ 不许假装覆盖', () => {
+    const p = pickUnicomRadius(8000)
+    expect(p.radiusM).toBe(5000)
+    expect(p.covers).toBe(false)
+    const m = mk({ point: { radius: 8000 } })
+    expect(m.upgrade.radiusNote).toContain('小于')
+  })
+
+  it('口径说明三种情形必须分得开', () => {
+    expect(mk({ point: { radius: 1000 } }).upgrade.radiusNote).toContain('一致')
+    expect(mk({ point: { radius: 1500 } }).upgrade.radiusNote).toContain('包含')
+    expect(mk({ point: { radius: 1500 } }).upgrade.radiusM).toBe(3000)
+  })
+
+  it('🔴 饱和 ⇒ not_now（唯一「明确不该花钱」的情形）', () => {
+    const m = mk({ own: { hasBrand: true, brand: '食其家', nearestM: 400, withinR: 2, radiusM: 2000, maxOwn: 2 } })
+    expect(m.verdict.level).toBe('hold')
+    expect(m.upgrade.tier).toBe('not_now')
+    expect(m.upgrade.why.join('|')).toContain('关一家开一家')
+    // 业主拍板：仍要给 buys / 半径（按钮降级但可点，规则不替业主否决）
+    expect(m.upgrade.buys.length).toBeGreaterThan(0)
+    expect(m.upgrade.radiusM).toBe(1000)
+  })
+
+  it('🔴 客群未评 ⇒ recommend（免费层最无力，正是花钱最值的情形）', () => {
+    const m = mk({ grid: { covered: false, reason: 'no_grid_row' }, density: null })
+    expect(m.upgrade.tier).toBe('recommend')
+    expect(m.upgrade.title).toContain('免费层')
+    expect(m.upgrade.why.join('|')).toContain('未评')
+  })
+
+  it('🔴 没填城市 ⇒ 也说「免费层给不出」，⛔ 不许说成「本市没网格」', () => {
+    const m = mk({ point: { city: '' }, grid: { covered: false, reason: 'no_city' }, density: null })
+    expect(m.upgrade.tier).toBe('recommend')
+    expect(m.upgrade.why.join('|')).toContain('没有填城市')
+    expect(m.upgrade.why.join('|')).not.toContain('暂无本地 1km 网格')
+  })
+
+  it('密度过本市 70% 分位 ⇒ recommend（人多值得用真实到访/职住验证）', () => {
+    // 圆面积 3.14 km² ⇒ 22,000 人 ≈ 7,006 人/km²，落在 p70(6000) 与 p90(8000) 之间
+    const m = mk({ density: { circlePop: 22000, whole: 2, partial: 3, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } } })
+    expect(m.population.level.key).toBe('p70')
+    expect(m.upgrade.tier).toBe('recommend')
+    expect(m.upgrade.title).toContain('70')
+  })
+
+  it('密度低 + 竞品不密集 ⇒ optional（先把免费层核验完）', () => {
+    const m = mk({ density: { circlePop: 2000, whole: 1, partial: 1, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } }, comp: { count: 1, byBrand: [] } })
+    expect(m.upgrade.tier).toBe('optional')
+  })
+
+  it('密度低但竞品密集 ⇒ optional，且理由点明「先看业态差异」', () => {
+    const m = mk({ density: { circlePop: 2000, whole: 1, partial: 1, thresholds: { n: 36, p25: 2000, p50: 4000, p70: 6000, p90: 8000 } }, comp: { count: 20, byBrand: [] } })
+    expect(m.upgrade.tier).toBe('optional')
+    expect(m.upgrade.why.join('|')).toContain('业态差异')
+  })
+
+  it('🔴 买得到的字段只能来自 1001（⛔ 不许承诺没接的时段流量 1005，⛔ 不许说「收入」）', () => {
+    const m = mk()
+    expect(m.upgrade.service).toBe('1001')
+    const text = m.upgrade.buys.join('|')
+    expect(text).toContain('到访人口')
+    expect(text).toContain('工作人口')
+    expect(text).not.toContain('时段流量')
+    expect(text).not.toContain('收入分档')
+    expect(text).toContain('不是收入')
+    // 常量本身也要与上面一致（防止有人只改计划不改常量）
+    expect(UPGRADE_BUYS.join('|')).toBe(text)
+  })
+
+  it('一次取数消耗 1 次配额（与 fetchPointPopulation 一致，⛔ 前端不许自己写 1）', () => {
+    expect(mk().upgrade.quotaPerFetch).toBe(1)
+  })
+
+  it('🔴 升级建议不许夹带「总分」或评分字段（单点没有可比集合）', () => {
+    const up = mk().upgrade
+    expect(JSON.stringify(up)).not.toMatch(/score|total|rank/i)
+  })
+})
+

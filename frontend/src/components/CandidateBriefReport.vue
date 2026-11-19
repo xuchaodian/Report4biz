@@ -6,9 +6,11 @@
   生成一份初步分析报告」，用途是**先免费判断值不值得花钱买联通人口**。
 
   ── 🔴 三条边界（改这个文件前必读）────────────────────────────────────────
-  ① **0 消耗**：只用 `GET /api/candidates/brief`（本地网格 + 站内竞品 + 我的门店 + 商圈面），
-     ⛔ 不许在这里调 `/api/smartsteps/*`、⛔ 不许调高德代理、⛔ 不许写库。
-     要花钱的「取联通人口」属于 P2，入口在**立项报告**里（那边有明确的消耗确认）。
+  ① **0 消耗**：只用 `GET /api/candidates/brief`（本地网格 + 站内竞品 + 我的门店 + 商圈面）。
+     ⛔ 不许在这个文件里调联通取数、⛔ 不许调高德代理、⛔ 不许写库。
+     v1.13.379（P2）起，「花钱深入」的入口是本文件下方的 `CandidateBriefUpgrade.vue`：
+     付费代码全部在那边（探测 + 确认 + 取数），本文件连它的内部都不碰 ⇒ 0 消耗的
+     源码守卫（`candidateBriefGuard.test.js` G6）继续有效，⛔ 不许为了加功能把它放宽。
   ② **页面内嵌，不是弹窗**：业主拍板「页面内嵌 + 可导出 PDF」。弹窗会遮住地图、
      长内容在 62vh 里滚两层；这里直接占满页面主体，由 `.cand-page` 统一滚动。
   ③ **切页锚点**：纸张内的区块必须带 `.bf-sec`、页脚带 `.bf-foot` ——
@@ -236,6 +238,42 @@
           </ul>
         </div>
 
+        <!-- 六、下一步：规则判定「要不要花钱深入」（v1.13.379 · P2）
+             🔴 这一段是**结论**，不是操作：花钱的按钮在纸张外（打印出来不该有按钮） -->
+        <div v-if="brief.upgrade" class="bf-sec">
+          <div class="bf-sec-hd">
+            <h2>六、下一步：要不要花钱深入</h2>
+            <span class="bf-sec-note">固定规则判定 · 可回溯</span>
+          </div>
+          <div class="bf-next" :class="'is-' + brief.upgrade.tier">
+            <b>{{ brief.upgrade.title }}</b>
+            <ul v-if="brief.upgrade.why.length">
+              <li v-for="(w, i) in brief.upgrade.why" :key="i">{{ w }}</li>
+            </ul>
+          </div>
+          <dl class="bf-kv is-flow">
+            <div>
+              <dt>能买到</dt>
+              <dd>{{ brief.upgrade.buys.join('、') }}</dd>
+            </div>
+            <div>
+              <dt>取数口径</dt>
+              <dd>{{ brief.upgrade.radiusNote }}</dd>
+            </div>
+            <div>
+              <dt>成本</dt>
+              <dd>
+                一次取数 {{ brief.upgrade.quotaPerFetch }} 次联通人口配额；
+                已在「我的门店」买过的位置自动复用，不重复扣费
+              </dd>
+            </div>
+          </dl>
+          <p class="bf-gap">
+            ⚠ 本报告没有购买联通人口 —— 所有数字都是站内免费数据。
+            纸张下方的操作区才会真正取数，且取数前会明示「消耗几次 / 剩余几次」。
+          </p>
+        </div>
+
         <!-- 口径页脚 -->
         <div class="bf-foot">
           <div class="bf-foot-t">数据口径</div>
@@ -251,6 +289,14 @@
 
       <div v-else-if="!loading && !errorMsg" class="bf-empty">没有可展示的分析结果</div>
     </div>
+
+    <!-- 升级取数面板（纸张外 ⇒ ⛔ 不进 PDF；付费逻辑全在子组件里，本文件保持 0 消耗） -->
+    <CandidateBriefUpgrade
+      v-if="brief && brief.upgrade"
+      :plan="brief.upgrade"
+      :point="brief.point"
+      :report-radius="brief.point.radius"
+    />
   </div>
 </template>
 
@@ -262,6 +308,8 @@ import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { radiusText } from '@/utils/candidateReport.js'
 import { exportPaperPdf, fileStamp, safeFileName } from '@/utils/exportPaperPdf.js'
+// 付费入口单独一个组件：这里只负责「免费结论」，两份职责不混（见文件头 ①）
+import CandidateBriefUpgrade from '@/components/CandidateBriefUpgrade.vue'
 
 const props = defineProps({
   // 列表行：{ id, markerId, name, origin, radius, ... }；id 可能为 null（门店还没推进记录）
@@ -426,6 +474,14 @@ onMounted(load)
 .bf-sec-hd h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .bf-sec-note { font-size: 11.5px; color: #8a9099; }
 
+/* 六、下一步（v1.13.379）：三档与结论同一套配色，扫一眼就知道「该不该花钱」 */
+.bf-next { padding: 9px 12px; background: #f7f9fc; border-left: 3px solid #8a9099; border-radius: 0 6px 6px 0; }
+.bf-next.is-recommend { background: #f2f7fd; border-left-color: #2563eb; }
+.bf-next.is-not_now { background: #fdf6ec; border-left-color: #e6a23c; }
+.bf-next b { font-size: 13px; color: #1f2329; }
+.bf-next ul { margin: 5px 0 0; padding-left: 18px; }
+.bf-next li { font-size: 12px; line-height: 1.65; color: #504f57; }
+
 .bf-kpi { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .bf-kpi-num { font-size: 26px; font-weight: 600; line-height: 1.1; letter-spacing: -.01em; }
 .bf-kpi-num em { font-size: 13px; font-weight: 400; font-style: normal; color: #646a73; margin-left: 3px; }
@@ -445,6 +501,9 @@ onMounted(load)
 .bf-chip.lv-sparse { background: #e7f4ec; color: #16794a; }
 
 .bf-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 14px; margin: 9px 0 0; }
+/* v1.13.379：「能买到」是 5 个词条，挤在 1/3 列里会折成五行 ⇒ 首行整宽、后两行两列 */
+.bf-kv.is-flow { grid-template-columns: 1fr 1fr; }
+.bf-kv.is-flow > div:first-child { grid-column: 1 / -1; }
 .bf-kv dt { font-size: 11px; color: #8a9099; margin-bottom: 3px; }
 .bf-kv dd { margin: 0; font-size: 12.5px; line-height: 1.5; }
 .bf-muted { color: #8a9099; font-size: 11px; }

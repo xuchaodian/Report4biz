@@ -31,7 +31,7 @@
  * ⇒ 两份报告的「商圈评分」「竞品数」必须同口径，所以都走 computeScore / countWithin。
  */
 import {
-  GRID_PERCENTILE_STEPS, GRID_PERCENTILE_FLOOR, SATURATION_DEFAULT
+  GRID_PERCENTILE_STEPS, GRID_PERCENTILE_FLOOR, SATURATION_DEFAULT, UNICOM_REPORT_RADII
 } from './siteSelectConfig.js'
 import { percentileScore, percentileThresholds } from './gridPopulation.js'
 import { competitionScore, COMPETITION_DENSE_MAX } from './districtScore.js'
@@ -219,6 +219,140 @@ export function buildVerdict(m) {
 }
 
 /**
+ * 联通 1001 能给到、而**本地网格没有**的东西（升级买的就是这些）。
+ *
+ * 🔴 只许写 1001 的真实字段：报告取数端点固定 `codes: '1001'`，它给的是
+ *    到访/居住/工作三类人口 + 年龄 15 档 + 月话费 6 档。
+ *    ⛔ 不许写「时段流量」(1005) —— 那条链路没接，写进报告就是承诺了买不到的东西。
+ * 🔴 「月话费分档」只能叫**消费能力代理**：分母是联通在网用户、且受家庭共享套餐/
+ *    企业报销影响（§6.128.15），⛔ 不许说成「收入分档」。
+ */
+export const UPGRADE_BUYS = Object.freeze([
+  '到访人口（客流活性）',
+  '居住人口',
+  '工作人口（职住结构）',
+  '年龄结构（15 档）',
+  '月话费分档（消费能力代理，不是收入）'
+])
+
+/**
+ * 报告口径半径 → 联通可取档位。
+ *
+ * 规则：**优先取「覆盖」报告圆的最小档**，⛔ 绝不取更小的档 ——
+ *   报告说 1.5km 有 3 万人，买成 1km 只有 1 万，用户会当成数据错了。
+ *   联通档位比报告小只有一种情形：报告半径 > 5km（联通最大档），此时必须明说。
+ *
+ * @returns {{radiusM:number, exact:boolean, covers:boolean}}
+ */
+export function pickUnicomRadius(radiusM) {
+  const n = Number(radiusM)
+  const list = UNICOM_REPORT_RADII
+  const fallback = list[list.length - 1]
+  if (!Number.isFinite(n) || n <= 0) return { radiusM: list[0], exact: false, covers: true }
+  if (list.includes(n)) return { radiusM: n, exact: true, covers: true }
+  const cover = list.find((r) => r > n)
+  if (cover) return { radiusM: cover, exact: false, covers: true }
+  return { radiusM: fallback, exact: false, covers: false }
+}
+
+/** 升级口径的一句话说明（三种情形必须分得开，⛔ 不能共用一句） */
+function upgradeRadiusNote(reportM, pick) {
+  const r = radiusText(reportM)
+  const u = radiusText(pick.radiusM)
+  if (pick.exact) return `与本次报告口径一致（${r}）`
+  if (pick.covers) {
+    return `本次报告是 ${r}，联通只有 ${UNICOM_REPORT_RADII.map(radiusText).join(' / ')} 三档 ⇒ `
+      + `将按 ${u} 取数（包含本报告的圆，不会漏算）`
+  }
+  return `本次报告是 ${r}，超过联通最大档 ${u} ⇒ 将按 ${u} 取数（范围小于本报告，人口会偏少）`
+}
+
+/**
+ * 升级建议（**固定规则、0 成本、可回溯**；业主 2026-11-19 拍板）。
+ *
+ * 与 `buildVerdict` 的分工：
+ *   verdict = 「这个点位本身行不行」；upgrade = 「要不要花钱把它看清楚」。
+ *   两者都只由**已算出的事实**决定，⛔ 不引入模型判断、⛔ 不查配额、⛔ 不发请求。
+ *
+ * 三档（业主拍板：hold 时降级显示但**仍可点**，规则不替业主否决）：
+ *   not_now  —— 同品牌已饱和：先确认是不是「关一家开一家」的替换计划
+ *   recommend —— 客群未评（免费层根本给不出数字）或密度已过本市 70% 分位
+ *   optional —— 其余：先把免费层的短板核验完再决定
+ *
+ * @param {object} m buildBriefModel 的中间结果（population / competition / own / point …）
+ * @returns {{tier:'not_now'|'recommend'|'optional', title:string, why:string[],
+ *            buys:string[], radiusM:number, radiusNote:string, quotaPerFetch:number, service:string}}
+ */
+export function buildUpgradePlan(m = {}) {
+  const reportM = Number(m.point?.radius) || 1000
+  const pick = pickUnicomRadius(reportM)
+  const plan = {
+    tier: 'optional',
+    title: '',
+    why: [],
+    buys: [...UPGRADE_BUYS],
+    radiusM: pick.radiusM,
+    radiusNote: upgradeRadiusNote(reportM, pick),
+    // 一次取数消耗几次配额（后端 fetchPointPopulation 固定 1）——前端 ⛔ 不许自己写 1
+    quotaPerFetch: 1,
+    service: '1001'
+  }
+  const densKey = m.population?.level?.key || ''
+  const dense = densKey === 'p70' || densKey === 'p90'
+
+  // ① 饱和是唯一「明确不该花钱」的情形
+  if (m.own?.saturated) {
+    plan.tier = 'not_now'
+    plan.title = '先别买：同品牌已经饱和'
+    plan.why = [
+      `${radiusText(m.saturation?.radiusM || SATURATION_DEFAULT.radiusM)} 内同品牌 ${m.own.withinR} 家`
+        + `（门限 ${m.saturation?.maxOwn ?? SATURATION_DEFAULT.maxOwn} 家）`,
+      '除非这是「关一家开一家」的替换计划，否则新点位会与自家门店互相蚕食',
+      '买来的客群数据再漂亮，也改变不了「人已经被自己吃掉」这个结论'
+    ]
+    return plan
+  }
+
+  // ② 客群未评：免费层给不出数字，升级恰恰最有用
+  if (!m.population?.covered) {
+    plan.tier = 'recommend'
+    plan.title = '建议买：免费层给不出客群数字'
+    plan.why = [
+      m.population?.reason === 'no_city'
+        ? '点位没有填城市，本地网格与商圈面都没法加载'
+        : '本市暂无本地 1km 网格，客群规模「未评」',
+      '「未评」不等于没人 —— 这里只能靠联通按半径直接取数',
+      '这一档是免费层最无力的情形，也是花钱最值的情形'
+    ]
+    return plan
+  }
+
+  // ③ 密度已过本市 70% 分位：值得用真实到访/职住验证「人多」是什么样的人多
+  if (dense) {
+    plan.tier = 'recommend'
+    plan.title = `建议买：客群密度已过本市 ${densKey === 'p90' ? '90' : '70'}% 的网格`
+    plan.why = [
+      `半径内常住人口 ${m.population.circlePopText}，密度 ${m.population.density} 人/km²（${m.population.level.label}）`,
+      '常住人口只说明「有人住」，说明不了「有人来」—— 到访人口与工作人口才能区分睡城与商圈',
+      `同级竞品 ${m.competition?.count ?? '—'} 家、竞争${m.competition?.level?.label || '未评'}`
+    ]
+    if (m.competition?.level?.key === 'dense') plan.why.push('注意：竞品已密集，买数据前先确认业态差异是否足够')
+    return plan
+  }
+
+  // ④ 其余：可选，先把免费层能核验的核验完
+  plan.tier = 'optional'
+  plan.title = '可选：先把免费层的短板核验完'
+  if (m.competition?.level?.key === 'dense') {
+    plan.why.push(`半径内竞品 ${m.competition.count} 家（竞争宽松度 ${m.competition.score} 分 ⇒ 密集），先看业态差异`)
+  } else {
+    plan.why.push(`半径内常住人口 ${m.population.circlePopText}，密度 ${m.population.density} 人/km²（${m.population.level.label}）`)
+  }
+  plan.why.push('客群规模没到「非看不可」的程度，可以先用免费数据判断，确认要推进再取数')
+  return plan
+}
+
+/**
  * 组装初步分析模型。
  *
  * @param {object} input
@@ -331,6 +465,8 @@ export function buildBriefModel(input = {}) {
   }
 
   out.verdict = buildVerdict({ ...out, saturation: out.saturation })
+  // 升级建议：花钱能买到什么、按哪个半径买。⛔ 只算不查（配额/已购由前端探测，见 P2 组件）
+  out.upgrade = buildUpgradePlan(out)
 
   // ── 风险与待确认（每条都对应一个可核验的事实）──────────────────────
   const risks = []
@@ -365,5 +501,7 @@ export const BRIEF_CONST = Object.freeze({
   GRID_PERCENTILE_FLOOR,
   COMPETITION_DENSE_MAX,
   SATURATION_RADIUS_M: SATURATION_DEFAULT.radiusM,
-  SATURATION_MAX_OWN: SATURATION_DEFAULT.maxOwn
+  SATURATION_MAX_OWN: SATURATION_DEFAULT.maxOwn,
+  // 联通可取半径档（前端做升级口径提示用，⛔ 不许自己写 [1000,3000,5000]）
+  UNICOM_RADII: UNICOM_REPORT_RADII
 })

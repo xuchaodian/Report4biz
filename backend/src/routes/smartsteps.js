@@ -6,6 +6,7 @@ import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { parsePopulation1001 } from '../utils/unicomPopulation.js'
+import { UNICOM_REPORT_RADII } from '../utils/siteSelectConfig.js'
 
 const router = express.Router()
 
@@ -636,7 +637,9 @@ router.post('/convert', (req, res) => {
 // 🔴 复用**不要求同月份**：已购数据就是那个月的事实，把 `dataMonth` 如实回传让用户自己判断
 //   要不要刷新。强行要求同月等于"过期就重新收费"，那是坑用户。
 // ============================================================================
-const REPORT_RADII = [1000, 3000, 5000]   // 报告只开放这三档：面积 3.1/28.3/78.5 km²（联通限制 0.3~80）
+// 🔴 v1.13.379：档位统一到 `siteSelectConfig.UNICOM_REPORT_RADII` —— 初步分析的
+//    「升级取数」要按同一组档位做半径映射，两处各写一份必然漂移。
+const REPORT_RADII = UNICOM_REPORT_RADII
 // 🔴 `REUSE_TOL_M`（坐标容差 10m）与 `radiusIncludes`（purchases.radius 解析）已抽到
 //    `utils/reuseKey.js` —— 批次 373 起 `routes/site-select.js::mergePurchasedPoints`
 //    也要用同一份判据，且本模块在测试里会被整模块 mock：留在这里会变成 `undefined`
