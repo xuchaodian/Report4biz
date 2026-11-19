@@ -23,19 +23,24 @@
     </div>
 
     <!-- v1.13.332 / P0 ②：数据口径卡。文案统一来自 utils/dataProvenance.js，
-         与销售预测页同结构；⛔ 不臆造期次、不把「未标注」写成有月份。 -->
+         与销售预测页同结构；⛔ 不臆造期次、不把「未标注」写成有月份。
+         v1.13.377：默认折叠，点标题展开；展开头用原生 <button>（键盘可达）+ aria-expanded，
+         照搬 SalesForecastView 的 fc-sim 折叠先例。 -->
     <div class="dv-prov">
-      <div class="prov-hd">
+      <button type="button" class="prov-toggle" :aria-expanded="provOpen" @click="provOpen = !provOpen">
         <span class="prov-title">数据口径</span>
         <span class="prov-sub">看懂这个分数建立在什么数据上</span>
+        <el-icon class="prov-arrow" :class="{ 'is-open': provOpen }"><ArrowDown /></el-icon>
+      </button>
+      <div v-if="provOpen" class="prov-body">
+        <dl class="prov-grid">
+          <div v-for="it in prov.items" :key="it.label" class="prov-item">
+            <dt>{{ it.label }}</dt>
+            <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
+          </div>
+        </dl>
+        <p class="prov-note">{{ prov.note }}</p>
       </div>
-      <dl class="prov-grid">
-        <div v-for="it in prov.items" :key="it.label" class="prov-item">
-          <dt>{{ it.label }}</dt>
-          <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
-        </div>
-      </dl>
-      <p class="prov-note">{{ prov.note }}</p>
     </div>
 
     <div class="dv-body">
@@ -243,7 +248,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, OfficeBuilding, DataAnalysis, Close } from '@element-plus/icons-vue'
+import { Refresh, OfficeBuilding, DataAnalysis, Close, ArrowDown } from '@element-plus/icons-vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { requireQuota, QUOTA_REASON, QUOTA_INLINE } from '@/utils/quotaContact'
 import { districtProvenance as buildDistrictProvenance } from '@/utils/dataProvenance'
@@ -287,6 +292,8 @@ const prov = computed(() => {
     || ''
   return buildDistrictProvenance({ dataMonth: month, districtCount: districts.value.length })
 })
+// v1.13.377：数据口径卡默认折叠，点标题展开（不记忆状态）
+const provOpen = ref(false)
 const compareList = ref([])
 const compareVisible = ref(false)
 const selectAll = ref(false)
@@ -926,12 +933,19 @@ async function refreshDistrict() {
   padding: 1px 5px;
   display: inline-block;
 }
-.dv-prov{margin:0 0 12px;padding:10px 14px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc}
+.dv-prov{margin:0 0 12px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc;overflow:hidden}
 
-/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
-.prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js
+   v1.13.377：默认折叠；展开头用原生 button（键盘可达），照搬 fc-sim 折叠样式 */
+.prov-toggle{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:10px 14px;
+  background:transparent;border:0;font:inherit;text-align:left;cursor:pointer;flex-wrap:wrap}
+.prov-toggle:hover{background:#f2f5f9}
+.prov-toggle:focus-visible{outline:2px solid var(--brand-primary);outline-offset:-2px}
 .prov-title{font-size:13px;font-weight:700;color:#303133}
 .prov-sub{font-size:11.5px;color:var(--text-secondary)}
+.prov-arrow{margin-left:auto;transition:transform .2s;color:var(--text-secondary);font-size:13px}
+.prov-arrow.is-open{transform:rotate(180deg)}
+.prov-body{padding:0 14px 11px}
 .prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
 .prov-item{min-width:0}
 .prov-item dt{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}

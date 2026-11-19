@@ -55,19 +55,24 @@
       </el-alert>
 
       <!-- v1.13.332 / P0 ②：数据口径卡，进页即显示（不依赖是否出过预测结果）。
-           文案统一来自 utils/dataProvenance.js，与商圈洞察页同结构。 -->
+           文案统一来自 utils/dataProvenance.js，与商圈洞察页同结构。
+           v1.13.377：默认折叠，点标题展开；展开头用原生 <button>（键盘可达）+ aria-expanded，
+           与商圈洞察页同款。 -->
       <div class="fc-prov">
-        <div class="prov-hd">
+        <button type="button" class="prov-toggle" :aria-expanded="provOpen" @click="provOpen = !provOpen">
           <span class="prov-title">数据口径</span>
           <span class="prov-sub">预测值建立在什么数据上</span>
+          <el-icon class="prov-arrow" :class="{ 'is-open': provOpen }"><ArrowDown /></el-icon>
+        </button>
+        <div v-if="provOpen" class="prov-body">
+          <dl class="prov-grid">
+            <div v-for="it in forecastProv.items" :key="it.label" class="prov-item">
+              <dt>{{ it.label }}</dt>
+              <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
+            </div>
+          </dl>
+          <p class="prov-note">{{ forecastProv.note }}</p>
         </div>
-        <dl class="prov-grid">
-          <div v-for="it in forecastProv.items" :key="it.label" class="prov-item">
-            <dt>{{ it.label }}</dt>
-            <dd :class="{ 'prov-warn': it.tone === 'warn', 'prov-ok': it.tone === 'ok' }">{{ it.value }}</dd>
-          </div>
-        </dl>
-        <p class="prov-note">{{ forecastProv.note }}</p>
       </div>
 
       <!-- 候选门店选择 -->
@@ -400,6 +405,8 @@ const result = ref(null)
 // 🔴 营业额唯一来源 = 上方 result.predictComp（⛔ 本视图不做任何预测）。
 //    成本模型全在 utils/storeSim.js；这里只收集输入、展示结果。
 const simOpen = ref(false)
+// v1.13.377：数据口径卡默认折叠，点标题展开（不记忆状态）
+const provOpen = ref(false)
 const simForm = reactive(defaultSimForm({}))
 const simDeliveryShare = ref(DELIVERY_RATIO_FALLBACK)
 
@@ -765,12 +772,19 @@ onMounted(() => {
 .fc-locked .el-button {
   margin-top: 14px;
 }
-.fc-prov{margin:0 0 12px;padding:10px 14px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc}
+.fc-prov{margin:0 0 12px;border:1px solid #e4e7ed;border-radius:6px;background:#fafbfc;overflow:hidden}
 
-/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js */
-.prov-hd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+/* v1.13.332 / P0 ②：数据口径卡。两页同结构，文案统一来自 utils/dataProvenance.js
+   v1.13.377：默认折叠；展开头用原生 button（键盘可达），照搬 fc-sim 折叠样式 */
+.prov-toggle{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:10px 14px;
+  background:transparent;border:0;font:inherit;text-align:left;cursor:pointer;flex-wrap:wrap}
+.prov-toggle:hover{background:#f2f5f9}
+.prov-toggle:focus-visible{outline:2px solid var(--brand-primary);outline-offset:-2px}
 .prov-title{font-size:13px;font-weight:700;color:#303133}
 .prov-sub{font-size:11.5px;color:var(--text-secondary)}
+.prov-arrow{margin-left:auto;transition:transform .2s;color:var(--text-secondary);font-size:13px}
+.prov-arrow.is-open{transform:rotate(180deg)}
+.prov-body{padding:0 14px 11px}
 .prov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0}
 .prov-item{min-width:0}
 .prov-item dt{font-size:11.5px;color:var(--text-secondary);margin-bottom:2px}
