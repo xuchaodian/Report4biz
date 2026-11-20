@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { deliveryOverlap, circleOverlapArea, DEFAULT_DELIVERY_RADIUS_M, OVERLAP_TIERS } from '../src/utils/deliveryOverlap.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '../..')
@@ -181,5 +182,57 @@ describe('免费体检页 · 免登录与纯前端边界', () => {
       expect(read(hp), `${name} 官网缺真实案例入口`).toMatch(/href="https:\/\/www\.mka-online\.cn\/cases\/"/)
     }
     expect(read(VIEW), '体检页缺真实案例入口').toMatch(/href="https:\/\/www\.mka-online\.cn\/cases\/"/)
+  })
+
+  // ── J 组：v1.13.390 案例两页「决策后日」+ 外卖配送圈重叠判据 ────────────────
+  // 竞品报告 P0「样板销售武器」组。系统无配送半径字段 ⇒ 判据只能是「假设半径的几何示意」，
+  // 守卫钉死五条，防后续改文案把示意伪装成实测、或数字与函数漂移：
+  //   ① 判据函数数学正确（d=0→100%、d≥2R→0%、单调递减）
+  //   ② 输出带 assumed:true + 明确 caveat（⛔ 不得删「非实测」声明）
+  //   ③ 案例页两节存在、含反事实推演与非实测标注
+  //   ④ 案例页表格数字与函数输出逐项一致（防手改数字造成口径漂移）
+  //   ⑤ 新内容脱敏零泄漏 + 备案号仍在（I 组敏感词列表同样适用全页）
+  it('J 组：配送圈判据数学与非实测标注 + 案例两页数字一致', () => {
+    // ① 数学：边界与单调
+    expect(circleOverlapArea(3000, 0)).toBeCloseTo(Math.PI * 3000 * 3000, 0)
+    expect(circleOverlapArea(3000, 6000)).toBe(0)
+    expect(deliveryOverlap(0).ratioPct).toBe(100)
+    expect(deliveryOverlap(6000).ratioPct).toBe(0)
+    expect(deliveryOverlap(138).ratioPct).toBe(97)
+    expect(deliveryOverlap(2000).ratioPct).toBe(58)
+    expect(deliveryOverlap(138).ratioPct).toBeGreaterThan(deliveryOverlap(2000).ratioPct)
+    expect(OVERLAP_TIERS[0].min).toBe(0.6)
+
+    // ② 非实测声明是硬约束
+    const v = deliveryOverlap(138)
+    expect(v, '必须标记 assumed:true').toHaveProperty('assumed', true)
+    expect(v.caveat).toMatch(/非实测/)
+    expect(v.caveat).toMatch(/距离近≠一定蚕食/)
+
+    // ③④ 案例页两节 + 非实测标注 + 表格数字与函数一致
+    const cases = read('homepage/cases/index.html')
+    expect(cases, '缺「决策后日」一节').toMatch(/五 · 决策后日/)
+    expect(cases, '缺「外卖配送圈重叠」一节').toMatch(/六 · 外卖配送圈重叠/)
+    expect(cases, '缺反事实推演声明').toMatch(/反事实推演/)
+    expect(cases, '决策后日必须明确无营业额数字').toMatch(/不含任何营业额数字/)
+    expect(cases, '配送圈必须标注假设半径').toMatch(/假设半径/)
+    expect(cases, '配送圈必须标注非实测').toMatch(/非实测/)
+    expect(cases, '必须标注半径可调整').toMatch(/假设半径与阈值均可按你的实际配送范围调整/)
+    // 表格数字逐项与函数一致：d → ratioPct
+    // 🔴 只切「圆心距 d」那张表（配送圈表），避免前两张门店表的数字蒙混过关。
+    const vennTable = (cases.match(/<table[\s\S]*?圆心距 d[\s\S]*?<\/table>/) || [''])[0]
+    expect(vennTable, '配送圈重叠表必须存在').not.toBe('')
+    for (const d of [138, 800, 2000]) {
+      const pct = deliveryOverlap(d).ratioPct
+      expect(vennTable, `d=${d}m 表格数字应=${pct}%`).toContain(`${pct}%`)
+    }
+    expect(DEFAULT_DELIVERY_RADIUS_M, '默认假设半径变更需同步案例页 R=3km 文案').toBe(3000)
+    expect(cases).toMatch(/R = 3km/)
+
+    // ⑤ 脱敏零泄漏（含新内容里的真实编码 8032/8110）+ 合规位仍在
+    for (const kw of ['食其家', 'SUKIYA', '松江', '佘山', '万达', '8032', '8110']) {
+      expect(cases, `案例页新增内容泄露「${kw}」`).not.toContain(kw)
+    }
+    expect(cases, '备案号必须仍在').toMatch(/沪ICP备2026010607号-1/)
   })
 })

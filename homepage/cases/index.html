@@ -83,7 +83,27 @@
   .case-nav-links a.primary:hover{opacity:.9;color:#fff}
   .case-icp{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);text-align:center;font-size:12px;color:var(--hint)}
   .case-icp a{color:var(--hint)}
-  @media(max-width:640px){.case-nav-links{gap:10px;font-size:12px}.case-nav-links a:not(.primary){display:none}}
+  /* 决策后日 · 反事实推演卡片 */
+  .story{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .story-h{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#fafcff;border-bottom:1px solid var(--line);padding:11px 16px}
+  .story-h .ttl{font-weight:600;font-size:14px}
+  .story-h .ttl small{font-weight:400;color:var(--hint);margin-left:8px}
+  .story-b{padding:14px 16px}
+  .story-row{display:flex;gap:12px;padding:9px 0;border-bottom:1px dashed #f2f3f5;font-size:13px}
+  .story-row:last-child{border-bottom:none}
+  .story-row .step{flex:0 0 74px;font-size:12px;color:var(--hint);padding-top:1px}
+  .story-row .body{flex:1;color:var(--sub);line-height:1.7}
+  .story-row .body b{color:var(--text)}
+  .verdict{background:#fef0f0;border:1px solid #fde2e2;border-radius:8px;padding:10px 14px;font-size:13px;color:#c45656;margin-top:10px}
+  /* 外卖配送圈重叠 · 几何示意 */
+  .venn-wrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+  .venn{flex:0 0 320px;max-width:100%}
+  .venn svg{width:100%;height:auto;display:block}
+  .venn-cap{font-size:12px;color:var(--hint);text-align:center;margin-top:6px;line-height:1.6}
+  .venn-note{flex:1;min-width:240px;font-size:13px;color:var(--sub);line-height:1.8}
+  .venn-note b{color:var(--text)}
+  .assume{display:inline-block;background:#f4f4f5;color:#909399;border:1px solid #e9e9eb;border-radius:4px;padding:1px 7px;font-size:11px;margin-left:6px}
+  @media(max-width:640px){.case-nav-links{gap:10px;font-size:12px}.case-nav-links a:not(.primary){display:none}.venn{flex:1 1 100%}}
 </style></head>
 <body>
 <header class="case-nav">
@@ -181,6 +201,75 @@
     <div class="check"><div class="no">×</div><div><div class="t">竞品品类 — 未配置</div>
       <div class="d">未做竞品品牌映射，因此不含「周边竞品密度」。</div></div></div>
     <p class="note">本报告的结论都基于<b>你自己的门店台账</b>，不依赖外部数据、不消耗任何付费额度。补齐缺失字段、导入销售记录与竞品品类后，可信度可提升到「高」。</p>
+  </div>
+
+  <div class="card sec">
+    <h2 class="warn">五 · 决策后日：这两笔开店申请，系统当场会怎么劝</h2>
+    <p class="h2sub">从上面 11 组需复核点位里挑 2 组，做一次<b>反事实推演</b>——不是真实发生的复盘，而是回答「如果当年把开店申请摆到系统面前，它会说什么」。<b>下面不含任何营业额数字</b>：距离与重叠是几何事实，蚕食与否仍需销售数据回答。</p>
+
+    <div class="story">
+      <div class="story-h"><div class="ttl">申请 A · 上海，已有门店旁 138m 再开一家同档大店 <small>对应复核表第 6 组</small></div><span class="tag t-red">建议暂缓</span></div>
+      <div class="story-b">
+        <div class="story-row"><div class="step">申请场景</div><div class="body">某连锁在上海已有两家标准大店（<b>门店 084 · 340㎡</b> 与 <b>门店 108 · 348㎡</b>），面积接近、编码不同，直线只隔 <b>138m</b>。现提交：在这一带再开一家同档门店。</div></div>
+        <div class="story-row"><div class="step">系统当场说</div><div class="body">① 同品牌 ≤300m 贴邻 ⇒ 进「需复核」清单；② 面积比 ≈1.02 <b>不足 2 倍</b> ⇒ ⛔ 不能按双店型放过，必须人工核；③ 假设 3km 配送圈，两店覆盖<b>重叠约 97%</b>（几何示意，见下一节）。</div></div>
+        <div class="story-row"><div class="step">劝退理由</div><div class="body">在 138m、同档、配送圈近乎完全重叠的位置再开一家，<b>大概率是把现有两家的客流再切一刀</b>，而不是做增量。系统不会直接说「一定亏」，但会把这三几何事实摆齐，把举证责任交给申请方。</div></div>
+        <div class="story-row"><div class="step">给决策者的问句</div><div class="body">「这 138m 内新店的目标客群，和现有两家是同一批人吗？有没有<b>销售数据</b>能证明这里还有未被覆盖的增量？」——答不上来，就先别签。</div></div>
+      </div>
+    </div>
+
+    <div class="story">
+      <div class="story-h"><div class="ttl">申请 B · 广州，同址 0m 再开一家面积接近的店 <small>对应复核表第 1 组</small></div><span class="tag t-amber">先核编码</span></div>
+      <div class="story-b">
+        <div class="story-row"><div class="step">申请场景</div><div class="body">某连锁在广州已有 <b>门店 079 · 260㎡</b> 与 <b>门店 032 · 137㎡</b>，坐标几乎重合（<b>0m</b>），面积差约 1.9 倍——离「双店型 2 倍」的门槛差一口气。现提交：同址再开一家。</div></div>
+        <div class="story-row"><div class="step">系统当场说</div><div class="body">① 同址（&lt;50m）⇒ 同址预警；② 面积比 1.9 倍 <b>未达 2 倍</b> ⇒ ⛔ 不满足双店型豁免，按「同档贴邻·需复核」处理；③ 同址意味着配送圈 100% 重合。</div></div>
+        <div class="story-row"><div class="step">劝退理由</div><div class="body">同址两店最常见的误判是「当成双店型直接放过」。这组面积差刚好卡在门槛下——<b>系统选择保守：先要编码与面积凭据，再谈开店</b>，避免把真蚕食误当成店型策略。</div></div>
+        <div class="story-row"><div class="step">给决策者的问句</div><div class="body">「这两家到底是不是两个真实店型？编码、面积、销售归属能对上吗？」——台账层面确认清楚，再决定第三家要不要开。</div></div>
+      </div>
+    </div>
+
+    <p class="note"><b>口径声明：</b>以上两笔申请为<b>基于真实坐标的反事实推演</b>，用于说明系统「会怎么劝」，<b>并非历史经营的真实复盘，也不代表这些门店真的发生了蚕食</b>。系统给的是几何证据与待答问题，最终判断必须回到你自己的销售数据。</p>
+  </div>
+
+  <div class="card sec">
+    <h2>六 · 外卖配送圈重叠：138m 到底意味着什么</h2>
+    <p class="h2sub">门店挨得近，外卖覆盖会不会也撞在一起？这一节用纯几何把「距离」翻译成「覆盖重叠率」。<span class="assume">假设半径 · 非实测</span></p>
+    <div class="venn-wrap">
+      <div>
+        <div class="venn">
+          <svg viewBox="0 0 320 190" role="presentation" aria-label="两个门店配送圈重叠示意">
+            <defs>
+              <clipPath id="vennClip"><rect x="0" y="0" width="320" height="190"/></clipPath>
+            </defs>
+            <g clip-path="url(#vennClip)">
+              <circle cx="132" cy="95" r="76" fill="#409eff" fill-opacity="0.35" stroke="#337ecc" stroke-width="1.5"/>
+              <circle cx="188" cy="95" r="76" fill="#f56c6c" fill-opacity="0.35" stroke="#c45656" stroke-width="1.5"/>
+            </g>
+            <text x="96" y="99" text-anchor="middle" font-size="12" fill="#337ecc">门店 A</text>
+            <text x="224" y="99" text-anchor="middle" font-size="12" fill="#c45656">门店 B</text>
+            <text x="160" y="99" text-anchor="middle" font-size="11" fill="#7d3f3f">重叠</text>
+            <line x1="132" y1="176" x2="188" y2="176" stroke="#909399" stroke-width="1.5"/>
+            <text x="160" y="188" text-anchor="middle" font-size="11" fill="#909399">圆心距 d（示意放大）</text>
+          </svg>
+        </div>
+        <div class="venn-cap">两圆＝两家门店的配送覆盖圈<br>深色区＝被两家同时覆盖的顾客</div>
+      </div>
+      <div class="venn-note">
+        <p style="margin-top:0">把每家门店的配送范围近似成<b>半径 R 的圆</b>，两家圆心距为 d，则覆盖重叠率为 <b>相交面积 ÷ 单圆面积</b>。这是纯几何量，<b>只用到门店坐标</b>，不调任何外部接口。</p>
+        <p>下图按<b>假设配送半径 R = 3km</b>（典型外卖量级，<b>非实测</b>）测算：两店隔 138m 时，覆盖重叠 <b>约 97%</b>——几乎同一批顾客；隔到 2km 仍有 58% 重叠；要到 6km 才完全分开。</p>
+        <p style="margin-bottom:0"><b>读法：</b>重叠率高 ≠ 一定蚕食，它只说明「两家的可比客群高度重合，值得用销售数据验证」。真实配送范围受商圈、运力、时段影响，请以实际数据为准。</p>
+      </div>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th>圆心距 d</th><th>覆盖重叠率<span class="assume">R=3km 假设</span></th><th>分档</th><th>含义（几何示意）</th></tr></thead>
+      <tbody>
+        <tr><td>0m（同址）</td><td>100%</td><td><span class="tag t-red">高度重叠</span></td><td>覆盖区完全一致，须核实是否两个真实店型</td></tr>
+        <tr><td>138m（本样本最近一组）</td><td>97%</td><td><span class="tag t-red">高度重叠</span></td><td>几乎同一批顾客，开店前尤其要用销售数据验证</td></tr>
+        <tr><td>800m</td><td>83%</td><td><span class="tag t-red">高度重叠</span></td><td>大部分覆盖重合，属于重点复核区间</td></tr>
+        <tr><td>2km</td><td>58%</td><td><span class="tag t-amber">部分重叠</span></td><td>仍有可观重合，结合客群结构判断</td></tr>
+        <tr><td>≥6km</td><td>0%</td><td><span class="tag t-green">基本独立</span></td><td>覆盖不重叠，几何上无明显外卖蚕食</td></tr>
+      </tbody>
+    </table>
+    <p class="note">分档阈值：重叠率 ≥60% 为高度重叠、30–60% 为部分重叠、&lt;30% 为基本独立。<b>假设半径与阈值均可按你的实际配送范围调整</b>；本页为对外示意，不代表任何客户的真实配送数据。</p>
   </div>
 
   <div class="pay">
