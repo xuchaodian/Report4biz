@@ -119,15 +119,22 @@
         </template>
       </el-table-column>
       <!-- 376：门店类型来自「我的门店」；独立点位没有类型可言，显示「独立点位」而不是空白 -->
+      <!-- 384：门店来源行的「不能删」解释挂在这里（原来占着操作列的位置，与来源列重复）。 -->
       <el-table-column label="来源" width="112" align="center">
         <template #default="{ row }">
-          <span v-if="row.origin === 'store'" class="cd-type">{{ row.storeType || '候选门店' }}</span>
+          <span
+            v-if="row.origin === 'store'"
+            class="cd-type cd-type-store"
+            title="来自「我的门店」· 不能在这里删除。要让它消失，请到「我的门店」把门店类型改回「已开业」"
+          >{{ row.storeType || '候选门店' }}</span>
           <span v-else class="cd-type cd-type-solo">独立点位</span>
         </template>
       </el-table-column>
-      <el-table-column label="半径" width="90" align="right">
-        <template #default="{ row }">{{ row.radius >= 1000 ? (row.radius / 1000) + ' km' : row.radius + ' m' }}</template>
-      </el-table-column>
+      <!-- 384：删掉「半径」列。它恒为默认 1000（门店来源行未改过就是 1km），
+           既不参与筛选也不是决策依据；且初步分析只认 1/3/5km 三档（向上取档）、
+           临时改半径不写回，列表值与实际取数口径本就是两套 ⇒ 留着反而误导。
+           需要看点位评估半径时：详情抽屉「评估半径」、「编辑评估半径」对话框。
+           ⚠️ 数据仍在 row.radius 上，openBrief() 仍靠它决定初步分析的默认半径，删的只是展示。 -->
       <el-table-column label="状态" width="110" align="center">
         <template #default="{ row }">
           <span class="cd-badge" :style="{ color: stageMeta(row.stage).color, background: stageMeta(row.stage).bg }">
@@ -138,19 +145,18 @@
       <el-table-column label="最近更新" width="160">
         <template #default="{ row }">{{ fmt(row.updated_at) }}</template>
       </el-table-column>
-      <!-- 383：操作列由 196 → 248。实测三个元素（详情 34 + 12 + 初步分析 62 + 12 + 灰字 94 = 214）
-           需要 214px，而 el-table 的 .cell 有左右各 12px padding ⇒ 列宽须 ≥ 214 + 24 = 238。
-           232 时只剩 208px ⇒ 溢出 6px，align=center 把溢出的灰字向左推、盖住「初步分析」。 -->
-      <el-table-column label="操作" width="248" align="center">
+      <!-- 384：删掉原「我的门店 · 不可删」灰字。理由：
+           ① 「来源」列已经写明这是门店（重点候选/一般候选 vs 独立点位），再写一遍是冗余；
+           ② 「没有删除按钮」本身就是可删性的表达，不需要额外占位；
+           ③ 解释挂在「来源」列的 tooltip 上，信息不丢、又不占操作列空间。
+           操作列宽随之回收到 196（独立点位：详情34 + 12 + 初步分析62 + 12 + 删除34 = 154，+24 padding = 178）。 -->
+      <el-table-column label="操作" width="196" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
           <!-- 初步分析是 0 消耗的，所以对每行都开放（含门店视图与独立点位） -->
           <el-button link type="primary" @click.stop="openBrief(row)">初步分析</el-button>
           <!-- 🔴 来自「我的门店」的行不能删（后端也会 400）：删了门店还在，刷新就"复活" -->
-          <!-- 383：灰字必须自解释 —— 旧文案「门店视图」被误读成可点的视图入口，
-               用户点下去没反应。新文案把「来源 + 限制」都写在字面上，tooltip 只留操作指引。 -->
           <el-button v-if="row.origin !== 'store'" link type="danger" @click.stop="remove(row)">删除</el-button>
-          <span v-else class="cd-lock" title="要让它消失，请到「我的门店」把门店类型改回「已开业」">我的门店 · 不可删</span>
         </template>
       </el-table-column>
     </el-table>
@@ -742,9 +748,8 @@ onMounted(() => {
 .cd-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
 .cd-type { font-size: 12px; color: #303133; }
 .cd-type-solo { color: var(--text-secondary); }
-/* 门店来源的点位不可删：给一句能自解释的灰字，而不是禁用的红按钮（禁用按钮说不出原因）。
-   383：文案加长 ⇒ 补 margin-left 对齐 el-button 的 12px 间距、nowrap 防折行。 */
-.cd-lock { margin-left: 12px; font-size: 12px; color: var(--text-secondary); cursor: help; white-space: nowrap; }
+/* 384：门店来源行的「不能删」解释移到这一列，靠 tooltip 承载，故给 help 光标作提示 */
+.cd-type-store { cursor: help; }
 .cd-detail-lock { display: block; margin-top: 8px; line-height: 1.7; }
 .cd-form-tip { margin-bottom: 14px; }
 
