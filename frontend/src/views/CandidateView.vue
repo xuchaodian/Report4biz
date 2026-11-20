@@ -106,16 +106,24 @@
       :row-key="(row) => (row.id ? 'c' + row.id : 'm' + row.markerId)"
       @row-click="openDetail"
     >
+      <!-- 385：品牌从「点位」列的第二行拆出来单列（业主 385 反馈：品牌挤在门店名下面两行，
+           读起来像门店名的一部分）。「点位」只留名称，「品牌」紧随其后。 -->
       <el-table-column label="点位" min-width="200">
         <template #default="{ row }">
           <div class="cd-name">{{ row.name }}</div>
-          <div v-if="row.brand" class="cd-name-sub">{{ row.brand }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="位置" min-width="220">
+      <el-table-column label="品牌" width="120">
         <template #default="{ row }">
-          <div>{{ [row.city, row.district].filter(Boolean).join(' · ') || '—' }}</div>
-          <div v-if="row.address" class="cd-addr">{{ row.address }}</div>
+          <div v-if="row.brand" class="cd-one" :title="row.brand">{{ row.brand }}</div>
+          <div v-else class="cd-one cd-none">—</div>
+        </template>
+      </el-table-column>
+      <!-- 385：「位置」由两行（城市·区 / 地址）改为一行，超出省略、悬停看全文。
+           单行后不再需要靠换行区分城市与地址，宽度可以收窄一些。 -->
+      <el-table-column label="位置" min-width="240">
+        <template #default="{ row }">
+          <div class="cd-one" :title="locText(row)">{{ locText(row) }}</div>
         </template>
       </el-table-column>
       <!-- 376：门店类型来自「我的门店」；独立点位没有类型可言，显示「独立点位」而不是空白 -->
@@ -384,6 +392,34 @@ function emptyForm() {
 
 /** 库里是 UTC（SQLite CURRENT_TIMESTAMP），统一走 utils/datetime.js 转本地 */
 const fmt = formatUtcDateTime
+
+/** 剥掉地址开头已含的城市/区前缀。
+ *  385 实测：address 常是「上海市闵行区浦锦路309弄6号」，而 city/district 也是同两段
+ *  ⇒ 拼成一行就变成「上海市 · 闵行区 · 上海市闵行区浦锦路309弄6号」，重复刺眼。
+ *  「上海」与「上海市」、「闵行」与「闵行区」互认，按**长的优先**匹配（否则「上海」会把
+ *  「上海市」吃半个字、剩下「市闵行区…」）。 */
+function stripAddrPrefix(addr, prefix) {
+  if (!addr || !prefix) return addr
+  const forms = new Set([prefix])
+  if (/[市县区省]$/.test(prefix)) forms.add(prefix.slice(0, -1))
+  else ['市', '区', '县'].forEach((s) => forms.add(prefix + s))
+  const candidates = [...forms].filter(Boolean).sort((a, b) => b.length - a.length)
+  for (const f of candidates) {
+    if (addr.startsWith(f)) return addr.slice(f.length).trim()
+  }
+  return addr
+}
+
+/** 列表「位置」列的一行文本：城市 · 区 · 地址，缺哪段跳哪段。全空给「—」。
+ *  385：原来分两行显示（城市·区 / 地址），业主反馈一行更好读；地址过长靠 CSS 省略 + title 看全文。 */
+function locText(row) {
+  const city = String(row?.city ?? '').trim()
+  const district = String(row?.district ?? '').trim()
+  let addr = String(row?.address ?? '').trim()
+  addr = stripAddrPrefix(addr, city)
+  addr = stripAddrPrefix(addr, district)
+  return [city, district, addr].filter(Boolean).join(' · ') || '—'
+}
 
 /** 经纬度展示：null/NaN 一律「—」（⛔ 不能让 `null.toFixed` 把整个抽屉炸掉） */
 function fmtLatLng(v) {
@@ -743,8 +779,10 @@ onMounted(() => {
 
 .cd-table { cursor: pointer; }
 .cd-name { font-size: 14px; color: #303133; }
-.cd-name-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.cd-addr { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+/* 385：单行 + 省略号。el-table 的 .cell 默认 word-break:break-all，这里必须 nowrap 才不折行；
+   截断部分靠 title 悬停看全文。 */
+.cd-one { font-size: 13px; color: #303133; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cd-none { color: var(--text-secondary); }
 .cd-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
 .cd-type { font-size: 12px; color: #303133; }
 .cd-type-solo { color: var(--text-secondary); }
