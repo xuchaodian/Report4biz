@@ -288,6 +288,27 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hero-case:hover{text-decoration:underline;text-underline-offset:3px}
 .hero-case .hc-arrow{transition:transform .2s}
 .hero-case:hover .hc-arrow{transform:translateX(3px)}
+/* ---------------- 公众号精选卡片（build_posts.py 注入正文） ---------------- */
+.posts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px}
+.post-card{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);background:#fff;overflow:hidden;transition:transform .28s,box-shadow .28s,border-color .28s}
+.post-card:hover{transform:translateY(-3px);border-color:var(--line2);box-shadow:var(--shadow-m)}
+.pc-thumb{display:block;aspect-ratio:16/9;background:var(--soft);overflow:hidden}
+.pc-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .4s}
+.post-card:hover .pc-thumb img{transform:scale(1.04)}
+.pc-thumb-ph{display:flex;align-items:center;justify-content:center;color:var(--ink3);font-weight:700;font-size:24px;letter-spacing:3px;background:linear-gradient(135deg,#eef2fb,#dfe9ff)}
+.pc-body{padding:18px 20px 20px;display:flex;flex-direction:column;flex:1}
+.pc-meta{font-size:12px;color:var(--ink3);display:flex;gap:6px;align-items:center}
+.pc-dot{opacity:.6}
+.pc-body h3{font-size:16px;line-height:1.45;margin:9px 0 0}
+.pc-body h3 a{color:var(--ink);text-decoration:none}
+.pc-body h3 a:hover{color:var(--brand)}
+.pc-sum{font-size:13px;color:var(--ink2);line-height:1.7;margin:9px 0 0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.pc-link{margin-top:auto;padding-top:14px;font-size:13px;color:var(--brand);text-decoration:none;font-weight:600}
+.pc-link:hover{text-decoration:underline;text-underline-offset:3px}
+.posts-empty{grid-column:1/-1;text-align:center;color:var(--ink3);padding:52px 20px;border:1px dashed var(--line2);border-radius:var(--r);background:var(--soft)}
+.posts-more{display:inline-flex;align-items:center;gap:6px;margin:34px auto 0;font-size:14px;font-weight:600;color:var(--brand);text-decoration:none}
+.posts-more:hover{text-decoration:underline;text-underline-offset:3px}
+@media(max-width:720px){.posts-grid{grid-template-columns:1fr}}
 .hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
   border:1px solid rgba(16,32,64,.10);
   box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
@@ -960,6 +981,19 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   </div>
 </section>
 
+<!-- ================= 公众号精选（最新动态）================= -->
+<section class="sec sec-soft" id="insights">
+  <div class="wrap">
+    <div class="sec-hd rv">
+      <span class="kicker">Latest posts</span>
+      <h2>Every Wednesday, we talk about site selection</h2>
+      <p>Catchment population, store competition, and site-decision know-how — all in our WeChat articles. Tap a card to read the original.</p>
+    </div>
+    <div class="posts-grid rv"><!--POSTS_CARDS_START--><div class="posts-empty">First articles coming soon</div><!--POSTS_CARDS_END--></div>
+    <div style="text-align:center"><a class="posts-more" href="/insights/">View all articles <span aria-hidden="true">→</span></a></div>
+  </div>
+</section>
+
 <!-- ================= 常见问题 ================= -->
 <section class="sec" id="faq" style="padding-top:96px;padding-bottom:86px">
   <div class="wrap">
@@ -1052,6 +1086,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
         <div class="ft-col">
           <h4>Support</h4>
           <a href="/help/">User manual</a>
+          <a href="/insights/">Latest posts</a>
           <a href="#faq">FAQ</a>
           <a href="mailto:jyo@youshi-tech.com">Feedback</a>
         </div>

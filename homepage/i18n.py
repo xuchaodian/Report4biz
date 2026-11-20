@@ -19,6 +19,12 @@ I18N = {
     "平台能力": ("Capabilities", "プラットフォーム機能"),
     "选择理由": ("Why choose us", "選ばれる理由"),
     "常见问题": ("FAQ", "よくある質問"),
+    "最新动态": ("Latest posts", "最新情報"),
+    "每周三，聊聊选址这件事": ("Every Wednesday, we talk about site selection", "毎週水曜日、出店選びについて語ります"),
+    "商圈人口、门店竞争、开店决策的干货与方法，都写在公众号里。点卡片读原文。": (
+        "Catchment population, store competition, and site-decision know-how — all in our WeChat articles. Tap a card to read the original.",
+        "商圏人口、店舗競合、出店判断のノウハウはすべて公式WeChat記事に。カードをタップして原文をお読みください。"),
+    "查看全部文章": ("View all articles", "すべての記事を見る"),
     "适用场景": ("Use cases", "活用例"),
     "企业级能力": ("Enterprise capabilities", "エンタープライズ機能"),
     "登录": ("Log in", "ログイン"),
