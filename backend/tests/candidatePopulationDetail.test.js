@@ -31,7 +31,17 @@ const REPO = path.resolve(HERE, '..', '..')
 const read = (p) => fs.readFileSync(path.join(REPO, p), 'utf8')
 
 const COMP = read('frontend/src/components/CandidateReport.vue')
-const TPL = COMP.slice(0, COMP.indexOf('<script setup>'))
+/**
+ * 🔴 v1.13.392：纸面从 CandidateReport.vue 抽成 components/ReportPaper.vue
+ *   （应用内弹窗与免登录分享页共用同一份模板与样式）。
+ *   ⇒ 本文件里凡断言「纸内」版式 / 文案 / 样式的，一律读 PAPER；
+ *     「弹窗外围（宽度）」与「工具条（.rp-bar）」的断言仍读 COMP。
+ *   断言意图一字未改，只是被测文件跟着搬了 —— ⛔ 不要因为改测试而放宽断言。
+ */
+const PAPER = read('frontend/src/components/ReportPaper.vue')
+const COMP_TPL = COMP.slice(0, COMP.indexOf('<script setup>'))
+const PAPER_TPL = PAPER.slice(0, PAPER.indexOf('<script setup>'))
+const TPL = PAPER_TPL          // 纸内模板（原 TPL 的语义）
 const SRC = read('frontend/src/utils/candidateReport.js')
 
 const cand = {
@@ -250,7 +260,7 @@ describe('G. 版式：双列比例条', () => {
   })
 
   it('比例条的底色必须是真的 CSS 背景（PDF 走 html2canvas 截 DOM）', () => {
-    const m = COMP.match(/\.rp-pb-track \{[^}]*\}/)
+    const m = PAPER.match(/\.rp-pb-track \{[^}]*\}/)
     expect(m).toBeTruthy()
     expect(m[0]).toContain('background')
   })
@@ -262,16 +272,20 @@ describe('G. 版式：双列比例条', () => {
    *   每行两三个字的竖条。纯代码看不出、单测也看不出，只有截图才现形。
    *   ⇒ 钉死：这两个类名在整个文件里只允许各有一条样式定义。
    */
-  it('🔴 新类名不许与既有工具条撞名（.rp-bar / .rp-bar-l 各只能定义一次）', () => {
-    const count = (sel) => (COMP.match(new RegExp(`\\${sel} \\{`, 'g')) || []).length
-    expect(count('.rp-bar'), '.rp-bar 被重复定义了').toBe(1)
-    expect(count('.rp-bar-l'), '.rp-bar-l 被重复定义了').toBe(1)
-    // 比例条必须用独立前缀
-    expect(COMP).toContain('.rp-pb-row {')
-    expect(COMP).toContain('.rp-pb-track {')
-    // 模板里工具条仍必须是 rp-bar（⛔ 被顺手改成比例条的类名）
-    expect(TPL).toContain('<div class="rp-bar">')
-    expect(TPL).toContain('<div class="rp-bar-l">')
+  it('🔴 新类名不许与既有工具条撞名（.rp-bar / .rp-bar-l 跨文件合计只许定义一次）', () => {
+    // 🔴 392 抽组件后撞名风险**更高**：scoped 只给元素加 data-v 属性、**不改类名选择器**，
+    //    所以同一个类名在两个组件里各定义一次，依旧会互相覆盖（谁后加载谁赢）。
+    const count = (src, sel) => (src.match(new RegExp(`\\${sel} \\{`, 'g')) || []).length
+    expect(count(COMP, '.rp-bar') + count(PAPER, '.rp-bar'), '.rp-bar 被重复定义了').toBe(1)
+    expect(count(COMP, '.rp-bar-l') + count(PAPER, '.rp-bar-l'), '.rp-bar-l 被重复定义了').toBe(1)
+    // 比例条必须用独立前缀，且只在纸面文件里
+    expect(PAPER).toContain('.rp-pb-row {')
+    expect(PAPER).toContain('.rp-pb-track {')
+    expect(COMP).not.toContain('.rp-pb-track {')
+    // 模板里工具条仍必须在弹窗里、且仍叫 rp-bar（⛔ 被顺手改成比例条的类名或搬进纸面）
+    expect(COMP_TPL).toContain('<div class="rp-bar">')
+    expect(COMP_TPL).toContain('<div class="rp-bar-l">')
+    expect(PAPER_TPL).not.toContain('class="rp-bar"')
   })
 
   /**
@@ -283,7 +297,7 @@ describe('G. 版式：双列比例条', () => {
     const w = Number((COMP.match(/width="(\d+)px"/) || [])[1])
     expect(w, '弹窗宽度没读到').toBeGreaterThanOrEqual(910)
     // 纸张宽度 794 不动（A4 比例的依据）
-    const paper = COMP.match(/\.rp-paper \{[\s\S]*?width:\s*(\d+)px/)
+    const paper = PAPER.match(/\.rp-paper \{[\s\S]*?width:\s*(\d+)px/)
     expect(Number(paper[1])).toBe(794)
   })
 })

@@ -24,6 +24,10 @@ const read = (p) => fs.readFileSync(path.join(REPO, p), 'utf8')
  *  立项报告与初步分析共用同一份。版式断言一律打在这个文件上。 */
 const PDF_UTIL = read('frontend/src/utils/exportPaperPdf.js')
 
+/** 🔴 v1.13.392：纸面从 CandidateReport.vue 抽成 components/ReportPaper.vue
+ *  （应用内弹窗与免登录分享页共用）⇒ 纸内样式断言改读 PAPER，弹窗/取数/导出断言仍读 COMP。 */
+const PAPER = read('frontend/src/components/ReportPaper.vue')
+
 /** 正方形面：lng 121.50~121.52，lat 31.29~31.31 */
 const square = {
   type: 'Polygon',
@@ -272,7 +276,7 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
 
   it('🔴 地图图必须固定 height 才能用 object-fit（否则高度被压、宽度不变 ⇒ 圆变椭圆）', () => {
     // 2026-11-09 真机：半径 1km 的正圆在报告里显示成横向椭圆
-    const m = COMP.match(/\.rp-map img \{[^}]*\}/)
+    const m = PAPER.match(/\.rp-map img \{[^}]*\}/)
     expect(m).toBeTruthy()
     const rule = m[0]
     expect(rule).toContain('object-fit: cover')
@@ -299,7 +303,11 @@ describe('D. 源码约束（报告组件不许自己另算一套）', () => {
     expect(PDF_UTIL).toContain('pickCutY')
     expect(PDF_UTIL).toMatch(/cuts\.filter/)
     // 组件必须真的在用这个 util（抽了不用＝两份实现）
-    expect(COMP).toContain('exportPaperPdf(paper.value')
+    expect(COMP).toMatch(/exportPaperPdf\(/)
+    // 🔴 v1.13.392：纸面搬进 ReportPaper 后，传给导出函数的是**组件实例**的根 DOM
+    //    （`paperRef.value` 是组件实例，html2canvas 只认 Element ⇒ 必须取 `$el`）。
+    //    ⛔ 不许再回到「把实例直接丢进去」的写法 —— 那会在导出时静默报错。
+    expect(COMP).toContain('paperRef.value?.$el')
   })
 
   it('导出走 html2canvas + jsPDF 动态 import（不把 pdf 库拖进首屏）', () => {
@@ -643,8 +651,8 @@ describe('K. 人口与商圈面解耦（v1.13.342）', () => {
   })
 
   it('🔴 模板人口区必须是独立 .rp-sec，⛔ 不包在商圈画像块内', () => {
-    const COMP = read('frontend/src/components/CandidateReport.vue')
-    const tpl = COMP.slice(0, COMP.indexOf('<script setup>'))
+    // 392：纸面已抽到 ReportPaper.vue ⇒ 这段版式断言打在那里
+    const tpl = PAPER.slice(0, PAPER.indexOf('<script setup>'))
     expect(tpl).toContain('class="rp-sec rp-pop"')
     expect(tpl).toContain('model.population.hasPop')
     // 商圈画像块里不许再渲染人口三项

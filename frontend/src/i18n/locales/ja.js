@@ -39,6 +39,7 @@ export default {
     forgotPassword: 'パスワード再設定',
     resetPassword: 'パスワードリセット',
     sharedPurchase: '購入申請',
+    sharedReport: '共有レポート',
     freeCheckup: '無料店舗ヘルスチェック',
     storeCheckup: '店舗ヘルスチェック',
     brands: 'アイコン設定',

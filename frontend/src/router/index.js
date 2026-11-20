@@ -46,6 +46,17 @@ const routes = [
     meta: { requiresAuth: false, titleKey: 'pageTitle.sharedPurchase' }
   },
   {
+    // 立项报告分享页（v1.13.392）：免登录只读快照，凭 token 打开。
+    // 🔴 noindex 必须为 true —— 页面含联通人口与商圈画像（付费/受权数据），
+    //    绝不能被搜索引擎收录；也不该出现在任何公开索引里。
+    // ⚠️ 路径形如 /s/<48位hex>，与后端 reportShares.shareUrl() 的拼法**必须一致**
+    //    （邮件里发出去的就是这个地址，改这里等于改所有历史邮件里的链接语义）。
+    path: '/s/:token',
+    name: 'SharedReport',
+    component: () => import('@/views/SharedReportView.vue'),
+    meta: { requiresAuth: false, noindex: true, titleKey: 'pageTitle.sharedReport' }
+  },
+  {
     // 免登录获客页：地图点选门店 → 纯前端算同品牌贴邻。⛔ 不调后端、不烧配额、不落库
     path: '/free-checkup',
     name: 'FreeCheckup',

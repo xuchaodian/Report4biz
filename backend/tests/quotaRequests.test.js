@@ -91,10 +91,18 @@ describe('源码：建表/配置/邮件/路由/挂载', () => {
   it('mailer.js 导出 sendQuotaPurchaseNotice，且正文不含单价/金额', () => {
     const s = read('src/utils/mailer.js')
     expect(s).toContain('export async function sendQuotaPurchaseNotice')
-    const body = slice(s, 'export async function sendQuotaPurchaseNotice')
+    // ⚠️ 必须给**结束锚**：只给起点会一直切到文件尾，把后面新增函数的注释也算进来
+    //    （v1.13.392 加了 sendReportShareMail，它注释里写着"不许出现单价"，于是这条守卫假红）。
+    //    ⇒ 切到下一个 `export async function` 为止，断言只打在本函数体内。
+    // ⚠️ 两个坑一起踩过，所以这里同时做两件事：
+    //   ① 给**结束锚**：只给起点会切到文件尾（392 新增函数被算进来 ⇒ 假红）；
+    //   ② **剥注释**：函数体后紧跟着下一个函数的 JSDoc，那段注释里写着"不落单价/报价"，
+    //      不剥的话这条守卫会**自伤**（同 211 的教训：扫源码的守卫必配剥注释）。
+    const body = slice(s, 'export async function sendQuotaPurchaseNotice', '\nexport async function')
+    const bare = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
     // 决策 4：邮件里 ⛔ 不落价
-    expect(body).not.toMatch(/单价|金额|¥|￥|报价/)
-    expect(body).toContain('escapeHtml')
+    expect(bare).not.toMatch(/单价|金额|¥|￥|报价/)
+    expect(bare).toContain('escapeHtml')
     expect(body).toContain('subject')
   })
 

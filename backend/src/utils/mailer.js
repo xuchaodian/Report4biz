@@ -186,6 +186,87 @@ export async function sendQuotaPurchaseNotice({
 
 
 /**
+ * 发送「选址立项报告」分享链接（v1.13.392）。
+ *
+ * 场景：业主在报告弹窗里点「邮件发送」，把**链接**发给同事及领导先看。
+ *   ⛔ 不做 PDF 附件 —— 服务端出附件要 puppeteer（另起无头浏览器渲染 A4），
+ *   与「轻量发个链接」的成本完全不成比例；链接页本身就是同一张 A4 纸。
+ *
+ * 🔴 正文**绝不能**出现的东西（收件人是外部同事/领导，不是本系统用户）：
+ *   配额余额、单价、套餐档位、账号名、user_id、联通调用次数 —— 这些只会让人困惑，
+ *   也会把内部定价泄露给不该看到的人。⛔ 也不放任何批注符号（⛔/🔴 之类）。
+ *
+ * ⚠️ 调用方约束（routes/reportShares.js 的 POST /:id/email 已按此实现）：
+ *   ① 必须在分享行写库**之后**调用，外部 IO 不进事务；
+ *   ② 必须「先回响应、后发信」＋ `.catch()` —— SMTP socketTimeout 达 30s；
+ *   ③ 链接是免登录的，所以正文里要写明**失效日期**与「请勿转发」提示 ——
+ *      链接的保密性全靠收件人，这是唯一的软防线。
+ *
+ * @param {{ to: string, reportTitle?: string, link: string, expiresAt?: string,
+ *           authorName?: string, note?: string }} opts
+ * @returns {Promise<object>} nodemailer 的发送结果（含 messageId）
+ */
+export async function sendReportShareMail({ to, reportTitle, link, expiresAt, authorName, note }) {
+  const t = getTransporter()
+  if (!t) throw new Error('邮件服务未配置')
+
+  const title = String(reportTitle || '选址立项报告').slice(0, 120)
+  const safeTitle = escapeHtml(title)
+  const safeLink = escapeHtml(link)
+  const safeAuthor = escapeHtml(authorName || '同事')
+  const safeNote = escapeHtml(String(note || '').trim())
+  // 有效期只显示日期（YYYY-MM-DD），⛔ 不显示时分秒 —— 收件人不关心几点几分
+  const expireDay = String(expiresAt || '').slice(0, 10)
+  const safeExpire = escapeHtml(expireDay || '—')
+
+  const subject = `【${MAIL_FROM_NAME}】选址立项报告：${title}`
+
+  const text = [
+    `${authorName || '同事'} 通过「${MAIL_FROM_NAME}」分享了一份选址立项报告：`,
+    '',
+    `报告：${title}`,
+    ...(safeNote ? ['', `附言：${String(note || '').trim()}`] : []),
+    '',
+    '点击链接查看（免登录，手机与电脑均可打开）：',
+    link,
+    '',
+    `链接有效期至 ${expireDay || '—'}，到期自动失效。`,
+    '报告含商业分析内容，请勿转发给无关人员。',
+    '',
+    `—— ${MAIL_FROM_NAME}（本邮件由系统自动发送，请勿直接回复）`
+  ].join('\n')
+
+  const html = `
+<div style="max-width:600px;margin:0 auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#333;">
+  <h2 style="font-size:18px;font-weight:500;margin:0 0 6px;color:#333;">选址立项报告</h2>
+  <p style="font-size:13px;line-height:1.7;margin:0 0 18px;color:#888;">${safeAuthor} 通过「${MAIL_FROM_NAME}」分享给你</p>
+  <div style="border:1px solid #e6e8eb;border-radius:8px;padding:16px 18px;margin:0 0 20px;background:#fafbfc;">
+    <p style="font-size:16px;font-weight:600;margin:0 0 6px;color:#1f2329;">${safeTitle}</p>
+    <p style="font-size:12px;color:#8a9099;margin:0;">含人口结构、商圈画像与关键信息 · 链接有效期至 ${safeExpire}</p>
+  </div>
+  ${safeNote ? `<div style="border-left:3px solid #d9e6fb;padding:2px 0 2px 12px;margin:0 0 20px;"><p style="font-size:13px;line-height:1.7;color:#646a73;margin:0;">${safeNote}</p></div>` : ''}
+  <p style="margin:0 0 18px;">
+    <a href="${safeLink}" style="display:inline-block;padding:11px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;">查看报告</a>
+  </p>
+  <p style="font-size:12px;color:#888;line-height:1.7;margin:0 0 8px;">按钮无法点击时，请复制下面的链接到浏览器打开：</p>
+  <p style="font-size:12px;color:#2563eb;word-break:break-all;line-height:1.7;margin:0 0 18px;">${safeLink}</p>
+  <p style="font-size:12px;color:#888;line-height:1.7;margin:0 0 6px;">链接到期自动失效；报告含商业分析内容，请勿转发给无关人员。</p>
+  <hr style="border:none;border-top:1px solid #eeeeee;margin:20px 0;">
+  <p style="font-size:12px;color:#aaaaaa;line-height:1.7;margin:0;">${MAIL_FROM_NAME} · 本邮件由系统自动发送，请勿直接回复</p>
+</div>`.trim()
+
+  const info = await t.sendMail({
+    from: `"${MAIL_FROM_NAME}" <${SMTP_USER}>`,
+    to,
+    subject,
+    text,
+    html
+  })
+  return info
+}
+
+
+/**
  * 发送「用户意见反馈」内部通知（v1.13.261）。
  *
  * ⚠️ 调用方约束（routes/feedbacks.js 的 POST / 已按此实现）：

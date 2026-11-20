@@ -1351,6 +1351,44 @@ export async function initDatabase() {
   `)
   db.run(`CREATE INDEX IF NOT EXISTS idx_cand_note_cand ON candidate_notes(candidate_id, created_at)`)
 
+  // ===== 立项报告分享链接（v1.13.392）=====
+  // 业主 2026-11-20 拍板：先出链接，再邮件把链接发出去（⛔ 不做 PDF 附件）。
+  // 🔴 **存快照，不存引用**：`snapshot_json` 是发出去那一刻纸面上的完整内容
+  //    （含联通人口块、商圈画像、facts、口径页脚）。理由：
+  //    ① 同事/领导看到的内容必须与作者发出时**完全一致**，不能被后续编辑悄悄改掉；
+  //    ② 匿名访客没有取数权限，也负担不起现场重建（商圈 + 联通人口都是付费/受权数据）；
+  //    ③ 候选点位被删、人口配额耗尽、联通接口故障，都不该让已发出的链接变成空白。
+  // ⚠️ 每个点位**最多保留一条有效分享**：再次分享时覆盖同一条快照并顺延有效期
+  //    （业主选的「快照为主，可切最新」——更新靠作者重新分享覆盖，不靠匿名页现场重算）。
+  // 🔴 `token` 是 24 字节随机数的 hex（48 字符），**不是**可推导的签名
+  //    ⇒ 与 purchase 的 HMAC token 不同，泄露一个推不出别的；代价是必须本表可查、可撤销。
+  // 🔴 撤销走 `revoked_at` 软删（⛔ 硬删）：事后要能回答「这条链接谁在什么时候撤的」。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS report_shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL,                   -- 48 位随机 hex，公开页凭此免登录读取
+      user_id INTEGER NOT NULL,              -- 发起人（只能看/撤/改自己的）
+      candidate_id INTEGER,                  -- 源候选点位；点位被删也留着，快照仍可看
+      title TEXT DEFAULT '',                 -- 报告抬头（点位名），列表与邮件标题用
+      snapshot_json TEXT NOT NULL,           -- 报告 model 的 JSON 快照（🔴 唯一内容来源）
+      map_img TEXT,                          -- 位置示意图 dataURL(JPEG)，可空
+      ai_text TEXT DEFAULT '',               -- AI 建议正文，可空
+      author_name TEXT DEFAULT '',           -- 发起人显示名（冻结，不随改名变）
+      expires_at DATETIME NOT NULL,          -- 有效期（默认 30 天）
+      revoked_at DATETIME,                   -- 撤销时间；非空即失效
+      view_count INTEGER DEFAULT 0,
+      last_viewed_at DATETIME,
+      emailed_at DATETIME,                   -- 最近一次邮件发出的时间（留痕用）
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `)
+  // token 全表唯一：公开页按 token 单条命中
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_share_token ON report_shares(token)`)
+  // 弹窗按「本人 + 点位」取当前有效分享
+  db.run(`CREATE INDEX IF NOT EXISTS idx_share_user_cand ON report_shares(user_id, candidate_id, updated_at DESC)`)
+
   // 保存数据库
   saveDatabase()
 

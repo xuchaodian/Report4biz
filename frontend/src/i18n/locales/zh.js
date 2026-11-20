@@ -46,6 +46,7 @@ export default {
     forgotPassword: '忘记密码',
     resetPassword: '重置密码',
     sharedPurchase: '采购单',
+    sharedReport: '分享的报告',
     freeCheckup: '免费门店体检',
     storeCheckup: '门店体检',
     brands: '设置图标',

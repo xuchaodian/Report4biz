@@ -19,6 +19,9 @@ import quotaRequestRoutes from './routes/quotaRequests.js'
 import feedbackRoutes from './routes/feedbacks.js'
 import sceneEventRoutes from './routes/sceneEvents.js'
 import candidateRoutes from './routes/candidates.js'
+// 立项报告分享链接（v1.13.392）：快照 + 免登录只读页 + 邮件发链接。
+// ⚠️ 独立前缀，避免与 /api/candidates/:id 动态段互吞（同 vip-applications 的取舍）。
+import reportShareRoutes from './routes/reportShares.js'
 import brandIconRoutes from './routes/brand-icons.js'
 import brandCompetitorMapRoutes from './routes/brand-competitor-map.js'
 import brandStoreRoutes from './routes/brand-stores.js'
@@ -130,6 +133,8 @@ async function start() {
     app.use('/api/scene-events', sceneEventRoutes)
     // 候选点位（v1.13.333）：独立表，⛔ 与 /api/markers 无共表关系（见 routes/candidates.js 头注释）
     app.use('/api/candidates', candidateRoutes)
+    // 立项报告分享（v1.13.392）—— `GET /public/:token` 刻意免登录，见该文件头注释
+    app.use('/api/report-shares', reportShareRoutes)
     app.use('/api/brand-icons', brandIconRoutes)
     app.use('/api/brand-competitor-map', brandCompetitorMapRoutes)
     app.use('/api/brand-stores', brandStoreRoutes)
