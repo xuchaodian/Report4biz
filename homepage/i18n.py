@@ -122,6 +122,7 @@ I18N = {
     "一句话给出结论": ("One sentence, a clear conclusion", "一言で結論を提示"),
     "免费开始使用": ("Get started free", "無料で始める"),
     "看 5 步操作演示": ("See the 5-step walkthrough", "5ステップのデモを見る"),
+    "免费门店体检（免登录）": ("Free store checkup (no sign-in)", "無料店舗診断（ログイン不要）"),
     "浏览器即用 · 无需安装 · 门店与竞品数据按账号隔离": (
         "Browser-based · No install · Store and competitor data isolated per account",
         "ブラウザですぐ利用 · インストール不要 · 店舗・競合データはアカウントごとに分離"),

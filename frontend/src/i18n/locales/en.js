@@ -39,6 +39,7 @@ export default {
     forgotPassword: 'Forgot password',
     resetPassword: 'Reset password',
     sharedPurchase: 'Purchase Order',
+    freeCheckup: 'Free Store Checkup',
     storeCheckup: 'Store Checkup',
     brands: 'Icons',
     auditLog: 'Audit Log',

@@ -46,6 +46,13 @@ const routes = [
     meta: { requiresAuth: false, titleKey: 'pageTitle.sharedPurchase' }
   },
   {
+    // 免登录获客页：地图点选门店 → 纯前端算同品牌贴邻。⛔ 不调后端、不烧配额、不落库
+    path: '/free-checkup',
+    name: 'FreeCheckup',
+    component: () => import('@/views/FreeCheckupView.vue'),
+    meta: { requiresAuth: false, titleKey: 'pageTitle.freeCheckup' }
+  },
+  {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/DashboardView.vue'),
