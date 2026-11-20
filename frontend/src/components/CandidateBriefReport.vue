@@ -49,7 +49,9 @@
         <el-button type="primary" :loading="exporting" :disabled="!brief" @click="exportPdf">下载 PDF</el-button>
       </div>
     </div>
-    <p class="bf-bar-note">换半径只改这份报告的口径，不改点位自身的评估半径（要改请点「编辑信息」）。</p>
+    <!-- 🔴 v1.13.386：原句尾「（要改请点「编辑信息」）」已删 —— 门店来源的点位不再有那个按钮，
+         留着就是把用户指向一个不存在的入口。这里只说「不写回」，不指路。 -->
+    <p class="bf-bar-note">换半径只改这份报告的口径，不会写回点位的评估半径。</p>
 
     <div v-if="errorMsg" class="bf-error">
       <el-icon><WarningFilled /></el-icon>{{ errorMsg }}

@@ -265,7 +265,13 @@
                主按钮给免费的这条路 —— 产品方向是「免费层给结论、付费层给证据」。 -->
           <el-button type="primary" @click="openBrief(detail)">初步分析</el-button>
           <el-button plain :loading="reportOpening" @click="openReport">生成立项报告</el-button>
-          <el-button @click="openEdit">编辑信息</el-button>
+          <!-- 🔴 v1.13.386：门店来源**不显示**「编辑信息」（业主 2026-11-20 定）。
+               那个弹窗对门店行只有「评估半径」一个可改项，其余字段全是门店台账（disabled），
+               点开就是一片灰 ⇒ 不如不给入口。半径仍有去处：初步分析里可换（不写回），
+               要改门店资料请到「我的门店」。
+               ⚠️ `openEdit` 里的 `formFromStore` 分支刻意保留 —— 它是「门店字段不许写回」的护栏，
+                  删掉以后万一有别的路径打开这个弹窗，就会把门店台账字段当成候选点位字段写库。 -->
+          <el-button v-if="detail.origin !== 'store'" @click="openEdit">编辑信息</el-button>
           <el-button v-if="detail.origin !== 'store'" type="danger" plain @click="remove(detail)">删除点位</el-button>
           <span v-else class="cd-muted cd-detail-lock">
             来自「我的门店」：要让它从候选点位里消失，请到我的门店把门店类型改回「已开业」
