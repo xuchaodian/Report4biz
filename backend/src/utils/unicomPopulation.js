@@ -95,12 +95,17 @@ function seriesByPrefix(dict, prefix, groups) {
 /**
  * 解析 1001 → 报告要用的结构化人口画像。
  *
+ * 🔴 v1.13.387：**三套口径全部解析**（0=到访 / 1=居住 / 2=工作）。
+ *   386 之前只解析了居住+工作的分档、到访只取总量 ⇒ 到访人次的年龄/话费/性别
+ *   明明是同一次调用返回的，却全被丢掉。业主 2026-11-20 定「报告要尽可能多用联通标签」。
+ *   ⚠️ 到访口径的单位是**人次**（统计期累计），别把它的年龄结构当"人口结构"写进报告。
+ *
  * @param {string|object} resultData district_cache.result_data（或裸 apiResult / 1001 dict）
  * @returns {null | {
  *   visit:number, live:number, work:number, total:number,
- *   male:{live:number, work:number}, female:{live:number, work:number},
- *   ages:{live:Array<{label:string,value:number}>, work:Array<...>},
- *   arpu:{live:Array<{label:string,value:number}>, work:Array<...>}
+ *   male:{visit:number, live:number, work:number}, female:{visit:number, live:number, work:number},
+ *   ages:{visit:Array<{label,value}>, live:Array<...>, work:Array<...>},
+ *   arpu:{visit:Array<{label,value}>, live:Array<...>, work:Array<...>}
  * }}
  */
 export function parsePopulation1001(resultData) {
@@ -121,13 +126,15 @@ export function parsePopulation1001(resultData) {
     live,
     work,
     total: total || Math.max(visit, live, work),
-    male: { live: n('male1_sum'), work: n('male2_sum') },
-    female: { live: n('female1_sum'), work: n('female2_sum') },
+    male: { visit: n('male0_sum'), live: n('male1_sum'), work: n('male2_sum') },
+    female: { visit: n('female0_sum'), live: n('female1_sum'), work: n('female2_sum') },
     ages: {
+      visit: seriesByPrefix(d, 'age0', AGE_GROUPS),
       live: seriesByPrefix(d, 'age1', AGE_GROUPS),
       work: seriesByPrefix(d, 'age2', AGE_GROUPS)
     },
     arpu: {
+      visit: seriesByPrefix(d, 'arpu0', ARPU_GROUPS),
       live: seriesByPrefix(d, 'arpu1', ARPU_GROUPS),
       work: seriesByPrefix(d, 'arpu2', ARPU_GROUPS)
     }

@@ -1,8 +1,11 @@
 <template>
+  <!-- 🔴 v1.13.391：弹窗宽度 880 → 912。880 时 `.rp-scroll` 内宽只剩 770px，
+       而 A4 纸张固定 794px ⇒ 纵向滚动条一出现就同时冒出**横向**滚动条（溢出 24px）。
+       391 起报告内容明显变长、纵向滚动成为常态，这个老缺陷就每次都会出现。 -->
   <el-dialog
     :model-value="modelValue"
     title="选址立项报告"
-    width="880px"
+    width="912px"
     append-to-body
     class="cand-report-dialog"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -123,24 +126,71 @@
               <template v-if="model.population.popMonth"> · 期次 {{ model.population.popMonth }}</template>
             </span>
           </div>
-          <div v-if="model.population.hasPop" class="rp-kv">
-            <div><dt>{{ radiusText(model.population.popRadius) }} 内居住</dt><dd>{{ num(model.population.population) }}</dd></div>
-            <div><dt>{{ radiusText(model.population.popRadius) }} 内工作</dt><dd>{{ num(model.population.work) }}</dd></div>
-            <div><dt>{{ radiusText(model.population.popRadius) }} 内到访</dt><dd>{{ numVisit(model.population.visit) }}</dd></div>
-          </div>
+          <template v-if="model.population.hasPop">
+            <!-- 量级四项。⚠️ 到访是**人次**（统计期累计），⛔ 与另三项不同量纲、不可相加 -->
+            <div class="rp-kv rp-kv-4">
+              <div><dt>{{ radiusText(model.population.popRadius) }} 内居住</dt><dd>{{ num(model.population.population) }}</dd></div>
+              <div><dt>{{ radiusText(model.population.popRadius) }} 内工作</dt><dd>{{ num(model.population.work) }}</dd></div>
+              <div><dt>{{ radiusText(model.population.popRadius) }} 内到访</dt><dd>{{ numVisit(model.population.visit) }}</dd></div>
+              <div><dt>联通全量人口</dt><dd>{{ num(model.population.popTotal) }}</dd></div>
+            </div>
+
+            <!-- 性别构成：到访 / 居住 / 工作 三套口径**各自独立**，⛔ 不加总 -->
+            <div v-if="genderRows.length" class="rp-pop-blk">
+              <div class="rp-pop-t">性别构成（各口径独立统计，不可相加）</div>
+              <table class="rp-pop-gt">
+                <thead>
+                  <tr><th>口径</th><th>男</th><th>女</th><th>合计</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="g in genderRows" :key="g.key">
+                    <th>{{ g.name }}</th>
+                    <td>{{ g.malePct.toFixed(1) }}%</td>
+                    <td>{{ g.femalePct.toFixed(1) }}%</td>
+                    <td>{{ g.total.toLocaleString('zh-CN') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 年龄结构：居住 / 工作 双列全 15 档（组内占比，跨列可直接比） -->
+            <div v-if="ageCols.length" class="rp-pop-blk">
+              <div class="rp-pop-t">年龄结构（15 档全量 · 各口径组内占比）</div>
+              <div class="rp-pop-cols">
+                <div v-for="c in ageCols" :key="c.key" class="rp-pop-col">
+                  <div class="rp-pop-ch">{{ c.name }}</div>
+                  <div v-for="r in c.rows" :key="r.label" class="rp-pb-row">
+                    <span class="rp-pb-l">{{ r.label }}</span>
+                    <span class="rp-pb-track"><i :style="{ width: Math.min(100, r.pct) + '%' }"></i></span>
+                    <span class="rp-pb-v">{{ r.pct.toFixed(1) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 月话费档：居住 / 工作 双列全 6 档。⛔ 消费能力代理，不是客单价 -->
+            <div v-if="arpuCols.length" class="rp-pop-blk">
+              <div class="rp-pop-t">月话费档（6 档全量 · 消费能力代理，非客单价）</div>
+              <div class="rp-pop-cols">
+                <div v-for="c in arpuCols" :key="c.key" class="rp-pop-col">
+                  <div class="rp-pop-ch">{{ c.name }}</div>
+                  <div v-for="r in c.rows" :key="r.label" class="rp-pb-row">
+                    <span class="rp-pb-l">{{ r.label }}</span>
+                    <span class="rp-pb-track"><i :style="{ width: Math.min(100, r.pct) + '%' }"></i></span>
+                    <span class="rp-pb-v">{{ r.pct.toFixed(1) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 小结：只陈述分布事实，⛔ 不推导营业额 / 客流预测 -->
+            <ul v-if="model.population.summary.length" class="rp-pop-sum">
+              <li v-for="(s, i) in model.population.summary" :key="i">{{ s }}</li>
+            </ul>
+          </template>
           <div v-else class="rp-pop-empty">
             <b>尚未获取联通人口数据</b>
             <span>人口规模、性别、年龄与消费档位均为空。点上方「获取人口数据」按点位半径向联通取数 —— 若该位置在「我的门店」里同半径买过，会自动复用、不重复扣费。</span>
-          </div>
-
-          <!-- 月话费档：联通话费档位，只作**消费能力代理**，⛔ 不是客单价 -->
-          <div v-if="arpuRows.length" class="rp-income">
-            <div class="rp-income-t">月话费档分布（居住人口 · 消费能力代理，非客单价）</div>
-            <div v-for="r in arpuRows" :key="r.label" class="rp-income-row">
-              <span class="rp-income-l">{{ r.label }}</span>
-              <span class="rp-income-bar"><i :style="{ width: r.pct + '%' }"></i></span>
-              <span class="rp-income-v">{{ r.pct.toFixed(1) }}%</span>
-            </div>
           </div>
         </div>
 
@@ -300,15 +350,34 @@ const resolvedCat = computed(() => {
 const needCategory = computed(() => !resolvedCat.value.mapped && !categoryInput.value.trim())
 
 /**
- * 月话费档分布（联通 1001 · 居住人口）。
- * ⚠️ 只是**消费能力代理**，⛔ 不是客单价、不能反推营业额 —— 报告页脚已写明。
+ * 人口结构三组派生（v1.13.387）。
+ *
+ * 🔴 为什么放在组件里而不是 util：`buildReportModel` 只负责"有哪些数据、各占多少"，
+ *    "哪几列并排画"是纯版式问题。改版式不该动数据层，改口径不该动组件。
+ * ⚠️ 全部从 `model.value.population` 取，⛔ 不要在这里再碰 `popData` ——
+ *    否则「有没有取到人口」会有两处判断，必然分叉。
+ * ⚠️ 空数组的口径直接过滤掉（联通没返回某一套时，不画空列）。
  */
-const arpuRows = computed(() => {
-  const s = popData.value?.arpu?.live
-  if (!Array.isArray(s) || !s.length) return []
-  const total = s.reduce((a, x) => a + (Number(x.value) || 0), 0)
-  if (!total) return []
-  return s.map((x) => ({ label: x.label, pct: ((Number(x.value) || 0) / total) * 100 }))
+const genderRows = computed(() => {
+  const g = model.value.population?.gender
+  if (!g) return []
+  return [['visit', '到访人次'], ['live', '居住'], ['work', '工作']]
+    .filter(([k]) => g[k])
+    .map(([k, name]) => ({ key: k, name, ...g[k] }))
+})
+const ageCols = computed(() => {
+  const a = model.value.population?.ages
+  if (!a) return []
+  return [['live', '居住人口'], ['work', '工作人口']]
+    .filter(([k]) => Array.isArray(a[k]) && a[k].length)
+    .map(([k, name]) => ({ key: k, name, rows: a[k] }))
+})
+const arpuCols = computed(() => {
+  const a = model.value.population?.arpu
+  if (!a) return []
+  return [['live', '居住人口'], ['work', '工作人口']]
+    .filter(([k]) => Array.isArray(a[k]) && a[k].length)
+    .map(([k, name]) => ({ key: k, name, rows: a[k] }))
 })
 
 function num(v) {
@@ -696,13 +765,34 @@ watch(() => props.modelValue, (v) => {
 .rp-kv dt { font-size: 11px; color: #8a9099; margin-bottom: 3px; }
 .rp-kv dd { margin: 0; font-size: 12.5px; }
 
-.rp-income { margin-top: 8px; }
-.rp-income-t { font-size: 12px; color: #646a73; margin-bottom: 6px; }
-.rp-income-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
-.rp-income-l { width: 62px; font-size: 11px; color: #646a73; flex: none; }
-.rp-income-bar { flex: 1; height: 8px; background: #eef0f3; border-radius: 4px; overflow: hidden; }
-.rp-income-bar i { display: block; height: 100%; background: #5b8def; }
-.rp-income-v { width: 48px; text-align: right; font-size: 11px; color: #646a73; flex: none; }
+.rp-kv-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* ── 人口结构（v1.13.387）────────────────────────────────────────────
+   双列条形是**纯 CSS** 比例条，宽度直接等于组内占比 ⇒ 左列（居住）与右列（工作）
+   的条长可以直接横向比较。⛔ 不要改成「按列内最大值归一」——那会让两列都撑满，
+   看上去分布一样，实际完全不同。
+   ⚠️ PDF 走 html2canvas 截 DOM，所以这里必须是真实背景色而不是伪元素。 */
+.rp-pop-blk { margin-top: 10px; }
+.rp-pop-t { font-size: 12px; color: #646a73; margin-bottom: 6px; }
+
+.rp-pop-gt { width: 100%; border-collapse: collapse; }
+.rp-pop-gt th, .rp-pop-gt td { font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid #f0f1f3; text-align: right; }
+.rp-pop-gt thead th { font-weight: 500; font-size: 11px; color: #8a9099; }
+.rp-pop-gt tbody th { width: 96px; text-align: left; font-weight: 500; color: #1f2329; }
+.rp-pop-gt td:first-of-type { width: 72px; }
+.rp-pop-gt td:last-child { width: 96px; color: #646a73; }
+
+.rp-pop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
+.rp-pop-col { min-width: 0; }
+.rp-pop-ch { font-size: 11px; font-weight: 600; color: #1f2329; margin-bottom: 3px; }
+.rp-pb-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.rp-pb-l { width: 54px; font-size: 10.5px; color: #646a73; flex: none; }
+.rp-pb-track { flex: 1; height: 7px; background: #eef0f3; border-radius: 4px; overflow: hidden; }
+.rp-pb-track i { display: block; height: 100%; background: #5b8def; border-radius: 4px; }
+.rp-pb-v { width: 40px; text-align: right; font-size: 10.5px; color: #646a73; flex: none; }
+
+.rp-pop-sum { margin: 9px 0 0; padding-left: 16px; }
+.rp-pop-sum li { font-size: 11.5px; line-height: 1.6; color: #1f2329; margin-bottom: 2px; }
 
 .rp-map { border: 1px solid #e6e8eb; border-radius: 6px; overflow: hidden; background: #fafbfc; }
 /* 🔴 必须同时给 width:100% 和**固定 height**，`object-fit` 才起作用。

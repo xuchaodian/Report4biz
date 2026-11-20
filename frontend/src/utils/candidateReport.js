@@ -141,16 +141,44 @@ export function radiusText(m) {
   return `${Math.round(n)}m`
 }
 
-/** 取序列里占比最高的前 n 项（用于报告里"主要年龄段/主要消费档"） */
-function topSeries(series, n = 3) {
-  const list = Array.isArray(series) ? series.filter((x) => Number(x.value) > 0) : []
-  if (!list.length) return []
-  const total = list.reduce((s, x) => s + Number(x.value), 0)
-  return list
-    .slice()
-    .sort((a, b) => Number(b.value) - Number(a.value))
-    .slice(0, n)
-    .map((x) => ({ label: x.label, value: Number(x.value), pct: total ? (Number(x.value) / total) * 100 : 0 }))
+/**
+ * 分档序列 → 带百分比的**完整**列表（v1.13.387）
+ *
+ * 🔴 这里是 387 的核心：1001 一次调用买回来的分档有 3 套口径（到访 0 / 居住 1 / 工作 2）
+ *   × 年龄 15 档 × 话费 6 档 = 数十个数值，而 386 之前报告只画了「居住 top3」——
+ *   **花了钱买回来的数据有一多半没上纸**，也是立项报告跟初步分析拉不开差距的根因。
+ *   现在整份序列都要进报告，所以这里返回全量（⛔ 不截断），由模板决定怎么排版。
+ *
+ * 总量为 0 返回空数组 —— ⛔ 不许画一排全 0 的条冒充"有数据"。
+ */
+function pctSeries(series) {
+  const list = Array.isArray(series) ? series : []
+  const total = list.reduce((s, x) => s + (Number(x.value) || 0), 0)
+  if (!total) return []
+  return list.map((x) => ({
+    label: x.label,
+    value: Number(x.value) || 0,
+    pct: ((Number(x.value) || 0) / total) * 100
+  }))
+}
+
+/** 序列里占比最高的一项（用于小结；空序列返回 null） */
+function topItem(series) {
+  if (!Array.isArray(series) || !series.length) return null
+  return series.reduce((a, b) => (b.pct > a.pct ? b : a))
+}
+
+/**
+ * 性别构成：男/女 → 人数 + 百分比。
+ * ⚠️ `Number(null) === 0`、`Number(undefined) === NaN` ⇒ 一律显式兜 0，
+ *    总数仍为 0 时返回 null（⛔ 不返回 0%/0% 让人以为"男女各半"）。
+ */
+function genderSplit(male, female) {
+  const m = Number(male) || 0
+  const f = Number(female) || 0
+  const t = m + f
+  if (!t) return null
+  return { male: m, female: f, total: t, malePct: (m / t) * 100, femalePct: (f / t) * 100 }
 }
 
 /** 评分 → 星级（0~5，半星取整到 0.5） */
@@ -204,6 +232,12 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
   //    ⇒ 该城市没有商圈面数据时，即使花配额买到了联通人口，报告纸面也看不到人口。
   //    340 换了数据源、341 换了半径口径，都没拆这个容器。人口口径本来就是「点 + 半径圆」，
   //    与任何商圈面无关 ⇒ 必须独立成块、**恒存在**，`hasPop` 只反映「有没有取到联通数据」。
+  //
+  //    🔴🔴 v1.13.387（业主 2026-11-20）：「报告原则上是在联通人口基础上的一份详细分析报告，
+  //    尽可能多用联通人口数据的丰富数据标签」。1001 一次调用就能拿到**三套口径**
+  //    （0=到访人次 / 1=居住 / 2=工作）× (总量 + 男女人数 + 15 年龄段 + 6 话费档)，
+  //    386 之前只用了「居住」那一套的三项摘要 ⇒ 白买。这里全量铺开。
+  //    ⚠️ 但**口径不能混**：到访是「人次」，居住/工作才是「人」—— 三套结论要分开写。
   const populationBlock = {
     hasPop: !!pop,
     population: pop ? Number(pop.live) || 0 : null,
@@ -212,14 +246,57 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     popTotal: pop ? Number(pop.total) || 0 : null,
     popMonth,
     popRadius,
-    gender: pop
-      ? {
-          liveMale: Number(pop.male?.live) || 0,
-          liveFemale: Number(pop.female?.live) || 0
-        }
+    /** 性别构成：三套口径各一组（无数据的那套为 null，模板据此隐藏） */
+    gender: {
+      visit: pop ? genderSplit(pop.male?.visit, pop.female?.visit) : null,
+      live: pop ? genderSplit(pop.male?.live, pop.female?.live) : null,
+      work: pop ? genderSplit(pop.male?.work, pop.female?.work) : null
+    },
+    /** 年龄结构：15 档全量（带百分比），无数据的口径为空数组 */
+    ages: {
+      visit: pop ? pctSeries(pop.ages?.visit) : [],
+      live: pop ? pctSeries(pop.ages?.live) : [],
+      work: pop ? pctSeries(pop.ages?.work) : []
+    },
+    /** 月话费档：6 档全量（消费能力代理，⛔ 不是客单价） */
+    arpu: {
+      visit: pop ? pctSeries(pop.arpu?.visit) : [],
+      live: pop ? pctSeries(pop.arpu?.live) : [],
+      work: pop ? pctSeries(pop.arpu?.work) : []
+    },
+    /**
+     * 职住比 = 工作人口 ÷ 居住人口。
+     * ⚠️ 只做两套**人数**口径的比值（同一期次、同一半径，量纲一致）；
+     *    ⛔ 不拿「到访人次」做任何比值 —— 它是统计期累计人次，与人数不可通约。
+     */
+    workLiveRatio: pop && Number(pop.live) > 0
+      ? (Number(pop.work) || 0) / Number(pop.live)
       : null,
-    topAges: pop ? topSeries(pop.ages?.live, 3) : [],
-    topArpu: pop ? topSeries(pop.arpu?.live, 3) : []
+    /** 描述性小结（只陈述分布事实，⛔ 不推导营业额/客流预测） */
+    summary: []
+  }
+
+  // 人口小结：职住结构 / 主力年龄 / 主力话费档 / 到访主力人群
+  //   🔴 全是「占比最高的一段」这种陈述，不排序、不加权、不外推。
+  if (populationBlock.hasPop) {
+    const b = populationBlock
+    const ratio = b.workLiveRatio
+    if (ratio !== null) {
+      const kind = ratio >= 1.2 ? '就业型' : (ratio <= 0.6 ? '居住型' : '职住均衡')
+      b.summary.push(
+        `职住结构：工作人口为居住人口的 ${ratio.toFixed(2)} 倍 ⇒ ${kind}片区（${b.work.toLocaleString('zh-CN')} 人就业 / ${b.population.toLocaleString('zh-CN')} 人居住）`
+      )
+    }
+    const la = topItem(b.ages.live)
+    if (la) b.summary.push(`居住人口以「${la.label}」为主，占 ${la.pct.toFixed(1)}%`)
+    const wa = topItem(b.ages.work)
+    if (wa) b.summary.push(`工作人口以「${wa.label}」为主，占 ${wa.pct.toFixed(1)}%`)
+    const lp = topItem(b.arpu.live)
+    if (lp) b.summary.push(`居住人口月话费集中在「${lp.label}」，占 ${lp.pct.toFixed(1)}%（消费能力代理，非客单价）`)
+    const va = topItem(b.ages.visit)
+    if (va) b.summary.push(`到访人次以「${va.label}」人群为主，占 ${va.pct.toFixed(1)}%（人次口径，不等于人数）`)
+    const vp = topItem(b.arpu.visit)
+    if (vp) b.summary.push(`到访人次月话费集中在「${vp.label}」，占 ${vp.pct.toFixed(1)}%`)
   }
 
   // ── 商圈画像（商圈面基线；可能没有）─────────────────────
@@ -270,32 +347,19 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     facts.push({
       label: `${rPrefix}到访人次`,
       value: `${b.visit.toLocaleString('zh-CN')} 人次`,
-      note: '统计期内累计到访次数，⛔ 不等于人数，不可与居住/工作相加'
+      note: '统计期内累计到访次数，不等于人数，不可与居住/工作相加'
     })
-    if (b.gender && (b.gender.liveMale || b.gender.liveFemale)) {
-      const m = b.gender.liveMale
-      const f = b.gender.liveFemale
-      const t = m + f
+    if (b.gender.live) {
       facts.push({
         label: '居住性别比',
-        value: t ? `男 ${((m / t) * 100).toFixed(1)}% · 女 ${((f / t) * 100).toFixed(1)}%` : '无数据',
+        value: `男 ${b.gender.live.malePct.toFixed(1)}% · 女 ${b.gender.live.femalePct.toFixed(1)}%`,
         note: '联通智慧足迹 · 居住人口口径'
       })
     }
-    if (b.topAges.length) {
-      facts.push({
-        label: '主要年龄段',
-        value: b.topAges.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
-        note: '联通智慧足迹 · 居住人口前 3 段'
-      })
-    }
-    if (b.topArpu.length) {
-      facts.push({
-        label: '主要月话费档',
-        value: b.topArpu.map((x) => `${x.label} ${x.pct.toFixed(0)}%`).join(' · '),
-        note: '联通智慧足迹 · 话费档可作消费能力代理，非实际客单价'
-      })
-    }
+    // 🔴 v1.13.387：原来这里还有「主要年龄段」「主要月话费档」两条 top3 摘要 ——
+    //    报告新增人口结构区块后会**全量 15 档 / 6 档**画出来，这两条就成了同一批数字的第三次出现。
+    //    ⇒ 已删除。结构进区块，表格只留量级（居住/工作/到访三项 + 性别比）。
+    //    ⚠️ 别按"以前这里有"就加回来：那是 387 之前的写法。
   } else {
     // 没买/没取到就如实说，⛔ 不拿商圈面属性顶上
     facts.push({
@@ -392,7 +456,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
         ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')
         : '人口无期次（未取数）；商圈基线未标注数据期次',
       sample: populationBlock.hasPop
-        ? `人口为点位半径${radiusText(populationBlock.popRadius) || ''} 内的圆口径，⛔ 非商圈面口径；评分与竞争计数为商圈面（${districtBlock?.name || '未匹配商圈面'}）口径`
+        ? `人口为点位半径${radiusText(populationBlock.popRadius) || ''} 内的圆口径，非商圈面口径；评分与竞争计数为商圈面（${districtBlock?.name || '未匹配商圈面'}）口径`
         : '人口未取数 ⇒ 无人口样本；评分与竞争为商圈面口径',
       confidence: '本报告不含销售预测；人口与竞争为存量数据，不代表实时客流'
     }
