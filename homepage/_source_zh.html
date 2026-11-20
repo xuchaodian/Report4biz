@@ -231,6 +231,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
 .cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
 .hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
+.hero-case{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;font-weight:600;color:var(--brand);text-decoration:none}
+.hero-case:hover{text-decoration:underline;text-underline-offset:3px}
+.hero-case .hc-arrow{transition:transform .2s}
+.hero-case:hover .hc-arrow{transform:translateX(3px)}
 .hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
   border:1px solid rgba(16,32,64,.10);
   box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
@@ -505,8 +509,8 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   <div class="hero-arc" aria-hidden="true"></div>
   <div class="wrap">
     <span class="eyebrow"><i aria-hidden="true"></i>基于位置大数据的商业智能分析平台</span>
-    <h1>选址，<span class="grad">看数据</span>说话</h1>
-    <p class="lede">商圈人口、竞品格局、门店体检、AI 建议 —— 一个平台，把开店决策从经验变成依据。</p>
+    <h1>开新店前，<span class="grad">先过闭店防火墙</span></h1>
+    <p class="lede">同品牌蚕食预警、双店型识别、坪效测算 —— 开新店前先算清楚：会不会抢了自己老店的生意。少开错一家，比多开十家更值钱。</p>
 
     <div class="feats">
       <div class="ft">
@@ -536,6 +540,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <a class="btn btn-xl btn-ghost" href="https://mka-online.cn/free-checkup">免费门店体检（免登录）</a>
     </div>
     <div class="hero-note">浏览器即用 · 无需安装 · 门店与竞品数据按账号隔离</div>
+    <a class="hero-case" href="https://www.mka-online.cn/cases/">看看真实连锁测出什么：549 家门店的体检报告 <span class="hc-arrow" aria-hidden="true">→</span></a>
 
     <div class="hero-shot">
       <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 地图工作台</span></div>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>门店位置体检报告 · 真实案例 · 选址赢家Online</title>
+<meta name="description" content="餐饮连锁门店位置体检真实案例（脱敏）：549 家在营门店，查出 49 组双店型、11 组同档贴邻需复核。免费门店体检，免登录、不上传、不消耗付费额度。">
+<link rel="canonical" href="https://www.mka-online.cn/cases/">
+<style>
+  :root{--bg:#f5f7fa;--card:#fff;--line:#e4e7ed;--text:#303133;--sub:#606266;--hint:#909399;
+        --blue:#2563eb;--green:#67c23a;--red:#f56c6c;--amber:#e6a23c;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 24px 56px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  h2{font-size:15px;font-weight:600;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  h2::before{content:"";width:3px;height:14px;background:var(--blue);border-radius:2px;flex:0 0 auto}
+  h2.warn::before{background:var(--amber)} h2.risk::before{background:var(--red)} h2.pass::before{background:var(--green)}
+  .h2sub{color:var(--hint);font-size:12px;margin:0 0 14px 11px}
+  .sub{color:var(--hint);font-size:13px;margin:0}
+  .head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
+  .badge{display:inline-flex;align-items:center;gap:6px;background:#f0f9eb;color:#529b2e;border:1px solid #e1f3d8;border-radius:6px;padding:5px 10px;font-size:12px;white-space:nowrap}
+  .badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#67c23a}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0 22px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .lab{font-size:12px;color:var(--hint);margin-bottom:6px}
+  .kpi .num{font-size:26px;font-weight:600;line-height:1.1}
+  .kpi .num em{font-size:13px;font-weight:400;color:var(--hint);font-style:normal;margin-left:3px}
+  .kpi .foot{font-size:12px;color:var(--hint);margin-top:6px;line-height:1.45}
+  .n-red{color:var(--red)} .n-amber{color:var(--amber)} .n-blue{color:var(--blue)} .n-grey{color:var(--sub)} .n-green{color:var(--green)}
+  .lead{background:#fdf6ec;border:1px solid #faecd8;border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:14px}
+  .lead b{color:#b88230}
+  .bars{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:6px 0 10px}
+  .bars i{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-style:normal;white-space:nowrap;overflow:hidden}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:9px;height:9px;border-radius:2px;display:inline-block;flex:0 0 auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-weight:500;color:var(--sub);background:#fafafa;border-bottom:1px solid var(--line);padding:8px 9px;white-space:nowrap}
+  td{border-bottom:1px solid #f2f3f5;padding:8px 9px;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;margin:1px 3px 1px 0;white-space:nowrap}
+  .t-red{background:#fef0f0;color:#c45656;border:1px solid #fde2e2}
+  .t-amber{background:#fdf6ec;color:#b88230;border:1px solid #faecd8}
+  .t-blue{background:#ecf5ff;color:#337ecc;border:1px solid #d9ecff}
+  .t-green{background:#f0f9eb;color:#529b2e;border:1px solid #e1f3d8}
+  .t-grey{background:#f4f4f5;color:#909399;border:1px solid #e9e9eb}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#909399}
+  .pay{border:1px solid #d9ecff;background:#f4f9ff;border-radius:10px;padding:16px 18px}
+  .pay h3{margin:0 0 8px;font-size:14px;font-weight:600;color:#337ecc}
+  .pay p{margin:0 0 10px;font-size:13px;color:var(--sub)}
+  .muted{color:var(--hint);font-size:12px}
+  .foot{margin-top:22px;padding-top:14px;border-top:1px dashed var(--line);font-size:12px;color:var(--hint);line-height:1.8}
+  .note{font-size:12px;color:var(--hint);margin:10px 0 0;line-height:1.75}
+  .alert{background:#fef0f0;border:1px solid #fde2e2;border-radius:8px;padding:10px 14px;font-size:13px;color:#c45656;margin:0 0 14px}
+  .alert-blue{background:#ecf5ff;border-color:#d9ecff;color:#337ecc}
+  .alert-amber{background:#fdf6ec;border-color:#faecd8;color:#b88230}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .mini{border:1px solid var(--line);border-radius:8px;padding:13px 14px}
+  .mini .t{font-size:12px;color:var(--hint);margin-bottom:8px}
+  .mini .big{font-size:15px;font-weight:600;margin-bottom:8px}
+  .kv{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);padding:3px 0}
+  .kv b{font-weight:500;color:var(--text)}
+  .check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed #f2f3f5;font-size:13px}
+  .check:last-child{border-bottom:none}
+  .check .ok,.check .no{flex:0 0 auto;width:18px;height:18px;border-radius:50%;font-size:11px;line-height:18px;text-align:center;margin-top:2px}
+  .check .ok{background:#f0f9eb;color:#529b2e} .check .no{background:#fef0f0;color:#c45656}
+  .check .t{font-weight:600;margin-bottom:2px} .check .d{color:var(--hint);font-size:12px;line-height:1.7}
+  .sec{margin-bottom:18px}
+  .strip{display:flex;gap:12px;align-items:flex-start;background:#fafcff;border:1px solid #e1edff}
+  .strip .ic{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:#ecf5ff;color:#337ecc;font-size:12px;line-height:20px;text-align:center;margin-top:1px}
+  .cta{border:1px solid #d9ecff;background:#f4f9ff;border-radius:10px;padding:16px 18px}
+  .cta h3{margin:0 0 8px;font-size:14px;font-weight:600;color:#337ecc}
+  .cta p{margin:0 0 8px;font-size:13px;color:var(--sub)}
+  /* 顶部导航（www 官网风格，纯 <a> 无 JS，符合 CSP） */
+  .case-nav{background:#fff;border-bottom:1px solid var(--line);padding:12px 0}
+  .case-nav .wrap{padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .case-brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;color:var(--text);text-decoration:none}
+  .case-brand img{width:30px;height:30px}
+  .case-nav-links{display:flex;align-items:center;gap:18px;font-size:13px}
+  .case-nav-links a{color:var(--sub);text-decoration:none}
+  .case-nav-links a:hover{color:var(--blue)}
+  .case-nav-links a.primary{background:var(--blue);color:#fff;padding:8px 15px;border-radius:7px;font-weight:600}
+  .case-nav-links a.primary:hover{opacity:.9;color:#fff}
+  .case-icp{margin-top:26px;padding-top:14px;border-top:1px solid var(--line);text-align:center;font-size:12px;color:var(--hint)}
+  .case-icp a{color:var(--hint)}
+  @media(max-width:640px){.case-nav-links{gap:10px;font-size:12px}.case-nav-links a:not(.primary){display:none}}
+</style></head>
+<body>
+<header class="case-nav">
+  <div class="wrap">
+    <a class="case-brand" href="https://www.mka-online.cn/"><img src="/assets/logo.png" alt="">选址赢家Online</a>
+    <nav class="case-nav-links" aria-label="页面导航">
+      <a href="https://www.mka-online.cn/">返回官网</a>
+      <a href="https://mka-online.cn/free-checkup">免费门店体检</a>
+      <a class="primary" href="https://mka-online.cn/register">免费注册</a>
+    </nav>
+  </div>
+</header>
+<div class="wrap">
+
+  <div class="head">
+    <div>
+      <h1>门店位置体检报告 <span style="font-size:12px;color:#909399;font-weight:400;">某全国性餐饮连锁客户（示例）</span></h1>
+      <p class="sub">台账 809 家 / <b>在营 549 家</b>（剔除 闭店 218 家、未开店 42 家）· 距离分档 50m/300m/800m/2km · 2026-11-19 · 只读计算</p>
+    </div>
+    <span class="badge">示例报告 · 数据已脱敏</span>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lab">在营门店</div><div class="num n-green">549<em>家</em></div>
+      <div class="foot">台账 809 − 剔除 260<br>坐标覆盖 549/549</div></div>
+    <div class="kpi"><div class="lab">双店型同址</div><div class="num n-blue">49<em>组</em></div>
+      <div class="foot">双店型同址<br>面积差 ≥2 倍，是店型策略</div></div>
+    <div class="kpi"><div class="lab">同档贴邻需复核</div><div class="num n-red">11<em>组</em></div>
+      <div class="foot">非双店型的贴邻门店<br>最近一组同档贴邻仅隔 138m</div></div>
+    <div class="kpi"><div class="lab">结论可信度</div><div class="num n-amber">中</div>
+      <div class="foot">4 项数据检查 2 项就绪<br>（销售记录、竞品品类待补）</div></div>
+  </div>
+
+  <div class="lead"><b>一句话结论：</b>这份台账里有 <b>60 组</b>贴在一起（≤300m）的门店，其中 <b>49 组是双店型</b>（编码不同 + 面积差 ≥2 倍，双店型中大店中位 <b>373㎡</b>、小店中位 <b>110㎡</b>）——这是店型策略，不是错误。真正需要复核的是 <b>11 组同档贴邻</b>；最近的一组两家同档门店只隔 <b>138m</b>（位于上海），这类点位才需要用销售数据回答「是不是自己抢自己」。这些结论<b>不花钱就能看清</b>；但它们到底互相抢走多少生意，<b>需要销售数据</b>。</div>
+
+  <div class="card sec strip">
+    <div class="ic">!</div>
+    <div style="font-size:13px">
+      <b>请勿把下面 49 组合并成一家 —— 它们是两家真实门店。</b>
+      系统「台账清洗」会按「同品牌 ≤50m」把它们列为疑似重复，
+      但本报告核查结论是：<b>编码不同、面积差 2 倍以上 ⇒ 两个店型</b>，请选「确认是两家」。
+      <span class="muted">（合并只是隐藏、可撤销，但面积与销售归属会跟着变，历史对比就断了。）</span>
+    </div>
+  </div>
+
+  <div class="card sec">
+    <h2 class="pass">一 · 先纠正一件容易误判的事：49 组不是重复</h2>
+    <p class="h2sub">判定依据不是店名像不像，而是<b>编码不同 + 面积差 ≥2 倍</b>——由系统原生判据给出。</p>
+    <table>
+      <thead><tr><th style="width:26px">#</th><th>城市</th><th>大店（店名 · 编码 · 面积）</th><th>小店（店名 · 编码 · 面积）</th><th style="width:52px">面积差</th><th style="width:52px">间距</th></tr></thead>
+      <tbody><tr><td>1</td><td>深圳</td><td>门店 095 · 336㎡</td><td>门店 051 · 124㎡</td><td>2.7×</td><td>0m</td></tr><tr><td>2</td><td>深圳</td><td>门店 099 · 377㎡</td><td>门店 052 · 128㎡</td><td>2.9×</td><td>0m</td></tr><tr><td>3</td><td>广州</td><td>门店 073 · 400㎡</td><td>门店 037 · 120㎡</td><td>3.3×</td><td>0m</td></tr><tr><td>4</td><td>广州</td><td>门店 071 · 306㎡</td><td>门店 034 · 97㎡</td><td>3.2×</td><td>0m</td></tr><tr><td>5</td><td>长沙</td><td>门店 093 · 407㎡</td><td>门店 050 · 138㎡</td><td>2.9×</td><td>0m</td></tr><tr><td>6</td><td>长沙</td><td>门店 111 · 338㎡</td><td>门店 063 · 116㎡</td><td>2.9×</td><td>0m</td></tr><tr><td>7</td><td>武汉</td><td>门店 114 · 415㎡</td><td>门店 047 · 106㎡</td><td>3.9×</td><td>0m</td></tr><tr><td>8</td><td>上海</td><td>门店 113 · 565㎡</td><td>门店 041 · 90㎡</td><td>6.3×</td><td>0m</td></tr><tr><td>9</td><td>上海</td><td>门店 068 · 360㎡</td><td>门店 021 · 137㎡</td><td>2.6×</td><td>0m</td></tr><tr><td>10</td><td>苏州</td><td>门店 090 · 290㎡</td><td>门店 057 · 51㎡</td><td>5.7×</td><td>0m</td></tr><tr><td>11</td><td>上海</td><td>门店 067 · 393㎡</td><td>门店 020 · 92㎡</td><td>4.3×</td><td>0m</td></tr><tr><td>12</td><td>苏州</td><td>门店 070 · 367㎡</td><td>门店 010 · 125㎡</td><td>2.9×</td><td>0m</td></tr><tr><td>13</td><td>南京</td><td>门店 102 · 460㎡</td><td>门店 053 · 110㎡</td><td>4.2×</td><td>0m</td></tr><tr><td>14</td><td>青岛</td><td>门店 088 · 376㎡</td><td>门店 044 · 134㎡</td><td>2.8×</td><td>0m</td></tr><tr><td>15</td><td>天津</td><td>门店 094 · 373㎡</td><td>门店 049 · 83㎡</td><td>4.5×</td><td>0m</td></tr><tr><td>16</td><td>佛山</td><td>门店 085 · 487㎡</td><td>门店 062 · 93㎡</td><td>5.2×</td><td>6m</td></tr><tr><td>17</td><td>广州</td><td>门店 089 · 350㎡</td><td>门店 015 · 84㎡</td><td>4.2×</td><td>6m</td></tr><tr><td>18</td><td>广州</td><td>门店 082 · 350㎡</td><td>门店 038 · 97㎡</td><td>3.6×</td><td>10m</td></tr><tr><td>19</td><td>天津</td><td>门店 078 · 373㎡</td><td>门店 009 · 154㎡</td><td>2.4×</td><td>20m</td></tr><tr><td>20</td><td>深圳</td><td>门店 095 · 336㎡</td><td>门店 055 · 110㎡</td><td>3.0×</td><td>28m</td></tr><tr><td>21</td><td>南京</td><td>门店 104 · 366㎡</td><td>门店 060 · 105㎡</td><td>3.5×</td><td>28m</td></tr><tr><td>22</td><td>上海</td><td>门店 103 · 303㎡</td><td>门店 003 · 69㎡</td><td>4.4×</td><td>33m</td></tr><tr><td>23</td><td>天津</td><td>门店 098 · 327㎡</td><td>门店 022 · 121㎡</td><td>2.7×</td><td>34m</td></tr><tr><td>24</td><td>广州</td><td>门店 109 · 295㎡</td><td>门店 036 · 83㎡</td><td>3.6×</td><td>35m</td></tr><tr><td>25</td><td>无锡</td><td>门店 116 · 461㎡</td><td>门店 043 · 96㎡</td><td>4.8×</td><td>37m</td></tr><tr><td>26</td><td>天津</td><td>门店 091 · 345㎡</td><td>门店 011 · 127㎡</td><td>2.7×</td><td>38m</td></tr><tr><td>27</td><td>上海</td><td>门店 074 · 416㎡</td><td>门店 025 · 110㎡</td><td>3.8×</td><td>40m</td></tr><tr><td>28</td><td>上海</td><td>门店 092 · 389㎡</td><td>门店 033 · 104㎡</td><td>3.7×</td><td>42m</td></tr><tr><td>29</td><td>南京</td><td>门店 115 · 446㎡</td><td>门店 030 · 118㎡</td><td>3.8×</td><td>60m</td></tr><tr><td>30</td><td>宁波</td><td>门店 106 · 489㎡</td><td>门店 035 · 152㎡</td><td>3.2×</td><td>63m</td></tr><tr><td>31</td><td>杭州</td><td>门店 110 · 394㎡</td><td>门店 045 · 110㎡</td><td>3.6×</td><td>73m</td></tr><tr><td>32</td><td>天津</td><td>门店 105 · 387㎡</td><td>门店 028 · 111㎡</td><td>3.5×</td><td>75m</td></tr><tr><td>33</td><td>上海</td><td>门店 101 · 409㎡</td><td>门店 026 · 99㎡</td><td>4.1×</td><td>78m</td></tr><tr><td>34</td><td>苏州</td><td>门店 087 · 361㎡</td><td>门店 056 · 119㎡</td><td>3.0×</td><td>88m</td></tr><tr><td>35</td><td>重庆</td><td>门店 086 · 504㎡</td><td>门店 027 · 108㎡</td><td>4.7×</td><td>93m</td></tr><tr><td>36</td><td>重庆</td><td>门店 075 · 323㎡</td><td>门店 017 · 105㎡</td><td>3.1×</td><td>94m</td></tr><tr><td>37</td><td>南京</td><td>门店 100 · 479㎡</td><td>门店 058 · 128㎡</td><td>3.7×</td><td>102m</td></tr><tr><td>38</td><td>成都</td><td>门店 080 · 511㎡</td><td>门店 046 · 111㎡</td><td>4.6×</td><td>113m</td></tr><tr><td>39</td><td>宁波</td><td>门店 097 · 365㎡</td><td>门店 016 · 100㎡</td><td>3.6×</td><td>116m</td></tr><tr><td>40</td><td>天津</td><td>门店 083 · 511㎡</td><td>门店 042 · 100㎡</td><td>5.1×</td><td>134m</td></tr><tr><td>41</td><td>广州</td><td>门店 077 · 276㎡</td><td>门店 039 · 100㎡</td><td>2.8×</td><td>147m</td></tr><tr><td>42</td><td>上海</td><td>门店 069 · 422㎡</td><td>门店 001 · 182㎡</td><td>2.3×</td><td>158m</td></tr><tr><td>43</td><td>上海</td><td>门店 065 · 384㎡</td><td>门店 002 · 88㎡</td><td>4.3×</td><td>159m</td></tr><tr><td>44</td><td>成都</td><td>门店 081 · 333㎡</td><td>门店 024 · 124㎡</td><td>2.7×</td><td>174m</td></tr><tr><td>45</td><td>成都</td><td>门店 076 · 334㎡</td><td>门店 013 · 136㎡</td><td>2.5×</td><td>175m</td></tr><tr><td>46</td><td>无锡</td><td>门店 096 · 353㎡</td><td>门店 006 · 112㎡</td><td>3.2×</td><td>215m</td></tr><tr><td>47</td><td>上海</td><td>门店 066 · 349㎡</td><td>门店 014 · 122㎡</td><td>2.9×</td><td>256m</td></tr><tr><td>48</td><td>宁波</td><td>门店 097 · 365㎡</td><td>门店 018 · 112㎡</td><td>3.2×</td><td>274m</td></tr><tr><td>49</td><td>南京</td><td>门店 107 · 395㎡</td><td>门店 059 · 93㎡</td><td>4.3×</td><td>278m</td></tr></tbody>
+    </table>
+    <p class="note">共 49 组，按间距升序；均为同品牌、编码不同。<b>处置建议：确认是两家，不要合并。</b></p>
+  </div>
+
+  <div class="card sec">
+    <h2 class="risk">二 · 真正需要复核的 11 组</h2>
+    <p class="h2sub">这些不是双店型——<b>两家同档</b>或编码相同却贴在一起，才可能真的互相蚕食。</p>
+    <div class="alert alert-amber">最近的一组两家同档门店只隔 <b>138m</b>（位于上海），这类点位才需要用销售数据回答「是不是自己抢自己」。</div>
+    <table>
+      <thead><tr><th style="width:26px">#</th><th>城市</th><th>门店 A</th><th>门店 B</th><th style="width:100px">类型</th><th style="width:52px">间距</th></tr></thead>
+      <tbody><tr><td>1</td><td>广州</td><td>门店 079 · 260㎡</td><td>门店 032 · 137㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>0m</td></tr><tr><td>2</td><td>成都</td><td>门店 072 · 299㎡</td><td>门店 012 · 166㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>0m</td></tr><tr><td>3</td><td>深圳</td><td>门店 055 · 110㎡</td><td>门店 051 · 124㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>28m</td></tr><tr><td>4</td><td>上海</td><td>门店 008 · 106㎡</td><td>门店 064 · —㎡</td><td><span class="tag t-grey">面积缺失</span></td><td>52m</td></tr><tr><td>5</td><td>天津</td><td>门店 112 · 278㎡</td><td>门店 019 · 142㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>98m</td></tr><tr><td>6</td><td>上海</td><td>门店 084 · 340㎡</td><td>门店 108 · 348㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>138m</td></tr><tr><td>7</td><td>苏州</td><td>门店 004 · 124㎡</td><td>门店 029 · 105㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>178m</td></tr><tr><td>8</td><td>天津</td><td>门店 031 · 103㎡</td><td>门店 005 · 102㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>193m</td></tr><tr><td>9</td><td>合肥</td><td>门店 048 · 83㎡</td><td>门店 054 · 124㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>196m</td></tr><tr><td>10</td><td>苏州</td><td>门店 040 · 105㎡</td><td>门店 007 · 127㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>231m</td></tr><tr><td>11</td><td>成都</td><td>门店 061 · 112㎡</td><td>门店 023 · 108㎡</td><td><span class="tag t-amber">面积接近·需核</span></td><td>276m</td></tr></tbody>
+    </table>
+    <p class="note">间距为门店坐标的球面直线距离（Haversine）。<b>注意：距离近 ≠ 一定蚕食</b>——商场内外、楼层、动线都会影响，最终要用销售数据验证。</p>
+  </div>
+
+  <div class="card sec">
+    <h2>三 · 位置结构画像与间距分布</h2>
+    <p class="h2sub">全部 549 家在营门店，按「最近同品牌门店距离」分档。</p>
+    <div class="bars"><i style="width:10.75%;background:#f56c6c">59</i><i style="width:10.38%;background:#e6a23c">57</i><i style="width:11.11%;background:#409eff">61</i><i style="width:24.95%;background:#67c23a">137</i><i style="width:42.81%;background:#c0c4cc">235</i></div>
+    <div class="legend"><span><i class="dot" style="background:#f56c6c"></i>同址<50m 59 家</span><span><i class="dot" style="background:#e6a23c"></i>贴身50-300m 57 家</span><span><i class="dot" style="background:#409eff"></i>部分重叠0.3-0.8km 61 家</span><span><i class="dot" style="background:#67c23a"></i>弱重叠0.8-2km 137 家</span><span><i class="dot" style="background:#c0c4cc"></i>基本独立>2km 235 家</span></div>
+    <p class="note">
+      最近同品牌距离的<b>中位数为 1649m</b>（基于 534 家在搜索窗内找到邻居的门店；
+      另有 15 家 20km 内无同品牌）。约 <b>21%</b>
+      的门店贴身或同址，其中绝大多数是双店型；真正孤立的门店占 <b>43%</b>。
+    </p>
+    <div class="grid3" style="margin-top:14px">
+      <div class="mini"><div class="t">面积结构（548 家有记录）</div>
+        <div class="kv"><span>&lt;120㎡</span><b>219 家</b></div><div class="kv"><span>120–200㎡</span><b>134 家</b></div>
+        <div class="kv"><span>200–350㎡</span><b>54 家</b></div><div class="kv"><span>≥350㎡</span><b>141 家</b></div></div>
+      <div class="mini"><div class="t">贴邻对构成（≤300m 共 60 对）</div>
+        <div class="kv"><span>双店型（策略）</span><b>49 对</b></div><div class="kv"><span>需复核（同档）</span><b>11 对</b></div>
+        <div class="kv"><span>其中同址(&lt;50m)</span><b>31 对</b></div></div>
+      <div class="mini"><div class="t">城市分布（在营 top）</div><div class="kv"><span>上海</span><b>152 家</b></div><div class="kv"><span>苏州</span><b>46 家</b></div><div class="kv"><span>成都</span><b>40 家</b></div><div class="kv"><span>南京</span><b>36 家</b></div><div class="kv"><span>广州</span><b>33 家</b></div></div>
+    </div>
+  </div>
+
+  <div class="card sec">
+    <h2 class="warn">四 · 数据完备度（决定上面结论能信几分）</h2>
+    <div class="check"><div class="ok">✓</div><div><div class="t">门店坐标</div><div class="d">549/549 家有坐标，几何判定覆盖 100%。</div></div></div>
+    <div class="check"><div class="ok">✓</div>
+      <div><div class="t">门店面积 — 基本就绪</div><div class="d">548/549 家有面积；1 家缺失。</div></div></div>
+    <div class="check"><div class="no">×</div><div><div class="t">销售记录 — 0 条</div>
+      <div class="d">没有营业额数据，无法回答「贴邻门店互相抢走多少生意」。这是本报告最大的未知。</div></div></div>
+    <div class="check"><div class="no">×</div><div><div class="t">竞品品类 — 未配置</div>
+      <div class="d">未做竞品品牌映射，因此不含「周边竞品密度」。</div></div></div>
+    <p class="note">本报告的结论都基于<b>你自己的门店台账</b>，不依赖外部数据、不消耗任何付费额度。补齐缺失字段、导入销售记录与竞品品类后，可信度可提升到「高」。</p>
+  </div>
+
+  <div class="pay">
+    <h3>免费给了什么，付费才给什么</h3>
+    <p><b>免费（本报告已包含，0 消耗）：</b>同品牌贴邻清单、双店型识别、间距与面积结构、数据完备度——全部是门店坐标与台账字段的本地几何计算。</p>
+    <p><b>付费证据（按需调用，调用前会明确显示「消耗 X / 剩余 Y」）：</b></p>
+    <p>· <b>竞品密度</b>：某点位周边 800m 内的真实竞品门店数与品牌分布<br>
+       · <b>客流与人口画像</b>：该点覆盖的居住、工作、到访人次与客群结构<br>
+       · <b>蚕食归因</b>：两家贴邻门店到底互相分流多少，需导入销售记录后测算</p>
+    <p class="muted">本报告未调用上述任何付费接口，未产生任何费用。实际使用时，系统会在消耗前提示本次消耗量与账户剩余额度，由你确认。</p>
+  </div>
+
+  <div class="card sec cta">
+    <h3>你的门店有没有同样的问题？自己点一下就知道 —— 免登录</h3>
+    <p>打开<b>免费门店体检</b>，在地图上点选你的门店位置，系统当场算出同品牌贴邻、同址预警、间距分档，
+       和你上面看到的是同一套口径。全程<b>不用注册、不用上传台账、不消耗任何付费额度</b>；坐标只在你的浏览器里算，不上传、不存储。</p>
+    <p style="margin-top:12px"><a href="https://mka-online.cn/free-checkup" style="display:inline-block;background:var(--blue);color:#fff;padding:11px 20px;border-radius:8px;font-weight:600;text-decoration:none">免费门店体检（免登录） →</a></p>
+    <p class="muted" style="margin-top:12px">先看到结论，再决定要不要注册。注册后可导入完整台账，得到双店型识别、蚕食归因、竞品密度与客流画像等完整结论；付费证据在调用前会明确显示消耗量与剩余额度。</p>
+  </div>
+  <div class="foot">数据口径：台账 809 家，剔除 闭店 218 家、未开店 42 家，在营口径 549 家；距离为球面直线距离（Haversine），搜索上限 20km；双店型判定由系统原生模块按「编码不同 + 面积比 ≥2」给出，不做合并建议；跨品牌不参与判定。<br><b>本文件为对外示例：</b>客户名、门店名称与编码均已匿名化，汇总数字来自真实计算；不对应任何在营门店的真实身份。</div>
+
+  <div class="case-icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">沪ICP备2026010607号-1</a> · © 选址赢家Online</div>
+
+</div>
+</body>
+</html>

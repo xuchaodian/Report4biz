@@ -105,6 +105,7 @@
                 免费注册，导入完整台账 →
               </a>
               <p class="fc-fine">注册后可一键得到双店型识别、蚕食归因、竞品密度等完整结论。免费层不消耗任何付费额度。</p>
+              <a class="fc-case" href="https://www.mka-online.cn/cases/">先看看真实连锁测出什么（549 家门店体检示例）→</a>
             </div>
           </template>
         </section>
@@ -411,6 +412,9 @@ onBeforeUnmount(() => {
 .fc-cta{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:9px 18px;border-radius:6px;font-size:13px}
 .fc-cta:hover{background:#1d4ed8}
 .fc-fine{font-size:11px!important;color:#a8abb2!important;margin:10px 0 0!important}
+.fc-case{display:inline-block;margin-top:12px;font-size:12px;color:var(--el-color-primary);text-decoration:none}
+.fc-case:hover{text-decoration:underline;text-underline-offset:3px}
+.fc-case:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:2px}
 .fc-foot{max-width:900px;margin:24px auto 0;text-align:center;font-size:12px;color:#a8abb2;line-height:1.8}
 @media(max-width:960px){.fc-layout{grid-template-columns:1fr}.fc-map{height:400px}.fc-hero h1{font-size:21px}}
 </style>

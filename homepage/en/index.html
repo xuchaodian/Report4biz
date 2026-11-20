@@ -284,6 +284,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
 .cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
 .hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
+.hero-case{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;font-weight:600;color:var(--brand);text-decoration:none}
+.hero-case:hover{text-decoration:underline;text-underline-offset:3px}
+.hero-case .hc-arrow{transition:transform .2s}
+.hero-case:hover .hc-arrow{transform:translateX(3px)}
 .hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
   border:1px solid rgba(16,32,64,.10);
   box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
@@ -568,8 +572,8 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   <div class="hero-arc" aria-hidden="true"></div>
   <div class="wrap">
     <span class="eyebrow"><i aria-hidden="true"></i>Location-intelligence BI platform</span>
-    <h1>Site selection, <span class="grad">powered by data</span></h1>
-    <p class="lede">Catchment population, competitive landscape, store health, AI advice — one platform that turns store-opening decisions from experience into evidence.</p>
+    <h1>Before you open a new store, <span class="grad">clear the closure firewall first</span></h1>
+    <p class="lede">Same-brand cannibalization alerts, dual-format detection, sales-per-sqm estimates — work out before you open whether a new store will steal from your own. Avoiding one wrong store beats opening ten right ones.</p>
 
     <div class="feats">
       <div class="ft">
@@ -599,6 +603,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <a class="btn btn-xl btn-ghost" href="https://mka-online.cn/free-checkup">Free store checkup (no sign-in)</a>
     </div>
     <div class="hero-note">Browser-based · No install · Store and competitor data isolated per account</div>
+    <a class="hero-case" href="https://www.mka-online.cn/cases/">See what a real chain found: a 549-store checkup <span class="hc-arrow" aria-hidden="true">→</span></a>
 
     <div class="hero-shot">
       <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / Map workspace</span></div>

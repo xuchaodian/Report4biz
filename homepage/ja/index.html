@@ -284,6 +284,10 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .ft em{font-style:normal;font-weight:400;font-size:14px;color:var(--ink2)}
 .cta-row{display:flex;justify-content:center;gap:14px;margin-top:38px}
 .hero-note{margin-top:18px;font-size:13px;color:var(--ink3)}
+.hero-case{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;font-weight:600;color:var(--brand);text-decoration:none}
+.hero-case:hover{text-decoration:underline;text-underline-offset:3px}
+.hero-case .hc-arrow{transition:transform .2s}
+.hero-case:hover .hc-arrow{transform:translateX(3px)}
 .hero-shot{position:relative;margin:58px auto 0;max-width:1040px;border-radius:16px;overflow:hidden;background:#eef2f8;
   border:1px solid rgba(16,32,64,.10);
   box-shadow:0 44px 84px -42px rgba(16,32,64,.40),0 14px 36px -26px rgba(16,32,64,.22)}
@@ -568,8 +572,8 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   <div class="hero-arc" aria-hidden="true"></div>
   <div class="wrap">
     <span class="eyebrow"><i aria-hidden="true"></i>位置ビッグデータに基づくBI分析基盤</span>
-    <h1>出店判断は、<span class="grad">データで</span>語る</h1>
-    <p class="lede">商圏人口、競合動向、店舗ヘルスチェック、AIアドバイス——出店判断を経験から根拠へ変える、ひとつの基盤。</p>
+    <h1>新店を出す前に、<span class="grad">まず閉店ファイアウォールを確認</span></h1>
+    <p class="lede">同ブランドのカニバリゼーション検知、複数業態の識別、坪売上推定——出店前に自店の売上を食い合わないかを計算。誤った1店を避けることは、正しい10店を開くより価値がある。</p>
 
     <div class="feats">
       <div class="ft">
@@ -599,6 +603,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
       <a class="btn btn-xl btn-ghost" href="https://mka-online.cn/free-checkup">無料店舗診断（ログイン不要）</a>
     </div>
     <div class="hero-note">ブラウザですぐ利用 · インストール不要 · 店舗・競合データはアカウントごとに分離</div>
+    <a class="hero-case" href="https://www.mka-online.cn/cases/">実際のチェーンが見つけたもの：549店舗の診断レポート <span class="hc-arrow" aria-hidden="true">→</span></a>
 
     <div class="hero-shot">
       <div class="shot-bar" aria-hidden="true"><i></i><i></i><i></i><span>mka-online.cn / 地図ワークスペース</span></div>

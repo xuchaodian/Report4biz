@@ -146,4 +146,40 @@ describe('免费体检页 · 免登录与纯前端边界', () => {
     expect(paper, '⛔ 报告图片不得用外链 src（会发请求+跨域污染 canvas）').not.toMatch(/<img[^>]+src=["']https?:/)
     expect(paper, '报告应提示扫码自测').toMatch(/扫码/)
   })
+
+  // ── I 组：v1.13.389 首屏「闭店防火墙」口径 + /cases/ 真实案例 ─────────────
+  // 竞品调研后的营销主张：官网首屏从泛「看数据选址」改为「闭店防火墙」，
+  // 并把脱敏真实案例放 /cases/ 作为自传播入口。守卫钉死四条：
+  //   ① 中文源首屏 H1 必须是闭店防火墙口径（⛔ 改回旧泛口径）
+  //   ② en/ja 生成产物首屏也带 closure firewall / 閉店ファイアウォール（漏翻会退回中文）
+  //   ③ /cases/ 页面存在、脱敏零泄漏、带备案号与体检入口
+  //   ④ 官网三语 + 体检页都有指向 /cases/ 的入口
+  it('I 组：首屏闭店防火墙口径三语一致 + 真实案例入口闭环', () => {
+    const hpSrc = read('homepage/_source_zh.html')
+    expect(hpSrc, '首屏 H1 必须是闭店防火墙口径').toMatch(/<h1>开新店前，<span class="grad">先过闭店防火墙<\/span><\/h1>/)
+    expect(hpSrc, '首屏 lede 必须讲「抢老店生意」').toMatch(/会不会抢了自己老店的生意/)
+    expect(hpSrc, '⛔ 首屏不得退回旧的泛选址口径').not.toMatch(/<h1>选址，<span class="grad">看数据<\/span>说话<\/h1>/)
+
+    // en/ja 生成产物首屏必须真替换成译文（不能残留中文 H1）
+    // 🔴 先切 <h1>…</h1> 整块再断言：译文的关键词在高亮 <span> 里，[^<]* 跨不过标签。
+    const h1En = (read(HP_EN).match(/<h1>[\s\S]*?<\/h1>/) || [''])[0]
+    const h1Ja = (read(HP_JA).match(/<h1>[\s\S]*?<\/h1>/) || [''])[0]
+    expect(h1En, '英文首屏漏翻（退回中文口径）').toMatch(/closure firewall/i)
+    expect(h1Ja, '日文首屏漏翻（退回中文口径）').toMatch(/閉店ファイアウォール/)
+
+    // 真实案例页：脱敏 + 合规 + 体检入口
+    const cases = read('homepage/cases/index.html')
+    for (const kw of ['食其家', 'SUKIYA', '松江', '佘山', '万达']) {
+      expect(cases, `案例页泄露「${kw}」`).not.toContain(kw)
+    }
+    expect(cases, '案例页必须有 ICP 备案号（合规位）').toMatch(/沪ICP备2026010607号-1/)
+    expect(cases, '案例页必须引导免费体检').toMatch(/mka-online\.cn\/free-checkup/)
+    expect(cases, '⛔ 案例页 CTA 不得再让用户提供 CSV（可操作性差，已纠偏）').not.toMatch(/门店台账 CSV/)
+
+    // 入口闭环：官网三语 + 体检页都要指向 /cases/
+    for (const [name, hp] of [['zh', HP_ZH], ['en', HP_EN], ['ja', HP_JA]]) {
+      expect(read(hp), `${name} 官网缺真实案例入口`).toMatch(/href="https:\/\/www\.mka-online\.cn\/cases\/"/)
+    }
+    expect(read(VIEW), '体检页缺真实案例入口').toMatch(/href="https:\/\/www\.mka-online\.cn\/cases\/"/)
+  })
 })

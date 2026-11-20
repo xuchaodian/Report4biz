@@ -109,6 +109,12 @@ I18N = {
     "选址，": ("Site selection, ", "出店判断は、"),
     "看数据": ("powered by data", "データで"),
     "说话": ("", "語る"),
+    # v1.13.389 首屏口径：闭店防火墙（餐饮连锁「少开错店」主张）
+    "开新店前，": ("Before you open a new store, ", "新店を出す前に、"),
+    "先过闭店防火墙": ("clear the closure firewall first", "まず閉店ファイアウォールを確認"),
+    "同品牌蚕食预警、双店型识别、坪效测算 —— 开新店前先算清楚：会不会抢了自己老店的生意。少开错一家，比多开十家更值钱。": (
+        "Same-brand cannibalization alerts, dual-format detection, sales-per-sqm estimates — work out before you open whether a new store will steal from your own. Avoiding one wrong store beats opening ten right ones.",
+        "同ブランドのカニバリゼーション検知、複数業態の識別、坪売上推定——出店前に自店の売上を食い合わないかを計算。誤った1店を避けることは、正しい10店を開くより価値がある。"),
     "商圈人口、竞品格局、门店体检、AI 建议 —— 一个平台，把开店决策从经验变成依据。": (
         "Catchment population, competitive landscape, store health, AI advice — one platform that turns store-opening decisions from experience into evidence.",
         "商圏人口、競合動向、店舗ヘルスチェック、AIアドバイス——出店判断を経験から根拠へ変える、ひとつの基盤。"),
@@ -120,6 +126,7 @@ I18N = {
     "自我蚕食看得见": ("See cannibalization clearly", "自社カニバリゼーションを可視化"),
     "AI 选址": ("AI site selection", "AI出店選定"),
     "一句话给出结论": ("One sentence, a clear conclusion", "一言で結論を提示"),
+    "看看真实连锁测出什么：549 家门店的体检报告": ("See what a real chain found: a 549-store checkup", "実際のチェーンが見つけたもの：549店舗の診断レポート"),
     "免费开始使用": ("Get started free", "無料で始める"),
     "看 5 步操作演示": ("See the 5-step walkthrough", "5ステップのデモを見る"),
     "免费门店体检（免登录）": ("Free store checkup (no sign-in)", "無料店舗診断（ログイン不要）"),
