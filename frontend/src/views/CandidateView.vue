@@ -138,14 +138,19 @@
       <el-table-column label="最近更新" width="160">
         <template #default="{ row }">{{ fmt(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="196" align="center">
+      <!-- 383：操作列由 196 → 248。实测三个元素（详情 34 + 12 + 初步分析 62 + 12 + 灰字 94 = 214）
+           需要 214px，而 el-table 的 .cell 有左右各 12px padding ⇒ 列宽须 ≥ 214 + 24 = 238。
+           232 时只剩 208px ⇒ 溢出 6px，align=center 把溢出的灰字向左推、盖住「初步分析」。 -->
+      <el-table-column label="操作" width="248" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
           <!-- 初步分析是 0 消耗的，所以对每行都开放（含门店视图与独立点位） -->
           <el-button link type="primary" @click.stop="openBrief(row)">初步分析</el-button>
           <!-- 🔴 来自「我的门店」的行不能删（后端也会 400）：删了门店还在，刷新就"复活" -->
+          <!-- 383：灰字必须自解释 —— 旧文案「门店视图」被误读成可点的视图入口，
+               用户点下去没反应。新文案把「来源 + 限制」都写在字面上，tooltip 只留操作指引。 -->
           <el-button v-if="row.origin !== 'store'" link type="danger" @click.stop="remove(row)">删除</el-button>
-          <span v-else class="cd-lock" title="来自「我的门店」：要让它消失，请到我的门店把门店类型改回「已开业」">门店视图</span>
+          <span v-else class="cd-lock" title="要让它消失，请到「我的门店」把门店类型改回「已开业」">我的门店 · 不可删</span>
         </template>
       </el-table-column>
     </el-table>
@@ -737,8 +742,9 @@ onMounted(() => {
 .cd-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 1.6; }
 .cd-type { font-size: 12px; color: #303133; }
 .cd-type-solo { color: var(--text-secondary); }
-/* 门店视图不可删：给一句灰字而不是禁用的红按钮（禁用按钮说不出原因） */
-.cd-lock { font-size: 12px; color: var(--text-secondary); cursor: help; }
+/* 门店来源的点位不可删：给一句能自解释的灰字，而不是禁用的红按钮（禁用按钮说不出原因）。
+   383：文案加长 ⇒ 补 margin-left 对齐 el-button 的 12px 间距、nowrap 防折行。 */
+.cd-lock { margin-left: 12px; font-size: 12px; color: var(--text-secondary); cursor: help; white-space: nowrap; }
 .cd-detail-lock { display: block; margin-top: 8px; line-height: 1.7; }
 .cd-form-tip { margin-bottom: 14px; }
 
