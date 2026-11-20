@@ -125,4 +125,25 @@ describe('免费体检页 · 免登录与纯前端边界', () => {
     expect(paper, '报告必须带官网入口，才能自传播').toMatch(/mka-online\.cn\/free-checkup/)
     expect(paper, '报告必须保留「免费层只看距离」的边界').toMatch(/只用坐标回答/)
   })
+
+  // ── H 组：v1.13.388 报告二维码 ──────────────────────────────────────────
+  // 「看到报告 → 扫码自测」是获客闭环的最后一环。守卫钉死四条：
+  //   ① 动态 import（⛔ 静态 import 会把 qrcode 打进首屏 chunk，踩首屏闭包铁律）
+  //   ② 二维码内容 = 官网体检页 URL（与报告文字入口同源，扫出来必须能自测）
+  //   ③ 本地 toDataURL 生成 + <img :src>（⛔ 外链图片会发请求且跨域污染 canvas）
+  //   ④ 二维码真在报告纸张里（不是只生成了没放上去）
+  it('H 组：报告二维码本地生成、内容指向官网、动态加载不进首屏', () => {
+    expect(view, '二维码必须动态 import（静态 import 会进首屏）').toMatch(/await\s+import\(\s*['"]qrcode['"]\s*\)/)
+    expect(view, '⛔ 不得静态 import qrcode（会打进首屏 chunk）').not.toMatch(/import\s+QRCode\s+from\s+['"]qrcode['"]/)
+    // 🔴 URL 断言必须用未剥注释的原文：stripComments 会把 `https://` 里的 `//` 当成行注释切断。
+    expect(read(VIEW), '二维码落地页必须是官网体检页').toMatch(/REPORT_QR_URL\s*=\s*['"]https:\/\/mka-online\.cn\/free-checkup['"]/)
+    expect(view, '必须由 qrcode 本地生成 data URL').toMatch(/QRCode\.toDataURL\s*\(\s*REPORT_QR_URL/)
+
+    const stageAt = view.indexOf('fc-report-stage')
+    const paper = view.slice(stageAt, view.indexOf('</template>', stageAt))
+    expect(paper, '报告里必须有二维码图片').toMatch(/class="fc-rp-qr"/)
+    expect(paper, '二维码应绑定本地生成的 data URL').toMatch(/:src="qrDataUrl"/)
+    expect(paper, '⛔ 报告图片不得用外链 src（会发请求+跨域污染 canvas）').not.toMatch(/<img[^>]+src=["']https?:/)
+    expect(paper, '报告应提示扫码自测').toMatch(/扫码/)
+  })
 })

@@ -169,8 +169,11 @@
         </div>
 
         <div class="fc-rp-cta bf-sec">
-          <div class="fc-rp-url">mka-online.cn/free-checkup</div>
-          <p>打开上面的地址，免费测你自己的门店；注册后导入完整台账，可得双店型识别、蚕食归因、竞品密度等完整结论。</p>
+          <img v-if="qrDataUrl" class="fc-rp-qr" :src="qrDataUrl" width="96" height="96" alt="扫码打开免费门店体检" />
+          <div class="fc-rp-cta-txt">
+            <div class="fc-rp-url">mka-online.cn/free-checkup</div>
+            <p>扫码或打开上面的地址，免费测你自己的门店；注册后导入完整台账，可得双店型识别、蚕食归因、竞品密度等完整结论。</p>
+          </div>
         </div>
 
         <div class="fc-rp-foot bf-foot">
@@ -193,10 +196,14 @@ import { buildFreeCheckup } from '@/utils/freeCheckupGeo.js'
 import { exportPaperPdf, fileStamp } from '@/utils/exportPaperPdf.js'
 
 const MAX_POINTS = 20
+// 报告二维码落地页：扫码直达免费体检，补上「看到报告 → 扫码自测」的转化闭环。
+// ⛔ 纯本地生成（qrcode 动态 import，不进首屏），不发请求、不烧配额、不泄露坐标。
+const REPORT_QR_URL = 'https://mka-online.cn/free-checkup'
 const mapRef = ref(null)
 const paperRef = ref(null)
 const points = ref([])
 const exporting = ref(false)
+const qrDataUrl = ref('')
 let map = null
 let markers = L.layerGroup()
 let seq = 0
@@ -255,14 +262,35 @@ function clearAll() {
 }
 
 /**
- * 导出可分享 PDF（v1.13.387 获客 P0）
- * ⛔ 纯前端：html2canvas + jsPDF 都在浏览器里跑，不发任何请求、不烧配额、坐标不上传。
+ * 报告二维码：动态 import qrcode，浏览器本地生成 PNG data URL（v1.13.388）。
+ * ⛔ 不进首屏：只有进了这个免登录页才会加载该 chunk；⛔ 不发请求：data URL 直接塞给 <img>，
+ * html2canvas 能原样截进 PDF。生成失败不打断体检主流程——报告仍有 URL 文字兜底。
+ */
+async function ensureReportQr() {
+  if (qrDataUrl.value) return
+  try {
+    const QRCode = (await import('qrcode')).default
+    qrDataUrl.value = await QRCode.toDataURL(REPORT_QR_URL, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 240,
+      color: { dark: '#1f2329ff', light: '#ffffffff' }
+    })
+  } catch {
+    // 非关键路径：二维码失败时报告里的文字地址仍然可用，不打断导出
+  }
+}
+
+/**
+ * 导出可分享 PDF（v1.13.387 获客 P0，v1.13.388 加可扫二维码）
+ * ⛔ 纯前端：html2canvas + jsPDF + qrcode 都在浏览器里跑，不发任何请求、不烧配额、坐标不上传。
  * 纸张平时藏在视口外（html2canvas 对视口外元素会截成空白），导出前临时挪进视口，
  * 截图后原样还原——不能改成 display:none，html2canvas 截不到。
  */
 async function exportPdf() {
   if (exporting.value || !result.value.total || !paperRef.value) return
   exporting.value = true
+  await ensureReportQr()
   const paper = paperRef.value
   const prev = {
     position: paper.style.position,
@@ -304,6 +332,7 @@ onMounted(() => {
   }).addTo(map)
   markers.addTo(map)
   map.on('click', onMapClick)
+  ensureReportQr()
 })
 onBeforeUnmount(() => {
   if (map) { map.off('click', onMapClick); map.remove(); map = null }
@@ -409,7 +438,9 @@ onBeforeUnmount(() => {
 .fc-rp-table th{background:#f8fafc;font-weight:600}
 .fc-rp-bound{border-top:1px solid #e8ebf0;padding-top:12px}
 .fc-rp-bound p{font-size:12px;margin:0}
-.fc-rp-cta{background:var(--el-color-primary-light-9);border-radius:8px;padding:12px 16px;text-align:center}
+.fc-rp-cta{background:var(--el-color-primary-light-9);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:18px}
+.fc-rp-qr{width:96px;height:96px;flex:0 0 auto;background:#fff;border:1px solid #e8ebf0;border-radius:4px;image-rendering:pixelated}
+.fc-rp-cta-txt{flex:1;min-width:0}
 .fc-rp-url{font-size:19px;font-weight:600;color:var(--el-color-primary);letter-spacing:.3px}
 .fc-rp-cta p{font-size:11px;color:#1f2329;margin:6px 0 0}
 .fc-rp-foot{border-top:1px solid #e8ebf0;padding-top:9px;margin-top:14px}
