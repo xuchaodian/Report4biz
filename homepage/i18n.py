@@ -18,6 +18,7 @@ I18N = {
     "操作演示": ("How it works", "操作デモ"),
     "平台能力": ("Capabilities", "プラットフォーム機能"),
     "选择理由": ("Why choose us", "選ばれる理由"),
+    "免费数据": ("Free data", "無料データ"),
     "常见问题": ("FAQ", "よくある質問"),
     "最新动态": ("Latest posts", "最新情報"),
     "每周三，聊聊选址这件事": ("Every Wednesday, we talk about site selection", "毎週水曜日、出店選びについて語ります"),
