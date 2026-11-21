@@ -25,6 +25,15 @@ I18N = {
         "Catchment population, store competition, and site-decision know-how — all in our WeChat articles. Tap a card to read the original.",
         "商圏人口、店舗競合、出店判断のノウハウはすべて公式WeChat記事に。カードをタップして原文をお読みください。"),
     "查看全部文章": ("View all articles", "すべての記事を見る"),
+    "市场大盘 · 数据看板": ("Market benchmark · Data dashboard", "市場baseline · データダッシュボード"),
+    "184 个连锁品牌，15 个月里谁在开、谁在关？": (
+        "184 chains, 15 months — who's opening, who's closing?",
+        "184チェーン、15か月——出店する店、閉店する店は？"),
+    "6 期门店快照、净增排名、城市分布、开关店逐期走势——用市场大盘校准你的选址判断。品牌多选、图表联动、明细可排序，打开即看。": (
+        "6 waves of store snapshots, net-growth rankings, city distribution, and opening/closing trends — benchmark your site decisions against the market. Multi-select brands, linked charts, sortable details; no signup needed.",
+        "6期の店舗スナップショット、純増ランキング、都市別分布、出店・閉店の推移——市場の実績で出店判断を校正。ブランド複数選択、連動チャート、明細ソートに対応。"),
+    "查看开关店分析": ("Explore openings & closures", "出店・閉店分析を見る"),
+    "开关店分析": ("Openings & closures", "出店・閉店分析"),
     "适用场景": ("Use cases", "活用例"),
     "企业级能力": ("Enterprise capabilities", "エンタープライズ機能"),
     "登录": ("Log in", "ログイン"),

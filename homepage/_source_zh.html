@@ -236,6 +236,19 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
 .hero-case:hover{text-decoration:underline;text-underline-offset:3px}
 .hero-case .hc-arrow{transition:transform .2s}
 .hero-case:hover .hc-arrow{transform:translateX(3px)}
+/* ---------------- 开关店分析看板入口 banner ---------------- */
+.sw-banner{display:flex;align-items:center;justify-content:space-between;gap:28px;flex-wrap:wrap;
+  background:linear-gradient(120deg,#0b1220,#12203d);color:#fff;border-radius:var(--r);padding:30px 34px;
+  box-shadow:var(--shadow-s);margin-top:8px}
+.sw-banner .sw-txt{flex:1 1 420px}
+.sw-banner .sw-kick{font-size:12px;font-weight:700;letter-spacing:.08em;color:#7fb0ff}
+.sw-banner h2{font-size:22px;line-height:1.4;margin:8px 0 10px}
+.sw-banner p{font-size:13.5px;color:#b6c4d8;line-height:1.75;max-width:640px}
+.sw-banner .sw-cta{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;
+  background:#fff;color:#0b1220;border-radius:9px;padding:12px 20px;font-size:14px;font-weight:700;
+  text-decoration:none;transition:transform .2s}
+.sw-banner .sw-cta:hover{transform:translateY(-2px)}
+@media(max-width:640px){.sw-banner{padding:24px 20px}.sw-banner h2{font-size:19px}}
 /* ---------------- 公众号精选卡片（build_posts.py 注入正文） ---------------- */
 .posts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px}
 .post-card{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r);background:#fff;overflow:hidden;transition:transform .28s,box-shadow .28s,border-color .28s}
@@ -915,6 +928,20 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
   </div>
 </section>
 
+<!-- ================= 开关店分析看板入口 ================= -->
+<section class="sec sec-soft" id="switch-analysis">
+  <div class="wrap">
+    <div class="sw-banner rv">
+      <div class="sw-txt">
+        <div class="sw-kick">市场大盘 · 数据看板</div>
+        <h2>184 个连锁品牌，15 个月里谁在开、谁在关？</h2>
+        <p>6 期门店快照、净增排名、城市分布、开关店逐期走势——用市场大盘校准你的选址判断。品牌多选、图表联动、明细可排序，打开即看。</p>
+      </div>
+      <a class="sw-cta" href="/switch-analysis/">查看开关店分析 <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+</section>
+
 <!-- ================= 公众号精选（最新动态）================= -->
 <section class="sec sec-soft" id="insights">
   <div class="wrap">
@@ -1021,6 +1048,7 @@ h1{margin:26px auto 0;max-width:16em;font-size:clamp(38px,5.4vw,66px);line-heigh
           <h4>支持</h4>
           <a href="/help/">用户手册</a>
           <a href="/insights/">最新动态</a>
+          <a href="/switch-analysis/">开关店分析</a>
           <a href="#faq">常见问题</a>
           <a href="mailto:jyo@youshi-tech.com">反馈建议</a>
         </div>
