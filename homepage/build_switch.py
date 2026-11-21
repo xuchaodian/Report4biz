@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_JSON = os.path.join(HERE, "switch_data.json")
 ROOT = "https://www.mka-online.cn"
 FREE_CHECKUP = "https://mka-online.cn/free-checkup"
+REGISTER = "https://mka-online.cn/register"
 
 # 三语 UI 文案（数据本身不翻译）
 UI = {
@@ -196,7 +197,7 @@ tbody tr:hover{background:#fafafa}
   <nav class="nav-links" aria-label="导航">
     <a href="%(root)s/">%(home)s</a>
     <a href="%(checkup)s">%(nav_checkup)s</a>
-    <a class="primary" href="%(root)sregister">%(register)s</a>
+    <a class="primary" href="%(register_url)s">%(register)s</a>
   </nav>
 </div></header>
 <div class="wrap">
@@ -421,6 +422,7 @@ def page(data, lang):
         "lang": ui["lang"], "title": esc(ui["title"]), "desc": esc(ui["desc"]),
         "root": ROOT, "checkup": FREE_CHECKUP, "brand": esc(ui["brand"]),
         "home": esc(ui["home"]), "register": esc(ui["register"]),
+        "register_url": REGISTER,  # 🔴 注册在主域 /register，⛔ 用 ROOT 拼（ROOT 是 www，会拼出无效地址）
         "nav_checkup": esc(ui["checkup"]),  # 右上角显示文案，与 href（FREE_CHECKUP）分离
         "h1": esc(ui["h1"]), "tag": esc(ui["tag"]), "sub": esc(ui["sub"]),
         "trend": esc(ui["trend"]), "trend_tag": esc(ui["trend_tag"]), "pick": esc(ui["pick"]),

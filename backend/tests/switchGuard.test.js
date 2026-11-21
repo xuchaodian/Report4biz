@@ -129,6 +129,10 @@ describe('开关店分析看板守卫', () => {
       const navLink = header.match(/<a href="[^"]*free-checkup">([^<]*)<\/a>/)
       expect(navLink, `${lang} 右上角缺 free-checkup 链接`).toBeTruthy()
       expect(navLink[1].trim(), `${lang} 右上角文案应为门店体检标签`).toBe(NAV_LABEL[lang])
+      // 🔴 注册链接必须指主域 /register，⛔ www 根拼 register（会拼出 mka-online.cnregister 死链）
+      const regLink = header.match(/<a class="primary" href="([^"]+)">/)
+      expect(regLink, `${lang} 右上角缺注册链接`).toBeTruthy()
+      expect(regLink[1], `${lang} 注册链接应指主域 /register`).toBe('https://mka-online.cn/register')
       // CTA 按钮存在（中/英/日任一）
       expect(h, `${lang} 应有 CTA 区`).toMatch(/class="cta"/)
     }
