@@ -123,6 +123,12 @@ describe('开关店分析看板守卫', () => {
     for (const [lang, p] of Object.entries(PAGES)) {
       const h = read(p)
       expect(h, `${lang} 应有免费体检链接`).toContain('mka-online.cn/free-checkup')
+      // 🔴 右上角显示文案必须是「门店体检」标签，⛔ 把 URL 本身当文字（2026-11-21 修）
+      const NAV_LABEL = { zh: '门店体检', en: 'Store Checkup', ja: '店舗チェック' }
+      const header = h.match(/<header class="site-nav">[\s\S]*?<\/header>/)?.[0] || ''
+      const navLink = header.match(/<a href="[^"]*free-checkup">([^<]*)<\/a>/)
+      expect(navLink, `${lang} 右上角缺 free-checkup 链接`).toBeTruthy()
+      expect(navLink[1].trim(), `${lang} 右上角文案应为门店体检标签`).toBe(NAV_LABEL[lang])
       // CTA 按钮存在（中/英/日任一）
       expect(h, `${lang} 应有 CTA 区`).toMatch(/class="cta"/)
     }

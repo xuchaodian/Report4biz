@@ -34,7 +34,7 @@ UI = {
     "zh": {
         "lang": "zh-CN", "title": "连锁品牌开关店分析 · 选址赢家Online",
         "desc": "184 个连锁品牌、6 期门店快照的开关店与净增趋势，选址决策的市场大盘参考。",
-        "brand": "选址赢家Online", "home": "返回官网", "checkup": "免费门店体检", "register": "免费注册",
+        "brand": "选址赢家Online", "home": "返回官网", "checkup": "门店体检", "register": "免费注册",
         "h1": "连锁品牌开关店分析", "tag": "6期 · 15个月",
         "sub": "数据区间 2025/03 – 2026/06 · 184 个连锁品牌 · 基于门店位置快照，以唯一门店 ID 跨期匹配",
         "kpi_total": "期末门店总数", "kpi_brand": "覆盖品牌", "kpi_new": "累计新开", "kpi_closed": "累计关闭",
@@ -53,7 +53,7 @@ UI = {
     "en": {
         "lang": "en", "title": "Chain Brand Store Openings & Closures · SiteWinner",
         "desc": "Opening, closing and net-growth trends across 184 chain brands over 6 snapshots — a market benchmark for site decisions.",
-        "brand": "SiteWinner", "home": "Home", "checkup": "Free Store Checkup", "register": "Sign Up Free",
+        "brand": "SiteWinner", "home": "Home", "checkup": "Store Checkup", "register": "Sign Up Free",
         "h1": "Chain Brand Store Openings & Closures", "tag": "6 waves · 15 months",
         "sub": "Coverage 2025/03 – 2026/06 · 184 chain brands · matched across snapshots by unique store ID",
         "kpi_total": "Stores at latest wave", "kpi_brand": "Brands covered", "kpi_new": "Cumulative openings", "kpi_closed": "Cumulative closures",
@@ -72,7 +72,7 @@ UI = {
     "ja": {
         "lang": "ja", "title": "チェーンブランドの出店・閉店分析 · サイトウィナー",
         "desc": "184チェーンブランド・6期の店舗スナップショットによる出店・閉店・純増の推移。出店判断の市場baseline。",
-        "brand": "サイトウィナー", "home": "ホームへ戻る", "checkup": "無料店舗チェック", "register": "無料登録",
+        "brand": "サイトウィナー", "home": "ホームへ戻る", "checkup": "店舗チェック", "register": "無料登録",
         "h1": "チェーンブランドの出店・閉店分析", "tag": "6期 · 15か月",
         "sub": "対象期間 2025/03 – 2026/06 · 184チェーンブランド · 店舗位置スナップショットを一意IDで期間突合",
         "kpi_total": "期末店舗数", "kpi_brand": "対象ブランド", "kpi_new": "累計出店", "kpi_closed": "累計閉店",
@@ -195,7 +195,7 @@ tbody tr:hover{background:#fafafa}
   <a class="brand" href="%(root)s/"><img src="/assets/logo.png" alt="">%(brand)s</a>
   <nav class="nav-links" aria-label="导航">
     <a href="%(root)s/">%(home)s</a>
-    <a href="%(checkup)s">%(checkup)s</a>
+    <a href="%(checkup)s">%(nav_checkup)s</a>
     <a class="primary" href="%(root)sregister">%(register)s</a>
   </nav>
 </div></header>
@@ -421,6 +421,7 @@ def page(data, lang):
         "lang": ui["lang"], "title": esc(ui["title"]), "desc": esc(ui["desc"]),
         "root": ROOT, "checkup": FREE_CHECKUP, "brand": esc(ui["brand"]),
         "home": esc(ui["home"]), "register": esc(ui["register"]),
+        "nav_checkup": esc(ui["checkup"]),  # 右上角显示文案，与 href（FREE_CHECKUP）分离
         "h1": esc(ui["h1"]), "tag": esc(ui["tag"]), "sub": esc(ui["sub"]),
         "trend": esc(ui["trend"]), "trend_tag": esc(ui["trend_tag"]), "pick": esc(ui["pick"]),
         "search": esc(ui["search"]), "top8": esc(ui["top8"]), "clear": esc(ui["clear"]),
