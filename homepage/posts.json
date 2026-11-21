@@ -1,6 +1,87 @@
 {
   "account": "选址赢家Online",
   "cadence": "每周三更新",
-  "updated": "2026-11-20",
-  "posts": []
+  "updated": "2026-11-21",
+  "posts": [
+    {
+      "id": "NAU1ED5FvErJJNfm",
+      "title": "相关不等于因果：连锁企业最该警惕的分析错觉",
+      "date": "2026-11-18",
+      "summary": "前言多变量解析，不是魔法引入多变量解析这类高级统计技术，就能像魔法一样解决所有商业难题 — 遗憾的是，现实远没",
+      "cover": "/assets/posts/NAU1ED5FvErJJNfm.jpg",
+      "url": "https://mp.weixin.qq.com/s/NAU1ED5FvErJJNfmz073eg"
+    },
+    {
+      "id": "vZyD1R9IYecGpjo_",
+      "title": "多变量分析工具入门：从 Excel 起步的方法与局限",
+      "date": "2026-11-11",
+      "summary": "前言工具选错，分析就成了形式主义在理解了多变量分析的价值与实战案例之后，一线业务人员最常追问的一个问题是 —",
+      "cover": "/assets/posts/vZyD1R9IYecGpjo_.jpg",
+      "url": "https://mp.weixin.qq.com/s/vZyD1R9IYecGpjo_PUNW-g"
+    },
+    {
+      "id": "pjoX_G46khYWanYH",
+      "title": "用哈夫模型实现竞争态势可视化",
+      "date": "2026-11-04",
+      "summary": "前言只看人口选点位，为什么还会踩坑在门店开发工作中，掌握候选位置周边的\\x26quot;商圈人口\\x26quot;是最基础的流程。",
+      "cover": "/assets/posts/pjoX_G46khYWanYH.jpg",
+      "url": "https://mp.weixin.qq.com/s/pjoX_G46khYWanYHZwInXw"
+    },
+    {
+      "id": "oVRbxXWBQ5hjYxMU",
+      "title": "多变量分析 5 大实战案例",
+      "date": "2026-10-28",
+      "summary": "前言方法懂了，落地才是关键理解多变量分析的核心思路与方法后，如何将其落地到自身业务中，才是真正的关键。",
+      "cover": "/assets/posts/oVRbxXWBQ5hjYxMU.jpg",
+      "url": "https://mp.weixin.qq.com/s/oVRbxXWBQ5hjYxMUxrF_Cg"
+    },
+    {
+      "id": "nAnOm7RoVegJ9sVr",
+      "title": "多变量分析有十几种，连锁企业该选哪一个？",
+      "date": "2026-10-21",
+      "summary": "前言选错分析方法，比不做分析更危险要让商业决策实现数据驱动，不仅需要掌握「多变量分析」的理论，还需要具备针对眼",
+      "cover": "/assets/posts/nAnOm7RoVegJ9sVr.jpg",
+      "url": "https://mp.weixin.qq.com/s/nAnOm7RoVegJ9sVrcn--pA"
+    },
+    {
+      "id": "rmCYeAw8_obdHUZH",
+      "title": "什么是多变量分析？让连锁决策告别\"凭感觉\"",
+      "date": "2026-10-14",
+      "summary": "前言当下的商业问题，大多由多重因素共同催生例如销售额波动、客户流失、市场趋势变化等现象，无法用单一原因解释，而",
+      "cover": "/assets/posts/rmCYeAw8_obdHUZH.jpg",
+      "url": "https://mp.weixin.qq.com/s/rmCYeAw8_obdHUZHuTKjxg"
+    },
+    {
+      "id": "ZPag84B3dEMrj4aP",
+      "title": "你的销售预测 AI，是不是建成的那天就到顶了？",
+      "date": "2026-10-08",
+      "summary": "前言持续培育 AI — 新的行业共识在如今中国连锁企业的开店开发场景里，用 AI 与机器学习做销售额预测，早就",
+      "cover": "/assets/posts/ZPag84B3dEMrj4aP.jpg",
+      "url": "https://mp.weixin.qq.com/s/ZPag84B3dEMrj4aPeP8g9w"
+    },
+    {
+      "id": "5deD83Rd2pRULMGw",
+      "title": "何为商势圈？",
+      "date": "2026-09-28",
+      "summary": "前言超越单店边界的「广域区域掌控」思维在现代门店商业中，区域营销早已超越单纯的「选址」范畴，正向提升区域整体市",
+      "cover": "/assets/posts/5deD83Rd2pRULMGw.jpg",
+      "url": "https://mp.weixin.qq.com/s/5deD83Rd2pRULMGwAS9Lhw"
+    },
+    {
+      "id": "BKfqkym3Z2kUeuVj",
+      "title": "什么是销售预测？",
+      "date": "2026-09-22",
+      "summary": "前言比预测模型更重要的 \\x26quot;数据处理\\x26quot;在零售、餐饮连锁企业中，新店选址的「销售预测」是一项关乎数十万至数百万元投",
+      "cover": "/assets/posts/BKfqkym3Z2kUeuVj.jpg",
+      "url": "https://mp.weixin.qq.com/s/BKfqkym3Z2kUeuVjBntmlA"
+    },
+    {
+      "id": "2QERLpZ-3hjy4XdQ",
+      "title": "空间数据的特征工",
+      "date": "2026-09-16",
+      "summary": "前言从「以模型为中心」到「以数据为中心」的转变长久以来，AI 与机器学习的进步依靠算法打磨与模型规模扩张实现。",
+      "cover": "/assets/posts/2QERLpZ-3hjy4XdQ.jpg",
+      "url": "https://mp.weixin.qq.com/s/2QERLpZ-3hjy4XdQpO7j2w"
+    }
+  ]
 }
