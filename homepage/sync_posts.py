@@ -24,7 +24,7 @@ import os, re, sys, json, html, urllib.request, urllib.error
 HERE = os.path.dirname(os.path.abspath(__file__))
 POSTS_JSON = os.path.join(HERE, "posts.json")
 ASSETS = os.path.join(HERE, "assets", "posts")
-MAX_POSTS = 12
+MAX_POSTS = 50  # 2026-11-21 上调（原 12）：首批 10 + 第二批 21 = 31 篇，留未来空间
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
@@ -119,15 +119,24 @@ def main():
     for url in urls:
         print("→ 抓取:", url)
         try:
-            raw, _ = fetch(url)
-            htm = raw.decode("utf-8", "ignore")
+            htm = ""
+            # 🔴 微信偶发返回 4MB 页面但 og meta 解析为空（2026-11-21 实测第17篇）
+            #    ⇒ 标题为空即重试，最多 3 次；否则该篇被静默跳过，文章永久缺失。
+            for attempt in range(1, 4):
+                raw, _ = fetch(url)
+                htm = raw.decode("utf-8", "ignore")
+                title = meta(htm, "og:title", "twitter:title") or meta(htm, "msg_title")
+                if not title:
+                    m = re.search(r'<h1[^>]*id="activity-name"[^>]*>([\s\S]*?)</h1>', htm)
+                    title = re.sub(r'<[^>]+>', '', m.group(1)).strip() if m else ""
+                if title:
+                    break
+                if attempt < 3:
+                    import time
+                    time.sleep(1.5)
         except Exception as e:
             print("  ✗ 抓取失败，跳过:", e)
             continue
-        title = meta(htm, "og:title", "twitter:title") or meta(htm, "msg_title")
-        if not title:
-            m = re.search(r'<h1[^>]*id="activity-name"[^>]*>([\s\S]*?)</h1>', htm)
-            title = re.sub(r'<[^>]+>', '', m.group(1)).strip() if m else ""
         title = re.sub(r'\s+', ' ', title).strip()
         summary = meta(htm, "og:description", "description", "twitter:description")
         summary = re.sub(r'\s+', ' ', summary).strip()[:120]

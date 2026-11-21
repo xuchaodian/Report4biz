@@ -82,6 +82,174 @@
       "summary": "前言从「以模型为中心」到「以数据为中心」的转变长久以来，AI 与机器学习的进步依靠算法打磨与模型规模扩张实现。",
       "cover": "/assets/posts/2QERLpZ-3hjy4XdQ.jpg",
       "url": "https://mp.weixin.qq.com/s/2QERLpZ-3hjy4XdQpO7j2w"
+    },
+    {
+      "id": "ZZi_Zqzy1qjRe0xE",
+      "title": "商圈分析是什么？",
+      "date": "2026-09-09",
+      "summary": "前言目的、实操方法、免费工具到最新案例“想开新店，但选在哪才能成功？”、 “门店业绩增长陷入瓶颈，有什么改善对策？",
+      "cover": "/assets/posts/ZZi_Zqzy1qjRe0xE.jpg",
+      "url": "https://mp.weixin.qq.com/s/ZZi_Zqzy1qjRe0xEeh44hA"
+    },
+    {
+      "id": "qvDPemhLW12pwR3s",
+      "title": "什么是特征工程？",
+      "date": "2026-09-02",
+      "summary": "前言大幅提升 AI 销售额预测精度2020 年代中期，零售、餐饮、流通行业正处在重大变革期。",
+      "cover": "/assets/posts/qvDPemhLW12pwR3s.jpg",
+      "url": "https://mp.weixin.qq.com/s/qvDPemhLW12pwR3spnHIBg"
+    },
+    {
+      "id": "1WqKTyrhxaOj4yhe",
+      "title": "SHAP 是什么？",
+      "date": "2026-08-26",
+      "summary": "前言机器学习模型的解读技术在现代门店开发工作中，随着 GIS（地理信息系统）与数字化转型的普及，基于数据开展决",
+      "cover": "/assets/posts/1WqKTyrhxaOj4yhe.jpg",
+      "url": "https://mp.weixin.qq.com/s/1WqKTyrhxaOj4yhetI66_Q"
+    },
+    {
+      "id": "cc7FAfSRXDZCqAHA",
+      "title": "什么是集成学习？",
+      "date": "2026-08-19",
+      "summary": "前言集成学习模型的种类与方法过去，营销人员所能依靠的工具仅限于经验法则、直觉以及基础统计数据。",
+      "cover": "/assets/posts/cc7FAfSRXDZCqAHA.jpg",
+      "url": "https://mp.weixin.qq.com/s/cc7FAfSRXDZCqAHAv2oIOg"
+    },
+    {
+      "id": "ej0RU0wyEmSoVKq2",
+      "title": "数据量较小时的机器学习 ｜ 交叉验证",
+      "date": "2026-08-12",
+      "summary": "前言数据驱动经营的理想与 “数据不足” 的现实如今社会大力倡导数字化转型与数据驱动经营，很多企业把 AI 预测",
+      "cover": "/assets/posts/ej0RU0wyEmSoVKq2.jpg",
+      "url": "https://mp.weixin.qq.com/s/ej0RU0wyEmSoVKq2jCIvUw"
+    },
+    {
+      "id": "19Ye6lhNyrlec6fX",
+      "title": "门店到店客流分析",
+      "date": "2026-08-05",
+      "summary": "前言可视化顾客行动与核心指标“最近到店客流增长停滞”、“其实并不清楚到底是什么样的顾客来店里消费”— 想必很多",
+      "cover": "/assets/posts/19Ye6lhNyrlec6fX.jpg",
+      "url": "https://mp.weixin.qq.com/s/19Ye6lhNyrlec6fXiyGaDw"
+    },
+    {
+      "id": "UO3CcCYnpIZKRd6_",
+      "title": "什么是空白市场？",
+      "date": "2026-07-29",
+      "summary": "前言从商圈分析视角讲解挖掘方法很多企业都会遭遇「增长瓶颈」：现有市场趋于饱和，沿用过往战略，营收与利润增速持续",
+      "cover": "/assets/posts/UO3CcCYnpIZKRd6_.jpg",
+      "url": "https://mp.weixin.qq.com/s/UO3CcCYnpIZKRd6_SzXG0g"
+    },
+    {
+      "id": "O88OOew3xFkhBvTT",
+      "title": "什么是集客率？",
+      "date": "2026-07-22",
+      "summary": "前言提升到店客流的改善方案“新印了传单派发，到底有没有效果？",
+      "cover": "/assets/posts/O88OOew3xFkhBvTT.jpg",
+      "url": "https://mp.weixin.qq.com/s/O88OOew3xFkhBvTTO-Hdxg"
+    },
+    {
+      "id": "lt3d9O9XBcyuJFyW",
+      "title": "什么是机器学习？",
+      "date": "2026-07-15",
+      "summary": "前言原理、分类及区域营销领域实操案例在现代商业环境中，依托海量数据做出精准决策，直接决定企业核心竞争力。",
+      "cover": "/assets/posts/lt3d9O9XBcyuJFyW.jpg",
+      "url": "https://mp.weixin.qq.com/s/lt3d9O9XBcyuJFyW722PZw"
+    },
+    {
+      "id": "98BKMHw8uK7nE2N5",
+      "title": "商圈分析 × 机器学习：提升拓店规划精准度",
+      "date": "2026-07-08",
+      "summary": "前言结合 GIS 构建销售额预测模型连锁品牌持续拓店时，新店能否成功直接决定企业发展命脉。",
+      "cover": "/assets/posts/98BKMHw8uK7nE2N5.jpg",
+      "url": "https://mp.weixin.qq.com/s/98BKMHw8uK7nE2N5hCYYEw"
+    },
+    {
+      "id": "OkFJB5Uojs078AyS",
+      "title": "什么是门店营销？",
+      "date": "2026-06-24",
+      "summary": "前言提升销售额的数据分析与落地策略线上线下消费体验融合的当下，实体门店想要经营成功，早已不能只依靠经营者的直觉",
+      "cover": "/assets/posts/OkFJB5Uojs078AyS.jpg",
+      "url": "https://mp.weixin.qq.com/s/OkFJB5Uojs078AySRyqEOA"
+    },
+    {
+      "id": "YllPg3SsXkCyffdl",
+      "title": "零售业营销策略详解",
+      "date": "2026-06-17",
+      "summary": "前言依托数据实现效益最大化当下零售行业正面临三大环境巨变：行业竞争日趋激烈、消费者需求愈发多元、数字化进程全面",
+      "cover": "/assets/posts/YllPg3SsXkCyffdl.jpg",
+      "url": "https://mp.weixin.qq.com/s/YllPg3SsXkCyffdl2wliWQ"
+    },
+    {
+      "id": "jzeHn65zn02wi2AC",
+      "title": "需求预测系列4 | AI 与机器学习",
+      "date": "2026-06-10",
+      "summary": "开篇导读面对传统预测方法难以应对的市场多变环境，业界对AI 机器学习需求预测的期待持续走高。",
+      "cover": "/assets/posts/jzeHn65zn02wi2AC.jpg",
+      "url": "https://mp.weixin.qq.com/s/jzeHn65zn02wi2AC7rveAw"
+    },
+    {
+      "id": "YaimLMGr8DZYhKML",
+      "title": "需求预测系列3 | 选择适合自己的方法",
+      "date": "2026-06-03",
+      "summary": "01 MarketAnalyzer为何要为需求预测寻找「方法」1. 商业中需求预测的重要性与难点如今的商",
+      "cover": "/assets/posts/YaimLMGr8DZYhKML.jpg",
+      "url": "https://mp.weixin.qq.com/s/YaimLMGr8DZYhKMLrChaYw"
+    },
+    {
+      "id": "y7KDhN79ngI1MUxa",
+      "title": "需求预测系列2 ｜ 什么是需求预测？",
+      "date": "2026-05-27",
+      "summary": "",
+      "cover": "/assets/posts/y7KDhN79ngI1MUxa.jpg",
+      "url": "https://mp.weixin.qq.com/s/y7KDhN79ngI1MUxa_GJyjQ"
+    },
+    {
+      "id": "sL0WCPx11MmDpZxq",
+      "title": "需求预测系列1 ｜ 分行业需求预测案例",
+      "date": "2026-05-20",
+      "summary": "前言零售、餐饮、制造业有何差异随着 AI 技术普及，企业对需求预测的关注度持续攀升，但不少企业引入相关工具后，",
+      "cover": "/assets/posts/sL0WCPx11MmDpZxq.jpg",
+      "url": "https://mp.weixin.qq.com/s/sL0WCPx11MmDpZxqb8kbKA"
+    },
+    {
+      "id": "3nCEdpHaD_P7b9fX",
+      "title": "人流测量完全指南",
+      "date": "2026-05-13",
+      "summary": "目录1. 什么是人流测量？",
+      "cover": "/assets/posts/3nCEdpHaD_P7b9fX.jpg",
+      "url": "https://mp.weixin.qq.com/s/3nCEdpHaD_P7b9fX81dksQ"
+    },
+    {
+      "id": "9-pBBlz6dnr6vO1w",
+      "title": "顾客洞察与数据分析",
+      "date": "2026-05-06",
+      "summary": "目录1. 为何当下商业成败由「顾客理解」决定？",
+      "cover": "/assets/posts/9-pBBlz6dnr6vO1w.jpg",
+      "url": "https://mp.weixin.qq.com/s/9-pBBlz6dnr6vO1wQO7Qjg"
+    },
+    {
+      "id": "mXv26cJkDHs_eGJH",
+      "title": "销售额预测方法｜经典3选",
+      "date": "2026-04-29",
+      "summary": "",
+      "cover": "/assets/posts/mXv26cJkDHs_eGJH.jpg",
+      "url": "https://mp.weixin.qq.com/s/mXv26cJkDHs_eGJHvENwDQ"
+    },
+    {
+      "id": "dgvoZmuhEJFOZjj2",
+      "title": "十分位分析（Decile Analysis）详解",
+      "date": "2026-04-22",
+      "summary": "前言应用案例与 Excel 实操方法「为什么仅靠部分门店，就能创造公司整体的大半销售额？",
+      "cover": "/assets/posts/dgvoZmuhEJFOZjj2.jpg",
+      "url": "https://mp.weixin.qq.com/s/dgvoZmuhEJFOZjj20U_wtA"
+    },
+    {
+      "id": "yCZghz-vWh1Fmugr",
+      "title": "什么是决策树分析？与回归分析的区别",
+      "date": "2026-04-15",
+      "summary": "前言区域营销实验室系列在数据成为商业重要指引的当下，机器学习是大幅提升决策精度的必备工具。",
+      "cover": "/assets/posts/yCZghz-vWh1Fmugr.jpg",
+      "url": "https://mp.weixin.qq.com/s/yCZghz-vWh1Fmugrl8ypsg"
     }
   ]
 }
