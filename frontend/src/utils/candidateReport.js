@@ -189,6 +189,147 @@ export function scoreToStars(score) {
 }
 
 /**
+ * 1001 的标签总数（联通「全量人口」一次返回 76 个字段）。
+ *
+ * 来源：`frontend/src/views/field_labels.js` 的 FIELD_LABELS['1001'] ——
+ *   7 个总量（P0~P5 + PALL）+ 6 个男女人数 + 45 个年龄（15 档 × 3 口径）
+ *   + 18 个话费（6 档 × 3 口径）= 76。
+ * ⚠️ 写在纸面上是为了让读者知道「纸面只是摘要，完整清单在购买履历」；
+ *    `backend/tests/reportIndicators.test.js` 会拿它跟 FIELD_LABELS 实际条数比对，
+ *    标签表一变就红 ⇒ ⛔ 不要手改成"大概的数"。
+ */
+export const POP_LABEL_TOTAL = 76
+
+/** 千分位整数（缺失 → '无数据'；0 是有效值） */
+function fmtInt(v) {
+  if (v === null || v === undefined || v === '') return '无数据'
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '无数据'
+  return Math.round(n).toLocaleString('zh-CN')
+}
+
+/**
+ * 选址研判指标 —— 把 1001 的 76 个标签**浓缩成能直接下判断的 8~9 行**（v1.13.400）。
+ *
+ * 🔴 业主 2026-11-22 定：明细（15 档年龄 / 6 档话费逐档比例）在「购买履历」里本来就看得全，
+ *   报告里再铺 44 行比例条只是把纸拉长，对"要不要拿这个点"没有增量信息；
+ *   ⇒ 纸面只留研判口径，需要逐项核对时点「查看全部标签」跳履历。
+ *
+ * 🔴 每一条都必须满足三件事：
+ *   ① 口径有先例或有明确字段来源（⛔ 不自创分母）；
+ *   ② 缺数据 → 不产出这一条（⛔ 不填 0、不写 0.0%，那会被读成"确实是 0"）；
+ *   ③ note 只陈述事实与适用的判断方向（⛔ 不许出现预计/预测/日销）。
+ *
+ * @param {object|null} pop parsePopulation1001 的结果
+ * @returns {Array<{key:string,label:string,value:string,note:string}>}
+ */
+export function buildPopulationIndicators(pop) {
+  if (!pop || typeof pop !== 'object') return []
+
+  const live = numOrNull(pop.live)
+  const work = numOrNull(pop.work)
+  const visit = numOrNull(pop.visit)
+  const out = []
+  const push = (key, label, value, note) => out.push({ key, label, value, note })
+
+  // ① 职住结构：工作 ÷ 居住（两套人数口径，量纲一致）
+  if (live > 0 && work !== null) {
+    const r = work / live
+    const kind = r >= 1.2 ? '就业型' : (r <= 0.6 ? '居住型' : '职住均衡')
+    push('workLive', '职住结构', `${r.toFixed(2)} 倍`,
+      `工作人口 ÷ 居住人口 ⇒ ${kind}片区`)
+  }
+
+  // ② 到访强度：到访人次 ÷ 居住人口（跨口径，只做「被使用频次」的相对量）
+  if (live > 0 && visit !== null) {
+    push('visitIntensity', '到访强度', `${(visit / live).toFixed(1)} 倍`,
+      '统计期累计到访人次 ÷ 居住人口；倍数越高，该点被使用的频次相对常住人口越高')
+  }
+
+  // ③ 外省到访占比：P3 ÷ P0（口径同对比看板 out_ratio）
+  //    ⚠️ 若上游给出 P3 > P0（口径不一致/数据异常），**不产出比例** —— 宁可少一行，
+  //    也不能在对外文档里写「外省到访占 132%」。
+  const outProv = numOrNull(pop.outProvince)
+  if (outProv !== null && visit > 0) {
+    if (outProv <= visit) {
+      push('outProvince', '外省到访占比', `${((outProv / visit) * 100).toFixed(1)}%`,
+        '外省到访 ÷ 到访人次；占比越高，客群辐射范围越出本地')
+    } else {
+      push('outProvince', '外省到访人口', `${fmtInt(outProv)} 人`,
+        '联通返回的外省到访人数；与到访人次不成子集关系，故不折算占比')
+    }
+  }
+
+  // ④ 职住一体度：P5 ÷ P1（居住与工作重合 ⇒ 就近消费的稳定客群）
+  const overlap = numOrNull(pop.liveWorkOverlap)
+  if (overlap !== null && live > 0) {
+    if (overlap <= live) {
+      push('liveWorkOverlap', '职住一体度', `${((overlap / live) * 100).toFixed(1)}%`,
+        '居住与工作重合人口 ÷ 居住人口；重合度越高，就近消费的稳定客群越多')
+    } else {
+      push('liveWorkOverlap', '居住工作重合', `${fmtInt(overlap)} 人`,
+        '联通返回的居住工作重合人数；大于居住人口时口径不可比，故不折算占比')
+    }
+  }
+
+  // ⑤ 家庭客群占比：居住人口 0-18 岁四档合计 ÷ 居住
+  const agesLive = Array.isArray(pop.ages?.live) ? pop.ages.live : []
+  const ageSum = agesLive.reduce((s, x) => s + (Number(x?.value) || 0), 0)
+  if (live > 0 && ageSum > 0) {
+    const minor = agesLive.slice(0, 4).reduce((s, x) => s + (Number(x?.value) || 0), 0)
+    push('family', '家庭客群占比', `${((minor / live) * 100).toFixed(1)}%`,
+      '居住人口中 0-18 岁（4 个人生阶段档合计）占比；用于判断亲子 / 家庭业态适配')
+  }
+
+  // ⑥ 主力年龄：居住人口占比最高的一段（只陈述，不外推）
+  //    ⚠️ 分母用**居住人口**而不是「各档合计」：与上面「家庭客群占比」同分母，
+  //       否则同一张表里两行百分比各用一套分母，读者无法互相对照。
+  if (live > 0 && ageSum > 0) {
+    const top = agesLive.reduce((a, b) => ((Number(b?.value) || 0) > (Number(a?.value) || 0) ? b : a))
+    const tv = Number(top?.value) || 0
+    if (tv > 0) {
+      push('mainAge', '主力年龄', `${top.label} · ${((tv / live) * 100).toFixed(1)}%`,
+        '居住人口中占比最高的一段（占比分母为居住人口）')
+    }
+  }
+
+  // ⑦ 高话费占比：居住人口月话费 ≥150 元（后三档）÷ 全部档
+  //    口径与 backend/src/utils/siteScore.js::arpuHighPct 一致
+  const arpuLive = Array.isArray(pop.arpu?.live) ? pop.arpu.live : []
+  const arpuSum = arpuLive.reduce((s, x) => s + (Number(x?.value) || 0), 0)
+  if (arpuLive.length >= 6 && arpuSum > 0) {
+    const high = arpuLive.slice(3).reduce((s, x) => s + (Number(x?.value) || 0), 0)
+    push('highArpu', '高话费占比', `${((high / arpuSum) * 100).toFixed(1)}%`,
+      '居住人口月话费 150 元以上占比；话费档是联通在网用户口径的消费能力代理，不是客单价')
+  }
+
+  // ⑧ 居住性别比（单套口径，⛔ 不与到访/工作相加）
+  const male = numOrNull(pop.male?.live)
+  const female = numOrNull(pop.female?.live)
+  if (male !== null && female !== null && male + female > 0) {
+    const t = male + female
+    push('gender', '居住性别比', `男 ${((male / t) * 100).toFixed(1)}% · 女 ${((female / t) * 100).toFixed(1)}%`,
+      '居住人口口径（男女合计为居住人口中的有性别记录部分）')
+  }
+
+  // ⑨ 娱乐人数：只做量级，⛔ 不派生比例（无法确认与到访人次构成子集）
+  const entertain = numOrNull(pop.entertain)
+  if (entertain !== null) {
+    push('entertain', '娱乐人数', `${fmtInt(entertain)} 人`,
+      '联通按娱乐场景识别的人数，仅作量级参考，不与到访人次折算比例')
+  }
+
+  return out
+}
+
+/** 数值或 null（区分 0 与"没有"；0 是有效值） */
+function numOrNull(v) {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
  * 组装报告模型 —— 报告里展示什么，全由这里决定（模板只负责排版）。
  *
  * 🔴🔴 v1.13.341：**人口数据一律来自联通的按次配额（1001），而且是「点位 + 半径」口径**，
@@ -272,12 +413,24 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     workLiveRatio: pop && Number(pop.live) > 0
       ? (Number(pop.work) || 0) / Number(pop.live)
       : null,
+    /**
+     * 🔴 v1.13.400：纸面只画这几行研判指标（8~9 行），
+     *   ⛔ 不再画 15 档年龄 / 6 档话费的逐档比例条（那是 387 的做法，业主 11-22 改口）。
+     *   逐档明细在「购买履历」里看得全，纸面重复一遍只会把报告拉长一页半。
+     *   派生逻辑全在 `buildPopulationIndicators`（纯函数，后端测试直接 import）。
+     */
+    indicators: pop ? buildPopulationIndicators(pop) : [],
+    /** 1001 标签总数 —— 纸面用它说明「这里只是摘要」 */
+    labelTotal: POP_LABEL_TOTAL,
     /** 描述性小结（只陈述分布事实，⛔ 不推导营业额/客流预测） */
     summary: []
   }
 
   // 人口小结：职住结构 / 主力年龄 / 主力话费档 / 到访主力人群
   //   🔴 全是「占比最高的一段」这种陈述，不排序、不加权、不外推。
+  //   ⚠️ v1.13.400 起**纸面不再渲染 summary**（改成上方的 indicators 表，两者信息重复），
+  //      但这段仍必须保留：仓库里三个后端测试断言它的措辞口径，
+  //      且它是"可复核的事实陈述"，将来 AI 提示词也会用到。⛔ 不要因为纸面看不到就删。
   if (populationBlock.hasPop) {
     const b = populationBlock
     const ratio = b.workLiveRatio

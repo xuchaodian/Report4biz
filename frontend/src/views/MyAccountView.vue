@@ -1631,15 +1631,26 @@ onMounted(async () => {
   // v1.13.218：拉取本人配额采购申请状态（决定提醒块里是「申请采购配额」还是「查看申请状态」）
   fetchQuotaApply()
 
-  // 检查 URL 参数：如果有 storeName 或 openHistory，自动打开购买履历
+  // 检查 URL 参数：如果有 storeName / openHistory / purchase，自动打开购买履历
   const storeName = route.query.storeName
   const openHistory = route.query.openHistory
-  if (storeName || openHistory) {
+  // 🔴 v1.13.400：报告纸面的「查看全部标签」跳过来时带 `purchase=<id>`。
+  //   按 id 精确打开 —— 按门店名找会命中同名多条（同一位置可能买过多次），
+  //   而报告要看的正是"这一次真正用到的那条"（可能含 1005/1006/1009 等全套服务码）。
+  const purchaseParam = route.query.purchase
+  if (storeName || openHistory || purchaseParam) {
     // 延迟打开对话框，确保 UI 已渲染
     setTimeout(async () => {
       await showHistoryDialog()
-      // 如果有该门店的记录，高亮显示
-      if (storeName && historyList.value.length > 0) {
+      if (purchaseParam) {
+        const idNum = Number(purchaseParam)
+        if (Number.isFinite(idNum) && idNum > 0) {
+          const hit = historyList.value.find(h => Number(h.id) === idNum)
+          // 即使列表里没有（集团可见域/已翻页）也按 id 直接取详情
+          await viewPurchaseDetail(hit || { id: idNum })
+        }
+      } else if (storeName && historyList.value.length > 0) {
+        // 如果有该门店的记录，高亮显示
         const targetStore = historyList.value.find(h => h.store_name === storeName)
         if (targetStore) {
           viewPurchaseDetail(targetStore)

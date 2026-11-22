@@ -58,6 +58,17 @@
         </template>
       </span>
       <span class="rp-popbar-r">
+        <!-- 🔴 v1.13.400：纸面只放 8~9 项研判指标（76 个标签的摘要），逐项明细在
+             「购买履历」里本来就看得全 ⇒ 这里给一个跳转入口。
+             ⚠️ 这个按钮**必须在纸外**（纸面组件 ReportPaper 是纯展示，⛔ 不许有路由跳转，
+                否则 392 的免登录分享页就没法复用它）。 -->
+        <el-button
+          v-if="popData && popPurchaseId"
+          size="small"
+          link
+          type="primary"
+          @click="openAllTags"
+        >查看全部标签</el-button>
         <el-button v-if="!popData" size="small" type="primary" plain :loading="popLoading" @click="fetchPopulation">
           获取人口数据（剩余 {{ quotaInfo.available }} 次）
         </el-button>
@@ -80,6 +91,7 @@
         :map-img="mapImg"
         :ai-text="aiText"
         :author-name="username"
+        detail-hint="完整清单见购买履历"
       />
     </div>
 
@@ -146,6 +158,12 @@ const popSource = ref('')                       // purchase（本人已购）| c
 const popQuotaUsed = ref(0)                     // 本次实际扣了几次（0 = 复用本人已购）
 const popCachedMonth = ref('')                  // 探测到「有缓存可查」时的期次（仅提示，不展示数据）
 const popReused = ref(null)                     // { storeName, purchasedAt }
+/**
+ * 本次真正用在报告上的那条购买记录 id（v1.13.400）。
+ * 三种来源各不相同：purchase＝被复用的那条（可能是门店买的多服务码套餐）、
+ * cache/fresh＝本次计费新写的那条。⛔ 不要按门店名去履历里猜 —— 同名会有多条。
+ */
+const popPurchaseId = ref(null)
 const quotaInfo = ref({ available: 0, remaining: 0, loaded: false })
 
 /** 报告里可选的三档半径（与后端 REPORT_RADII 一致） */
@@ -241,6 +259,7 @@ async function probePopulation() {
   popQuotaUsed.value = 0
   popCachedMonth.value = ''
   popReused.value = null
+  popPurchaseId.value = null
   const c = props.candidate
   if (!c || !Number(c.latitude) || !Number(c.longitude)) return
   try {
@@ -256,6 +275,7 @@ async function probePopulation() {
       popMonth.value = data.dataMonth || ''
       popSource.value = data.source
       popReused.value = data.reused
+      popPurchaseId.value = data.purchaseId || data.reused?.purchaseId || null
     } else if (data?.source === 'cache') {
       // 🔴 后端按新规**不回 population**（回了就是白拿），只告知「有数据可查」
       popCachedMonth.value = data.dataMonth || '未知'
@@ -345,6 +365,7 @@ async function fetchPopulation() {
       popQuotaUsed.value = Number(data.quotaUsed) || 0
       popCachedMonth.value = ''
       popReused.value = data.reused
+      popPurchaseId.value = data.purchaseId || data.reused?.purchaseId || null
       ElMessage.success(data.message || '已获取联通人口数据')
       loadQuota()
     } else {
@@ -365,6 +386,25 @@ async function fetchPopulation() {
   } finally {
     popLoading.value = false
   }
+}
+
+/**
+ * 跳「购买履历」看这份人口数据的**全部标签**（v1.13.400）。
+ *
+ * 🔴 为什么是跳转而不是在报告里展开：1001 一次返回 76 个字段，纸面只摘 8~9 项；
+ *   而「我的门店」买的套餐里可能还有 1005 时段人流 / 1006 停留 / 1007 到达频次 /
+ *   1009 消费水平 / 1010 教育 / 1011 行业 / 1012 人生阶段 / 1013 综合消费 / 1015 资产 ——
+ *   那些只有履历详情页能完整呈现，报告里再做一个只读抽屉必然缺一半。
+ *
+ * ⚠️ 携带 `purchase` 精确到记录 id：按门店名猜会命中同名多条（见 MyAccountView 的 openHistory 分支）。
+ * ⚠️ 本入口只在**登录态**存在（CandidateReport 本身就在路由守卫之后）；
+ *   392 的免登录分享页不渲染它 —— 访客没有履历可看，点了只会撞登录页。
+ */
+function openAllTags() {
+  const id = popPurchaseId.value
+  if (!id) return ElMessage.warning('未找到对应的购买记录，请到「我的账户 → 购买履历」查看')
+  emit('update:modelValue', false)     // 先关报告弹窗，避免跳转后残留在上一页
+  router.push({ path: '/account', query: { openHistory: 'true', purchase: String(id) } })
 }
 
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */

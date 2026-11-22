@@ -237,18 +237,23 @@ describe('F. 387 删掉的两条重复 fact 不许加回来', () => {
 })
 
 
-describe('G. 版式：双列比例条', () => {
-  it('年龄与话费都用双列布局', () => {
-    expect(TPL).toContain('rp-pop-cols')
-    // 两个结构块各一处
-    expect((TPL.match(/class="rp-pop-cols"/g) || []).length).toBe(2)
+describe('G. 版式：量级四栏 + 研判指标表（v1.13.400 起不再画逐档比例条）', () => {
+  /**
+   * 🔴 387 的版式（15 档年龄 / 6 档话费双列比例条，共 44 行）已在 393 被业主撤掉：
+   *   「购买履历里能看所有标签 ⇒ 报告里浓缩成研判指标，需要明细时点开跳转」。
+   *   本组断言随之改为「量级 + 指标表」；比例条是否**彻底撤干净**由
+   *   `reportIndicators.test.js` G 组钉住（两处不重复断言同一件事）。
+   */
+  it('量级四栏仍是 4 列（居住 / 工作 / 到访 / 全量）', () => {
+    expect(TPL).toContain('rp-kv-4')
+    expect((TPL.match(/class="rp-kv rp-kv-4"/g) || []).length).toBe(1)
   })
 
-  it('🔴 条形宽度必须等于组内占比本身，⛔ 不许按列内最大值归一', () => {
-    // 归一写法会让「居住」和「工作」两列的最长条都撑满 ⇒ 两列看起来分布一样
-    expect(TPL).toContain("Math.min(100, r.pct) + '%'")
-    expect(TPL).not.toMatch(/maxPct/)
-    expect(TPL).not.toMatch(/r\.pct\s*\/\s*\w+Max/)
+  it('★ 人口结构改为研判指标表（指标 / 数值 / 判读三列）', () => {
+    expect(TPL).toContain('class="rp-ind"')
+    expect(TPL).toContain('v-for="it in indicators"')
+    expect(TPL).toContain('rp-ind-v')
+    expect(TPL).toContain('rp-ind-n')
   })
 
   it('到访量级必须用 numVisit（人次），⛔ 不许复用 num()', () => {
@@ -257,12 +262,6 @@ describe('G. 版式：双列比例条', () => {
 
   it('全量人口一格必须标注是联通全量口径（⛔ 不可与居住/工作相加）', () => {
     expect(TPL).toContain('联通全量人口')
-  })
-
-  it('比例条的底色必须是真的 CSS 背景（PDF 走 html2canvas 截 DOM）', () => {
-    const m = PAPER.match(/\.rp-pb-track \{[^}]*\}/)
-    expect(m).toBeTruthy()
-    expect(m[0]).toContain('background')
   })
 
   /**
@@ -278,11 +277,11 @@ describe('G. 版式：双列比例条', () => {
     const count = (src, sel) => (src.match(new RegExp(`\\${sel} \\{`, 'g')) || []).length
     expect(count(COMP, '.rp-bar') + count(PAPER, '.rp-bar'), '.rp-bar 被重复定义了').toBe(1)
     expect(count(COMP, '.rp-bar-l') + count(PAPER, '.rp-bar-l'), '.rp-bar-l 被重复定义了').toBe(1)
-    // 比例条必须用独立前缀，且只在纸面文件里
-    expect(PAPER).toContain('.rp-pb-row {')
-    expect(PAPER).toContain('.rp-pb-track {')
-    expect(COMP).not.toContain('.rp-pb-track {')
-    // 模板里工具条仍必须在弹窗里、且仍叫 rp-bar（⛔ 被顺手改成比例条的类名或搬进纸面）
+    // 指标表用独立前缀（.rp-ind-*），且只在纸面文件里定义
+    expect(PAPER).toContain('.rp-ind-v {')
+    expect(PAPER).toContain('.rp-ind-n {')
+    expect(COMP).not.toContain('.rp-ind-v {')
+    // 模板里工具条仍必须在弹窗里、且仍叫 rp-bar（⛔ 被顺手改成指标表的类名或搬进纸面）
     expect(COMP_TPL).toContain('<div class="rp-bar">')
     expect(COMP_TPL).toContain('<div class="rp-bar-l">')
     expect(PAPER_TPL).not.toContain('class="rp-bar"')

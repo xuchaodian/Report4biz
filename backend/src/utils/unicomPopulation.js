@@ -84,6 +84,28 @@ function pick(dict, name, fallback = 0) {
   return fallback
 }
 
+/**
+ * 取数值，**区分「字段不存在」与「值为 0」**（v1.13.400）。
+ *
+ * 为什么不能复用 `pick`：`pick` 的 fallback 语义是「缺就当作 0」，对量级展示没问题；
+ *   但 P3/P4/P5 要参与**比例派生**（外省到访÷到访、重合÷居住），
+ *   把"没返回这个字段"当成 0 会生成「外省到访占 0.0%」这种假结论。
+ *   ⇒ 缺失返 null，0 是有效值。
+ */
+function pickRaw(dict, name) {
+  if (!dict) return null
+  const want = String(name).toLowerCase()
+  for (const [k, v] of Object.entries(dict)) {
+    const lk = k.toLowerCase()
+    if (lk === want || lk.replace(/\d+$/, '') === want) {
+      if (v === null || v === undefined || v === '') return null
+      const n = Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+  }
+  return null
+}
+
 /** 某一人口类型位（0到访/1居住/2工作）的分档序列 */
 function seriesByPrefix(dict, prefix, groups) {
   return groups.map(([label, code]) => ({
@@ -103,6 +125,7 @@ function seriesByPrefix(dict, prefix, groups) {
  * @param {string|object} resultData district_cache.result_data（或裸 apiResult / 1001 dict）
  * @returns {null | {
  *   visit:number, live:number, work:number, total:number,
+ *   outProvince:number|null, entertain:number|null, liveWorkOverlap:number|null,
  *   male:{visit:number, live:number, work:number}, female:{visit:number, live:number, work:number},
  *   ages:{visit:Array<{label,value}>, live:Array<...>, work:Array<...>},
  *   arpu:{visit:Array<{label,value}>, live:Array<...>, work:Array<...>}
@@ -126,6 +149,19 @@ export function parsePopulation1001(resultData) {
     live,
     work,
     total: total || Math.max(visit, live, work),
+    /**
+     * 🔴 v1.13.400：这三个字段一直买回来、也一直在「购买履历」里显示，
+     *   但报告从没解析过（业主 2026-11-22 提出「丰富的联通人口字段要浓缩成研判指标」）。
+     *   · 外省到访（P3）÷ 到访（P0）＝ 客群辐射力 —— 口径沿用对比看板的 `out_ratio`
+     *     （utils/orderCompare.js，同一条派生式，⛔ 别处不要另定义）
+     *   · 娱乐人数（P4）—— 联通按娱乐场景识别，**只做量级展示**，不派生比例
+     *     （无法确认它与 P0 是否构成子集，硬做占比会得出 >100% 的假数）
+     *   · 居住工作重合（P5）÷ 居住（P1）＝ 职住一体度（就近消费粘性）
+     *   ⚠️ 一律用 pickRaw ⇒ 缺失返 null（⛔ 不填 0 冒充「确实是 0 人」）
+     */
+    outProvince: pickRaw(d, 'p3_sum'),
+    entertain: pickRaw(d, 'p4_sum'),
+    liveWorkOverlap: pickRaw(d, 'p5_sum'),
     male: { visit: n('male0_sum'), live: n('male1_sum'), work: n('male2_sum') },
     female: { visit: n('female0_sum'), live: n('female1_sum'), work: n('female2_sum') },
     ages: {

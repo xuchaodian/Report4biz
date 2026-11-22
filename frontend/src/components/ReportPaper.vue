@@ -66,62 +66,33 @@
           <div><dt>联通全量人口</dt><dd>{{ num(model.population.popTotal) }}</dd></div>
         </div>
 
-        <!-- 性别构成：到访 / 居住 / 工作 三套口径**各自独立**，⛔ 不加总 -->
-        <div v-if="genderRows.length" class="rp-pop-blk">
-          <div class="rp-pop-t">性别构成（各口径独立统计，不可相加）</div>
-          <table class="rp-pop-gt">
+        <!-- 选址研判指标：把 1001 的 76 个标签浓缩成 8~9 行（v1.13.400）。
+             🔴 业主 2026-11-22 定：逐档明细（15 档年龄 / 6 档话费）在「购买履历」里看得全，
+                报告里再画 44 行比例条只是把纸拉长一页半，对"要不要拿这个点"没有增量信息。
+             ⛔ 不要按"387 画过"就加回来：387 的全量分档已被本批取代。
+             ⚠️ indicators 为空（旧快照 / 1001 只有总量）时整块不渲染，只留上面 4 栏量级。 -->
+        <div v-if="indicators.length" class="rp-pop-blk">
+          <div class="rp-pop-t">
+            选址研判指标
+            <span class="rp-pop-tx">（{{ indicators.length }} 项摘要 · 联通 1001 共 {{ labelTotal }} 项标签<template v-if="detailHint">，{{ detailHint }}</template>）</span>
+          </div>
+          <table class="rp-ind">
             <thead>
-              <tr><th>口径</th><th>男</th><th>女</th><th>合计</th></tr>
+              <tr><th>指标</th><th>数值</th><th>判读</th></tr>
             </thead>
             <tbody>
-              <tr v-for="g in genderRows" :key="g.key">
-                <th>{{ g.name }}</th>
-                <td>{{ g.malePct.toFixed(1) }}%</td>
-                <td>{{ g.femalePct.toFixed(1) }}%</td>
-                <td>{{ g.total.toLocaleString('zh-CN') }}</td>
+              <tr v-for="it in indicators" :key="it.key">
+                <th>{{ it.label }}</th>
+                <td class="rp-ind-v">{{ it.value }}</td>
+                <td class="rp-ind-n">{{ it.note }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-
-        <!-- 年龄结构：居住 / 工作 双列全 15 档（组内占比，跨列可直接比） -->
-        <div v-if="ageCols.length" class="rp-pop-blk">
-          <div class="rp-pop-t">年龄结构（15 档全量 · 各口径组内占比）</div>
-          <div class="rp-pop-cols">
-            <div v-for="c in ageCols" :key="c.key" class="rp-pop-col">
-              <div class="rp-pop-ch">{{ c.name }}</div>
-              <div v-for="r in c.rows" :key="r.label" class="rp-pb-row">
-                <span class="rp-pb-l">{{ r.label }}</span>
-                <span class="rp-pb-track"><i :style="{ width: Math.min(100, r.pct) + '%' }"></i></span>
-                <span class="rp-pb-v">{{ r.pct.toFixed(1) }}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 月话费档：居住 / 工作 双列全 6 档。⛔ 消费能力代理，不是客单价 -->
-        <div v-if="arpuCols.length" class="rp-pop-blk">
-          <div class="rp-pop-t">月话费档（6 档全量 · 消费能力代理，非客单价）</div>
-          <div class="rp-pop-cols">
-            <div v-for="c in arpuCols" :key="c.key" class="rp-pop-col">
-              <div class="rp-pop-ch">{{ c.name }}</div>
-              <div v-for="r in c.rows" :key="r.label" class="rp-pb-row">
-                <span class="rp-pb-l">{{ r.label }}</span>
-                <span class="rp-pb-track"><i :style="{ width: Math.min(100, r.pct) + '%' }"></i></span>
-                <span class="rp-pb-v">{{ r.pct.toFixed(1) }}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 小结：只陈述分布事实，⛔ 不推导营业额 / 客流预测 -->
-        <ul v-if="model.population.summary && model.population.summary.length" class="rp-pop-sum">
-          <li v-for="(s, i) in model.population.summary" :key="i">{{ s }}</li>
-        </ul>
       </template>
       <div v-else class="rp-pop-empty">
         <b>尚未获取联通人口数据</b>
-        <span>人口规模、性别、年龄与消费档位均为空。点上方「获取人口数据」按点位半径向联通取数 —— 若该位置在「我的门店」里同半径买过，会自动复用、不重复扣费。</span>
+        <span>人口规模、职住结构、年龄与消费档位均无法计算。点上方「获取人口数据」按点位半径向联通取数 —— 若该位置在「我的门店」里同半径买过，会自动复用、不重复扣费。</span>
       </div>
     </div>
 
@@ -202,7 +173,7 @@
  *    改版式不该动数据层，改口径不该动版式。
  */
 import { computed } from 'vue'
-import { fmtM, radiusText } from '@/utils/candidateReport.js'
+import { fmtM, radiusText, POP_LABEL_TOTAL } from '@/utils/candidateReport.js'
 
 const props = defineProps({
   /** buildReportModel() 的输出（或快照里还原出来的同结构对象） */
@@ -212,35 +183,24 @@ const props = defineProps({
   /** AI 建议正文（可空） */
   aiText: { type: String, default: '' },
   /** 生成人显示名 */
-  authorName: { type: String, default: '' }
+  authorName: { type: String, default: '' },
+  /**
+   * 「明细在哪看」的补充说明（v1.13.400）。
+   * ⚠️ **只能由调用方决定**：应用内弹窗传「完整清单见购买履历」；
+   *    免登录分享页必须传空 —— 访客没有账号、打不开购买履历，
+   *    纸上写「见购买履历」等于承诺一件他做不到的事。
+   */
+  detailHint: { type: String, default: '' }
 })
 
-/** 性别三行（到访 / 居住 / 工作）；某套口径为空则不画那一行 */
-const genderRows = computed(() => {
-  const g = props.model?.population?.gender
-  if (!g) return []
-  return [['visit', '到访人次'], ['live', '居住'], ['work', '工作']]
-    .filter(([k]) => g[k])
-    .map(([k, name]) => ({ key: k, name, ...g[k] }))
+/** 选址研判指标（8~9 行摘要）；旧快照里没有这个字段 ⇒ 空数组，整块不渲染 */
+const indicators = computed(() => {
+  const list = props.model?.population?.indicators
+  return Array.isArray(list) ? list : []
 })
 
-/** 年龄双列（居住 / 工作），空列直接过滤 */
-const ageCols = computed(() => {
-  const a = props.model?.population?.ages
-  if (!a) return []
-  return [['live', '居住人口'], ['work', '工作人口']]
-    .filter(([k]) => Array.isArray(a[k]) && a[k].length)
-    .map(([k, name]) => ({ key: k, name, rows: a[k] }))
-})
-
-/** 月话费双列（居住 / 工作） */
-const arpuCols = computed(() => {
-  const a = props.model?.population?.arpu
-  if (!a) return []
-  return [['live', '居住人口'], ['work', '工作人口']]
-    .filter(([k]) => Array.isArray(a[k]) && a[k].length)
-    .map(([k, name]) => ({ key: k, name, rows: a[k] }))
-})
+/** 1001 标签总数（纸面用来声明「这里只是摘要」）；旧快照没这个字段 ⇒ 用常量兜底 */
+const labelTotal = computed(() => Number(props.model?.population?.labelTotal) || POP_LABEL_TOTAL)
 
 function num(v) {
   const n = Number(v) || 0
@@ -303,32 +263,22 @@ function fmtTime(d) {
 
 .rp-kv-4 { grid-template-columns: repeat(4, 1fr); }
 
-/* ── 人口结构（v1.13.387）────────────────────────────────────────────
-   双列条形是**纯 CSS** 比例条，宽度直接等于组内占比 ⇒ 左列（居住）与右列（工作）
-   的条长可以直接横向比较。⛔ 不要改成「按列内最大值归一」——那会让两列都撑满，
-   看上去分布一样，实际完全不同。
-   ⚠️ PDF 走 html2canvas 截 DOM，所以这里必须是真实背景色而不是伪元素。 */
+/* ── 选址研判指标（v1.13.400）────────────────────────────────────────
+   取代 387 的双列比例条：1001 的逐档明细去「购买履历」看，纸面只留能直接
+   拿来做判断的 8~9 行。三列＝指标 / 数值 / 判读，判读独占剩余宽度。
+   ⚠️ PDF 走 html2canvas 截 DOM，所以表格必须是真实 border 而非伪元素。
+   🔴 类名一律 `.rp-ind-*` 前缀：391 的教训是比例条最初叫 `.rp-bar`、
+      与顶部工具条同名，把工具条布局挤坏了 —— 新块别再用通用名。 */
 .rp-pop-blk { margin-top: 10px; }
 .rp-pop-t { font-size: 12px; color: #646a73; margin-bottom: 6px; }
+.rp-pop-tx { font-size: 10.5px; color: #a0a5ad; }
 
-.rp-pop-gt { width: 100%; border-collapse: collapse; }
-.rp-pop-gt th, .rp-pop-gt td { font-size: 11.5px; padding: 3px 0; border-bottom: 1px solid #f0f1f3; text-align: right; }
-.rp-pop-gt thead th { font-weight: 500; font-size: 11px; color: #8a9099; }
-.rp-pop-gt tbody th { width: 96px; text-align: left; font-weight: 500; color: #1f2329; }
-.rp-pop-gt td:first-of-type { width: 72px; }
-.rp-pop-gt td:last-child { width: 96px; color: #646a73; }
-
-.rp-pop-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
-.rp-pop-col { min-width: 0; }
-.rp-pop-ch { font-size: 11px; font-weight: 600; color: #1f2329; margin-bottom: 3px; }
-.rp-pb-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.rp-pb-l { width: 54px; font-size: 10.5px; color: #646a73; flex: none; }
-.rp-pb-track { flex: 1; height: 7px; background: #eef0f3; border-radius: 4px; overflow: hidden; }
-.rp-pb-track i { display: block; height: 100%; background: #5b8def; border-radius: 4px; }
-.rp-pb-v { width: 40px; text-align: right; font-size: 10.5px; color: #646a73; flex: none; }
-
-.rp-pop-sum { margin: 9px 0 0; padding-left: 16px; }
-.rp-pop-sum li { font-size: 11.5px; line-height: 1.6; color: #1f2329; margin-bottom: 2px; }
+.rp-ind { width: 100%; border-collapse: collapse; }
+.rp-ind th, .rp-ind td { font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f0f1f3; vertical-align: top; }
+.rp-ind thead th { font-size: 10.5px; font-weight: 500; color: #8a9099; text-align: left; padding-bottom: 3px; }
+.rp-ind tbody th { width: 92px; text-align: left; font-weight: 500; color: #1f2329; }
+.rp-ind-v { width: 148px; font-weight: 600; color: #1f2329; }
+.rp-ind-n { color: #646a73; line-height: 1.5; }
 
 .rp-map { border: 1px solid #e6e8eb; border-radius: 6px; overflow: hidden; background: #fafbfc; }
 /* 🔴 必须同时给 width:100% 和**固定 height**，`object-fit` 才起作用。

@@ -682,15 +682,18 @@ function latestMonthLocal() {
  *
  * @param {object} opts.gate     `checkQuota` 的成功结果（含 pool），必须在调用前拿到
  * @param {boolean} opts.cacheHit 数据来自缓存 ⇒ 不再重复写 cache 表
- * @returns {{ok:true, remaining:number} | {ok:false, message:string}}
+ * @returns {{ok:true, remaining:number, purchaseId:number} | {ok:false, message:string}}
+ *   🔴 v1.13.400 起回传 `purchaseId`：报告纸面的「查看全部标签」要跳「购买履历」中
+ *      **本次真正用到的那条记录**（缓存/自购/复用三种来源各不相同，⛔ 不能按门店名猜）。
  */
 function chargeAndRecord(db, user, opts = {}) {
   const { gate, lng, lat, radius, cityMonth, storeName, storeType, resultData, cacheHit } = opts
   const remaining = Number(gate?.pool) - 1
+  let purchaseId = null
   db.beginTx()
   try {
     db.prepare(`UPDATE admin_quota SET remaining_quota = remaining_quota - 1 WHERE id = 1`).run()
-    db.prepare(`
+    const ins = db.prepare(`
       INSERT INTO purchases (user_id, store_name, store_type, center_lng, center_lat, radius,
                              city_month, quota_used, status, result_data)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', ?)
@@ -700,10 +703,11 @@ function chargeAndRecord(db, user, opts = {}) {
       cityMonth,
       JSON.stringify({ querySuccess: true, apiResult: resultData, refunded: false })
     )
+    purchaseId = Number(ins.lastInsertRowid) || null
     // ⚠️ 只有真调上游才写缓存；缓存命中再写一次是空转（且会覆盖同 key 的期次）
     if (!cacheHit) saveToCache(db, lng, lat, radius, cityMonth, '1001', resultData)
     db.commitTx()
-    return { ok: true, remaining }
+    return { ok: true, remaining, purchaseId }
   } catch (txErr) {
     try { db.rollbackTx() } catch { /* 忽略 */ }
     console.error('[fetchPointPopulation] 落库失败:', txErr.message)
@@ -786,6 +790,10 @@ export async function fetchPointPopulation(db, user, opts = {}) {
           radius,
           population: pop,
           dataMonth: row.city_month || '',
+          // v1.13.400：跳「购买履历」用 —— 复用时**必须给被复用的那条**，
+          //   它可能是「我的门店」买的多服务码套餐（1005/1006/1009…），
+          //   而不是本次报告只买 1001 的那条。
+          purchaseId: Number(row.id) || null,
           reused: {
             purchaseId: row.id,
             storeName: row.store_name || '',
@@ -858,6 +866,7 @@ export async function fetchPointPopulation(db, user, opts = {}) {
               radius,
               population: pop,
               dataMonth: month,
+              purchaseId: rec.purchaseId || null,
               reused: null,
               quotaUsed: 1,
               remainingQuota: rec.remaining,
@@ -938,6 +947,7 @@ export async function fetchPointPopulation(db, user, opts = {}) {
       radius,
       population: pop,
       dataMonth: cityMonth,
+      purchaseId: rec.purchaseId || null,
       reused: null,
       quotaUsed: 1,
       remainingQuota: rec.remaining,
