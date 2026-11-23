@@ -126,3 +126,74 @@ describe('多半径对比 · 交互（点列头切主报告）', () => {
     expect(TPL).toContain('verdictShift')
   })
 })
+
+/**
+ * 成本口径的「落点」（v1.13.406 · 业主 2026-11-23 拍板 A）
+ *
+ * 背景：403 版脚注写着「三档都是联通 1001 能按原半径取数的档；每档各自取数各消耗
+ * 1 次配额，互不替代」，而紧接着的第三句是「本次分析 0 消耗」。业主读到的第一反应
+ * 是「到底花不花钱」，并追问「这跟 1km 网格人口有什么关系」。
+ *
+ * 拍板：脚注只讲**估算 / 0 消耗 / 口径限制**；计费口径（一档一次、换档另买、
+ * 同半径才复用）挪到第六节「成本」行 —— 那才是真的要花钱的地方。
+ *
+ * 🔴 顺带修掉一个「会变假」的断言：旧句写死「三档都是…」。主半径是 500m / 1500m
+ * 时后端 `parseCompareRadii` 会把主半径塞进表变成 4 列，那一格明写「联通无此档，
+ * 按 X 取」⇒ 脚注与表格自相矛盾。
+ */
+describe('成本口径归位（v1.13.406 · 脚注不谈钱）', () => {
+  /** 脚注整段（到第一个 </p> 止）⚠️ 取不到就让「自检」那条先红，别静默假绿 */
+  const foot = (() => {
+    const at = TPL.indexOf('class="bf-cmp-foot"')
+    if (at < 0) return ''
+    const end = TPL.indexOf('</p>', at)
+    return end > at ? TPL.slice(at, end) : ''
+  })()
+
+  /** 第六节「成本」那一格 */
+  const costCell = (() => {
+    const at = TPL.indexOf('<dt>成本</dt>')
+    if (at < 0) return ''
+    const end = TPL.indexOf('</dd>', at)
+    return end > at ? TPL.slice(at, end) : ''
+  })()
+
+  it('切片自检（空串会让下面几条全部假绿）', () => {
+    expect(foot.length).toBeGreaterThan(30)
+    expect(costCell.length).toBeGreaterThan(30)
+    expect(foot).toContain('bf-cmp-foot')
+    expect(costCell).toContain('成本')
+  })
+
+  it('🔴 对比表脚注不谈配额（「各消耗 1 次」不许回来）', () => {
+    expect(foot).not.toContain('配额')
+    expect(foot).not.toContain('互不替代')
+    expect(foot).not.toContain('各消耗')
+  })
+
+  it('脚注要同时说清「这是免费估算」与「本次 0 消耗」', () => {
+    expect(foot).toContain('免费')
+    expect(foot).toContain('0 消耗')
+  })
+
+  it('脚注要点出这张表的用途：决定按哪个圆向联通取数（否则读者不知道它跟花钱的关系）', () => {
+    expect(foot).toContain('向联通取数')
+  })
+
+  it('🔴 脚注不许写死档数/列数（主半径 800/1500 时表会变 4 列，写死就与表格打架）', () => {
+    for (const wrong of ['三个圆', '三档', '三个档', '四档']) {
+      expect(foot, `脚注出现「${wrong}」—— 边界场景（主半径不在 1/3/5km）会自相矛盾`).not.toContain(wrong)
+    }
+  })
+
+  it('🔴「一档一次、换档另买」必须在第六节成本行（换到花钱的地方说）', () => {
+    expect(costCell).toContain('一档一次')
+    expect(costCell).toContain('换档另买')
+    expect(costCell).toContain('同半径')
+  })
+
+  it('反向：旧文案不许回潮（它写死「三档」，主半径不在三档时会与表格打架）', () => {
+    expect(src).not.toContain('三档都是联通 1001 能按原半径取数的档')
+    expect(src).not.toContain('互不替代')
+  })
+})
