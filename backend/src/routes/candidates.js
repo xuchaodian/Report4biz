@@ -65,7 +65,8 @@ import { loadCompetitorIndex } from '../utils/competitorPoints.js'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 import { dstr } from '../utils/districtProps.js'
 import {
-  buildBriefModel, densityThresholds, BRIEF_CONST
+  buildBriefModel, densityThresholds, BRIEF_CONST,
+  parseCompareRadii, buildCompareRow
 } from '../utils/candidateBrief.js'
 import { SATURATION_DEFAULT } from '../utils/siteSelectConfig.js'
 
@@ -620,35 +621,81 @@ router.get('/brief', authenticate, (req, res) => {
     // ── ⑤ 该位置已购哪些半径（只读；仅用于「买过别的档」提示）────────────
     const purchased = readPurchasedRadii(db, uid, point.lng, point.lat)
 
-    const brief = buildBriefModel({
-      point,
-      grid: { covered: grid.covered, reason: grid.reason },
-      density,
-      comp: {
-        count: cnt.count,
-        byBrand,
-        scope: {
-          configured: Array.isArray(brandScope.compBrands),
-          source: brandScope.source,
-          brands: Array.isArray(brandScope.compBrands) ? brandScope.compBrands : []
+    // ── ⑥ 多半径对比（v1.13.403）────────────────────────────────────────
+    // 🔴🔴 为什么必须**在这一个请求里**算完，⛔ 不能让前端连发三次：
+    //   本端点每次进来都会 `gridForCity → loadGridIndex`，把整城 geojson 重新解析
+    //   并重建索引，**没有缓存**（上海 3,263 格约 150ms、重庆 59,862 格约 1.5s）。
+    //   前端发三次 ＝ 同一个文件解析三遍、还串行等 4.5s。
+    //   这里索引/密度分位门槛/竞品索引/自有门店/商圈面/已购半径**各建一次**，
+    //   只把「圆内人口」与「圆内竞品」按半径重扫 —— 那两步各自只走一遍索引。
+    const compareRadii = parseCompareRadii(q.radii, radiusM, { min: RADIUS_MIN, max: RADIUS_MAX })
+
+    /** 任意半径的完整模型（半径无关的东西全部由外层闭包复用） */
+    const modelFor = (r, withBrandDetail = false) => {
+      let d = null
+      if (grid.covered) {
+        const cp = circlePopulation(grid.index, point.lng, point.lat, r)
+        d = {
+          circlePop: cp.pop,
+          whole: cp.whole,
+          partial: cp.partial,
+          thresholds: density ? density.thresholds : null
         }
-      },
-      own: {
-        hasBrand,
-        brand: point.brand,
-        nearestM: near ? Math.round(near.m) : null,
-        nearestName: str(near?.store?.name),
-        nearestCode: str(near?.store?.store_code),
-        withinR,
-        radiusM: SATURATION_DEFAULT.radiusM,
-        maxOwn: SATURATION_DEFAULT.maxOwn
-      },
-      district,
-      purchased
-    })
+      }
+      const c = countWithin(compIndex, point.lng, point.lat, r)
+      return buildBriefModel({
+        point: { ...point, radius: r },
+        grid: { covered: grid.covered, reason: grid.reason },
+        density: d,
+        comp: {
+          count: c.count,
+          // 品牌明细只给主半径（对比表不展示品牌构成，省一次分组）
+          byBrand: withBrandDetail ? byBrand : [],
+          scope: {
+            configured: Array.isArray(brandScope.compBrands),
+            source: brandScope.source,
+            brands: Array.isArray(brandScope.compBrands) ? brandScope.compBrands : []
+          }
+        },
+        own: {
+          hasBrand,
+          brand: point.brand,
+          nearestM: near ? Math.round(near.m) : null,
+          nearestName: str(near?.store?.name),
+          nearestCode: str(near?.store?.store_code),
+          withinR,
+          radiusM: SATURATION_DEFAULT.radiusM,
+          maxOwn: SATURATION_DEFAULT.maxOwn
+        },
+        // ⚠️ 商圈面是按**面**判的（不是半径），所以不进对比表；这里各档共用同一份，
+        //    只有 `district.score` 内部用到竞品数，而它只出现在主半径的报告正文里。
+        district,
+        purchased
+      })
+    }
+
+    // `parseCompareRadii` 保证主半径一定在列表里 ⇒ 主报告直接取自同一批模型，
+    // 不再单独算一遍（⛔ 别写成「主半径走老路、对比走新路」—— 那会两套算法各自漂移）
+    const models = compareRadii.map((r) => [r, modelFor(r, r === radiusM)])
+    const mainPair = models.find(([r]) => r === radiusM)
+    const brief = mainPair ? mainPair[1] : modelFor(radiusM, true)
+
+    const compareRows = models.map(([r, m]) => ({
+      ...buildCompareRow(m, purchased.radii),
+      isMain: r === radiusM
+    }))
 
     res.json({
       brief,
+      // 多半径对比（v1.13.403）：业主 2026-11-23 拍板「只比联通能买到的三档」，
+      // 若主半径不在三档内（500m / 800m 之类）会一并带上并高亮。
+      compare: {
+        rows: compareRows,
+        mainRadius: radiusM,
+        // 口径来源：档位来自后端常量，前端 ⛔ 不许自己写 [1000,3000,5000]
+        source: 'unicom-tiers',
+        unicomRadii: [...BRIEF_CONST.UNICOM_RADII]
+      },
       // 点位来源（前端要显示「来自我的门店 / 独立点位」与门店类型）
       origin: marker
         ? { kind: 'store', markerId: marker.id, storeCode: str(marker.store_code), storeType: str(marker.store_type) }

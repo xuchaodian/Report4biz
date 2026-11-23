@@ -527,6 +527,101 @@ export function buildBriefModel(input = {}) {
   return out
 }
 
+/**
+ * 多半径对比要算哪几档（v1.13.403）。
+ *
+ * 默认就是 `UNICOM_REPORT_RADII`（1/3/5km）—— 业主 2026-11-23 拍板「只比能买到的三档」：
+ * 500m 与 1.5km 在联通那边买不到（1.5km 实际按 3km 取数），列进对比表会让人以为能买。
+ *
+ * 🔴 但**当前半径必须进表**：业主可能正在看 500m 或点位自带的 800m，
+ *    表里没有它就会出现「报告的圆在对比表里找不到」的错位感。
+ *    ⇒ 三档 ∪ {当前半径}，升序，最多 5 列。
+ *
+ * @param {string|number[]} raw 逗号分隔（来自 `?radii=`）或数组；空 ⇒ 用联通三档
+ * @param {number} mainRadiusM 本次报告的主半径
+ * @param {{min?:number,max?:number,maxCount?:number}} [limits]
+ * @returns {number[]} 升序、去重、含主半径
+ */
+export function parseCompareRadii(raw, mainRadiusM, limits = {}) {
+  const min = Number(limits.min) || 1
+  const max = Number(limits.max) || Number.MAX_SAFE_INTEGER
+  const maxCount = Number(limits.maxCount) || 5
+
+  const pick = (v) => {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n <= 0) return null
+    return Math.min(max, Math.max(min, Math.round(n)))
+  }
+
+  const rawList = Array.isArray(raw)
+    ? raw
+    : String(raw === null || raw === undefined ? '' : raw).split(',')
+  const base = rawList.map(pick).filter((n) => n !== null)
+  const list = base.length ? base : [...UNICOM_REPORT_RADII]
+
+  const out = [...new Set(list)].sort((a, b) => a - b).slice(0, maxCount)
+  const main = pick(mainRadiusM)
+  if (main !== null && !out.includes(main)) {
+    out.push(main)
+    // 🔴 上限是硬约束（`?radii=` 可以塞 30 个）：挤掉边缘档，但**主半径必须留**
+    //    —— 表里看不到自己正在看的那个圆，比少一列严重得多。
+    while (out.length > maxCount) {
+      let dropAt = -1
+      for (let i = out.length - 1; i >= 0; i--) {
+        if (out[i] !== main) { dropAt = i; break }
+      }
+      if (dropAt < 0) break
+      out.splice(dropAt, 1)
+    }
+  }
+  return out.sort((a, b) => a - b)
+}
+
+/**
+ * 多半径对比的一行（v1.13.403）。
+ *
+ * 只挑**真的随半径变**的三项 + 结论 + 已购标记：
+ *   · 半径内常住人口 / 人口密度（`circlePopulation` 换半径重扫）
+ *   · 半径内竞品数（`countWithin` 换半径重扫）
+ *   · 判定结论（三档规则重跑，**可能与主半径不同** —— 这正是对比的价值）
+ * 🔴 自有门店距离、饱和判定、商圈面、已购半径**不随半径变**（分别固定扫 20km /
+ *    固定 `SATURATION_DEFAULT.radiusM` / 按面判 / 按坐标判）⇒ ⛔ 不要塞进对比表：
+ *    读者会以为换个半径它就变了。
+ *
+ * ⚠️ 数值缺就是 `null`，⛔ 不写 0 —— 「未评」和「这里没人」是两件事（文件头 ③）。
+ *
+ * @param {object} m buildBriefModel 的完整结果
+ * @param {number[]} purchasedRadii 该位置已购半径（复用是**同半径**语义，逐列判）
+ */
+export function buildCompareRow(m = {}, purchasedRadii = []) {
+  const radiusM = Number(m.point?.radius) || 0
+  const pop = m.population || {}
+  const comp = m.competition || {}
+  const have = (Array.isArray(purchasedRadii) ? purchasedRadii : [])
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+
+  return {
+    radiusM,
+    population: {
+      covered: !!pop.covered,
+      reason: String(pop.reason || ''),
+      circlePop: Number.isFinite(pop.circlePop) ? pop.circlePop : null,
+      density: Number.isFinite(pop.density) ? pop.density : null,
+      level: pop.level ? { key: pop.level.key, label: pop.level.label } : null
+    },
+    competition: {
+      count: Number.isFinite(comp.count) ? comp.count : null,
+      level: comp.level ? { key: comp.level.key, label: comp.level.label } : null
+    },
+    verdict: m.verdict ? { level: m.verdict.level, title: m.verdict.title } : null,
+    // 这一档在联通那边是不是「原样可取」（三档内＝exact；点位自带 800m 之类＝按上一档买）
+    unicom: pickUnicomRadius(radiusM),
+    // 同位置买过这一档 ⇒ 切过去能免费复用（与取数侧同半径语义）
+    purchased: have.includes(radiusM)
+  }
+}
+
 /** 供路由层直接用的常量（⛔ 前端不许硬编码这几个数） */
 export const BRIEF_CONST = Object.freeze({
   GRID_PERCENTILE_STEPS,

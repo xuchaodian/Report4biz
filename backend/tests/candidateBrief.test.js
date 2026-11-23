@@ -17,15 +17,14 @@
  * · `R4B_GEO_DIR` 必须在动态 import 之前设置，否则会往真实 uploads 里写文件
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
-import fs from 'node:fs'
-import os from 'node:os'
+// 🔴 必须**第一个**：本文件在下面静态 import 了 `utils/candidateBrief.js`，
+//    而 ESM 的静态 import 全在模块体之前求值 ⇒ 原先那两行 `process.env.R4B_DB_PATH = …`
+//    根本赶不上 —— `models/database.js` 早已把 dbPath 定成仓库里的真库，
+//    `beforeEach(clearAll)` 就一直删在 `database/webgis.db` 上（2026-11-23 实测发现，
+//    本机开发库被写进 brief_admin/brief_other 等测试用户、原有门店被删空）。
+import { tmpDb, tmpGeo, cleanupTmpEnv } from './_tmpDbEnv.mjs'
 import path from 'node:path'
 import http from 'node:http'
-
-const tmpDb = path.join(os.tmpdir(), `r4b-brief-${process.pid}-${Date.now()}.db`)
-process.env.R4B_DB_PATH = tmpDb
-const tmpGeo = path.join(os.tmpdir(), `r4b-brief-geo-${process.pid}-${Date.now()}`)
-process.env.R4B_GEO_DIR = tmpGeo
 
 import {
   cellDensity, densityThresholds, densityLevel, competitionLevel, buildVerdict, buildBriefModel,
@@ -196,8 +195,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (server) await new Promise((r) => server.close(r))
-  try { fs.rmSync(tmpDb, { force: true }) } catch { /* 忽略 */ }
-  try { fs.rmSync(tmpGeo, { recursive: true, force: true }) } catch { /* 忽略 */ }
+  cleanupTmpEnv()
 })
 
 beforeEach(() => clearAll())

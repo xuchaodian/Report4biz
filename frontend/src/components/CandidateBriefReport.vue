@@ -89,6 +89,109 @@
           </ul>
         </div>
 
+        <!--
+          多半径对比（v1.13.403）
+          业主 2026-11-23 拍板：形态 A（保留完整报告，顶部加这张表）、只比联通能买到的
+          三档 1/3/5km、表要进 PDF。
+          🔴 三列的数字**全部由后端一次请求算出来**（`compare.rows`），前端只负责摆：
+             ⛔ 不许在前端自己按半径算人口/竞品 —— 那会和正文的六节变成两套算法。
+          🔴 放在 `.bf-paper` 里面 ⇒ 导出 PDF 自动带上（`exportPaperPdf(paper)` 截的是纸面 DOM）。
+        -->
+        <div v-if="compareRows.length > 1" class="bf-sec bf-cmp">
+          <div class="bf-sec-hd">
+            <h2>多半径对比</h2>
+            <span class="bf-sec-note">同一圆心各算一次 · 点半径可切换主报告</span>
+          </div>
+
+          <table class="bf-cmp-t">
+            <thead>
+              <tr>
+                <th scope="col" class="bf-cmp-k">指标</th>
+                <th
+                  v-for="r in compareRows"
+                  :key="r.radiusM"
+                  scope="col"
+                  :class="{ 'is-main': r.isMain }"
+                >
+                  <button
+                    type="button"
+                    class="bf-cmp-go"
+                    :disabled="loading"
+                    :aria-current="r.isMain ? 'true' : undefined"
+                    :aria-label="r.isMain ? `当前按 ${radiusText(r.radiusM)} 分析` : `切换到 ${radiusText(r.radiusM)} 重新分析`"
+                    @click="switchRadius(r)"
+                  >{{ radiusText(r.radiusM) }}</button>
+                  <span v-if="r.isMain" class="bf-cmp-cur">本次</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">半径内常住人口</th>
+                <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <template v-if="r.population.covered">
+                    {{ fmtNum(r.population.circlePop) }} 人
+                    <em v-if="popRatio(r)" class="bf-cmp-x">{{ popRatio(r) }}</em>
+                  </template>
+                  <span v-else class="bf-cmp-na">未评</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">人口密度</th>
+                <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <template v-if="r.population.covered && r.population.density !== null">
+                    {{ fmtNum(r.population.density) }} 人/km²
+                    <span v-if="r.population.level" class="bf-chip" :class="'lv-' + r.population.level.key">
+                      {{ r.population.level.label }}
+                    </span>
+                  </template>
+                  <span v-else class="bf-cmp-na">未评</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">半径内竞品</th>
+                <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <template v-if="r.competition.count !== null">
+                    {{ r.competition.count }} 家
+                    <span v-if="r.competition.level" class="bf-cmp-lv">{{ r.competition.level.label }}</span>
+                  </template>
+                  <span v-else class="bf-cmp-na">未评</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">判定结论</th>
+                <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <span v-if="r.verdict" class="bf-cmp-tag" :class="'is-' + r.verdict.level">
+                    {{ verdictTagOf(r.verdict.level) }}
+                  </span>
+                  <span v-else class="bf-cmp-na">—</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">该半径取数</th>
+                <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <span v-if="r.purchased" class="bf-cmp-own">已购 · 可复用</span>
+                  <!-- 点位自带 800m 这类档联通没有原样对应，会按上一档取 -->
+                  <span v-else-if="!r.unicom.exact" class="bf-cmp-na">
+                    联通无此档，按 {{ radiusText(r.unicom.radiusM) }} 取
+                  </span>
+                  <span v-else class="bf-cmp-na">未购</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p v-if="verdictShift" class="bf-cmp-flip">
+            ⚠ 结论随半径变化：本次「{{ verdictTagOf(mainCompare?.verdict?.level) }}」，
+            {{ verdictShift }} —— 这个点位对半径敏感，取数前先定下该按哪个圆判断。
+          </p>
+          <p class="bf-cmp-foot">
+            三档都是联通 1001 能按原半径取数的档；每档各自取数各消耗 1 次配额，<b>互不替代</b>。
+            人口按圆内网格加权，圆超出本市网格范围的部分不计（该档人口会偏低）。
+            本表数字全部来自站内免费数据（本地 1km 网格 + 竞品库），本次分析 0 消耗。
+          </p>
+        </div>
+
         <!-- 一、客群 -->
         <div class="bf-sec">
           <div class="bf-sec-hd">
@@ -329,6 +432,8 @@ const loading = ref(false)
 const exporting = ref(false)
 const errorMsg = ref('')
 const brief = ref(null)
+// 多半径对比（v1.13.403）：整块由后端一次算好，前端只摆（⛔ 不在前端自己按半径算）
+const compare = ref(null)
 const consts = ref(null)
 const generatedAt = ref(null)
 const paper = ref(null)
@@ -352,9 +457,50 @@ const radiusOptions = computed(() => {
   return STANDARD_RADII.includes(base) ? STANDARD_RADII : [...new Set([base, ...STANDARD_RADII])].sort((a, b) => a - b)
 })
 
-const verdictTag = computed(() => {
-  const lv = brief.value?.verdict?.level
-  return lv === 'go' ? '值得深入' : lv === 'hold' ? '不建议深入' : '需核验'
+/** 三档结论的统一措辞（正文结论区与对比表必须用同一套词，⛔ 各写一份） */
+function verdictTagOf(level) {
+  return level === 'go' ? '值得深入' : level === 'hold' ? '不建议深入' : level === 'watch' ? '需核验' : '—'
+}
+
+const verdictTag = computed(() => verdictTagOf(brief.value?.verdict?.level))
+
+// ── 多半径对比（v1.13.403）──────────────────────────────────────────────
+const compareRows = computed(() => compare.value?.rows || [])
+const mainCompare = computed(() => compareRows.value.find((r) => r.isMain) || null)
+
+/** 切换主报告到某一档（表头点击）。已在该档就什么都不做，⛔ 别白跑一次请求 */
+function switchRadius(r) {
+  const target = Number(r?.radiusM)
+  if (!Number.isFinite(target) || loading.value) return
+  if (Number(radius.value) === target) return
+  radius.value = target
+  load()
+}
+
+/**
+ * 相对本次半径的人口倍数（「放大到 3km 人口 ×3.2」比单看两个绝对值有用）。
+ * 🔴 只在**两档都有有效人口**时给；差 5% 以内不给（否则会出现「×1.0」这种废话）。
+ */
+function popRatio(r) {
+  const base = Number(mainCompare.value?.population?.circlePop)
+  const v = Number(r?.population?.circlePop)
+  if (r?.isMain) return ''
+  if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(v) || v <= 0) return ''
+  const k = v / base
+  if (k >= 0.95 && k <= 1.05) return ''
+  if (k > 1) return `×${k >= 10 ? k.toFixed(0) : k.toFixed(1)}`
+  return `÷${(1 / k).toFixed(1)}`
+}
+
+/** 哪几档的结论与本次不同 —— 差异本身就是结论，必须写出来，⛔ 不许让读者自己对表 */
+const verdictShift = computed(() => {
+  const main = mainCompare.value
+  if (!main?.verdict) return ''
+  const diff = compareRows.value.filter(
+    (r) => !r.isMain && r.verdict && r.verdict.level !== main.verdict.level
+  )
+  if (!diff.length) return ''
+  return diff.map((r) => `${radiusText(r.radiusM)} 为「${verdictTagOf(r.verdict.level)}」`).join('、')
 })
 
 const popMissReason = computed(() => {
@@ -409,10 +555,14 @@ async function load() {
 
     const { data } = await axios.get('/api/candidates/brief', { params })
     brief.value = data.brief
+    // 多半径对比（后端在同一个请求里算完，⛔ 不要前端再发两次请求：
+    // /brief 每次都重建全城网格索引，重庆一次就要 1.5s）
+    compare.value = data.compare || null
     consts.value = data.consts || null
     generatedAt.value = data.generatedAt
   } catch (e) {
     brief.value = null
+    compare.value = null
     errorMsg.value = e?.response?.data?.message || e?.message || '生成初步分析失败'
   } finally {
     loading.value = false
@@ -482,6 +632,46 @@ onMounted(load)
 .bf-verdict-text { margin: 6px 0 0; font-size: 12.5px; line-height: 1.7; color: #303133; }
 .bf-verdict-reasons { margin: 6px 0 0; padding-left: 18px; }
 .bf-verdict-reasons li { font-size: 12px; line-height: 1.65; color: #504f57; }
+
+/* ── 多半径对比（v1.13.403）───────────────────────────────────────────────
+   🔴 导出 PDF 走 html2canvas 截 DOM ⇒ 表格线必须是**真实 border**，
+      ⛔ 不能用伪元素画（391 的比例条踩过：屏幕上有、PDF 里消失）。 */
+.bf-cmp-t {
+  width: 100%; border-collapse: collapse; margin-top: 2px;
+  font-size: 12.5px; table-layout: fixed;
+}
+.bf-cmp-t th, .bf-cmp-t td {
+  border-bottom: 1px solid #e6e8eb; padding: 7px 8px;
+  text-align: left; vertical-align: middle; word-break: break-word;
+}
+.bf-cmp-t thead th { border-bottom: 1px solid #c9ced6; padding-bottom: 5px; }
+.bf-cmp-t tbody th { width: 118px; font-weight: 400; color: var(--text-regular, #606266); }
+.bf-cmp-k { width: 118px; font-weight: 400; color: #8a9099; font-size: 12px; }
+/* 当前半径那一列淡蓝底（不是高亮全部，只标「你正在看的圆」） */
+.bf-cmp-t .is-main { background: #f2f7ff; }
+.bf-cmp-go {
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 500; color: #2563eb;
+}
+.bf-cmp-go:disabled { color: #1f2329; cursor: default; }
+.bf-cmp-cur {
+  margin-left: 3px; font-size: 10.5px; color: #2563eb;
+  background: #eaf0fd; border-radius: 3px; padding: 0 4px; vertical-align: 1px;
+}
+.bf-cmp-x { font-style: normal; margin-left: 4px; color: #8a9099; }
+.bf-cmp-lv { margin-left: 4px; font-size: 11.5px; color: #8a9099; }
+.bf-cmp-na { color: #8a9099; }
+.bf-cmp-own { font-size: 11.5px; color: #16794a; background: #f1f9f5; border-radius: 3px; padding: 1px 5px; }
+.bf-cmp-tag { font-size: 11px; padding: 1px 6px; border-radius: 3px; color: #fff; background: #8a9099; }
+.bf-cmp-tag.is-go { background: #16794a; }
+.bf-cmp-tag.is-watch { background: #b26a00; }
+.bf-cmp-tag.is-hold { background: #c0392b; }
+.bf-cmp-flip {
+  margin: 8px 0 0; padding: 6px 9px; font-size: 12px; line-height: 1.65;
+  color: #7a5b1e; background: #fff8e6; border: 1px solid #e8c07d; border-radius: 5px;
+}
+.bf-cmp-foot { margin: 7px 0 0; font-size: 11.5px; line-height: 1.7; color: #8a9099; }
+.bf-cmp-foot b { color: var(--text-regular); font-weight: 500; }
 
 .bf-sec { margin-top: 14px; }
 .bf-sec-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }

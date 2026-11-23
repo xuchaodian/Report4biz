@@ -200,7 +200,12 @@ describe('G5. 负变异：改坏必须报红（证明上面不是假绿）', () 
 
   it('M302 给 brief 塞一条 INSERT ⇒ 纯读断言会红', () => {
     expect(forbidden(BRIEF_ROUTE, WRITE)).toEqual([])
-    const bad = mutate(BRIEF_ROUTE, 'const brief = buildBriefModel', "db.prepare('INSERT INTO x VALUES (1)').run()\n    const brief = buildBriefModel")
+    // ⚠️ v1.13.403：锚点从 `const brief = buildBriefModel` 改成 `const compareRadii`
+    //    —— 多半径对比把建模过程抽成了 `modelFor()` 闭包，原锚点已不存在。
+    //    锚点跟着实现走是可以的，但**断言本身 ⛔ 不许放宽**。
+    const anchor = 'const compareRadii = parseCompareRadii'
+    expect(BRIEF_ROUTE, '锚点失效：请挑一句短期内不会消失的代码').toContain(anchor)
+    const bad = mutate(BRIEF_ROUTE, anchor, "db.prepare('INSERT INTO x VALUES (1)').run()\n    " + anchor)
     expect(forbidden(bad, WRITE)).toEqual(['INSERT INTO'])
   })
 
