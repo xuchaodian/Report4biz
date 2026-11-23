@@ -1,5 +1,5 @@
 /**
- * 联通智慧足迹 1001（人口基础属性）统一解析。
+ * 联通人口 1001（人口基础属性）统一解析。
  *
  * 权威依据：backend/src/utils/unicomSummaryCols.js —— 1001 的取值键 = 模板 field.toLowerCase()，
  * 即实际响应键为**小写**：p0_sum / male0_sum / age0_0006 / arpu0_50 / pall_sum …（模板 C 列是大写 P0_SUM）。

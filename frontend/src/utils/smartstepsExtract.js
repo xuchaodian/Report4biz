@@ -1,5 +1,5 @@
 /**
- * 联通智慧足迹 result_data 解析器 —— **单一权威**（single source of truth）。
+ * 联通人口 result_data 解析器 —— **单一权威**（single source of truth）。
  *
  * 为什么要有这个文件（v1.13.166）：
  *   这四个解析器原本内联在 `views/MyAccountView.vue`，只有本页可用。新做的「多订单对比看板」

@@ -26,7 +26,7 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>常住人口对比</span>
       </div>
-      <div class="business-circle-btn" @click="$emit('toggle-smartsteps')" title="智慧足迹人口分析">
+      <div class="business-circle-btn" @click="$emit('toggle-smartsteps')" title="联通人口分析">
         <el-icon><DataAnalysis /></el-icon>
         <span>联通人口</span>
       </div>

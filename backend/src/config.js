@@ -117,7 +117,7 @@ const missingKeys = []
 if (!AMAP_KEY) missingKeys.push('AMAP_KEY(高德)')
 if (!TENCENT_LBS_KEY) missingKeys.push('TENCENT_LBS_KEY(腾讯位置)')
 if (!ARK_API_KEY) missingKeys.push('ARK_API_KEY(豆包)')
-if (!SMARTSTEPS_API_KEY) missingKeys.push('SMARTSTEPS_API_KEY(联通智慧足迹)')
+if (!SMARTSTEPS_API_KEY) missingKeys.push('SMARTSTEPS_API_KEY(联通人口)')
 if (!PURCHASE_SHARE_SECRET) missingKeys.push('PURCHASE_SHARE_SECRET(分享链接签名)')
 if (missingKeys.length) {
   console.warn('[config] 未配置第三方密钥: ' + missingKeys.join(', ') + '。请在 backend/.env 或环境变量中配置，否则对应服务将不可用。')

@@ -53,7 +53,7 @@
       <div class="rp-sec-hd">
         <h2>人口数据（点位半径）</h2>
         <span class="rp-sec-note">
-          联通智慧足迹 1001 · 半径 {{ radiusText(model.population.popRadius) }} 内
+          联通人口 1001 · 半径 {{ radiusText(model.population.popRadius) }} 内
           <template v-if="model.population.popMonth"> · 期次 {{ model.population.popMonth }}</template>
         </span>
       </div>

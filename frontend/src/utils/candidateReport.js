@@ -490,7 +490,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     // 🔴 标签必须带「半径」，因为这是 point+radius 口径，不是商圈面口径（v1.13.341）
     const rTxt = radiusText(b.popRadius)
     const rPrefix = rTxt ? `半径 ${rTxt} 内` : '半径内'
-    const srcNote = `联通智慧足迹${b.popMonth ? ' ' + b.popMonth : ''} · 点位半径口径（圆）`
+    const srcNote = `联通人口${b.popMonth ? ' ' + b.popMonth : ''} · 点位半径口径（圆）`
     facts.push({
       label: `${rPrefix}居住人口`,
       value: `${b.population.toLocaleString('zh-CN')} 人`,
@@ -506,7 +506,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
       facts.push({
         label: '居住性别比',
         value: `男 ${b.gender.live.malePct.toFixed(1)}% · 女 ${b.gender.live.femalePct.toFixed(1)}%`,
-        note: '联通智慧足迹 · 居住人口口径'
+        note: '联通人口 · 居住人口口径'
       })
     }
     // 🔴 v1.13.387：原来这里还有「主要年龄段」「主要月话费档」两条 top3 摘要 ——
@@ -603,7 +603,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     provenance: {
       source: populationBlock.hasPop
         // 人口与商圈面**分属两个来源、两套口径**，必须分开写，⛔ 不能糊成一句"联通数据"
-        ? `人口：联通智慧足迹 1001（点位半径${populationBlock.popRadius ? ' ' + radiusText(populationBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
+        ? `人口：联通人口 1001（点位半径${populationBlock.popRadius ? ' ' + radiusText(populationBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
         : '人口未获取（需购买联通人口配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记',
       period: populationBlock.hasPop
         ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')

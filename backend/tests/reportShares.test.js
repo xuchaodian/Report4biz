@@ -57,7 +57,7 @@ function makeSnapshot(title, extra = {}) {
     coordinate: { lat: 31.2304, lng: 121.4737, radius: 1000 },
     facts: [{ label: '拟入驻品牌', value: '食其家' }],
     risks: ['租金未填'],
-    provenance: { source: '联通智慧足迹', period: '202510', sample: '半径 1km', confidence: '中' },
+    provenance: { source: '联通人口', period: '202510', sample: '半径 1km', confidence: '中' },
     completeness: '较完整',
     ...extra
   }

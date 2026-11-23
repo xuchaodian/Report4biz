@@ -29,7 +29,7 @@
         <span class="bu-tag" :class="'is-' + (plan?.tier || 'optional')">{{ tierTag }}</span>
         <b class="bu-title">{{ plan?.title || '要不要花钱深入' }}</b>
       </div>
-      <span class="bu-hd-note">联通智慧足迹 · 按半径圆取数</span>
+      <span class="bu-hd-note">联通人口 · 按半径圆取数</span>
     </div>
 
     <ul v-if="plan?.why?.length" class="bu-why">

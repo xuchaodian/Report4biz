@@ -975,7 +975,7 @@
       @close="closePoiResults"
     />
 
-    <!-- 智慧足迹面板（M1：异步组件，首次打开才加载；everOpened 保证打开后常驻，保留拖动位置等状态） -->
+    <!-- 联通人口面板（M1：异步组件，首次打开才加载；everOpened 保证打开后常驻，保留拖动位置等状态） -->
     <SmartstepsPanel
       v-if="smartstepsEverOpened"
       :visible="smartstepsVisible"
@@ -3094,7 +3094,7 @@ let poiCenterMarker = null    // POI中心点标记
 let poiRadiusCircle = null   // POI搜索半径圆
 let poiCenterPoint = null     // POI中心点坐标
 
-// 智慧足迹面板
+// 联通人口面板
 const smartstepsVisible = ref(false)
 // M1（v1.13.107）：异步弹窗「是否曾打开过」——首次打开时才挂载（触发 chunk 按需加载），
 // 之后保持挂载（配合组件内部 v-if/v-model 显隐），避免每次开关都重建、丢失拖动位置等状态。

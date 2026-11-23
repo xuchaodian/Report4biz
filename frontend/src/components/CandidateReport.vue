@@ -54,7 +54,7 @@
           <span class="rp-popbar-miss">尚未获取</span>
           <!-- v1.13.381：平台有数据 ≠ 本账号买过 ⇒ 只提示「有数据可查」，取数照样计费 -->
           <span v-if="popCachedMonth" class="rp-popbar-note">该位置已有数据可查（期次 {{ popCachedMonth }}），取数消耗 1 次配额</span>
-          <span v-else class="rp-popbar-note">联通智慧足迹 · 点位半径口径 · 同半径已购自动复用</span>
+          <span v-else class="rp-popbar-note">联通人口 · 点位半径口径 · 同半径已购自动复用</span>
         </template>
       </span>
       <span class="rp-popbar-r">

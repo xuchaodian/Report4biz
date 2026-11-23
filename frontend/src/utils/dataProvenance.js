@@ -34,7 +34,7 @@ export function districtProvenance({ dataMonth, districtCount = 0 } = {}) {
   const refreshed = !!dataMonth
   return {
     items: [
-      { label: '数据来源', value: refreshed ? '联通智慧足迹 1001 接口（当期人口）' : '本地商圈面基线 · 联通人口版' },
+      { label: '数据来源', value: refreshed ? '联通人口 1001 接口（当期人口）' : '本地商圈面基线 · 联通人口版' },
       { label: '数据期次', value: refreshed ? formatMonth(dataMonth) : '未标注（基线数据）', tone: refreshed ? 'ok' : 'warn' },
       { label: '覆盖商圈', value: districtCount > 0 ? `${districtCount} 个（当前城市）` : '未选择城市' },
       { label: '评分口径', value: '固定经验权重，非统计模型；仅供同城横向比较' }

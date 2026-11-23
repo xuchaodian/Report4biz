@@ -30,7 +30,7 @@
 ### 4. **商圈工具组件** (BusinessCirclePanel.vue)
 - 商圈工具面板
 - 常住人口分布/对比
-- 智慧足迹人口分析
+- 联通人口分析
 - 开店余地功能
 
 ### 5. **门店控制组件** (StoreControlPanel.vue)
