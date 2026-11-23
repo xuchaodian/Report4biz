@@ -333,8 +333,17 @@ const consts = ref(null)
 const generatedAt = ref(null)
 const paper = ref(null)
 
-/** 与智能选址同一组可选半径（⛔ 别另立一套：同一点位在两处的圆必须一样大） */
-const STANDARD_RADII = [500, 1000, 1500, 3000]
+/**
+ * 可选分析半径（v1.13.402 起补 5km）。
+ *
+ * 前三档与「智能选址」同源（`SITE_RADIUS_CHOICES`），同一点位在两处的圆必须一样大。
+ * 5km 是**后加的**：它等于联通 1001 的**最大档**（`UNICOM_REPORT_RADII` 上界），
+ * 而立项报告的半径选项里本来就有 5000 ⇒ 初步分析不给 5km，就等于「能买的档买不到」，
+ * 5km 的立项报告也就没法从初步分析直接生成。
+ * ⚠️ 智能选址目前仍只有前四档 —— 那是另一个开销模型（网格估算，`MAX_GRIDS` 有限），
+ *    要一起放开得单独评估，⛔ 别顺手改。
+ */
+const STANDARD_RADII = [500, 1000, 1500, 3000, 5000]
 const radius = ref(Number(props.row?.radius) || 1000)
 
 /** 点位自身的半径可能不在四档里（800/1200 之类）⇒ 插进去并默认选中，⛔ 不偷偷改掉 */
