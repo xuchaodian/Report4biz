@@ -9,7 +9,6 @@
     <!-- 头部 -->
     <div class="cd-head">
       <div class="cd-head-l">
-        <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon>返回地图</el-button>
         <h2>候选点位</h2>
         <p class="cd-sub">
           这里列出<b>「我的门店」里门店类型为重点候选 / 一般候选的门店</b>，
@@ -18,6 +17,10 @@
         </p>
       </div>
       <div class="cd-head-r">
+        <!-- v1.13.401：返回地图从左上挪到刷新左侧（业主 2026-11-23）。
+             理由：左上那块被标题 + 三行说明占据，返回按钮孤零零挂在文字上方；
+             放进右侧动作组后，页面上所有「可点」的东西集中在同一簇。 -->
+        <el-button link @click="goBack"><el-icon><ArrowLeft /></el-icon>返回地图</el-button>
         <el-button :loading="loading" @click="reload">刷新</el-button>
         <el-button type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>新建独立点位
@@ -755,7 +758,9 @@ onMounted(() => {
 .cd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .cd-head-l h2 { margin: 4px 0 6px; font-size: 20px; font-weight: 500; }
 .cd-sub { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-regular); max-width: 720px; }
-.cd-head-r { display: flex; gap: 8px; flex-shrink: 0; }
+/* v1.13.401：align-items:center 让 link 型「返回地图」与两个实体按钮垂直对齐
+   （原来只有实体按钮，stretch 看不出来；混入文字按钮后会上下错位）。 */
+.cd-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .cd-stages { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .cd-stage {
