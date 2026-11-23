@@ -395,8 +395,8 @@ function generateMockData(services) {
  * 请求体: {
  *   centerLng: number,   // GCJ-02经度
  *   centerLat: number,  // GCJ-02纬度
- *   radius: number,      // 主要半径（米）
- *   radii: number[],     // 所有半径数组（米）
+ *   radius: number,      // 主要半径（米）—— **本次唯一真正取数的圆**
+ *   radii: number[],     // 前端「4 个半径框填了哪些」的留痕；⛔ 不参与扣费、⛔ 不落库（v1.13.408）
  *   services: string[], // 服务编码数组，如 ['1001', '1005']
  *   cityMonth: string,  // 格式: '202403'，为空则用最新月份
  * }
@@ -552,7 +552,16 @@ router.post('/query', authenticate, async (req, res) => {
           storeType || '',
           centerLng,
           centerLat,
-          JSON.stringify(radii || [radius]),
+          // 🔴 v1.13.408：**只写本次真正取数的那一个圆**。
+          //   老实现写的是 `radii`（用户填的全部半径），但上游请求体只有一个 `radius`
+          //   （见上面 requestBody）—— 记录写着「买了 500/1000/1500 三档」，
+          //   实际只有 500 米那一份数据。两个后果都很硬：
+          //     ① 履历半径列对不上账（显示多档、实际一档）；
+          //     ② `/api/smartsteps/population` 的复用判据是「同半径」，
+          //        按 1500 米做立项报告会被判「已购可复用」⇒ 拿 500 米的数据当 1500 米用
+          //        （面积差 9 倍）。
+          //   ⇒ 记录口径必须等于扣费口径：一个圆 = 一次配额 = 一行 purchases。
+          JSON.stringify([radius]),
           cityMonth || '',
           actualQuotaUsed,
           recordStatus,

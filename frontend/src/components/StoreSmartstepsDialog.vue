@@ -81,6 +81,9 @@
 
     <div class="query-info">
       <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
+      <!-- v1.13.408：4 个框都留着（业主明确不动结构），但一次请求只取一个圆 ——
+           不写这句，用户填 4 个框会以为 4 个圆都买了。 -->
+      <span class="query-info-tip">本次取数只查第一个非 0 的半径（一圆一次，其余半径要查需单独购买）</span>
     </div>
 
     <div class="quota-section">
@@ -157,7 +160,10 @@
       <ul>
         <li><strong>门店:</strong> {{ storeInfo?.name }}</li>
         <li><strong>圆心位置:</strong> {{ storeInfo?.latitude.toFixed(6) }}, {{ storeInfo?.longitude.toFixed(6) }}</li>
-        <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
+        <li><strong>查询半径:</strong> {{ primaryRadiusText }}</li>
+        <li v-if="extraRadiusCount > 0" class="confirm-extra">
+          其余 {{ extraRadiusCount }} 个半径本次<strong>不取数</strong>（一圆一次，要查请单独购买）
+        </li>
         <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
         <li><strong>本次扣除:</strong> {{ getQuotaToUse() }}次</li>
         <li><strong>扣除后剩余:</strong> {{ getRemainingAfterUse() }}次</li>
@@ -620,40 +626,57 @@ const selectedMonthLabel = computed(() => {
   return month ? month.label : ''
 })
 
-// 计算本次扣除次数（有效半径的数量）
+/**
+ * 一次请求的固定成本：**1 个圆 = 1 次配额**（v1.13.408）
+ *
+ * 🔴 为什么恒为 1（业主 2026-11-23 拍板）：
+ *   上游 getData 的请求体是 `{ codes, cityMonth, radius, polygons }` —— **一个 radius、
+ *   一个点**，一次调用只查一个圆。后端 `/query` 也按 `QUOTA_UNIT = 1` 实扣 1 次
+ *   （`smartsteps.js` 里有「不接受客户端传 quotaUsed」的防改包注释）。
+ *   而确认框原先按「4 个框里有几个非 0」显示 4 次 ⇒ **文案说扣除 4 次、实际扣 1 次**，
+ *   用户拿履历一对账就差 3 次。
+ *   ⚠️ 与服务码无关：`codes` 是一次请求里拼成一包发出去的，15 个服务码同价。
+ */
+const QUERY_QUOTA_COST = 1
+
+// 本次扣除次数：恒 1（不是「填了几个半径框」）
 function getQuotaToUse() {
-  let count = 0
-  if (queryForm.value.radius1 > 0) count++
-  if (queryForm.value.radius2 > 0) count++
-  if (queryForm.value.radius3 > 0) count++
-  if (queryForm.value.radius4 > 0) count++
-  return count
+  return QUERY_QUOTA_COST
 }
 
 // 计算扣除后剩余次数
 function getRemainingAfterUse() {
   if (!quotaInfo.value) return '-'
-  return quotaInfo.value.available - getQuotaToUse()
+  return quotaInfo.value.available - QUERY_QUOTA_COST
 }
 
-// 获取半径显示
-function getRadiiDisplay() {
-  const radii = []
-  if (queryForm.value.radius1 > 0) radii.push(`${queryForm.value.radius1}公里`)
-  if (queryForm.value.radius2 > 0) radii.push(`${queryForm.value.radius2}公里`)
-  if (queryForm.value.radius3 > 0) radii.push(`${queryForm.value.radius3}公里`)
-  if (queryForm.value.radius4 > 0) radii.push(`${queryForm.value.radius4}公里`)
-  return radii.length > 0 ? radii.join(', ') : '无'
-}
-
-// 获取有效半径（米）
+/**
+ * 有效半径（米），按半径1→4 顺序收集并去重。
+ *
+ * 🔴 v1.13.408：原来只收 radius1~3，**把半径4 吞掉了** ⇒ 只填第 4 个框时 `radii = []`
+ *   ⇒ 请求里 `radius: radii[0]` 是 undefined ⇒ 后端 400「缺少必要参数」，
+ *   而前端校验 `hasQueryParams` 是通过的 —— 用户填满了框、按钮能点、结果报参数缺失。
+ *   4 个框是业主明确要保留的（「不要动」），那就不能有一个被静默忽略。
+ *
+ * 🔴 去重：初步分析进来会把半径1 预填成报告半径（如 1.00），而 localStorage 里半径2
+ *   的旧值往往也是 1 ⇒ 不去重就会拿同一个圆算两遍，提示文案里的「其余 N 个」也失真。
+ */
 function getRadiiInMeters() {
   const radii = []
-  if (queryForm.value.radius1 > 0) radii.push(Math.round(queryForm.value.radius1 * 1000))
-  if (queryForm.value.radius2 > 0) radii.push(Math.round(queryForm.value.radius2 * 1000))
-  if (queryForm.value.radius3 > 0) radii.push(Math.round(queryForm.value.radius3 * 1000))
+  for (const v of [queryForm.value.radius1, queryForm.value.radius2, queryForm.value.radius3, queryForm.value.radius4]) {
+    const m = Math.round(Number(v) * 1000)
+    if (m > 0 && !radii.includes(m)) radii.push(m)
+  }
   return radii
 }
+
+/** 本次真正送去取数的那一个圆（第一个非 0 半径；后端 `radius: radii[0]`） */
+const primaryRadiusM = computed(() => getRadiiInMeters()[0] || 0)
+const primaryRadiusText = computed(() => (
+  primaryRadiusM.value > 0 ? `${(primaryRadiusM.value / 1000).toFixed(2)} 公里` : '未填'
+))
+/** 除主半径外还填了几个（本次不取数，仅提示，别让用户以为一起查了） */
+const extraRadiusCount = computed(() => Math.max(0, getRadiiInMeters().length - 1))
 
 // 加载可选月份（v1.13.104 修正：与 SmartstepsPanel/BatchSmartstepsDialog 同源——
 // 调联通 getCityMonth 实测可用月，截取最近 2 个月（API 仅受理数据最新月为锚的过往 2 个月，
@@ -2067,7 +2090,10 @@ async function executeQuery(event) {
     } else {
       // 正常模式：调用真实API
       const radii = getRadiiInMeters()
-      
+      // 🔴 v1.13.408：`radius` 是**本次唯一真正取数的圆**（第一个非 0 半径）；
+      //   `radii` 只是「用户还填了哪些候选半径」的留痕，后端**不据此扣费、不据此落库**
+      //   （purchases.radius 只写 [radius]，见 smartsteps.js 的 INSERT 注释）。
+      //   ⚠️ 上游 getData 只受理单个 radius —— 多档不是「一起查」，是「一圆一次」。
       const res = await axios.post('/api/smartsteps/query', {
         centerLng: storeInfo.value.longitude,
         centerLat: storeInfo.value.latitude,
@@ -2482,6 +2508,21 @@ watch(() => props.store, (newStore) => {
   font-size: 12px;
   color: #666;
   margin-bottom: 15px;
+}
+
+/* v1.13.408：4 个半径框只取 1 个圆 —— 这句必须看得清（12px 用 #646a73 而不是 #909399，
+   #909399 在白底只有 2.85:1，不达 AA）。 */
+.query-info-tip {
+  display: block;
+  margin-top: 4px;
+  color: #646a73;
+}
+
+/* 确认框里「其余 N 个半径本次不取数」—— 同样不能用浅灰 */
+.confirm-extra {
+  color: #646a73;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .quota-section {
