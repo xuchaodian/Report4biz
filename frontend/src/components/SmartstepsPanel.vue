@@ -89,9 +89,10 @@
         </el-form>
         <div class="query-info">
           <span>单位: 公里 ｜ 半径范围: 0.35~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
-          <!-- v1.13.409：本面板仍是「一次只发一个圆」（⚠️ 与门店弹窗的「填几个买几个」不同），
-               不写这句，用户填 4 个框会以为 4 个圆都买了。 -->
-          <span class="query-info-tip">本面板每次只取第一个非 0 的半径；要一次买多个半径，请用「地图—门店图标—联通人口数据」弹窗</span>
+          <!-- v1.13.410：4 个框各对应一个圆，填几个就买几个（一圆一次、各扣 1 次）。
+               409 时这里写的是「每次只取第一个非 0 的半径」—— 那是把上游「一次一个 radius」
+               的限制直接摊给用户；而门店弹窗 409 已改成逐圆下单 ⇒ 两处口径必须一致。 -->
+          <span class="query-info-tip">填几个半径就买几个圆（一圆一次、各扣 1 次）；不需要的框请留空或填 0</span>
         </div>
       </div>
 
@@ -116,24 +117,49 @@
           @click="confirmPurchase"
           :disabled="!canPurchase || isLoading"
         >
-          <AppIcon v-if="!isLoading" class="icon-text"><CreditCard /></AppIcon>{{ isLoading ? '处理中...' : '购买' }}
+          <AppIcon v-if="!isLoading" class="icon-text"><CreditCard /></AppIcon>{{ isLoading ? (purchaseProgress || '处理中...') : (getQuotaToUse() > 1 ? `购买（${getQuotaToUse()} 次）` : '购买') }}
         </el-button>
         <!-- 禁用原因提示 -->
         <div class="purchase-hint" v-if="!canPurchase && !isLoading">
           <span v-if="quotaInfo && quotaInfo.available <= 0" style="color: #f56c6c;">{{ QUOTA_INLINE.prefix }}<el-button type="primary" link size="small" @click="onQuotaShortage">{{ QUOTA_INLINE.action }}</el-button>{{ QUOTA_INLINE.suffix }}</span>
           <span v-else-if="!circleCenter">请先选择位置</span>
           <span v-else-if="!hasRadius">请设置至少一个半径</span>
+          <!-- v1.13.410：次数够 1 次但不够买满当前圆数时，按钮会被 canPurchase **静默置灰**
+               ⇒ 必须说清「差几次、怎么减」，否则用户只看到一个灰按钮无从下手。 -->
+          <span v-else-if="quotaInfo && quotaInfo.available < getQuotaToUse()">本次需扣 {{ getQuotaToUse() }} 次（每个半径 1 次），当前只剩 {{ quotaInfo.available }} 次 —— 请减少半径框，或<el-button type="primary" link size="small" @click="onQuotaShortage">补充次数</el-button></span>
           <span v-else>请选择数据年月</span>
         </div>
       </div>
 
       <!-- 结果展示 -->
-      <div v-if="queryResult" class="result-section">
+      <div v-if="queryResults.length" class="result-section">
         <div class="result-header">
           <span class="result-title"><AppIcon class="icon-text"><DataAnalysis /></AppIcon>查询结果</span>
-          <button class="clear-result" @click="queryResult = null">清除</button>
+          <button class="clear-result" @click="clearResults">清除</button>
         </div>
-        <div class="result-data" v-html="sanitizeHtml(formatResultData(queryResult.data))"></div>
+        <!-- v1.13.410：多个圆时按半径切换 —— 一个圆 = 一次请求 = 一份数据，
+             上游一次只受理一个 radius，不能把 4 份结果混在一张表里。 -->
+        <div v-if="queryResults.length > 1" class="result-radius-bar">
+          <span class="result-radius-label">查询半径：</span>
+          <el-radio-group v-model="activeRadius" size="small">
+            <el-radio-button
+              v-for="item in queryResults"
+              :key="item.radius"
+              :value="item.radius"
+            >{{ (item.radius / 1000).toFixed(2) }} 公里{{ item.ok ? '' : '（未取到）' }}</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-if="activeResult && activeResult.error" class="result-note result-note-error">
+          该半径取数失败：{{ activeResult.error }}
+        </div>
+        <div v-else-if="activeResult && activeResult.res && activeResult.res.refunded" class="result-note">
+          该半径所选月份暂无数据，配额已返还
+        </div>
+        <div v-else-if="activeResult" class="result-data" v-html="sanitizeHtml(formatResultData(activeResult.res?.data))"></div>
+        <div v-else class="result-data"><p>暂无查询结果</p></div>
+        <div v-if="activeResult && activeResult.res && activeResult.res.fromCache" class="result-note">
+          本半径命中缓存（同点位、同半径、同月份、同批服务项），未扣配额、未新增履历
+        </div>
       </div>
     </div>
 
@@ -149,8 +175,11 @@
           <li><strong>门店名称:</strong> {{ queryForm.storeName || '-' }}</li>
           <li><strong>门店类型:</strong> {{ queryForm.storeType || '-' }}</li>
           <li><strong>圆心位置:</strong> {{ circleCenter?.lat.toFixed(6) }}, {{ circleCenter?.lng.toFixed(6) }}</li>
-          <li><strong>查询半径:</strong> {{ getRadiiDisplay() }}</li>
+          <li><strong>查询半径:</strong> {{ radiiConfirmText }}</li>
           <li><strong>数据年月:</strong> {{ selectedMonthLabel }}</li>
+          <li><strong>本次扣除:</strong> {{ getQuotaToUse() }}次</li>
+          <li><strong>扣除后剩余:</strong> {{ getRemainingAfterUse() }}次</li>
+          <li class="confirm-note">同点位、同半径、同月份、同批服务项此前查过会命中缓存：不扣配额，也不新增履历。</li>
         </ul>
       </div>
       <template #footer>
@@ -193,8 +222,16 @@ const circleCenter = ref(null)
 const isSelecting = ref(false)
 const quotaInfo = ref(null)  // 配额信息
 const isLoading = ref(false)
-const queryResult = ref(null)
+// v1.13.410：一个圆一份结果（原来单条 queryResult 只能装一档）→ 与「填几个买几个」配套
+const queryResults = ref([])
+const activeRadius = ref(0)
+const purchaseProgress = ref('')
 const showConfirmDialog = ref(false)
+
+// 本面板固定查全部服务（1016 已被上游停用，故缺省；与 409 前内联的 25 项完全一致）。
+// ⚠️ 缓存键里含 services 排序拼串（后端 findCache）⇒ 换服务集合会另生成一份缓存，
+//   不同入口（门店弹窗只查 15 项）之间因此不会互相命中，属既有行为。
+const ALL_SERVICES = ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023','1024','1025']
 
 // 查询表单（4个半径，单位：公里）— 从 localStorage 加载预设值
 const PANEL_STORAGE_KEY = 'panel_smartsteps_radii'
@@ -246,39 +283,52 @@ const panelStyle = computed(() => ({
 }))
 
 // 获取有效的半径列表（转换为米）
+//   🔴 去重：4 个框允许填同一半径（如两框都是 1.00）⇒ 不去重会拿同一个圆买两遍、白扣一次配额。
+//   🔴 radius4 也收：408 之前只收 1~3，只填第 4 个框时 radii=[] ⇒ 后端 400「缺少必要参数」。
 function getRadiiInMeters() {
   const radii = []
-  if (queryForm.value.radius1 > 0) {
-    radii.push(Math.round(queryForm.value.radius1 * 1000))
-  }
-  if (queryForm.value.radius2 > 0) {
-    radii.push(Math.round(queryForm.value.radius2 * 1000))
-  }
-  if (queryForm.value.radius3 > 0) {
-    radii.push(Math.round(queryForm.value.radius3 * 1000))
-  }
-  if (queryForm.value.radius4 > 0) {
-    radii.push(Math.round(queryForm.value.radius4 * 1000))
+  for (const v of [queryForm.value.radius1, queryForm.value.radius2, queryForm.value.radius3, queryForm.value.radius4]) {
+    const m = Math.round(Number(v) * 1000)
+    if (m > 0 && !radii.includes(m)) radii.push(m)
   }
   return radii
 }
 
-// 获取半径显示文本
-function getRadiiDisplay() {
-  const radii = []
-  if (queryForm.value.radius1 > 0) {
-    radii.push(`${queryForm.value.radius1}公里`)
-  }
-  if (queryForm.value.radius2 > 0) {
-    radii.push(`${queryForm.value.radius2}公里`)
-  }
-  if (queryForm.value.radius3 > 0) {
-    radii.push(`${queryForm.value.radius3}公里`)
-  }
-  if (queryForm.value.radius4 > 0) {
-    radii.push(`${queryForm.value.radius4}公里`)
-  }
-  return radii.length > 0 ? radii.join(', ') : '无'
+/**
+ * v1.13.410：本次要买几个圆 = 填了几个非 0 半径（去重后）＝要扣几次配额。
+ *
+ * 🔴 上游 getData 请求体是 `{ codes, cityMonth, radius, polygons }` —— 一个 radius、一个点，
+ *   一次调用只查一个圆。所以「一次买 4 个圆」不是一次请求，而是**逐圆下单 4 次**：
+ *   每次一个 `POST /api/smartsteps/query` ⇒ 后端一行 purchases + 扣 1 次
+ *   （与门店弹窗 StoreSmartstepsDialog / BatchSmartstepsDialog 同一套路）。
+ * ⚠️ 命中 `smartsteps_cache`（同点位+同半径+同月+同批服务项）的圆 `quotaUsed:0` 且不写 purchases
+ *   ⇒ 实际扣费 ≤ 框数；与 `/population` 的「缓存照扣 1 次」口径**有意不同**，⛔ 不要统一。
+ */
+function getQuotaToUse() {
+  return getRadiiInMeters().length
+}
+
+// 计算扣除后剩余次数
+function getRemainingAfterUse() {
+  if (!quotaInfo.value) return '-'
+  return quotaInfo.value.available - getQuotaToUse()
+}
+
+/** 确认框里的半径清单：`0.50、1.00、1.50、2.00 公里（共 4 个圆）` */
+const radiiConfirmText = computed(() => {
+  const list = getRadiiInMeters()
+  if (list.length === 0) return '未填'
+  return `${list.map(m => (m / 1000).toFixed(2)).join('、')} 公里（共 ${list.length} 个圆）`
+})
+
+// 当前查看的圆（多个圆时用 radio 切换）
+const activeResult = computed(
+  () => queryResults.value.find(r => r.radius === activeRadius.value) || queryResults.value[0] || null
+)
+
+function clearResults() {
+  queryResults.value = []
+  activeRadius.value = 0
 }
 
 // 选中的月份标签
@@ -288,13 +338,14 @@ const selectedMonthLabel = computed(() => {
 })
 
 // 是否有有效半径
-const hasRadius = computed(() => {
-  return queryForm.value.radius1 > 0 || queryForm.value.radius2 > 0 || queryForm.value.radius3 > 0 || queryForm.value.radius4 > 0
-})
+const hasRadius = computed(() => getRadiiInMeters().length > 0)
 
-// 是否可以购买（只要选择了位置、半径、年月就允许点击，执行时再检查配额）
+// 是否可以购买：位置、半径、年月填全 **且** 可用次数够买满当前圆数。
+//   ⚠️ 配额要够「填了几个圆」而不是够 1 次：否则前几个买完、后面几个在循环里被闸门拒掉，
+//   用户拿到一半数据、心里没底 —— 宁可下单前拦住，让他先清框或去补额度。
 const canPurchase = computed(() => {
-  return circleCenter.value && hasRadius.value && queryForm.value.cityMonth
+  return !!(circleCenter.value && hasRadius.value && queryForm.value.cityMonth)
+    && (quotaInfo.value?.available ?? 0) >= getQuotaToUse()
 })
 
 // 开始拖动
@@ -398,60 +449,102 @@ function confirmPurchase() {
 
 /** 配额不足的行内入口：走统一引导（v1.13.217 —— 文案与联系方式收敛到 utils/quotaContact.js） */
 function onQuotaShortage() {
-  requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
+  requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: getQuotaToUse() || 1 })
 }
 
-// 执行购买并查询
+// 执行购买并查询（v1.13.410：填几个半径就逐圆买几次，一圆 = 一次请求 = 一行履历 = 1 次配额）
 async function executePurchase() {
   if (!circleCenter.value) return
 
   showConfirmDialog.value = false
   isLoading.value = true
-  queryResult.value = null
+  queryResults.value = []
+  activeRadius.value = 0
+  purchaseProgress.value = ''
+
+  const radii = getRadiiInMeters()
 
   try {
     // 刷新最新配额
     await loadQuota()
 
-    // 检查配额（配额未加载或配额不足）—— v1.13.217 改走统一引导
-    if (!quotaInfo.value || quotaInfo.value.available < 1) {
-      await requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: 1 })
+    // 配额闸门：需要够买满「填了几个圆」，不够就整体拦下并引导 —— 不半途而废
+    if ((quotaInfo.value?.available ?? 0) < radii.length) {
+      await requireQuota(QUOTA_REASON.OWN, { own: quotaInfo.value?.available ?? 0, need: radii.length || 1 })
       isLoading.value = false
       return
     }
 
-    // 获取半径列表（米）
-    const radii = getRadiiInMeters()
-
-    // 调用查询API
-    const res = await axios.post('/api/smartsteps/query', {
-      centerLng: circleCenter.value.lng,
-      centerLat: circleCenter.value.lat,
-      radius: radii[0], // 使用第一个半径作为主要半径
-      radii: radii,     // 传递所有半径
-      services: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1017','1018','1019','1020','1021','1022','1023','1024','1025'],  // 全部服务
-      cityMonth: queryForm.value.cityMonth,
-      quotaUsed: 1,        // 消耗1次配额
-      storeName: queryForm.value.storeName,
-      storeType: queryForm.value.storeType
-    })
-
-    queryResult.value = res.data
-
-    // 检查是否返还配额（空数据情况）
-    if (res.data.refunded) {
-      ElMessage.warning('该区域暂无数据，配额已返还')
-    } else {
-      ElMessage.success('查询成功!')
+    /**
+     * 🔴 逐圆下单。上游 getData 一次只受理一个 `radius`，所以「一次买 4 个圆」=
+     *   连发 4 次 `POST /api/smartsteps/query`，每次落一行 purchases、扣 1 次
+     *   （与 `BatchSmartstepsDialog` 的「门店×半径」、门店弹窗的「单店×半径」同一套路）。
+     * ⚠️ 不复用后端一次循环：那会让超时/部分失败的责任落到服务端；这里只负责
+     *   「失败也要说清楚是哪个圆」。
+     */
+    const items = []
+    let quotaBlocked = ''
+    for (let i = 0; i < radii.length; i++) {
+      const r = radii[i]
+      purchaseProgress.value = `购买中 ${i + 1}/${radii.length}（${(r / 1000).toFixed(2)} 公里）`
+      try {
+        const res = await axios.post('/api/smartsteps/query', {
+          centerLng: circleCenter.value.lng,
+          centerLat: circleCenter.value.lat,
+          radius: r,        // 一个圆一次：本轮只查这一档
+          radii: [r],       // 留痕用；后端记录口径 = 扣费口径 = 这一档
+          services: ALL_SERVICES,  // 全部服务
+          cityMonth: queryForm.value.cityMonth,
+          quotaUsed: 1,     // 服务端自行计量，这里只是声明
+          storeName: queryForm.value.storeName,
+          storeType: queryForm.value.storeType
+        })
+        items.push({ radius: r, ok: !res.data.refunded, res: res.data, error: '' })
+      } catch (e) {
+        const code = e.response?.data?.code
+        items.push({
+          radius: r,
+          ok: false,
+          res: null,
+          error: e.response?.data?.message || e.message || '请求失败'
+        })
+        // 配额被闸门拒掉 ⇒ 后面的圆再请求也是同样结果，直接停手并引导补额度
+        if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) { quotaBlocked = code; break }
+      }
+    }
+    // 中途停手时，剩下的圆必须显式标成「未购买」——⛔ 静默少买比报错更难查
+    for (const r of radii.slice(items.length)) {
+      items.push({ radius: r, ok: false, res: null, error: '未购买（前面的圆已用完可用次数）' })
     }
 
-    // 刷新配额
-    loadQuota()
+    queryResults.value = items
+    activeRadius.value = (items.find(x => x.ok) || items[0])?.radius || 0
+
+    await loadQuota()
 
     // v1.13.259：向父级上报「本次查询已走完」——供场景引导判定第 6 步完成。
     // 🔴 必须用真实结果上报，⛔ 不能以「点开面板」为完成依据。
     // ⚠️ refunded（空数据返还配额）也算完成动作：用户确实走完了流程，卡住他重试没有意义。
     emit('queried')
+
+    const okItems = items.filter(x => x.ok)
+    const cachedCount = okItems.filter(x => x.res?.fromCache).length
+    const refundCount = items.filter(x => x.res?.refunded).length
+    const failCount = items.filter(x => !x.ok && !x.res).length
+    const paidCount = okItems.length - cachedCount
+
+    if (quotaBlocked) {
+      ElMessage.warning(`已取到 ${okItems.length} 个圆，其余因可用次数不足未购买`)
+      await requireQuota(quotaBlocked, { own: quotaInfo.value?.available ?? 0, need: 1 })
+    } else if (okItems.length === 0) {
+      ElMessage.warning(refundCount > 0 ? '所选月份暂无数据，配额已全部返还' : '本次查询全部失败')
+    } else {
+      const bits = [`新取数 ${paidCount} 个圆`]
+      if (cachedCount > 0) bits.push(`命中缓存 ${cachedCount} 个（不扣费）`)
+      if (refundCount > 0) bits.push(`无数据返还 ${refundCount} 个`)
+      if (failCount > 0) bits.push(`失败 ${failCount} 个`)
+      ElMessage.success(`购买完成：${bits.join('，')}`)
+    }
   } catch (e) {
     console.error('查询失败:', e)
     // v1.13.217：后端闸门拒绝时按 code 分流 —— 「平台池空」与「账号额度空」给**不同出口**
@@ -467,6 +560,7 @@ async function executePurchase() {
     }
   } finally {
     isLoading.value = false
+    purchaseProgress.value = ''
   }
 }
 
@@ -1299,6 +1393,50 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+/* 多圆结果按半径切换（v1.13.410）。面板只有 340px 宽 ⇒ 按钮组必须可换行，
+   否则 4 个「0.50 公里」会横向溢出、被 .panel-content 的 overflow-y 裁掉右半边。 */
+.result-radius-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.result-radius-label {
+  font-size: 12px;
+  color: #646a73;
+}
+
+.result-radius-bar :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* EP 的 radio-button 靠「相邻按钮消左边框 + 只给首尾圆角」拼成一条，
+   换行后就断成两段、首尾圆角对不上 ⇒ 这里改成每个按钮各自独立圆角。 */
+.result-radius-bar :deep(.el-radio-button__inner) {
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+}
+
+.result-radius-bar :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  border-color: var(--el-color-primary);
+}
+
+/* 单圆失败 / 无数据 / 命中缓存 的说明行 */
+.result-note {
+  font-size: 12px;
+  color: #646a73;
+  line-height: 1.7;
+  margin-top: 8px;
+}
+
+.result-note-error {
+  color: #f56c6c;
+}
+
 .result-data {
   font-size: 13px;
 }
@@ -1350,6 +1488,13 @@ onUnmounted(() => {
 
 .confirm-content li:last-child {
   border-bottom: none;
+}
+
+/* 缓存说明：与门店弹窗同一条口径（/query 命中 smartsteps_cache ⇒ 不扣费、不写 purchases） */
+.confirm-content li.confirm-note {
+  color: #646a73;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 /* 结果详情样式 - 与购买履历一致 */

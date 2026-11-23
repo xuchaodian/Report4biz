@@ -313,3 +313,112 @@ describe('B. 前端弹窗：填几个半径就买几个圆（409）', () => {
     expect(src).not.toContain('primaryRadiusText')
   })
 })
+
+/**
+ * C 组：地图「商圈工具 → 联通人口」那张侧面板（SmartstepsPanel.vue）。
+ *
+ * 409 时这张面板是**唯一**还写着「每次只取第一个非 0 的半径」的地方 —— 等于把上游
+ * 「一次一个 radius」的限制摊给用户，与门店弹窗「填几个买几个」自相矛盾。
+ * 410 把它也改成逐圆下单。本组钉死三件事：
+ *   ① 旧文案不许回潮（那是「只买一个圆」的承诺）
+ *   ② 一次请求只发一个 radius（⛔ 不能把 4 个框塞进一个请求，上游会只认第一个）
+ *   ③ 配额闸门按圆数，且不够时必须有内联出口（⛔ 只给灰按钮）
+ * ⚠️ 这里只做源码切片断言；「4 个圆 ⇒ 4 行 purchases」由 A 组的真实 HTTP 用例覆盖
+ *   （两个入口走的是同一个 POST /api/smartsteps/query）。
+ */
+describe('C. 地图侧面板：与弹窗口径一致（410）', () => {
+  const PANEL = 'frontend/src/components/SmartstepsPanel.vue'
+  const src = read(PANEL)
+  /**
+   * 🔴 断言前必须剥注释：409 的历史文案**就写在文件注释里**（记录「当时为什么那么写」），
+   *   不剥的话「旧文案不许回潮」这条会对着注释报假红（211 的「正则扫源码必配切片」同源坑）。
+   *   ⛔ 只剥三种注释，不碰字符串 —— 文案断言的对象是用户能看到的字面量。
+   */
+  const code = src
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '')
+  const fnBody = (name) => {
+    const i = code.indexOf(`function ${name}(`)
+    expect(i, `${PANEL} 里找不到 ${name}()`).toBeGreaterThan(-1)
+    const end = code.indexOf('\n}', i)
+    expect(end).toBeGreaterThan(i)
+    return code.slice(i, end)
+  }
+
+  it('表单下写明「填几个就买几个、各扣 1 次」，⛔ 不再把上游限制摊给用户', () => {
+    expect(code).toMatch(/填几个半径就买几个圆/)
+    // 反向断言（本批的核心）：这两句都是「只买一个圆」的承诺，留着就是骗人
+    expect(code, '409 的「只取第一个非 0 半径」文案回潮').not.toMatch(/每次只取第一个非 0 的半径/)
+    expect(code, '把用户往别的入口赶的提示已无必要').not.toMatch(/要一次买多个半径，请用/)
+  })
+
+  it('getQuotaToUse = 本次要买的圆数', () => {
+    expect(fnBody('getQuotaToUse')).toContain('getRadiiInMeters')
+    expect(code).not.toContain('QUERY_QUOTA_COST')
+  })
+
+  it('getRadiiInMeters 收全 4 个框并去重（⛔ 吞半径4 / ⛔ 同值买两遍）', () => {
+    const body = fnBody('getRadiiInMeters')
+    // 4 个框都要在循环里（408 只收 1~3，只填第 4 个框时 radii=[] ⇒ 后端 400）
+    for (const r of ['radius1', 'radius2', 'radius3', 'radius4']) expect(body).toContain(r)
+    expect(body, '不去重会拿同一个圆买两遍、白扣一次').toContain('!radii.includes(m)')
+  })
+
+  it('下单前要求「剩余次数 ≥ 圆数」，不是有 1 次就放行', () => {
+    const i = code.indexOf('const canPurchase = computed')
+    expect(i).toBeGreaterThan(-1)
+    const block = code.slice(i, code.indexOf('\n})', i))
+    expect(block, 'canPurchase 必须比到「够买 N 个圆」').toContain('getQuotaToUse()')
+  })
+
+  it('executePurchase 逐圆下单：一次请求一个 radius', () => {
+    const fn = fnBody('executePurchase')
+    expect(fn, '没有逐圆循环 ⇒ 4 个框只会买第一个').toMatch(/for \(let i = 0; i < radii\.length; i\+\+\)/)
+    expect(fn).toContain('radius: r')
+    expect(fn).toContain('radii: [r]')
+    expect(fn, '409 前的老写法：拿 radii[0] 当唯一半径').not.toContain('radius: radii[0]')
+    expect(fn).toContain('purchaseProgress')
+    // 中途被闸门拒掉时，剩下的圆必须显式标未购买（⛔ 静默少买）
+    expect(fn).toContain('未购买')
+  })
+
+  it('确认框列全部半径 + 共几个圆 + 扣几次，⚠️ 写明命中缓存不扣费', () => {
+    // ⚠️ 锚点不能用「购买确认对话框」—— 那是 HTML 注释，上面已被剥掉
+    const s = code.indexOf('v-model="showConfirmDialog"')
+    const e = code.indexOf('</template>', s)
+    expect(s).toBeGreaterThan(-1)
+    expect(e).toBeGreaterThan(s)
+    const block = code.slice(s, e)
+    expect(block).toContain('radiiConfirmText')
+    expect(block).toContain('getQuotaToUse()')
+    expect(block).toContain('扣除后剩余')
+    expect(block, '缓存命中不扣费必须写明（/query 与 /population 口径不同）').toContain('命中缓存')
+    // 反向：旧的「罗列半径」写法
+    expect(block).not.toContain('getRadiiDisplay')
+  })
+
+  it('结果区按半径切换：一个圆一套数据', () => {
+    expect(code).toContain('const queryResults = ref([])')
+    expect(code).toContain('const activeRadius = ref(0)')
+    expect(code).toContain('const activeResult = computed')
+    // 同样不能用注释当锚点：结果区 → 确认框 之间的模板
+    const s = code.indexOf('v-if="queryResults.length"')
+    const block = code.slice(s, code.indexOf('v-model="showConfirmDialog"', s))
+    expect(s).toBeGreaterThan(-1)
+    expect(block).toContain('activeResult')
+    expect(block).toContain('queryResults.length > 1')
+    // 老的单条 queryResult 引用不许回潮
+    expect(code, '仍在读单条 queryResult').not.toMatch(/\bqueryResult\.(data|refunded)\b|\{\{ queryResult \}\}/)
+  })
+
+  it('次数不够买满时，灰按钮旁边必须说清差几次（⛔ 只给一个 disabled）', () => {
+    expect(code).toContain('quotaInfo.available < getQuotaToUse()')
+    expect(code).toContain('本次需扣')
+    expect(code).toContain('请减少半径框')
+  })
+
+  it('购买按钮按圆数给文案（4 个框 ⇒ 「购买（4 次）」）', () => {
+    expect(code).toContain('购买（${getQuotaToUse()} 次）')
+  })
+})
