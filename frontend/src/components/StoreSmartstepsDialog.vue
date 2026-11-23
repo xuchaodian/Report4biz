@@ -308,7 +308,17 @@ const isVipUser = computed(() => userStore.isVipActive)
 
 const props = defineProps({
   visible: Boolean,
-  store: Object  // 门店对象，包含 latitude, longitude, name
+  store: Object,  // 门店对象，包含 latitude, longitude, name
+  /**
+   * 预填「半径1」（**米**）。v1.13.407 起初步分析也从这里取数：
+   * 用户在报告里看的是 3km，点进来第一个框就必须是 3km —— 否则他看到的是
+   * 上次记住的 0.5/1/1.5/2km，圆和报告不是一个，取回来的数也没法跟报告对照。
+   *
+   * 🔴 只覆盖 radius1，⛔ 不动 4 个框的结构，也⛔ 不清掉其余 3 个（它们本来就是
+   *    「一次查多个候选半径」的用法，业主 11-23 明确要求保留）。
+   * 🔴 0 / 负数 / NaN ⇒ 不预填，走 localStorage 记忆的默认值（地图页进来的老行为）。
+   */
+  presetRadius: { type: Number, default: 0 }
 })
 
 const emit = defineEmits(['update:visible', 'close'])
@@ -2413,11 +2423,25 @@ const handleDataInsight = async () => {
   }
 }
 
+/**
+ * 把 `presetRadius`（米）写进「半径1」框。
+ *
+ * ⚠️ 只在传了正数时生效；否则保持 localStorage 记着的那组（地图页的老行为）。
+ * ⚠️ 四舍五入到 2 位小数再 clamp：输入框是 `step=0.01 / precision=2`，
+ *    直接塞 0.30000000000000004 这种浮点值会让 el-input-number 显示成一长串。
+ */
+function applyPresetRadius() {
+  const m = Number(props.presetRadius)
+  if (!Number.isFinite(m) || m <= 0) return
+  queryForm.value.radius1 = Math.min(5, Math.max(0.31, Math.round(m / 10) / 100))
+}
+
 // 监听store变化
 // 监听 store 变化，初始化门店信息
 watch(() => props.store, (newStore) => {
   if (newStore) {
     storeInfo.value = { ...newStore }
+    applyPresetRadius()
     // 在 nextTick 后加载数据，确保 DOM 已更新
     nextTick(() => {
       loadAvailableMonths()

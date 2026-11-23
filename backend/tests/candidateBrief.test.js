@@ -594,18 +594,20 @@ describe('P6. 升级建议与半径映射', () => {
     expect(pickUnicomRadius(2000), '2km 报告要按 3km 买').toEqual({ radiusM: 3000, exact: false, covers: true })
   })
 
-  it('🔴 报告半径 > 5km ⇒ 明说「范围小于本报告」，⛔ 不许假装覆盖', () => {
+  it('🔴 报告半径 > 5km ⇒ 档位映射取上限且标 covers=false（⛔ 不许假装覆盖）', () => {
     const p = pickUnicomRadius(8000)
     expect(p.radiusM).toBe(5000)
     expect(p.covers).toBe(false)
-    const m = mk({ point: { radius: 8000 } })
-    expect(m.upgrade.radiusNote).toContain('小于')
   })
 
-  it('口径说明三种情形必须分得开', () => {
-    expect(mk({ point: { radius: 1000 } }).upgrade.radiusNote).toContain('一致')
-    expect(mk({ point: { radius: 1500 } }).upgrade.radiusNote).toContain('包含')
-    expect(mk({ point: { radius: 1500 } }).upgrade.radiusM).toBe(3000)
+  it('🔴 取数口径只说恒为真的事（v1.13.407：不再是「联通只有三档」）', () => {
+    const note = mk().upgrade.radiusNote
+    expect(note).toContain('0.31~5km')
+    expect(note).toContain('圆')
+    // 旧前提已被证伪（门店弹窗一直支持任意半径、生产库 0 条记录）⇒ 三样都不许回潮
+    expect(note).not.toContain('三档')
+    expect(note).not.toContain('漏算')
+    expect(note).not.toContain('将按')
   })
 
   it('🔴 饱和 ⇒ not_now（唯一「明确不该花钱」的情形）', () => {
@@ -693,12 +695,14 @@ describe('P7. 同位置已购别的半径 ⇒ 明说要另买', () => {
     expect(purchasedReuseText([1000, 3000], 3000)).toBe('')
   })
 
-  it('🔴 买过 1km、本次要 3km ⇒ 必须同时出现「已购 1km」「同半径」「另买 1 次」', () => {
+  it('🔴 买过 1km、本次报告 3km ⇒ 出现「已购 1km」「同半径」「另买」，且不再替用户定档', () => {
     const t = purchasedReuseText([1000], 3000)
     expect(t).toContain('已购 1km')
-    expect(t).toContain('3km')
     expect(t).toContain('同半径')
     expect(t).toContain('另买 1 次')
+    // v1.13.407：用户会在弹窗里自己选圆，⛔ 不许写「本次按 3km」
+    expect(t).not.toContain('本次按')
+    expect(t).not.toContain('3km')
   })
 
   it('🔴 买过更大的档也不能反推可复用（复用是精确包含，不是「买大的送小的」）', () => {

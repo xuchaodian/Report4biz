@@ -213,16 +213,22 @@ describe('B2. 源码守卫（防回退成「缓存白拿」）', () => {
     expect(fn, 'probeReusable 只能查 purchases').not.toContain('smartsteps_cache')
   })
 
-  it('🔴 前端 reusable 只认 purchase（不许再用「有 population 就算可复用」）', () => {
-    const m = UPGRADE.match(/const reusable = computed\([^\n]*\)/)
-    expect(m, '找不到 reusable 的 computed').toBeTruthy()
-    expect(m[0]).toContain("'purchase'")
-    expect(m[0]).not.toContain("!== 'none'")
-  })
-
-  it('前端必须有 cacheReady 态（缓存命中的成本要说清楚）', () => {
-    expect(UPGRADE).toContain('cacheReady')
-    expect(UPGRADE).toContain('但你的账号没有购买记录')
+  /**
+   * v1.13.407：初步分析面板**不再自己取数**，购买动作交给门店弹窗
+   * （`StoreSmartstepsDialog` → `/api/smartsteps/query`）。
+   *
+   * ⇒ 原来那两条「前端必须有 reusable / cacheReady」的断言随之失效：
+   *   面板里已经没有这两个态了，留着只会逼人把死代码写回去。
+   *
+   * 🔴 但要看清这次**没有**推翻什么：381 的「缓存照扣」约束的是
+   *    `/api/smartsteps/population`（`fetchPointPopulation` → `chargeAndRecord`），
+   *    那条后端守卫仍在（上面 194-199 两条）。报告页只是换了一个入口，
+   *    `/population` 依旧被智能选址等链路使用，口径不变。
+   */
+  it('前端不再自己判「可复用 / 缓存命中」——计费口径只在弹窗一处（v1.13.407）', () => {
+    expect(UPGRADE, '面板里又长出 reusable ⇒ 与弹窗的扣费说明两套口径').not.toContain('const reusable = computed')
+    expect(UPGRADE, '面板里又长出 cacheReady ⇒ 同上').not.toContain('cacheReady')
+    expect(UPGRADE, '购买入口必须指向门店弹窗').toContain('StoreSmartstepsDialog')
   })
 
   it('门店报告页的「本次未消耗配额」必须按实际 quotaUsed 决定', () => {

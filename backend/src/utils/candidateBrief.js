@@ -256,42 +256,57 @@ export function pickUnicomRadius(radiusM) {
 }
 
 /**
- * 「同一位置买过**别的**半径」的提示（业主 2026-11-19 拍板补的文案）。
+ * 「同一位置买过别的半径」的提示（v1.13.380 立，**v1.13.407 改写**）。
  *
- * ── 为什么需要它 ────────────────────────────────────────────────────────
- * P3 实测：先买过 1km，把报告切到 1.5km（联通按 3km 取）后，面板只说
- *   「该位置尚未购买、将消耗 1 次」—— 技术上完全正确，但用户刚为这个位置花过钱，
- *   极容易读成「系统要我再买一次」＝重复扣费。
+ * ── 改了什么、为什么 ────────────────────────────────────────────────────
+ * 旧版写「…但复用要求同半径 ⇒ **本次按 3km** 需另买 1 次」—— 那是报告页
+ * **替用户定档**时的说法。407 起购买动作交给门店弹窗（`StoreSmartstepsDialog`），
+ * 用户在弹窗里自己选圆，系统不再指定档位 ⇒ 再说「本次按 3km」就是凭空造一个
+ * 不会发生的行为（他完全可能按 1.5km 买，面积 7.07 km² 也在合规区间内）。
  *
- * 🔴 复用是**同半径**语义（`radiusIncludes`：已购 1km 顶不了 3km 的请求）。
- *   所以「买过别的档」≠「能复用」，必须把「本次要另买」写明白；
- *   ⛔ 不许含糊成「你可能已经买过」，那会让人以为点下去不花钱。
+ * 现在只陈述**恒为真**的两件事：买过哪些（可免费看）、复用要求同半径。
+ * ⛔ 不许含糊成「你可能已经买过」—— 那会让人以为换档也不用花钱。
  *
  * @param {number[]} purchasedRadii 该位置已购的半径（已解析；可重复、可含脏值；空＝没买过）
- * @param {number} pickM 本次要取的联通档位
+ * @param {number} wantM 本次报告口径（米）—— 只用来判「是否正好命中可复用档」，
+ *        ⛔ 不写进文案。命中 ⇒ 不提示（纸面成本行已说「同半径自动复用」）。
  * @returns {string} 空串 = 无需提示（没买过，或正好命中可复用档）
  */
-export function purchasedReuseText(purchasedRadii, pickM) {
+export function purchasedReuseText(purchasedRadii, wantM) {
   const list = (Array.isArray(purchasedRadii) ? purchasedRadii : [])
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0)
-  const want = Number(pickM)
+  const want = Number(wantM)
   if (!list.length || !Number.isFinite(want) || want <= 0) return ''
   if (list.includes(want)) return ''   // 正好能复用 ⇒ 成本行自己会说「可免费复用」
   const have = [...new Set(list)].sort((a, b) => a - b).map(radiusText).join(' / ')
-  return `该位置已购 ${have}（可免费看），但复用要求同半径 ⇒ 本次按 ${radiusText(want)} 需另买 1 次`
+  return `该位置已购 ${have}（可免费看）；复用要求同半径，换一个圆需另买 1 次`
 }
 
-/** 升级口径的一句话说明（三种情形必须分得开，⛔ 不能共用一句） */
-function upgradeRadiusNote(reportM, pick) {
-  const r = radiusText(reportM)
-  const u = radiusText(pick.radiusM)
-  if (pick.exact) return `与本次报告口径一致（${r}）`
-  if (pick.covers) {
-    return `本次报告是 ${r}，联通只有 ${UNICOM_REPORT_RADII.map(radiusText).join(' / ')} 三档 ⇒ `
-      + `将按 ${u} 取数（包含本报告的圆，不会漏算）`
-  }
-  return `本次报告是 ${r}，超过联通最大档 ${u} ⇒ 将按 ${u} 取数（范围小于本报告，人口会偏少）`
+/**
+ * 联通圆的可选区间（公里）—— 与门店弹窗的输入框上下限同源。
+ *
+ * 来源是联通硬约束的圆面积 0.3~80 km²：r = √(A/π) ⇒ 0.309km ~ 5.046km。
+ * 弹窗取整成 0.31~5（输入框 `min=0.31 max=5 step=0.01`）。
+ */
+const UNICOM_RADIUS_RANGE_KM = Object.freeze({ min: 0.31, max: 5 })
+
+/**
+ * 取数口径的一句话说明（**v1.13.407 重写**）。
+ *
+ * 🔴 旧版在这里写「联通只有 1/3/5km 三档 ⇒ 将按 3km 取数（包含本报告的圆，不会漏算）」。
+ *    这个前提在 2026-11-23 被业主与代码一起证伪：
+ *      · 门店弹窗一直是 0.31~5km 任意两位小数（默认 0.5/1/1.5/2km），走的是同一个 1001；
+ *      · 后端两条链路都只校验面积 0.3~80 km²，没有任何档位白名单；
+ *      · 生产库 purchases / smartsteps_cache 各 0 条（配额也是 0）⇒ 从无实测支撑。
+ *    更要紧的是：报告页的购买动作已经交给那个弹窗，用户自己选圆，
+ *    「系统替你取整」这件事根本不会发生。
+ *
+ * 现在只保留恒为真的信息：按点位半径的圆取数、弹窗里能选多大。
+ * ⛔ 别再写「三档」「向上取整」「不会漏算」—— 守卫 `briefUpgradeDialogGuard.test.js` 钉死。
+ */
+function upgradeRadiusNote() {
+  return `联通按点位半径的圆取数，可在查询面板自选 ${UNICOM_RADIUS_RANGE_KM.min}~${UNICOM_RADIUS_RANGE_KM.max}km`
 }
 
 /**
@@ -319,10 +334,13 @@ export function buildUpgradePlan(m = {}, purchased = null) {
     title: '',
     why: [],
     buys: [...UPGRADE_BUYS],
+    // ⚠️ `radiusM` 只是「联通标准档里最接近的参考值」，v1.13.407 起前端**不再**用它
+    //    预填或取数（用户在弹窗里自己选圆）—— 保留是因为对比表与历史测试都还引用它。
     radiusM: pick.radiusM,
-    radiusNote: upgradeRadiusNote(reportM, pick),
-    // 同位置买过别的档 ⇒ 明说「要另买」；空串＝无需提示（判据与取数侧复用关同源）
-    reuseHint: purchasedReuseText(purchased?.radii, pick.radiusM),
+    radiusNote: upgradeRadiusNote(),
+    // 同位置买过别的档 ⇒ 只说「买过什么、复用要同半径」；判「是否正好命中」用报告半径
+    // （弹窗打开时预填的就是它，⛔ 不是向上取整后的档位）
+    reuseHint: purchasedReuseText(purchased?.radii, reportM),
     // 一次取数消耗几次配额（后端 fetchPointPopulation 固定 1）——前端 ⛔ 不许自己写 1
     quotaPerFetch: 1,
     service: '1001'
@@ -530,8 +548,10 @@ export function buildBriefModel(input = {}) {
 /**
  * 多半径对比要算哪几档（v1.13.403）。
  *
- * 默认就是 `UNICOM_REPORT_RADII`（1/3/5km）—— 业主 2026-11-23 拍板「只比能买到的三档」：
- * 500m 与 1.5km 在联通那边买不到（1.5km 实际按 3km 取数），列进对比表会让人以为能买。
+ * 默认就是 `UNICOM_REPORT_RADII`（1/3/5km）—— 业主 2026-11-23 拍板「只比这三档」。
+ * 这是**产品选择**（三档足以覆盖常见决策），⛔ 不是「联通买不到」——
+ * v1.13.407 已确认门店弹窗支持 0.31~5km 任意半径，500m / 1.5km 都能原样买。
+ * （旧注释写「1.5km 实际按 3km 取数」，那个前提已被证伪。）
  *
  * 🔴 但**当前半径必须进表**：业主可能正在看 500m 或点位自带的 800m，
  *    表里没有它就会出现「报告的圆在对比表里找不到」的错位感。
@@ -615,8 +635,9 @@ export function buildCompareRow(m = {}, purchasedRadii = []) {
       level: comp.level ? { key: comp.level.key, label: comp.level.label } : null
     },
     verdict: m.verdict ? { level: m.verdict.level, title: m.verdict.title } : null,
-    // 这一档在联通那边是不是「原样可取」（三档内＝exact；点位自带 800m 之类＝按上一档买）
-    unicom: pickUnicomRadius(radiusM),
+    // ⚠️ v1.13.407 删掉了 `unicom`（原「这一档在联通能不能原样取」）：
+    //    门店弹窗支持 0.31~5km 任意半径 ⇒ 报告里的每一档都能原样买，
+    //    这个字段恒为「可买」，前端那行「联通无此档，按 3km 取」也就撤了。
     // 同位置买过这一档 ⇒ 切过去能免费复用（与取数侧同半径语义）
     purchased: have.includes(radiusM)
   }

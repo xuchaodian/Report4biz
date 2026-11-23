@@ -174,13 +174,13 @@
                 </td>
               </tr>
               <tr>
-                <th scope="row">该半径取数</th>
+                <th scope="row">购买状态</th>
                 <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
+                  <!-- v1.13.407：删掉「联通无此档，按 X 取」——
+                       门店弹窗本来就支持 0.31~5km 任意半径（默认 0.5/1/1.5/2km），
+                       500m / 1.5km / 800m 都能原样买。那半句是「报告替用户取整」时代的说法，
+                       前提没了就得撤掉，否则表格在说一件不会发生的事。 -->
                   <span v-if="r.purchased" class="bf-cmp-own">已购 · 可复用</span>
-                  <!-- 点位自带 800m 这类档联通没有原样对应，会按上一档取 -->
-                  <span v-else-if="!r.unicom.exact" class="bf-cmp-na">
-                    联通无此档，按 {{ radiusText(r.unicom.radiusM) }} 取
-                  </span>
                   <span v-else class="bf-cmp-na">未购</span>
                 </td>
               </tr>
@@ -390,7 +390,7 @@
           <p v-if="brief.upgrade.reuseHint" class="bf-reuse">{{ brief.upgrade.reuseHint }}</p>
           <p class="bf-gap">
             ⚠ 本报告没有购买联通人口 —— 所有数字都是站内免费数据。
-            纸张下方的操作区才会真正取数，且取数前会明示「消耗几次 / 剩余几次」。
+            纸张下方的操作区会打开联通人口查询，取数前会明示「消耗几次 / 剩余几次」。
           </p>
         </div>
 
@@ -685,14 +685,14 @@ onMounted(load)
 .bf-cmp-foot { margin: 7px 0 0; font-size: 11.5px; line-height: 1.7; color: #8a9099; }
 .bf-cmp-foot b { color: var(--text-regular); font-weight: 500; }
 
-.bf-sec { margin-top: 14px; }
-/* 🔴 纵向预算（v1.13.405 实测，别随手加高）：
+/* 🔴 纵向预算（v1.13.405 实测，v1.13.407 再压一次）：
    导出 PDF 的「能缩到 ≥72% 就塞进一页」是按**纸面总高**算的 —— A4 可用高 285mm
    ÷ 0.72 = 395.8mm，而 794px 宽纸面 1px = 0.26455mm ⇒ **纸面高必须 ≤ 1496px** 才是一页。
-   本批第一版只加 padding（纸面 1455→1531）就越过 1496，导出变「一张正文 + 一张纯白 40px 尾页」。
-   所以灰条的高度是拿「节间距」换来的：`.bf-sec` 14→10px（省 28）+ 每条净增 7（共 49）= 净 +21。
-   现在的实测是 1476px / 缩放 0.730（一页）。**再加 padding 前先量纸面高，否则业主会多收到一张白纸。** */
-.bf-sec { margin-top: 10px; }
+   405 第一版只加 padding（1455→1531）就越过 1496，导出变「一张正文 + 一张纯白 40px 尾页」，
+   所以灰条的高度是拿「节间距」换来的：`.bf-sec` 14→10px。
+   407 把「取数口径」改成通用句后纸面涨到 **1495（零余量）** ⇒ 10→7px，回到 1477。
+   **再加 padding / 加长文案前先量纸面高，否则业主会多收到一张白纸。** */
+.bf-sec { margin-top: 7px; }
 /* 节标题条（v1.13.405）：六节大标题「一、二、三…」加灰底 + 左侧竖条 ——
    初版六节只有 14px 间距、全是正文，客户翻到底部找不回「这是第几节」。
    🔴 三条硬约束，改之前先读：

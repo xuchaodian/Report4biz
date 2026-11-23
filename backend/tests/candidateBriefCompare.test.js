@@ -265,11 +265,13 @@ describe('B. buildCompareRow', () => {
     expect(three.purchased, '踩过：复用是同半径语义，⛔ 整表一个 purchased').toBe(false)
   })
 
-  it('unicom 口径带上（点位自带 800m ⇒ 按 1km 买，exact=false）', () => {
-    const row = buildCompareRow(model({ point: { radius: 800 } }), [])
-    expect(row.unicom.radiusM).toBe(1000)
-    expect(row.unicom.exact).toBe(false)
-    expect(buildCompareRow(model({ point: { radius: 5000 } }), []).unicom.exact).toBe(true)
+  it('🔴 v1.13.407：对比行不再带 unicom 档位（任意半径都能原样买，恒真字段已删）', () => {
+    // 旧版这里断言「800m ⇒ 按 1km 买，exact=false」，前提是「联通只有三档」。
+    // 407 已确认门店弹窗支持 0.31~5km 任意半径 ⇒ 该字段没有区分度，删掉防止
+    // 前端再渲染出「联通无此档，按 3km 取」这种不会发生的事。
+    for (const r of [500, 800, 1500, 3000, 5000]) {
+      expect(buildCompareRow(model({ point: { radius: r } }), [])).not.toHaveProperty('unicom')
+    }
   })
 })
 
