@@ -1,5 +1,5 @@
 /**
- * 记录口径 = 取数口径 = 扣费口径（批次 408 · 业主 2026-11-23 拍板）
+ * 记录口径 = 取数口径 = 扣费口径（批次 408 立规，409 扩到多圆）
  *
  * ── 业主原话 ──────────────────────────────────────────────────────────
  * 「把『记录只写真正查的那一档半径 + 确认框按 1 次显示 + 半径4 也发出去』一起修掉吧」
@@ -20,8 +20,11 @@
  *
  * ── 现在的口径 ───────────────────────────────────────────────────────
  *   · 一个圆 = 一次配额 = 一行 purchases（`purchases.radius` 只写 `[radius]`）
- *   · 确认框「本次扣除」恒 1，并明说「其余 N 个半径本次不取数」
- *   · 半径1~4 全部参与「谁是本次的圆」的判定（第一个非 0 的值），⛔ 不再有静默吞掉的框
+ *   · 🔴 409（业主 2026-11-23 追问）：**填几个半径就买几个圆** —— 前端逐圆下单，
+ *     N 个框连发 N 次 `/query`，每次一个 `radius`、各落一行、各扣 1 次；确认框按 N 显示。
+ *     上游 getData 一次只受理一个 radius，所以「一次买 4 个」在服务端看就是 4 次调用，
+ *     与 `BatchSmartstepsDialog`（门店×半径）同一个套路。
+ *   · 半径1~4 全部参与（第一个非 0 不再有特权），⛔ 不再有静默吞掉的框
  *
  * ── 测试手法 ─────────────────────────────────────────────────────────
  * A 组走真实 HTTP（temp DB + express 端口 0 + fetch 打接口），stub 掉外网后读库验记录；
@@ -171,6 +174,35 @@ describe('A. 后端：purchases.radius 只写真正取数的那一档', () => {
     expect(row.radius).toBe('[2000]')
   })
 
+  it('一次买 4 个圆（前端逐圆下单）⇒ 4 行记录、池子扣 4 次', async () => {
+    // 单独把池子拉到 10，便于精确断言「买了 4 个 ⇒ 6」
+    db.prepare(`UPDATE admin_quota SET remaining_quota = 10 WHERE id = 1`).run()
+    const radii = [400, 600, 900, 1200]
+    for (const r of radii) {
+      const res = await call('POST', '/api/smartsteps/query', {
+        token: token(),
+        body: {
+          // 每个圆换一个坐标，避开 smartsteps_cache（同点同半径同月会免费返回、不写履历）
+          centerLng: 121.6 + r / 100000,
+          centerLat: 31.3 + r / 100000,
+          radius: r,
+          radii: [r],
+          services: ['1001'],
+          cityMonth: '202609',
+          storeName: `口径测试门店C-${r}`,
+          storeType: '已开业'
+        }
+      })
+      expect(res.status).toBe(200)
+      expect(res.body.quotaUsed).toBe(1)
+    }
+    const rows = db.prepare(`SELECT radius, quota_used FROM purchases WHERE store_name LIKE '口径测试门店C-%' ORDER BY id`).all()
+    expect(rows.map((x) => x.radius)).toEqual(radii.map((r) => `[${r}]`))
+    expect(rows.every((x) => x.quota_used === 1)).toBe(true)
+    const pool = db.prepare(`SELECT remaining_quota FROM admin_quota WHERE id = 1`).get()
+    expect(Number(pool.remaining_quota)).toBe(6)
+  })
+
   it('反向断言：⛔ 不许回潮 `radii || [radius]`（那正是「记录写全量」的写法）', () => {
     const src = read('backend/src/routes/smartsteps.js')
     expect(src).not.toContain('radii || [radius]')
@@ -179,7 +211,7 @@ describe('A. 后端：purchases.radius 只写真正取数的那一档', () => {
   })
 })
 
-describe('B. 前端弹窗：确认框按 1 次、4 个框都不吞', () => {
+describe('B. 前端弹窗：填几个半径就买几个圆（409）', () => {
   const src = read(DIALOG)
   /** 取某个顶层函数的函数体（到行首 `}` 为止）—— 避免整文件匹配造成假绿灯 */
   const fnBody = (name) => {
@@ -190,39 +222,94 @@ describe('B. 前端弹窗：确认框按 1 次、4 个框都不吞', () => {
     return src.slice(i, end)
   }
 
-  it('getQuotaToUse 恒为 1（不再数「填了几个框」）', () => {
+  it('getQuotaToUse = 本次要买的圆数（不再恒 1）', () => {
     const body = fnBody('getQuotaToUse')
-    expect(body).toContain('QUERY_QUOTA_COST')
-    expect(body).not.toContain('count++')
-    // 常量本身就是 1，与后端 QUOTA_UNIT 对齐
-    expect(src).toMatch(/const\s+QUERY_QUOTA_COST\s*=\s*1\b/)
+    expect(body).toContain('purchaseRadii')
+    // 反向：408 的「恒 1 次」不许回潮 —— 那时后端一次只发一个圆
+    expect(src, '408 的常量还在 ⇒ render 仍会显示「扣 1 次」').not.toContain('QUERY_QUOTA_COST')
   })
 
-  it('getRadiiInMeters 覆盖半径1~4（半径4 不再被吞）', () => {
-    const body = fnBody('getRadiiInMeters')
-    for (const k of ['radius1', 'radius2', 'radius3', 'radius4']) {
-      expect(body, `${k} 没进 getRadiiInMeters`).toContain(k)
-    }
-    // 去重：初步分析的预填半径常与 localStorage 里的旧值撞车
-    expect(body).toContain('includes')
+  it('下单前要求「剩余次数 ≥ 圆数」，不是有 1 次就放行', () => {
+    const i = src.indexOf('const canQuery = computed')
+    expect(i).toBeGreaterThan(-1)
+    const line = src.slice(i, src.indexOf('\n', i))
+    expect(line, 'canQuery 必须比到「够买 N 个圆」').toContain('getQuotaToUse()')
   })
 
-  it('确认框显示的是「本次真正取数的那个圆」，并说明其余半径不取数', () => {
+  it('确认框列全部半径 + 共几个圆 + 扣几次，⚠️ 写明命中缓存不扣费', () => {
     const s = src.indexOf('购买确认对话框')
     const e = src.indexOf('历史报表对话框', s)
     expect(s).toBeGreaterThan(-1)
     expect(e).toBeGreaterThan(s)
     const block = src.slice(s, e)
-    expect(block).toContain('primaryRadiusText')     // 只显示主半径
-    expect(block).toContain('extraRadiusCount')      // 其余 N 个不取数
-    expect(block).not.toContain('getRadiiDisplay')   // 别再罗列全部半径冒充「都查了」
+    expect(block).toContain('radiiConfirmText')   // 列全部半径
+    expect(block).toContain('getQuotaToUse()')    // 扣 N 次
+    expect(block).toContain('命中缓存')            // 实际扣费 ≤ 框数，必须说明
+    // 反向：408 的「其余 N 个不取数」不许回潮
+    expect(block).not.toContain('本次不取数')
+    expect(block).not.toContain('primaryRadiusText')
+    expect(block).not.toContain('extraRadiusCount')
   })
 
-  it('表单下明确写出「只查第一个非 0 的半径」', () => {
-    expect(src).toMatch(/本次取数只查第一个非 0 的半径/)
+  it('次数不够买满时，灰按钮旁边必须说清差几次（⛔ 只给一个 disabled）', () => {
+    // canQuery 要求 available ≥ 圆数 ⇒ 有 2 次、填 4 个框时按钮是灰的；
+    // 只在 available<=0 才提示的话，用户面对灰按钮无从判断。
+    expect(src).toContain('quotaInfo.available < getQuotaToUse()')
+    expect(src).toContain('本次需扣')
+    expect(src).toContain('请减少半径框')
   })
 
-  it('getRadiiDisplay 已无残留（已被主半径 + 提示替代）', () => {
+  it('radiiConfirmText 里带「共 N 个圆」，且用、分隔两位小数', () => {
+    const i = src.indexOf('const radiiConfirmText')
+    expect(i).toBeGreaterThan(-1)
+    const block = src.slice(i, src.indexOf('\n})', i))
+    expect(block).toContain('个圆')
+    expect(block).toContain("toFixed(2)")
+    expect(block).toContain("'、'")
+  })
+
+  it('executeQuery 逐圆下单：一次请求一个 radius，⛔ 不再把 4 个框塞进一个请求', () => {
+    const fn = fnBody('executeQuery')
+    expect(fn, '没有逐圆循环 ⇒ 4 个框只会买第一个').toMatch(/for \(let i = 0; i < radii\.length; i\+\+\)/)
+    expect(fn).toContain('radius: r')
+    expect(fn).toContain('radii: [r]')
+    expect(fn).not.toContain('radius: radii[0]')
+    expect(fn).toContain('purchaseProgress')
+    // 中途被闸门拒掉时，剩下的圆必须显式标未购买（⛔ 静默少买）
+    expect(fn).toContain('未购买')
+  })
+
+  it('结果框按半径切换：一个圆一套数据，导出跟着切', () => {
+    expect(src).toContain('const queryResults = ref([])')
+    expect(src).toContain('const activeRadius = ref(0)')
+    const i = src.indexOf('查询结果对话框')
+    const block = src.slice(i, src.indexOf('购买确认对话框', i))
+    expect(block).toContain('activeResult')
+    expect(block).toContain('queryResults.length > 1')
+    // 导出必须用「当前选中半径」的记录，⛔ 不能用最后一次请求的
+    expect(src).toContain('const queryPurchaseId = computed')
+  })
+
+  it('表单下写明「填几个就买几个、各扣 1 次」', () => {
+    expect(src).toMatch(/填几个半径就买几个圆/)
+    // 反向：408 的单一圆文案不许回潮
+    expect(src).not.toMatch(/本次取数只查第一个非 0 的半径/)
+  })
+
+  it('半径下限 0.35（门店弹窗与地图面板同源，⛔ 不许再出现 0.31）', () => {
+    expect(src).toContain(':min="0.35"')
+    expect(src).toContain('0.35~5 公里')
+    expect(src).not.toContain(':min="0.31"')
+    const panel = read('frontend/src/components/SmartstepsPanel.vue')
+    expect(panel).toContain(':min="0.35"')
+    expect(panel).toContain('0.35~5 公里')
+    // 批量购买弹窗同样走 /query，下限也得是 0.35（老值 0.1 会被后端面积校验 400）
+    const batch = read('frontend/src/components/BatchSmartstepsDialog.vue')
+    expect(batch).toContain(':min="0.35"')
+  })
+
+  it('getRadiiDisplay / primaryRadiusText 无残留（别罗列半径冒充「都查了」）', () => {
     expect(src).not.toContain('getRadiiDisplay')
+    expect(src).not.toContain('primaryRadiusText')
   })
 })

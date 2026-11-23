@@ -24,7 +24,7 @@
       <el-form-item label="半径1">
         <el-input-number
           v-model="queryForm.radius1"
-          :min="0.1"
+          :min="0.35"
           :max="10"
           :step="0.1"
           :precision="1"

@@ -11,7 +11,7 @@
  *   ② 按钮只能打开弹窗，且弹窗**必须懒加载**（那个组件 2800+ 行）
  *   ③ 传给弹窗的坐标字段名必须是 `latitude / longitude`（弹窗内部这么读，
  *      传 lat/lng 会让它拿到 undefined，然后在几百行外炸）
- *   ④ 预填半径必须 clamp 到 0.31~5km 且保留 2 位小数，且**不许动 4 个输入框**
+ *   ④ 预填半径必须 clamp 到 0.35~5km 且保留 2 位小数，且**不许动 4 个输入框**
  *      （业主 11-23 明确：4 个框是「一次查多个候选半径」的用法，要保留）
  *   ⑤ 后端口径文案不许再写「联通只有 1/3/5km 三档 / 向上取整 / 不会漏算」——
  *      这个前提已被证伪（门店弹窗一直支持任意半径、生产库 0 条记录）
@@ -133,12 +133,12 @@ describe('U4. 弹窗的预填实现（clamp + 不动 4 个框）', () => {
     expect(DIALOG).toMatch(/presetRadius:\s*\{\s*type:\s*Number,\s*default:\s*0\s*\}/)
   })
 
-  it('🔴 预填必须 clamp 到 0.31~5 且保留 2 位小数', () => {
+  it('🔴 预填必须 clamp 到 0.35~5 且保留 2 位小数', () => {
     const i = DIALOG.indexOf('function applyPresetRadius')
     expect(i, '找不到 applyPresetRadius（预填逻辑被删？）').toBeGreaterThan(0)
     const fn = DIALOG.slice(i, DIALOG.indexOf('}', DIALOG.indexOf('radius1 =', i)) + 1)
     expect(fn.length).toBeGreaterThan(80)
-    expect(fn, '没夹上限 / 下限 ⇒ 弹窗会显示 0.05 或 8 公里').toMatch(/Math\.min\(5[\s\S]*Math\.max\(0\.31/)
+    expect(fn, '没夹上限 / 下限 ⇒ 弹窗会显示 0.05 或 8 公里').toMatch(/Math\.min\(5[\s\S]*Math\.max\(0\.35/)
     expect(fn, '没四舍五入到 2 位 ⇒ 输入框会显示 1.4999999').toMatch(/Math\.round\(/)
   })
 
@@ -153,7 +153,7 @@ describe('U4. 弹窗的预填实现（clamp + 不动 4 个框）', () => {
     for (const n of [1, 2, 3, 4]) {
       expect(DIALOG, `半径${n} 输入框被删了`).toContain(`v-model="queryForm.radius${n}"`)
     }
-    expect(DIALOG).toContain(':min="0.31"')
+    expect(DIALOG).toContain(':min="0.35"')
     expect(DIALOG).toContain(':max="5"')
     expect(DIALOG).toContain(':step="0.01"')
   })
@@ -178,8 +178,8 @@ describe('U5. 后端口径文案：旧前提不许回潮', () => {
     }
     expect(fn, '必须给出弹窗里可选的真实区间').toContain('UNICOM_RADIUS_RANGE_KM')
     // 区间本身只有一份来源，且必须与弹窗输入框的 min/max 一致
-    expect(BRIEF_UTIL).toMatch(/UNICOM_RADIUS_RANGE_KM\s*=\s*Object\.freeze\(\{\s*min:\s*0\.31,\s*max:\s*5\s*\}\)/)
-    expect(DIALOG).toContain(':min="0.31"')
+    expect(BRIEF_UTIL).toMatch(/UNICOM_RADIUS_RANGE_KM\s*=\s*Object\.freeze\(\{\s*min:\s*0\.35,\s*max:\s*5\s*\}\)/)
+    expect(DIALOG).toContain(':min="0.35"')
     expect(DIALOG).toContain(':max="5"')
   })
 
@@ -198,7 +198,7 @@ describe('U5. 后端口径文案：旧前提不许回潮', () => {
     expect(BRIEF).toContain('brief.upgrade.radiusNote')
   })
 
-  it('🔴 对比表不许再写「联通无此档，按 X 取」（弹窗支持 0.31~5km 任意半径）', () => {
+  it('🔴 对比表不许再写「联通无此档，按 X 取」（弹窗支持 0.35~5km 任意半径）', () => {
     expect(BRIEF, '「无此档」是「报告替用户取整」时代的说法，前提已失效').not.toContain('联通无此档')
     expect(BRIEF, '前端还在读 r.unicom ⇒ 后端字段已删，会渲染成 undefined').not.toContain('r.unicom')
   })
@@ -252,7 +252,7 @@ describe('U8. 负变异：证明上面的断言真会红', () => {
     const ok = `
       const StoreSmartstepsDialog = defineAsyncComponent(() => import('@/components/StoreSmartstepsDialog.vue'))
       const dialogStore = { name: 'x', latitude: 1, longitude: 2 }
-      function applyPresetRadius(){ queryForm.value.radius1 = Math.min(5, Math.max(0.31, 3)) }
+      function applyPresetRadius(){ queryForm.value.radius1 = Math.min(5, Math.max(0.35, 3)) }
       const btn = '打开联通人口查询'
     `
     expect(forbidden(ok)).toEqual([])

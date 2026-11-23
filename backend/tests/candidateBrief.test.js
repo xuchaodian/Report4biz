@@ -602,7 +602,7 @@ describe('P6. 升级建议与半径映射', () => {
 
   it('🔴 取数口径只说恒为真的事（v1.13.407：不再是「联通只有三档」）', () => {
     const note = mk().upgrade.radiusNote
-    expect(note).toContain('0.31~5km')
+    expect(note).toContain('0.35~5km')
     expect(note).toContain('圆')
     // 旧前提已被证伪（门店弹窗一直支持任意半径、生产库 0 条记录）⇒ 三样都不许回潮
     expect(note).not.toContain('三档')

@@ -39,7 +39,7 @@
           <el-form-item label="半径1">
             <el-input-number
               v-model="queryForm.radius1"
-              :min="0.31"
+              :min="0.35"
               :max="5"
               :step="0.01"
               :precision="2"
@@ -88,7 +88,10 @@
           </el-form-item>
         </el-form>
         <div class="query-info">
-          <span>单位: 公里 ｜ 半径范围: 0.31~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
+          <span>单位: 公里 ｜ 半径范围: 0.35~5 公里 ｜ 数据月份以联通已产出月份为准（通常滞后1~2个月）</span>
+          <!-- v1.13.409：本面板仍是「一次只发一个圆」（⚠️ 与门店弹窗的「填几个买几个」不同），
+               不写这句，用户填 4 个框会以为 4 个圆都买了。 -->
+          <span class="query-info-tip">本面板每次只取第一个非 0 的半径；要一次买多个半径，请用「地图—门店图标—联通人口数据」弹窗</span>
         </div>
       </div>
 
@@ -1212,6 +1215,12 @@ onUnmounted(() => {
   font-size: 12px;
   color: #666;
   margin-top: 8px;
+}
+
+.query-info-tip {
+  display: block;
+  margin-top: 4px;
+  color: #646a73;
 }
 
 /* 剩余次数显示 */

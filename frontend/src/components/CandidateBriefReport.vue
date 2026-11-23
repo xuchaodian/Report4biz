@@ -177,7 +177,7 @@
                 <th scope="row">购买状态</th>
                 <td v-for="r in compareRows" :key="r.radiusM" :class="{ 'is-main': r.isMain }">
                   <!-- v1.13.407：删掉「联通无此档，按 X 取」——
-                       门店弹窗本来就支持 0.31~5km 任意半径（默认 0.5/1/1.5/2km），
+                       门店弹窗本来就支持任意半径（v1.13.409 起 0.35~5km）（默认 0.5/1/1.5/2km），
                        500m / 1.5km / 800m 都能原样买。那半句是「报告替用户取整」时代的说法，
                        前提没了就得撤掉，否则表格在说一件不会发生的事。 -->
                   <span v-if="r.purchased" class="bf-cmp-own">已购 · 可复用</span>
