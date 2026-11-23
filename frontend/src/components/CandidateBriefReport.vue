@@ -15,6 +15,9 @@
      长内容在 62vh 里滚两层；这里直接占满页面主体，由 `.cand-page` 统一滚动。
   ③ **切页锚点**：纸张内的区块必须带 `.bf-sec`、页脚带 `.bf-foot` ——
      `utils/exportPaperPdf.js` 靠这些类名找「安全切页点」，⛔ 改类名会让 PDF 把一行字切成两半。
+  ④ **视觉分段**（v1.13.405）：六节大标题（一、二、三…）用灰底标题条，业主 2026-11-23
+     反馈「全是文字看起来不是很清楚」。灰底的色值被导出工具的切页扫描判据约束住，
+     改浅会让 PDF 把标题条切成两半 ⇒ 动之前先读样式里 `.bf-sec-hd` 的三条约束。
 
   ── 文案纪律 ────────────────────────────────────────────────────────────
   · 「商圈综合评分」是**商圈面**的分，⛔ 不能说成「这个点位的评分」
@@ -674,9 +677,31 @@ onMounted(load)
 .bf-cmp-foot b { color: var(--text-regular); font-weight: 500; }
 
 .bf-sec { margin-top: 14px; }
-.bf-sec-hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
-.bf-sec-hd h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.bf-sec-note { font-size: 11.5px; color: #8a9099; }
+/* 🔴 纵向预算（v1.13.405 实测，别随手加高）：
+   导出 PDF 的「能缩到 ≥72% 就塞进一页」是按**纸面总高**算的 —— A4 可用高 285mm
+   ÷ 0.72 = 395.8mm，而 794px 宽纸面 1px = 0.26455mm ⇒ **纸面高必须 ≤ 1496px** 才是一页。
+   本批第一版只加 padding（纸面 1455→1531）就越过 1496，导出变「一张正文 + 一张纯白 40px 尾页」。
+   所以灰条的高度是拿「节间距」换来的：`.bf-sec` 14→10px（省 28）+ 每条净增 7（共 49）= 净 +21。
+   现在的实测是 1476px / 缩放 0.730（一页）。**再加 padding 前先量纸面高，否则业主会多收到一张白纸。** */
+.bf-sec { margin-top: 10px; }
+/* 节标题条（v1.13.405）：六节大标题「一、二、三…」加灰底 + 左侧竖条 ——
+   初版六节只有 14px 间距、全是正文，客户翻到底部找不回「这是第几节」。
+   🔴 三条硬约束，改之前先读：
+     ① 只用真实 background / border，⛔ 不用伪元素（导出 PDF 走 html2canvas，伪元素会整个丢掉）
+     ② 灰底取 #e8eaed，⛔ 别换成更浅的 #f2f3f5 / #eef0f3：导出工具的 findCutY 把
+        「RGB 三通道都 >236」的像素行当成空白行去切页，#f2f3f5(242,243,245) 正好命中 ⇒
+        万一切在标题条中间，PDF 上就是一条被劈开的灰线。#e8eaed(232,234,237) 判不成空白行。
+     ③ 左右各外扩 10px（负 margin）、padding-left 7px 抵掉 3px 边框 ⇒ 标题文字仍与正文
+        左边缘对齐（34-10+3+7=34），条宽比内容宽 20px 但不会撑破纸张，也不会挤窄文字区。
+   对比度实算：标题 #1f2329 on #e8eaed = 13.09:1；说明文字见下一条。 */
+.bf-sec-hd {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 0 -10px 6px; padding: 4px 10px 4px 7px;
+  background: #e8eaed; border-left: 3px solid #8a9099; border-radius: 0 4px 4px 0;
+}
+.bf-sec-hd h2 { margin: 0; font-size: 14px; font-weight: 600; color: #1f2329; }
+/* 原来的 #8a9099 在灰底上只有 2.67:1（连 AA 的 4.5 都不到）⇒ 加深到 #646a73（灰底 4.52 / 白底 5.45） */
+.bf-sec-note { font-size: 11.5px; color: #646a73; }
 
 /* 六、下一步（v1.13.379）：三档与结论同一套配色，扫一眼就知道「该不该花钱」 */
 .bf-next { padding: 9px 12px; background: #f7f9fc; border-left: 3px solid #8a9099; border-radius: 0 6px 6px 0; }
