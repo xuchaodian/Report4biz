@@ -64,7 +64,14 @@
             <el-option v-for="r in radiusOptions" :key="r" :value="r" :label="radiusText(r)" />
           </el-select>
         </span>
-        <el-button :loading="loading" @click="load">重新分析</el-button>
+        <!--
+          v1.13.412：按钮名由「重新分析」改为「刷新」。
+          🔴 它的真实语义就是 `load()` —— 用**当前半径**重取 `GET /brief`（0 消耗、不调联通/高德、不写库），
+             和进页面时那一次是同一条路径。叫「重新分析」会让人以为点了会重算别的东西，
+             叫「刷新」更贴近实际（失败重试 / 期间数据变了手动同步）。
+          ⛔ 别因为它「半径没变时点了数字不变」就删掉：弱网超时后页面上没有第二个重试入口。
+        -->
+        <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" :loading="exporting" :disabled="!brief" @click="exportPdf">下载 PDF</el-button>
       </div>
     </div>
@@ -140,7 +147,7 @@
                     class="bf-cmp-go"
                     :disabled="loading"
                     :aria-current="r.isMain ? 'true' : undefined"
-                    :aria-label="r.isMain ? `当前按 ${radiusText(r.radiusM)} 分析` : `切换到 ${radiusText(r.radiusM)} 重新分析`"
+                    :aria-label="r.isMain ? `当前按 ${radiusText(r.radiusM)} 分析` : `切换到 ${radiusText(r.radiusM)} 分析`"
                     @click="switchRadius(r)"
                   >{{ radiusText(r.radiusM) }}</button>
                   <span v-if="r.isMain" class="bf-cmp-cur">本次</span>

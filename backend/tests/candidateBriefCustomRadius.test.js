@@ -53,14 +53,22 @@ function slice(src, startMark, endMark) {
   return src.slice(i, j < 0 ? src.length : j)
 }
 
-/** 模板里的半径选择器（从「设置分析半径」到「重新分析」按钮之间） */
-const SELECT_BLOCK = slice(code, '设置分析半径', '重新分析')
+/**
+ * 模板里的半径选择器（从「设置分析半径」到「刷新」按钮之间）。
+ * 🔴 锚点用「刷新」：v1.13.412 把按钮名从「重新分析」改成了「刷新」，锚点不同步会让 slice 切空、
+ *    断言全红（好一点）或切到别处（危险）—— 改名时**必须一起改这里**。
+ */
+const SELECT_BLOCK = slice(code, '设置分析半径', '刷新')
 /** onRadiusChange 函数体 */
 const ON_CHANGE = slice(code, 'function onRadiusChange', '/** 三档结论的统一措辞')
 
 describe('初步分析 · 设置分析半径（v1.13.411）', () => {
   it('① 文案改成「设置分析半径」，旧名只剩注释', () => {
     expect(SELECT_BLOCK, '模板里找不到「设置分析半径」').not.toBe('')
+    // 🔴 切片不得越界：锚点 '刷新' 若命不中按钮，会一路切到 653 行的「返回列表刷新后重试」，
+    //    那样 ② 仍能过（属性都在前面）⇒ 假绿。用「按钮之后的说明行」当越界线。
+    expect(SELECT_BLOCK, '切片跑过界了（锚点没命中按钮，改名后忘了同步 endMark？）')
+      .not.toContain('bf-bar-note')
     expect(code, '旧名「本次分析半径」还在代码里（注释不算）').not.toContain('本次分析半径')
     expect(code, 'aria-label 必须同步改名').toContain('aria-label="设置分析半径"')
   })
@@ -117,5 +125,13 @@ describe('初步分析 · 设置分析半径（v1.13.411）', () => {
   it('⑦ 手动输入同样不写回点位半径（提示句还在）', () => {
     expect(code).toContain('不会写回点位的评估半径')
     expect(code, '手动输入也必须说明区间').toMatch(/手动输入 0\.35~5 公里/)
+  })
+
+  it('⑧ 按钮名是「刷新」，⛔ 不再叫「重新分析」', () => {
+    // 业主 2026-11-24：「把「重新分析」按钮名称改为「刷新」」
+    expect(SELECT_BLOCK, '半径选择器后面找不到具名按钮').not.toBe('')
+    expect(code, '按钮文案没改成「刷新」').toContain('@click="load">刷新</el-button>')
+    // 「重新分析」是数据洞察那两个按钮的名字（StoreSmartstepsDialog / MyAccountView），本文件已无此词
+    expect(code, '本文件不该再有「重新分析」（含 aria-label）').not.toContain('重新分析')
   })
 })
