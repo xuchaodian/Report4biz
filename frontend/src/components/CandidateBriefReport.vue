@@ -36,14 +36,30 @@
       </div>
       <div class="bf-bar-r">
         <span class="bf-radius">
-          本次分析半径
+          设置分析半径
+          <!--
+            v1.13.411：由「本次分析半径」改名「设置分析半径」，并支持**手动输入**。
+            🔴 用法：点开下拉直接敲公里数（`2` / `1.5` / `2km`）回车即用；
+               也认米（`800m`）；超出 0.35~5km 会提示并回退到上一个有效半径。
+            🔴 刻意用 `:model-value` + `@change` 而不是 `v-model`：
+               `allow-create` 会把用户敲的字**原样**当成值（字符串 `'2'`）→ 直接当米用就成了 2 米。
+               这里接住 change、解析成米、再回写 ⇒ 模型里永远是数字（米）。
+            🔴 `:key="radiusKey"`：`allow-create` 会把临时输入项留在下拉里（`2` 与 `2km` 并存），
+               改完 key 强制重建一次下拉，列表只留我们认可的那几档。
+          -->
           <el-select
-            v-model="radius"
+            :key="radiusKey"
+            :model-value="radius"
             size="small"
-            style="width: 104px"
+            class="bf-radius-sel"
             :disabled="loading"
-            aria-label="本次分析半径"
-            @change="load"
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            placeholder="输入公里数"
+            aria-label="设置分析半径"
+            @change="onRadiusChange"
           >
             <el-option v-for="r in radiusOptions" :key="r" :value="r" :label="radiusText(r)" />
           </el-select>
@@ -54,7 +70,7 @@
     </div>
     <!-- 🔴 v1.13.386：原句尾「（要改请点「编辑信息」）」已删 —— 门店来源的点位不再有那个按钮，
          留着就是把用户指向一个不存在的入口。这里只说「不写回」，不指路。 -->
-    <p class="bf-bar-note">换半径只改这份报告的口径，不会写回点位的评估半径。</p>
+    <p class="bf-bar-note">换半径（含手动输入 0.35~5 公里）只改这份报告的口径，不会写回点位的评估半径。</p>
 
     <div v-if="errorMsg" class="bf-error">
       <el-icon><WarningFilled /></el-icon>{{ errorMsg }}
@@ -426,7 +442,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, WarningFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
-import { radiusText } from '@/utils/candidateReport.js'
+import { radiusText, parseRadiusInput, CUSTOM_RADIUS_MIN_M, CUSTOM_RADIUS_MAX_M } from '@/utils/candidateReport.js'
 import { exportPaperPdf, fileStamp, safeFileName } from '@/utils/exportPaperPdf.js'
 // 付费入口单独一个组件：这里只负责「免费结论」，两份职责不混（见文件头 ①）
 import CandidateBriefUpgrade from '@/components/CandidateBriefUpgrade.vue'
@@ -463,11 +479,75 @@ const paper = ref(null)
 const STANDARD_RADII = [500, 1000, 1500, 3000, 5000]
 const radius = ref(Number(props.row?.radius) || 1000)
 
-/** 点位自身的半径可能不在四档里（800/1200 之类）⇒ 插进去并默认选中，⛔ 不偷偷改掉 */
+/**
+ * 手动输入半径的允许区间与解析规则都在 `utils/candidateReport.js`
+ * （纯函数 ⇒ 可被 `candidateBriefCustomRadius.test.js` 直接 import 断言，
+ *   也能和后端 `UNICOM_RADIUS_RANGE_KM` 对账，⛔ 别在组件里再写一份）。
+ *
+ * 🔴 为什么卡在 0.35~5km 而不是后端 `/brief` 的 100m~50km：
+ *    · 上界 5km ＝ 联通 1001 最大档。报告圆再大，升级也只能按 5km 取数
+ *      （`pickUnicomRadius` 的 `covers:false` 分支就会写「范围小于本报告、人口会偏少」）
+ *      ⇒ 纸上摆一个买不到证据的圆，纯属自找解释成本。
+ *    · 下界 0.35km ＝ 门店弹窗可买下限（409 起四处同源）；再小的圆算得出、买不到。
+ */
+
+/** 用户手动输入过、且校验通过的半径（米）。会并进下拉，方便下次直接选 */
+const customRadii = ref([])
+/** 下拉重建计数：见模板里 `:key="radiusKey"` 的说明（清掉 allow-create 的临时项） */
+const radiusKey = ref(0)
+
+/**
+ * 下拉里显示哪些档：固定档 ∪ 点位自带半径 ∪ 手动输入过的值，升序去重。
+ * ⚠️ 固定档必须来自 `STANDARD_RADII`（守卫 `candidateBriefRadius.test.js` 解析这一行），
+ *    ⛔ 别把 `customRadii` 混进那个字面量数组，否则「最大档＝联通最大档」的断言会失效。
+ */
 const radiusOptions = computed(() => {
   const base = Number(props.row?.radius) || 1000
-  return STANDARD_RADII.includes(base) ? STANDARD_RADII : [...new Set([base, ...STANDARD_RADII])].sort((a, b) => a - b)
+  const all = [...STANDARD_RADII, base, ...customRadii.value]
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return [...new Set(all)].sort((a, b) => a - b)
 })
+
+/**
+ * 下拉变更（选档 或 手动输入）。
+ *
+ * 🔴 必须区分来源：`allow-create` 让用户敲的字以**字符串**形式进来（`'2'`），
+ *    而选项是数字（`2000`）。只看 `typeof` 就能分辨，⛔ 别用"有没有小数点"之类的猜法。
+ * 🔴 无效输入**必须回退**：`el-select` 内部已把显示值改成了用户敲的字，
+ *    此时只提示不回写，框里会留着一个不存在的半径（看着像选中了，其实没生效）。
+ */
+function onRadiusChange(v) {
+  const typed = typeof v === 'string'
+  const prev = radius.value
+  const next = typed ? parseRadiusInput(v) : Number(v)
+
+  if (!Number.isFinite(next) || next <= 0) {
+    ElMessage.warning('没看懂这个半径，请输入公里数，如 2 或 1.5（0.35~5）')
+  } else if (next < CUSTOM_RADIUS_MIN_M || next > CUSTOM_RADIUS_MAX_M) {
+    // 「填 2000 想要 2000 米」是最常见的误填 ⇒ 单独给一句更对症的话，⛔ 别只说"越界"。
+    // ⚠️ 判据要用**用户敲的原始数字**（不是 `next`）：`next` 已经 ×1000 成米，
+    //    2,000,000m 永远 >50000，拿它判「像米数」恒为 false（本批第一版就这么漏了）。
+    const rawNum = typed ? Number(String(v).replace(/[^\d.]/g, '')) : NaN
+    const looksLikeMeters = Number.isFinite(rawNum)
+      && rawNum >= CUSTOM_RADIUS_MIN_M && rawNum <= CUSTOM_RADIUS_MAX_M
+    ElMessage.warning(
+      looksLikeMeters
+        ? `这里按「公里」算：${rawNum} 公里超出可买区间。要 ${rawNum} 米请输入 ${rawNum}m`
+        : `半径需在 ${CUSTOM_RADIUS_MIN_M / 1000}~${CUSTOM_RADIUS_MAX_M / 1000} 公里之间` +
+          '（超出这个区间的圆，联通买不到数据）'
+    )
+  } else {
+    radius.value = next
+    if (typed && !radiusOptions.value.includes(next)) customRadii.value = [...customRadii.value, next]
+  }
+
+  // 无论成败都重建下拉：成功是清掉临时的字符串项，失败是清掉用户敲的无效项
+  radiusKey.value += 1
+
+  // 半径确实变了才重新取数（`/brief` 每次都要解析整城网格，重庆约 1.5s）
+  if (radius.value !== prev) load()
+}
 
 /** 三档结论的统一措辞（正文结论区与对比表必须用同一套词，⛔ 各写一份） */
 function verdictTagOf(level) {
@@ -606,6 +686,9 @@ onMounted(load)
 .bf-bar-hint { font-size: 12px; color: #16794a; background: #eaf7f0; border-radius: 10px; padding: 1px 8px; }
 .bf-bar-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bf-radius { font-size: 13px; color: var(--text-regular); display: flex; align-items: center; gap: 6px; }
+/* 132px 是量出来的：EP 下拉项左右 padding 共 52px，`1.5km` / `手动输入` 这类 5 字标签
+   需要 ≥108px ⇒ 再留 24px 余量。⛔ 别压回 104px（选项文字会被截成「1.5…」） */
+.bf-radius-sel { width: 132px; }
 .bf-bar-note { margin: 6px 0 12px; font-size: 12px; color: var(--text-secondary); }
 
 .bf-error { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #fef0f0; color: #f56c6c; border-radius: 6px; font-size: 13px; }

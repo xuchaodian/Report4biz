@@ -142,6 +142,46 @@ export function radiusText(m) {
 }
 
 /**
+ * 「设置分析半径」手动输入的允许区间（米）—— v1.13.411。
+ *
+ * 🔴 为什么不是后端 `/brief` 的 100m~50km：
+ *   · 上界 5km ＝ 联通 1001 最大档（`UNICOM_REPORT_RADII` 上界）。报告圆再大，
+ *     升级购买也只能按 5km 取数（`pickUnicomRadius` 的 `covers:false`）⇒
+ *     纸上摆一个买不到证据的圆，纯属自找解释成本。
+ *   · 下界 0.35km ＝ 门店弹窗可买下限（`UNICOM_RADIUS_RANGE_KM.min`，409 起四处同源）。
+ * ⇒ 与后端 `utils/candidateBrief.js::UNICOM_RADIUS_RANGE_KM` 同源，
+ *    `candidateBriefCustomRadius.test.js` 直接比对，漂移即红。
+ */
+export const CUSTOM_RADIUS_MIN_M = 350
+export const CUSTOM_RADIUS_MAX_M = 5000
+
+/**
+ * 手动输入的半径文本 → 米（无效返回 NaN）。
+ *
+ * 只认三类写法，其余一律 NaN（调用方提示并回退，⛔ 不做"猜单位"的魔法）：
+ *   `2` / `1.5` / `2.0`       ⇒ 公里（业务口径，与门店弹窗「单位: 公里」一致）
+ *   `2km` / `2公里` / `2千米`  ⇒ 公里
+ *   `800m` / `800米`           ⇒ 米
+ * ⚠️ `2000` 会被当成 2000 公里（越界）⇒ 提示文案明写「请输入公里数」，
+ *    免得用户以为填米也行、然后得到一个"没看懂"的提示。
+ */
+export function parseRadiusInput(raw) {
+  const s = String(raw ?? '').trim().toLowerCase().replace(/\s+/g, '')
+  if (!s) return NaN
+  const km = s.match(/^(\d+(?:\.\d+)?)(?:km|公里|千米)?$/)
+  if (km) {
+    const m = Math.round(Number(km[1]) * 1000)
+    return m > 0 ? m : NaN          // `0` / `0.0` 不是半径，交给调用方当无效处理
+  }
+  const m = s.match(/^(\d+(?:\.\d+)?)(?:m|米)$/)
+  if (m) {
+    const v = Math.round(Number(m[1]))
+    return v > 0 ? v : NaN
+  }
+  return NaN
+}
+
+/**
  * 分档序列 → 带百分比的**完整**列表（v1.13.387）
  *
  * 🔴 这里是 387 的核心：1001 一次调用买回来的分档有 3 套口径（到访 0 / 居住 1 / 工作 2）

@@ -291,7 +291,7 @@ export function purchasedReuseText(purchasedRadii, wantM) {
  *    0.31 贴 0.3 km² 面积下限只剩 0.002 km² 余量，上游稍有出入就报「面积超范围」；
  *    0.35（0.385 km²）留出余量，也让弹窗提示与后端校验说的是同一个数。
  */
-const UNICOM_RADIUS_RANGE_KM = Object.freeze({ min: 0.35, max: 5 })
+export const UNICOM_RADIUS_RANGE_KM = Object.freeze({ min: 0.35, max: 5 })
 
 /**
  * 取数口径的一句话说明（**v1.13.407 重写**）。
@@ -653,5 +653,7 @@ export const BRIEF_CONST = Object.freeze({
   SATURATION_RADIUS_M: SATURATION_DEFAULT.radiusM,
   SATURATION_MAX_OWN: SATURATION_DEFAULT.maxOwn,
   // 联通可取半径档（前端做升级口径提示用，⛔ 不许自己写 [1000,3000,5000]）
-  UNICOM_RADII: UNICOM_REPORT_RADII
+  UNICOM_RADII: UNICOM_REPORT_RADII,
+  // 联通圆的可选区间（公里）：前端「设置分析半径」手动输入的上下限来源（411）
+  UNICOM_RADIUS_KM: UNICOM_RADIUS_RANGE_KM
 })
