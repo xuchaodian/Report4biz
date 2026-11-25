@@ -280,8 +280,13 @@ describe('G. 版式：比例条已撤、指标表在纸内、跳转入口在纸�
   })
 
   it('量级四栏仍在（领导先看数，再看指标）', () => {
+    // 417：四栏改为数据驱动（magnitudeItems，动线档把到访提到首位）⇒
+    //      格子的定义搬到 script，模板只负责 v-for；断言跟着搬，强度不放宽。
+    const PAPER_SCRIPT = PAPER.slice(PAPER.indexOf('<script setup>'))
     expect(PAPER_TPL).toContain('rp-kv-4')
-    expect(PAPER_TPL).toContain('联通全量人口')
+    expect(PAPER_TPL).toContain('magnitudeItems')
+    expect(PAPER_SCRIPT).toContain('联通全量人口')
+    expect(PAPER_SCRIPT).toContain('const magnitudeItems = computed')
   })
 
   it('🔴 纸面组件里不许出现路由跳转（392 的免登录分享页要复用它）', () => {

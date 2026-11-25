@@ -55,15 +55,21 @@
         <span class="rp-sec-note">
           联通人口 1001 · 半径 {{ radiusText(model.population.popRadius) }} 内
           <template v-if="model.population.popMonth"> · 期次 {{ model.population.popMonth }}</template>
+          <template v-if="role.label"> · {{ role.label }}</template>
         </span>
       </div>
       <template v-if="model.population.hasPop">
         <!-- 量级四项。⚠️ 到访是**人次**（统计期累计），⛔ 与另三项不同量纲、不可相加 -->
+        <!-- 角色说明（417）：这一档按业主口径「小半径看动线、大半径看静态」，先把"这档该看什么"讲清楚 -->
+        <div v-if="role.label" class="rp-role">
+          <b>{{ role.label }}</b>
+          <span class="rp-role-focus">{{ role.focus }}口径</span>
+          <span class="rp-role-hint">{{ role.hint }}</span>
+          <span v-if="role.basis" class="rp-role-basis">判定依据：{{ role.basis }}</span>
+        </div>
+        <!-- 量级四项：动线档把「到访」提到首位，静态档按居住/工作/到访/全量排 -->
         <div class="rp-kv rp-kv-4">
-          <div><dt>{{ radiusText(model.population.popRadius) }} 内居住</dt><dd>{{ num(model.population.population) }}</dd></div>
-          <div><dt>{{ radiusText(model.population.popRadius) }} 内工作</dt><dd>{{ num(model.population.work) }}</dd></div>
-          <div><dt>{{ radiusText(model.population.popRadius) }} 内到访</dt><dd>{{ numVisit(model.population.visit) }}</dd></div>
-          <div><dt>联通全量人口</dt><dd>{{ num(model.population.popTotal) }}</dd></div>
+          <div v-for="it in magnitudeItems" :key="it.key"><dt>{{ it.label }}</dt><dd>{{ it.value }}</dd></div>
         </div>
 
         <!-- 选址研判指标：把 1001 的 76 个标签浓缩成 8~9 行（v1.13.400）。
@@ -81,10 +87,35 @@
               <tr><th>指标</th><th>数值</th><th>判读</th></tr>
             </thead>
             <tbody>
-              <tr v-for="it in indicators" :key="it.key">
+              <tr v-for="it in indicatorsMain" :key="it.key">
                 <th>{{ it.label }}</th>
                 <td class="rp-ind-v">{{ it.value }}</td>
                 <td class="rp-ind-n">{{ it.note }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <!-- 副组：另一口径的指标压成一行，说明「这些也有，但不是这一档该看的重点」 -->
+          <p v-if="sideText" class="rp-ind-side">
+            另见（{{ role.view === 'visit' ? '静态' : '流动' }}口径，仅作参考）：{{ sideText }}
+          </p>
+        </div>
+
+        <!-- 居民画像（417）：消费水平/消费力/教育/职业/人生阶段/收入资产/月驻留频次。
+             ⛔ 只买了 1001 的位置没有这些码 ⇒ profileRows 为空，整块不渲染（不拿话费冒充收入）。 -->
+        <div v-if="profileRows.length" class="rp-pop-blk">
+          <div class="rp-pop-t">
+            居民画像
+            <span class="rp-pop-tx">（{{ profileScope }}口径 · 来自已购服务码 {{ (model.population.profileServices || []).join(' / ') || '1009/1010/1011/1012/1013/1015' }}）</span>
+          </div>
+          <table class="rp-ind">
+            <thead>
+              <tr><th>维度</th><th>数值</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(p, i) in profileRows" :key="i">
+                <th>{{ p.label }}</th>
+                <td class="rp-ind-v">{{ p.value }}</td>
+                <td class="rp-ind-n">{{ p.note }}</td>
               </tr>
             </tbody>
           </table>
@@ -112,6 +143,7 @@
         <thead>
           <tr>
             <th>半径</th>
+            <th>角色</th>
             <th>居住人口</th>
             <th>工作人口</th>
             <th>职住比</th>
@@ -126,6 +158,7 @@
               {{ r.radiusText }}
               <span v-if="r.isMain" class="rp-tiers-main">主档</span>
             </th>
+            <td class="rp-tiers-role">{{ r.roleLabel || '—' }}</td>
             <td>{{ withUnit(r.live, ' 人') }}</td>
             <td>{{ withUnit(r.work, ' 人') }}</td>
             <td>{{ ratioText(r.workLiveRatio) }}</td>
@@ -135,6 +168,7 @@
           </tr>
         </tbody>
       </table>
+      <p v-if="tiers.note" class="rp-tiers-compare">{{ tiers.note }}</p>
       <p v-for="(s, i) in tiers.summary" :key="i" class="rp-tiers-sum">{{ s }}</p>
       <p class="rp-tiers-note">
         人口密度＝该档圆内居住人口 ÷ 圆面积，与上方「居住人口」同源（不是本地 1km 网格口径）。
@@ -245,6 +279,131 @@ const indicators = computed(() => {
   return Array.isArray(list) ? list : []
 })
 
+/**
+ * 该档角色（v1.13.417）：近场动线 / 步行客群 / 片区基本盘。
+ * ⚠️ 旧快照（417 之前分享/下载的）没有这些字段 ⇒ 全部兜底成空，纸面按「未标注角色」渲染，
+ *    ⛔ 不能因为缺字段就整块不渲染（人口数据本身还在）。
+ */
+const role = computed(() => {
+  const p = props.model?.population || {}
+  return {
+    key: p.role || '',
+    label: p.roleLabel || '',
+    hint: p.roleHint || '',
+    basis: p.roleBasis || '',
+    focus: p.roleFocus || '',
+    view: p.role === 'flow' || p.role === 'near' ? 'visit' : 'live'
+  }
+})
+
+/**
+ * 研判指标按角色分组：主组（该角色该看的）展全表，副组压成一行文字。
+ * 动线档 ⇒ 流动类展开；静态档 ⇒ 静态类展开。
+ * 🔴 为什么不让 9 行全展开：小半径档的"家庭客群/居住性别比"其实是从很小的基数算的，
+ *    摆一整张表会让人以为那几行和小半径同样可信 —— 那正是业主说的"要按半径语义侧重"。
+ */
+const indicatorsMain = computed(() => {
+  const want = role.value.view === 'visit' ? 'flow' : 'static'
+  const main = indicators.value.filter((it) => (it.cat || 'static') === want)
+  // 旧快照没有 cat ⇒ 全归 static；若主组为空则退回全量，避免整块消失
+  return main.length ? main : indicators.value
+})
+const indicatorsSide = computed(() => {
+  const mainKeys = new Set(indicatorsMain.value.map((it) => it.key))
+  return indicators.value.filter((it) => !mainKeys.has(it.key))
+})
+const sideText = computed(() =>
+  indicatorsSide.value.map((it) => `${it.label} ${it.value}`).join(' · ')
+)
+
+/** 居民画像（1009/1010/1011/1012/1013/1015）—— 没买这些码时为 null ⇒ 整块不渲染 */
+const profileRows = computed(() => {
+  const p = props.model?.population?.profile
+  if (!p || typeof p !== 'object') return []
+  const pct = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? `${n.toFixed(1)}%` : '—'
+  }
+  const rows = []
+  const sl = p.spendLevel
+  if (sl && sl.total > 0) {
+    rows.push({
+      label: '消费水平（1013）',
+      value: `高 ${pct(sl.high)} · 中 ${pct(sl.mid)} · 低 ${pct(sl.low)}`,
+      note: '联通消费水平三档，占比按该口径可分档人口计'
+    })
+  }
+  if (p.spendIndex && Number.isFinite(Number(p.spendIndex.avg))) {
+    rows.push({
+      label: '消费力指数（1009）',
+      value: `${Number(p.spendIndex.avg).toFixed(1)} / 8`,
+      note: '1~8 档加权均值，越高消费力越强；与上面的高中低三档是两套口径'
+    })
+  }
+  if (p.education && p.education.total > 0 && p.education.bachelorPlusPct !== null) {
+    rows.push({
+      label: '教育（1010）',
+      value: `本科及以上 ${pct(p.education.bachelorPlusPct)}`,
+      note: '本科 + 硕士 + 博士 占可分档人口'
+    })
+  }
+  if (p.occupation && p.occupation.top && p.occupation.top.length) {
+    rows.push({
+      label: '职业（1011）',
+      value: p.occupation.top.map((x) => `${x.label} ${pct(x.pct)}`).join(' · '),
+      note: '占比最高的前 3 类职业'
+    })
+  }
+  if (p.lifeStage && p.lifeStage.total > 0 && p.lifeStage.marriedWithKidsPct !== null) {
+    rows.push({
+      label: '人生阶段（1012）',
+      value: `已婚已育 ${pct(p.lifeStage.marriedWithKidsPct)}`,
+      note: '家庭型客群占比，与「家庭客群占比」互为正交参考'
+    })
+  }
+  if (p.income && p.income.total > 0 && p.income.highPlusPct !== null) {
+    rows.push({
+      label: '收入预测（1015）',
+      value: `高 + 中高 ${pct(p.income.highPlusPct)}`,
+      note: '联通收入预测概率档，⚠️ 是模型概率档不是实际收入金额'
+    })
+  }
+  const assets = []
+  if (p.car && p.car.highPlusPct !== null) assets.push(`有车（高+中高）${pct(p.car.highPlusPct)}`)
+  if (p.house && p.house.highPlusPct !== null) assets.push(`有房（高+中高）${pct(p.house.highPlusPct)}`)
+  if (assets.length) {
+    rows.push({ label: '资产预测（1015）', value: assets.join(' · '), note: '同为概率档，只作量级参考' })
+  }
+  const reach = props.model?.population?.reach
+  if (reach && reach.total > 0 && reach.heavyPct !== null) {
+    rows.push({
+      label: '月驻留频次（1007）',
+      value: `月到访 5 次以上 ${pct(reach.heavyPct)}`,
+      note: '高频回头客占比 —— 越高越说明这个点是「目的地」而不只是路过'
+    })
+  }
+  return rows
+})
+
+/**
+ * 量级四项的顺序（417）：动线档把「到访（人次）」提到首位 —— 那一档的主要问题是"多少人经过"，
+ * 把居住人口放第一会让人误以为要看常住规模。静态档维持「居住/工作/到访/全量」。
+ */
+const magnitudeItems = computed(() => {
+  const p = props.model?.population || {}
+  const r = radiusText(p.popRadius)
+  const items = [
+    { key: 'live', label: `${r} 内居住`, value: num(p.population) },
+    { key: 'work', label: `${r} 内工作`, value: num(p.work) },
+    { key: 'visit', label: `${r} 内到访`, value: numVisit(p.visit) },
+    { key: 'total', label: '联通全量人口', value: num(p.popTotal) }
+  ]
+  return role.value.view === 'visit' ? [items[2], items[0], items[1], items[3]] : items
+})
+
+/** 画像来源口径：动线档读到访、静态档读居住 */
+const profileScope = computed(() => (role.value.view === 'visit' ? '到访人口' : '居住人口'))
+
 /** 1001 标签总数（纸面用来声明「这里只是摘要」）；旧快照没这个字段 ⇒ 用常量兜底 */
 const labelTotal = computed(() => Number(props.model?.population?.labelTotal) || POP_LABEL_TOTAL)
 
@@ -260,6 +419,8 @@ const tiers = computed(() => {
     has: !!t?.has && rows.length >= 2,
     count: Number(t?.count) || rows.length,
     rows,
+    /** 可比性说明（417）：绝对值随半径膨胀，只有密度/职住比/到访强度能横向比 */
+    note: String(t?.note || ''),
     summary: Array.isArray(t?.summary) ? t.summary.filter(Boolean) : []
   }
 })
@@ -376,6 +537,15 @@ function fmtTime(d) {
 .rp-tiers-m { color: #8a9099; font-variant-numeric: tabular-nums; }
 .rp-tiers-sum { margin: 7px 0 0; font-size: 11.5px; line-height: 1.6; color: #1f2329; }
 .rp-tiers-note { margin: 5px 0 0; font-size: 10px; line-height: 1.55; color: #8a9099; }
+/* ── 档位角色 / 副组 / 可比性（v1.13.417）────────────────────────── */
+.rp-role { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 2px 0 8px; font-size: 11px; line-height: 1.6; color: #333; }
+.rp-role b { font-size: 12px; color: #1f2329; }
+.rp-role-focus { padding: 1px 6px; border-radius: 3px; background: #eef4ff; color: #2563eb; font-size: 10.5px; }
+.rp-role-hint { color: #4e5969; }
+.rp-role-basis { width: 100%; font-size: 10px; color: #8a9099; }
+.rp-ind-side { margin: 6px 0 0; font-size: 10px; line-height: 1.6; color: #8a9099; }
+.rp-tiers-role { font-size: 10.5px; color: #4e5969; white-space: nowrap; }
+.rp-tiers-compare { margin: 6px 0 0; padding: 5px 8px; background: #f7f8fa; border-left: 2px solid #c9cdd4; font-size: 10px; line-height: 1.6; color: #4e5969; }
 
 .rp-map { border: 1px solid #e6e8eb; border-radius: 6px; overflow: hidden; background: #fafbfc; }
 /* 🔴 必须同时给 width:100% 和**固定 height**，`object-fit` 才起作用。

@@ -251,17 +251,30 @@ describe('G. 版式：量级四栏 + 研判指标表（v1.13.400 起不再画逐
 
   it('★ 人口结构改为研判指标表（指标 / 数值 / 判读三列）', () => {
     expect(TPL).toContain('class="rp-ind"')
-    expect(TPL).toContain('v-for="it in indicators"')
+    // 417：9 项指标按档位角色分主/副两组，表里渲染的是主组（副组压成一行文字）
+    expect(TPL).toContain('v-for="it in indicatorsMain"')
     expect(TPL).toContain('rp-ind-v')
     expect(TPL).toContain('rp-ind-n')
   })
 
+  it('417：indicatorsMain 必须从 indicators 派生（⛔ 不许另造一套指标）', () => {
+    const S = PAPER.slice(PAPER.indexOf('<script setup>'))
+    expect(S).toContain('const indicatorsMain = computed')
+    expect(S).toMatch(/indicators\.value\.filter/)
+  })
+
   it('到访量级必须用 numVisit（人次），⛔ 不许复用 num()', () => {
-    expect(TPL).toMatch(/numVisit\(model\.population\.visit\)/)
+    // 417：量级四栏改为数据驱动（magnitudeItems，动线档把到访提到首位）⇒ 断言搬到 script 侧，
+    //      并补一条反向断言：模板里不许再出现「用 num() 渲染 visit」的旧写法。
+    const S = PAPER.slice(PAPER.indexOf('<script setup>'))
+    expect(S).toMatch(/numVisit\(p\.visit\)/)
+    expect(TPL).not.toMatch(/num\(model\.population\.visit\)/)
   })
 
   it('全量人口一格必须标注是联通全量口径（⛔ 不可与居住/工作相加）', () => {
-    expect(TPL).toContain('联通全量人口')
+    const S = PAPER.slice(PAPER.indexOf('<script setup>'))
+    expect(S).toContain('联通全量人口')
+    expect(TPL).toContain('magnitudeItems')
   })
 
   /**

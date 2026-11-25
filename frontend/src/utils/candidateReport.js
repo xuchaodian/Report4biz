@@ -14,6 +14,9 @@
  * ⚠️ 守卫测试直接 import 本文件跑用例（`backend/tests/candidateReport.test.js`）。
  */
 
+import { radiusText } from './radiusText.js'
+import { assignTierRoles, tierCompareNote } from './tierRoles.js'
+
 /** 每度经/纬度对应米数（等距近似；报告只用于"最近商圈多远"这种量级判断，不用于测量） */
 const M_PER_DEG_LAT = 110540
 const mPerDegLng = (lat) => 111320 * Math.cos((lat * Math.PI) / 180)
@@ -130,16 +133,11 @@ function populationNote(pop) {
   return '居住密度很低'
 }
 
-/** 半径文案：1000 →「1km」、1500 →「1.5km」、500 →「500m」 */
-export function radiusText(m) {
-  const n = Number(m)
-  if (!Number.isFinite(n) || n <= 0) return ''
-  if (n >= 1000) {
-    const km = n / 1000
-    return `${Number.isInteger(km) ? km : km.toFixed(1)}km`
-  }
-  return `${Math.round(n)}m`
-}
+/**
+ * 半径文案已抽到 `utils/radiusText.js`（v1.13.417）—— 档位角色判定也要用同一份，
+ * 各写一份会出现「正文 1.5km、对比表 1.50 km」。此处 re-export 保持既有 import 不变。
+ */
+export { radiusText }
 
 /**
  * 「设置分析半径」手动输入的允许区间（米）—— v1.13.411。
@@ -270,20 +268,22 @@ export function buildPopulationIndicators(pop) {
   const work = numOrNull(pop.work)
   const visit = numOrNull(pop.visit)
   const out = []
-  const push = (key, label, value, note) => out.push({ key, label, value, note })
+  // v1.13.417：cat 区分「流动类（看完这一档能回答：多少人经过、从哪来）」与
+  //   「静态类（住/工作在这的人是谁、有没有消费力）」。报告按档位角色决定哪一组展开。
+  const push = (key, label, value, note, cat) => out.push({ key, label, value, note, cat: cat || 'static' })
 
   // ① 职住结构：工作 ÷ 居住（两套人数口径，量纲一致）
   if (live > 0 && work !== null) {
     const r = work / live
     const kind = r >= 1.2 ? '就业型' : (r <= 0.6 ? '居住型' : '职住均衡')
     push('workLive', '职住结构', `${r.toFixed(2)} 倍`,
-      `工作人口 ÷ 居住人口 ⇒ ${kind}片区`)
+      `工作人口 ÷ 居住人口 ⇒ ${kind}片区`, 'static')
   }
 
   // ② 到访强度：到访人次 ÷ 居住人口（跨口径，只做「被使用频次」的相对量）
   if (live > 0 && visit !== null) {
     push('visitIntensity', '到访强度', `${(visit / live).toFixed(1)} 倍`,
-      '统计期累计到访人次 ÷ 居住人口；倍数越高，该点被使用的频次相对常住人口越高')
+      '统计期累计到访人次 ÷ 居住人口；倍数越高，该点被使用的频次相对常住人口越高', 'flow')
   }
 
   // ③ 外省到访占比：P3 ÷ P0（口径同对比看板 out_ratio）
@@ -293,10 +293,10 @@ export function buildPopulationIndicators(pop) {
   if (outProv !== null && visit > 0) {
     if (outProv <= visit) {
       push('outProvince', '外省到访占比', `${((outProv / visit) * 100).toFixed(1)}%`,
-        '外省到访 ÷ 到访人次；占比越高，客群辐射范围越出本地')
+        '外省到访 ÷ 到访人次；占比越高，客群辐射范围越出本地', 'flow')
     } else {
       push('outProvince', '外省到访人口', `${fmtInt(outProv)} 人`,
-        '联通返回的外省到访人数；与到访人次不成子集关系，故不折算占比')
+        '联通返回的外省到访人数；与到访人次不成子集关系，故不折算占比', 'flow')
     }
   }
 
@@ -305,10 +305,10 @@ export function buildPopulationIndicators(pop) {
   if (overlap !== null && live > 0) {
     if (overlap <= live) {
       push('liveWorkOverlap', '职住一体度', `${((overlap / live) * 100).toFixed(1)}%`,
-        '居住与工作重合人口 ÷ 居住人口；重合度越高，就近消费的稳定客群越多')
+        '居住与工作重合人口 ÷ 居住人口；重合度越高，就近消费的稳定客群越多', 'static')
     } else {
       push('liveWorkOverlap', '居住工作重合', `${fmtInt(overlap)} 人`,
-        '联通返回的居住工作重合人数；大于居住人口时口径不可比，故不折算占比')
+        '联通返回的居住工作重合人数；大于居住人口时口径不可比，故不折算占比', 'static')
     }
   }
 
@@ -318,7 +318,7 @@ export function buildPopulationIndicators(pop) {
   if (live > 0 && ageSum > 0) {
     const minor = agesLive.slice(0, 4).reduce((s, x) => s + (Number(x?.value) || 0), 0)
     push('family', '家庭客群占比', `${((minor / live) * 100).toFixed(1)}%`,
-      '居住人口中 0-18 岁（4 个人生阶段档合计）占比；用于判断亲子 / 家庭业态适配')
+      '居住人口中 0-18 岁（4 个人生阶段档合计）占比；用于判断亲子 / 家庭业态适配', 'static')
   }
 
   // ⑥ 主力年龄：居住人口占比最高的一段（只陈述，不外推）
@@ -329,7 +329,7 @@ export function buildPopulationIndicators(pop) {
     const tv = Number(top?.value) || 0
     if (tv > 0) {
       push('mainAge', '主力年龄', `${top.label} · ${((tv / live) * 100).toFixed(1)}%`,
-        '居住人口中占比最高的一段（占比分母为居住人口）')
+        '居住人口中占比最高的一段（占比分母为居住人口）', 'static')
     }
   }
 
@@ -340,7 +340,7 @@ export function buildPopulationIndicators(pop) {
   if (arpuLive.length >= 6 && arpuSum > 0) {
     const high = arpuLive.slice(3).reduce((s, x) => s + (Number(x?.value) || 0), 0)
     push('highArpu', '高话费占比', `${((high / arpuSum) * 100).toFixed(1)}%`,
-      '居住人口月话费 150 元以上占比；话费档是联通在网用户口径的消费能力代理，不是客单价')
+      '居住人口月话费 150 元以上占比；话费档是联通在网用户口径的消费能力代理，不是客单价', 'static')
   }
 
   // ⑧ 居住性别比（单套口径，⛔ 不与到访/工作相加）
@@ -349,14 +349,14 @@ export function buildPopulationIndicators(pop) {
   if (male !== null && female !== null && male + female > 0) {
     const t = male + female
     push('gender', '居住性别比', `男 ${((male / t) * 100).toFixed(1)}% · 女 ${((female / t) * 100).toFixed(1)}%`,
-      '居住人口口径（男女合计为居住人口中的有性别记录部分）')
+      '居住人口口径（男女合计为居住人口中的有性别记录部分）', 'static')
   }
 
   // ⑨ 娱乐人数：只做量级，⛔ 不派生比例（无法确认与到访人次构成子集）
   const entertain = numOrNull(pop.entertain)
   if (entertain !== null) {
     push('entertain', '娱乐人数', `${fmtInt(entertain)} 人`,
-      '联通按娱乐场景识别的人数，仅作量级参考，不与到访人次折算比例')
+      '联通按娱乐场景识别的人数，仅作量级参考，不与到访人次折算比例', 'flow')
   }
 
   return out
@@ -444,17 +444,29 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
         visit,
         // 职住比只做两套**人数**口径的比值（到访是人次，⛔ 不参与任何比值）
         workLiveRatio: (live !== null && live > 0 && work !== null ? work / live : null),
-        density: (live !== null && areaKm2 > 0 ? Math.round((live / areaKm2) * 10) / 10 : null)
+        density: (live !== null && areaKm2 > 0 ? Math.round((live / areaKm2) * 10) / 10 : null),
+        // v1.13.417：该档画像（visit/live/work 三套口径）与这一档实际买到的服务码。
+        // 报告「居民画像」块按角色挑口径（动线档读到访、静态档读居住），此处原样带下去。
+        profile: t?.profile || null,
+        services: Array.isArray(t?.services) ? t.services : [],
+        reach: t?.reach || null
       }
     })
     .filter(Boolean)
     .sort((a, b) => a.radius - b.radius)
+
+  // v1.13.417：给每档判「角色」（近场动线 / 步行客群 / 片区基本盘）。
+  // 🔴 判据在 utils/tierRoles.js —— 按**档位相对位置 + 到访强度校验**，⛔ 不写死 500m/1km：
+  //    同城不同业态，300m 可能是"片区"、2km 可能还只是"一个小区"。
+  assignTierRoles(tierRows)
 
   const tierBlock = {
     has: tierRows.length >= 2,
     count: tierRows.length,
     mainRadius: popRadius,
     rows: tierRows,
+    /** 可比性说明（纸面必印）：绝对值随半径膨胀，只有密度/职住比/到访强度能横向比 */
+    note: tierCompareNote(tierRows),
     /**
      * 放大一圈的净效果（只陈述两个已购档之间的变化，⛔ 不外推营业额/客流）。
      * 为什么值得写：人口绝对值**一定**随半径变大，光看那一列等于「5km 永远赢」；
@@ -463,20 +475,33 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     summary: []
   }
   if (tierRows.length >= 2) {
-    const a = tierRows[0]
-    const b = tierRows[tierRows.length - 1]
-    const pct = (from, to) => (from > 0 ? ((to - from) / from) * 100 : null)
-    const popPct = a.live > 0 && b.live !== null ? pct(a.live, b.live) : null
-    const denPct = a.density > 0 && b.density !== null ? pct(a.density, b.density) : null
-    // ⚠️ 两端都必须有居住人口才写这句：缺一头就没有"放大多少"可谈，
-    //    硬拼会得到「null → 60,000 人」或者 `null.toLocaleString()` 直接抛错。
-    if (a.live !== null && b.live !== null) {
+    const pct = (from, to) => (from !== null && from > 0 && to !== null ? ((to - from) / from) * 100 : null)
+    const fmt = (v) => (v !== null ? v.toLocaleString('zh-CN') : '—')
+    // 🔴 v1.13.417：原来只比「最小档 → 最大档」两句，3 档以上中间档在纸上没有任何文字解读。
+    //    ⇒ 改成**逐段相邻对比**（N 档写 N-1 句），每段带上两端角色，读者才知道这段在回答什么问题。
+    for (let i = 1; i < tierRows.length; i++) {
+      const a = tierRows[i - 1]
+      const b = tierRows[i]
+      // ⚠️ 两端都必须有居住人口才写这段：缺一头就没有"放大多少"可谈，
+      //    硬拼会得到「null → 60,000 人」或者 `null.toLocaleString()` 直接抛错。
+      if (a.live === null || b.live === null) continue
+      const popPct = pct(a.live, b.live)
+      const denPct = pct(a.density, b.density)
+      const intenPct = pct(a.visitIntensity, b.visitIntensity)
       tierBlock.summary.push(
-        `从 ${a.radiusText} 放大到 ${b.radiusText}：居住人口 ${a.live.toLocaleString('zh-CN')} → ${b.live.toLocaleString('zh-CN')} 人` +
+        `从 ${a.radiusText}（${a.roleLabel}）到 ${b.radiusText}（${b.roleLabel}）：居住人口 ${fmt(a.live)} → ${fmt(b.live)} 人` +
         (popPct !== null ? `（${popPct >= 0 ? '+' : ''}${popPct.toFixed(0)}%）` : '') +
-        `，人口密度 ${a.density !== null ? a.density.toLocaleString('zh-CN') : '—'} → ${b.density !== null ? b.density.toLocaleString('zh-CN') : '—'} 人/km²` +
+        `，人口密度 ${fmt(a.density)} → ${fmt(b.density)} 人/km²` +
         (denPct !== null ? `（${denPct >= 0 ? '+' : ''}${denPct.toFixed(0)}%）` : '') +
-        '。半径越大人口越多是必然的，密度是否被摊薄才说明这片客群有多集中。'
+        (intenPct !== null
+          ? `，到访强度 ${a.visitIntensity.toFixed(1)} → ${b.visitIntensity.toFixed(1)} 倍（${intenPct >= 0 ? '+' : ''}${intenPct.toFixed(0)}%）`
+          : '') +
+        '。'
+      )
+    }
+    if (tierBlock.summary.length) {
+      tierBlock.summary.push(
+        '半径越大人口越多是必然的；密度被摊薄多少、到访强度下降多少，才说明这片客群有多集中、这个点更像「路过」还是「目的地」。'
       )
     }
   }
@@ -499,6 +524,13 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
   //    （0=到访人次 / 1=居住 / 2=工作）× (总量 + 男女人数 + 15 年龄段 + 6 话费档)，
   //    386 之前只用了「居住」那一套的三项摘要 ⇒ 白买。这里全量铺开。
   //    ⚠️ 但**口径不能混**：到访是「人次」，居住/工作才是「人」—— 三套结论要分开写。
+  // v1.13.417：当前档（纸面正文那一档）的角色与画像 —— 决定这一块「侧重讲什么」。
+  //   动线档读到访口径画像（这一档的人群是"路过的人"），静态档读居住口径（"住在这的人"）。
+  const curTier = tierRows.find((r) => r.radius === popRadius) || null
+  const curProfile = curTier
+    ? ((curTier.roleView === 'visit' ? curTier.profile?.visit : curTier.profile?.live) || null)
+    : null
+
   const populationBlock = {
     hasPop: !!pop,
     population: pop ? Number(pop.live) || 0 : null,
@@ -540,6 +572,24 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
      *   派生逻辑全在 `buildPopulationIndicators`（纯函数，后端测试直接 import）。
      */
     indicators: pop ? buildPopulationIndicators(pop) : [],
+    /**
+     * 该档角色（v1.13.417）：近场动线 / 步行客群 / 片区基本盘 —— 决定这一块侧重讲什么。
+     * ⚠️ 角色是按**档位相对位置**判的（见 utils/tierRoles.js），不写死 500m/1km。
+     */
+    role: curTier?.role || null,
+    roleLabel: curTier?.roleLabel || '',
+    roleHint: curTier?.roleHint || '',
+    roleFocus: curTier?.roleFocus || '',
+    roleBasis: curTier?.roleBasis || '',
+    /**
+     * 居民画像（来自 1009 消费力/1010 教育/1011 职业/1012 人生阶段/1013 消费水平/1015 收入资产）。
+     * 只买了 1001 的位置为 null ⇒ 纸面不出画像块（⛔ 不拿话费档冒充收入）。
+     */
+    profile: curProfile,
+    /** 这一档实际买到的服务码，纸面要写明画像的来源 */
+    profileServices: curTier?.services || [],
+    /** 月驻留次数（1007，到访口径）→ 高频回头客占比 */
+    reach: curTier?.reach || null,
     /** 1001 标签总数 —— 纸面用它说明「这里只是摘要」 */
     labelTotal: POP_LABEL_TOTAL,
     /** 描述性小结（只陈述分布事实，⛔ 不推导营业额/客流预测） */

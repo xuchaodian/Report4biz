@@ -62,7 +62,13 @@
             :disabled="tiersLoading || !hasTiers"
             aria-label="选择已购人口半径"
           >
-            <el-option v-for="t in tiers" :key="t.radius" :value="t.radius" :label="`半径 ${radiusText(t.radius)}`" />
+            <!-- 417：下拉带档位角色（近场动线/步行客群/片区基本盘），让人知道切过去该看什么 -->
+            <el-option
+              v-for="t in tiers"
+              :key="t.radius"
+              :value="t.radius"
+              :label="`半径 ${radiusText(t.radius)}${t.roleLabel ? ' · ' + t.roleLabel : ''}`"
+            />
           </el-select>
           <template v-if="popData">
             <!-- ⚠️ v1.13.413 起这里**恒为不消耗**：报告侧只有一条 GET 只读请求，
@@ -142,6 +148,7 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores/user'
 import { pickDistrictForPoint, buildReportModel, fmtM, radiusText } from '@/utils/candidateReport.js'
+import { assignTierRoles } from '@/utils/tierRoles.js'
 import { resolveBrandCategory } from '@/utils/storeBrand.js'
 import { captureMapOnlyCanvas } from '@/utils/mapCapture'
 import ReportPaper from '@/components/ReportPaper.vue'
@@ -181,7 +188,31 @@ const mapImg = ref('')
 //
 // 🔴 守卫 `candidateReportPurchasedGuard.test.js` 钉死：本文件⛔ 不许再出现
 //   `/smartsteps/population`、`probeOnly`、`获取人口数据` 这些字样 —— 加回去就是回退。
-const tiers = ref([])            // [{ radius, cityMonth, purchaseId, purchasedAt, storeName, population }]
+/**
+ * 给下拉项补角色（417）：调用与报告纸**同一个** assignTierRoles，只喂它需要的四个数
+ * （radius/live/work/visit + density）。⛔ 不要在这里另写一套"小于 500m 就是动线档"。
+ */
+function withTierRoles(list) {
+  if (!Array.isArray(list) || !list.length) return []
+  const rows = list.map((t) => {
+    const r = Number(t?.radius) || 0
+    const p = t?.population || null
+    const num = (v) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null))
+    const live = p ? num(p.live) : null
+    const areaKm2 = r > 0 ? (Math.PI * r * r) / 1e6 : 0
+    return {
+      radius: r,
+      live,
+      work: p ? num(p.work) : null,
+      visit: p ? num(p.visit) : null,
+      density: (live !== null && areaKm2 > 0) ? live / areaKm2 : null
+    }
+  })
+  assignTierRoles(rows)
+  return list.map((t, i) => ({ ...t, roleLabel: rows[i]?.roleLabel || '' }))
+}
+
+const tiers = ref([])            // [{ radius, cityMonth, purchaseId, purchasedAt, storeName, population, roleLabel }]
 const tiersLoading = ref(false)
 const tiersReady = ref(false)    // 拉取已结束（无论有没有），用于区分「加载中」与「空态」
 /** 当前选中档的半径（米）—— 报告正文与纸面主档都跟它走 */
@@ -295,7 +326,8 @@ async function loadTiers() {
   try {
     const { data } = await axios.get('/api/candidates/purchased-population', { params })
     const list = Array.isArray(data?.tiers) ? data.tiers : []
-    tiers.value = list
+    // 417：给下拉项补角色标签 —— 复用报告同一份判据（utils/tierRoles.js），⛔ 不另写一套
+    tiers.value = withTierRoles(list)
     if (list.length) popRadius.value = pickNearestTier(list, Number(c.radius) || 1000)
   } catch (e) {
     // 读失败就按「没买过」处理：宁可让用户去初步分析看一眼，也不能谎称有数据可用

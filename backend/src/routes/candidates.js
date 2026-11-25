@@ -61,6 +61,7 @@ import { isAllBrandsToken, resolveBrandScope } from '../utils/competitorScope.js
 // 已购半径读取（v1.13.380）：判据与取数侧同源，⛔ 不许各写一份
 import { REUSE_TOL_M, parseRadii } from '../utils/reuseKey.js'
 import { parsePopulation1001 } from '../utils/unicomPopulation.js'
+import { buildProfiles, buildReach } from '../utils/unicomProfile.js'
 import { loadCompetitorIndex } from '../utils/competitorPoints.js'
 import { IN_BUSINESS_SQL, IN_BUSINESS_PARAMS } from '../utils/storeStatus.js'
 import { dstr } from '../utils/districtProps.js'
@@ -362,6 +363,11 @@ function readPurchasedEntries(db, uid, lng, lat) {
       let pop = null
       try { pop = parsePopulation1001(row.result_data) } catch { pop = null }
       if (!pop) continue
+      // v1.13.417：同一行的多档共用一份 result_data ⇒ 画像/驻留只解析一次
+      //   1001 给「有多少人」，1009/1010/1011/1012/1013/1015 给「是什么人」
+      //   ⇒ 报告的「居民画像」块靠这里；没有画像码时 profile 三个口径全为 null，报告自动不渲染。
+      const profiles = buildProfiles(row.result_data)
+      const reach = buildReach(row.result_data)
       for (const r of parseRadii(row.radius)) {
         if (seen.has(r)) continue
         seen.add(r)
@@ -371,7 +377,13 @@ function readPurchasedEntries(db, uid, lng, lat) {
           purchaseId: Number(row.id) || null,
           purchasedAt: str(row.created_at),
           storeName: str(row.store_name),
-          population: pop
+          population: pop,
+          /** 画像（按口径分开）：动线档读 visit，静态档读 live */
+          profile: { visit: profiles.visit, live: profiles.live, work: profiles.work },
+          /** 这一档实际买到的服务码（报告要写明画像来自哪些码） */
+          services: profiles.services,
+          /** 月驻留次数分布（1007，到访口径）→ 高频回头客占比 */
+          reach
         })
       }
     }
