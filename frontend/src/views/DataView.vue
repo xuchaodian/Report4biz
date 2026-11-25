@@ -298,17 +298,25 @@
         </el-row>
 
         <el-row :gutter="20">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="面积(㎡)" prop="store_area">
               <el-input-number v-model="form.store_area" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
+            <el-form-item label="月租金(元)" prop="rent">
+              <!-- 414：这里才是「月租金」的唯一录入处 ——
+                   候选点位详情的「月租金」与开店测算的默认成本都从 markers.rent 取。
+                   ⛔ 别改成「元/㎡/月」：那是销售预测里的单价，两者口径不同（这里是整店月租总额）。 -->
+              <el-input-number v-model="form.rent" :min="0" :step="1000" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
             <el-form-item label="座位数" prop="seats">
               <el-input-number v-model="form.seats" :min="0" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="门幅面积" prop="frontage">
               <el-input-number v-model="form.frontage" :min="0" style="width: 100%" />
             </el-form-item>

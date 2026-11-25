@@ -45,6 +45,8 @@ export const STORE_IMPORT_FIELDS = [
   { key: 'district', label: '区县', required: false, note: '用于城市内的片区筛选' },
   { key: 'address', label: '地址', required: false, note: '体检复核清单里靠它人工确认「是不是同一个地址」' },
   { key: 'store_area', label: '门店面积（㎡）', required: false, note: '🔴 缺面积 ⇒ 判不了店型（大店/小店），体检面积分档不计它，销售预测也少一个特征' },
+  // 414：整店月租总额（元/月）。⛔ 不是销售预测里的「元/㎡/月」单价，别混用
+  { key: 'rent', label: '月租金（元）', required: false, note: '整店每月租金总额（元/月），⛔ 不是元/㎡/月的单价；候选点位详情的「月租金」取这一列' },
   { key: 'store_category', label: '门店区分', required: false, note: `🔴 是**选址形态**（${STORE_CATEGORIES_TEXT}），⛔ 不是菜系业态；缺它销售预测仍能算，只是参照店的「类型匹配」少一个加分项` },
   { key: 'store_status', label: '门店状态', required: false, note: '正常 / 闭店 / 停业' },
   { key: 'open_date', label: '开店日期', required: false, note: '用于「开满一年才算成熟店」这类筛选' },
@@ -88,14 +90,14 @@ export function buildStoreTemplateCsv() {
     {
       store_code: 'BJ001', brand: '星巴克', name: '星巴克国贸店', store_type: '已开业',
       city: '北京市', district: '朝阳区', address: '国贸大厦一层', open_date: '2023-01-15',
-      business_hours: '07:00-22:00', store_area: 200, seats: 80, frontage: '',
+      business_hours: '07:00-22:00', store_area: 200, rent: 56000, seats: 80, frontage: '',
       store_category: '直营', store_status: '正常', mall_type: '', trade_area_type: '',
       latitude: 39.9088, longitude: 116.4610, description: 'CBD核心区'
     },
     {
       store_code: 'BJ002', brand: '星巴克', name: '星巴克望京候选', store_type: '重点候选',
       city: '北京市', district: '朝阳区', address: '', open_date: '',
-      business_hours: '', store_area: '', seats: '', frontage: '',
+      business_hours: '', store_area: '', rent: '', seats: '', frontage: '',
       store_category: '加盟', store_status: '正常', mall_type: '', trade_area_type: '',
       latitude: 39.9965, longitude: 116.4710, description: '重点跟进'
     }

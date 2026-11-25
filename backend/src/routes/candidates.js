@@ -142,7 +142,7 @@ function candidateStores(db, userId) {
   const ph = CANDIDATE_STORE_TYPES.map(() => '?').join(',')
   return db.prepare(
     `SELECT id, store_code, name, brand, store_type, city, district, address,
-            latitude, longitude, area, rent, status, created_at, updated_at
+            latitude, longitude, area, store_area, rent, status, created_at, updated_at
        FROM markers
       WHERE user_id = ? AND store_type IN (${ph}) AND merged_into IS NULL
       ORDER BY updated_at DESC, id DESC`
@@ -168,6 +168,9 @@ function allCandidates(db, userId) {
  *   stageStored 该阶段是库里存的（true）还是补的默认值（false）
  *
  * ⚠️ 面积/租金优先取门店台账（它是准的），台账没填才回落到候选点位当年手填的值。
+ * 🔴🔴 414：门店台账的「面积」列是 `store_area`（我的门店页面写入的就是它），
+ *    `area` 是早期遗留列、全站没有任何写入路径 ⇒ 只读 `m.area` 会让门店行**恒显示「—」**，
+ *    用户在「我的门店」填了面积也看不到。顺序必须是 `store_area` → `area`（老数据兜底）→ 候选记录。
  */
 function buildRows(db, userId) {
   const stores = candidateStores(db, userId)
@@ -191,7 +194,7 @@ function buildRows(db, userId) {
       address: str(m.address),
       latitude: m.latitude === null ? null : Number(m.latitude),
       longitude: m.longitude === null ? null : Number(m.longitude),
-      area: m.area ?? (c ? c.area : null),
+      area: m.store_area ?? m.area ?? (c ? c.area : null),
       rent: m.rent ?? (c ? c.rent : null),
       radius: Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_RADIUS,
       stage: c ? str(c.stage) : STAGES[0],
@@ -255,7 +258,7 @@ function linkedStoreFor(db, uid, cand) {
   const code = str(cand?.store_code)
   if (code) {
     const hit = db.prepare(
-      `SELECT id, store_code, name, store_type, city, district, address, latitude, longitude, area, rent
+      `SELECT id, store_code, name, store_type, city, district, address, latitude, longitude, area, store_area, rent
          FROM markers WHERE user_id = ? AND store_code = ? AND merged_into IS NULL`
     ).get(uid, code)
     if (hit) return hit
@@ -406,7 +409,7 @@ function resolvePointRequest(db, uid, q = {}) {
   if (markerId) {
     const marker = db.prepare(
       `SELECT id, store_code, name, brand, store_type, city, district, address,
-              latitude, longitude, area, rent
+              latitude, longitude, area, store_area, rent
          FROM markers WHERE id = ? AND user_id = ? AND merged_into IS NULL`
     ).get(markerId, uid) || null
     if (!marker) return { status: 404, message: '未找到该门店' }
@@ -549,7 +552,7 @@ router.post('/ensure', authenticate, (req, res) => {
         str(m.district).slice(0, FIELD_MAX.district),
         str(m.address).slice(0, FIELD_MAX.address),
         lat, lng,
-        DEFAULT_RADIUS, num(m.area), num(m.rent),
+        DEFAULT_RADIUS, num(m.store_area ?? m.area), num(m.rent),
         STAGES[0], 'store-sync'
       ).lastInsertRowid
 

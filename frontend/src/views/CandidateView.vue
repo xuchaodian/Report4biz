@@ -149,7 +149,8 @@
       <!-- 384：删掉「半径」列。它恒为默认 1000（门店来源行未改过就是 1km），
            既不参与筛选也不是决策依据；且初步分析只认 1/3/5km 三档（向上取档）、
            临时改半径不写回，列表值与实际取数口径本就是两套 ⇒ 留着反而误导。
-           需要看点位评估半径时：详情抽屉「评估半径」、「编辑评估半径」对话框。
+           414：详情抽屉里的「评估半径」也一并删掉（业主：显示意义不大，半径是点「初步分析」
+           之后在那份报告里设置的）。要改点位自身的评估半径，仍走「编辑评估半径」对话框。
            ⚠️ 数据仍在 row.radius 上，openBrief() 仍靠它决定初步分析的默认半径，删的只是展示。 -->
       <el-table-column label="状态" width="110" align="center">
         <template #default="{ row }">
@@ -201,7 +202,9 @@
           <div><dt>城市 / 区县</dt><dd>{{ [detail.city, detail.district].filter(Boolean).join(' · ') || '—' }}</dd></div>
           <div class="cd-info-wide"><dt>地址</dt><dd>{{ detail.address || '—' }}</dd></div>
           <div><dt>坐标</dt><dd>{{ fmtLatLng(detail.latitude) }}, {{ fmtLatLng(detail.longitude) }}</dd></div>
-          <div><dt>评估半径</dt><dd>{{ detail.radius }} m</dd></div>
+          <!-- 414：删掉「评估半径」行。半径不是这个点位的固有属性，而是「初步分析」里逐次设置的分析口径
+               （0.35~5 公里、换档不写回）；在这里显示一个恒为 1000 的数，反而让人以为它是个固定参数。
+               点位自身的默认半径仍可在「编辑评估半径」对话框里改。 -->
           <div><dt>面积</dt><dd>{{ detail.area ? detail.area + ' ㎡' : '—' }}</dd></div>
           <div><dt>月租金</dt><dd>{{ detail.rent ? detail.rent + ' 元' : '—' }}</dd></div>
           <div v-if="detail.drop_reason" class="cd-info-wide">

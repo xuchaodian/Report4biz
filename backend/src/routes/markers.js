@@ -637,7 +637,7 @@ router.post('/', authenticate, (req, res) => {
     const {
       store_code, brand, name, store_type,
       city, district, address,
-      open_date, business_hours, store_area, seats, frontage,
+      open_date, business_hours, store_area, seats, frontage, rent,
       store_category, store_status, mall_type, trade_area_type, description,
       latitude, longitude, icon_color
     } = req.body
@@ -645,7 +645,6 @@ router.post('/', authenticate, (req, res) => {
     if (!name || latitude === undefined || longitude === undefined) {
       return res.status(400).json({ message: '门店名称和坐标不能为空' })
     }
-
     const db = getDb()
 
     // 城市兜底（规则 13）：city 留空 → 按坐标反查补全，否则该行无法被管辖范围圈定
@@ -655,15 +654,17 @@ router.post('/', authenticate, (req, res) => {
       INSERT INTO markers (
         store_code, brand, name, store_type,
         city, district, address,
-        open_date, business_hours, store_area, seats, frontage,
+        open_date, business_hours, store_area, seats, frontage, rent,
         store_category, store_status, mall_type, trade_area_type, description,
         latitude, longitude, status, icon_color, user_id, city_source,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       store_code || '', brand || '', name, store_type || '已开业',
       cityFix.city || '', district || '', address || '',
       open_date || '', business_hours || '', store_area || null, seats || null, frontage || null,
+      // 414：月租金（元/月）。只有「我的门店」能录，候选点位详情/开店测算都从这里取
+      rent === undefined || rent === null || rent === '' ? null : Number(rent),
       store_category || '', store_status || '', mall_type || '', trade_area_type || '', description || '',
       latitude, longitude, '正常', icon_color || '#409eff', req.user.id, cityFix.city_source || null
     )
@@ -686,7 +687,7 @@ router.put('/:id', authenticate, (req, res) => {
     const {
       store_code, brand, name, store_type,
       city, district, address,
-      open_date, business_hours, store_area, seats, frontage,
+      open_date, business_hours, store_area, seats, frontage, rent,
       store_category, store_status, mall_type, trade_area_type, description,
       latitude, longitude, icon_color
     } = req.body
@@ -713,7 +714,7 @@ router.put('/:id', authenticate, (req, res) => {
       UPDATE markers SET
         store_code = ?, brand = ?, name = ?, store_type = ?,
         city = ?, district = ?, address = ?, 
-        open_date = ?, business_hours = ?, store_area = ?, seats = ?, frontage = ?,
+        open_date = ?, business_hours = ?, store_area = ?, seats = ?, frontage = ?, rent = ?,
         store_category = ?, store_status = ?, mall_type = ?, trade_area_type = ?, description = ?,
         latitude = ?, longitude = ?, icon_color = ?, city_source = ?,
         updated_at = datetime('now')
@@ -732,6 +733,8 @@ router.put('/:id', authenticate, (req, res) => {
       store_area ?? existingMarker.store_area,
       seats ?? existingMarker.seats,
       frontage ?? existingMarker.frontage,
+      // 414：租金允许改（含清空 → null），未传则保持原值
+      rent === undefined ? existingMarker.rent : (rent === null || rent === '' ? null : Number(rent)),
       store_category ?? existingMarker.store_category,
       store_status ?? existingMarker.store_status,
       mall_type ?? existingMarker.mall_type,
@@ -887,6 +890,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               row.store_area ? esc(parseFloat(row.store_area)) : 'NULL',
               row.seats ? esc(parseInt(row.seats)) : 'NULL',
               row.frontage ? esc(parseFloat(row.frontage)) : 'NULL',
+              row.rent ? esc(parseFloat(row.rent)) : 'NULL',
               esc(row.store_category || ''), esc(row.store_status || ''), esc(row.mall_type || ''), esc(row.trade_area_type || ''), esc(row.description || ''),
               esc(parseFloat(row.latitude)), esc(parseFloat(row.longitude)),
               "'正常'",
@@ -895,7 +899,7 @@ router.post('/import', authenticate, upload.single('file'), (req, res) => {
               esc(citySource),
               "datetime('now')", "datetime('now')"
             ].join(',')
-            db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,city_source,created_at,updated_at) VALUES (' + vals + ')')
+            db.exec('INSERT INTO markers (store_code,brand,name,store_type,city,district,address,open_date,business_hours,store_area,seats,frontage,rent,store_category,store_status,mall_type,trade_area_type,description,latitude,longitude,status,icon_color,user_id,city_source,created_at,updated_at) VALUES (' + vals + ')')
             imported++
           }
           db.commitTx() // 内含统一落盘
