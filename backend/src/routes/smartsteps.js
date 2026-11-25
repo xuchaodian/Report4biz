@@ -6,6 +6,7 @@ import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { checkQuota, buildGateError } from '../utils/quotaGate.js'
 import { parsePopulation1001 } from '../utils/unicomPopulation.js'
+import { checkIfDataIsEmpty } from '../utils/unicomEmpty.js'
 import { UNICOM_REPORT_RADII } from '../utils/siteSelectConfig.js'
 
 const router = express.Router()
@@ -203,55 +204,14 @@ export function buildCircleWkt(lng, lat, radius) {
 }
 
 /**
- * 检测返回数据是否全为0/空（需要返还配额）
- * @param {any} data - API返回的数据
- * @returns {boolean} - true表示全为0/空，需要返还配额
+ * 空数据判据已抽到 `utils/unicomEmpty.js`（v1.13.416）—— 与 `routes/resale.js` 共用同一份实现。
+ *
+ * 历史教训（改这里之前先读 unicomEmpty.js 的注释）：
+ *   · 旧实现 `if (data.error) return false` ⇒ 上游 code=200 但带 error 时被判「有数据」⇒ 扣了配额没数据；
+ *   · 旧实现把 `hour`/`day_type`/`date` 这类序号/日期字段当数据 ⇒ `{1005:[{hour:1,visit:0}]}` 也扣费。
+ * ⛔ 不要在本文件再写一份：两份漂移的后果是「一个入口退款、另一个入口照扣」。
  */
-export function checkIfDataIsEmpty(data) {
-  // 空数据情况
-  if (data === null || data === undefined) return true
-  if (data.error) return false  // 有错误信息不算空数据
-  
-  // 如果是对象
-  if (typeof data === 'object') {
-    // 空对象
-    if (Object.keys(data).length === 0) return true
-    
-    // 遍历所有数值字段
-    let hasValidNumber = false
-    for (const [key, value] of Object.entries(data)) {
-      if (key === 'error') continue  // 跳过错误字段
-      if (value === null || value === undefined) continue
-      
-      // 如果是数字
-      if (typeof value === 'number') {
-        if (value !== 0) {
-          hasValidNumber = true
-          break
-        }
-      }
-      // 如果是字符串数字
-      else if (typeof value === 'string') {
-        const num = parseFloat(value)
-        if (!isNaN(num) && num !== 0) {
-          hasValidNumber = true
-          break
-        }
-      }
-      // 如果是数组或对象，递归检查
-      else if (typeof value === 'object') {
-        if (!checkIfDataIsEmpty(value)) {
-          hasValidNumber = true
-          break
-        }
-      }
-    }
-    
-    return !hasValidNumber
-  }
-  
-  return false
-}
+export { checkIfDataIsEmpty }
 
 /**
  * 获取Token

@@ -7,6 +7,7 @@ import { SMARTSTEPS_API_KEY } from '../config.js'
 import { fetchWithTimeout, DEFAULT_HTTP_TIMEOUT_MS, SLOW_HTTP_TIMEOUT_MS } from '../utils/httpTimeout.js'
 import { getPoolInfo } from '../utils/quotaPool.js'
 import { checkQuota } from '../utils/quotaGate.js'
+import { checkIfDataIsEmpty } from '../utils/unicomEmpty.js'
 
 const router = express.Router()
 
@@ -190,18 +191,9 @@ function chargeUsageAndRecord(db, client, opts = {}) {
 }
 
 // ===== 检测空数据 =====
-function checkIfDataIsEmpty(data) {
-  if (data === null || data === undefined) return true
-  if (data.error) return false
-  if (typeof data === 'object') {
-    if (Object.keys(data).length === 0) return true
-    for (const v of Object.values(data)) {
-      if (!checkIfDataIsEmpty(v)) return false
-    }
-    return true
-  }
-  return data === 0 || data === ''
-}
+// v1.13.416：判据抽到 `utils/unicomEmpty.js`，与 `routes/smartsteps.js` 共用一份。
+// ⛔ 不要再写第二份：对外 API Key 扣的是 api_keys.balance，判据一旦漂移，
+//    会出现「同一份上游数据，后台退款、对外照扣」的账目分裂。
 
 // ===== API Key 工具 =====
 function generateApiKey() {
