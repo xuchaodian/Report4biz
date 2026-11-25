@@ -231,9 +231,18 @@ describe('B2. 源码守卫（防回退成「缓存白拿」）', () => {
     expect(UPGRADE, '购买入口必须指向门店弹窗').toContain('StoreSmartstepsDialog')
   })
 
-  it('门店报告页的「本次未消耗配额」必须按实际 quotaUsed 决定', () => {
-    expect(REPORT).toContain('popQuotaUsed')
-    // 不许再无条件写死「· 本次未消耗配额」
-    expect(REPORT).not.toContain('· 本次未消耗配额\n')
+  /**
+   * 🔴 v1.13.413：这条守卫换了一次口径。
+   *   381 的原文是「报告页的『本次未消耗配额』必须按实际 quotaUsed 决定」——
+   *   那时报告还会自己 POST `/smartsteps/population`，所以"扣没扣"是要算出来的。
+   *   413 起报告侧**整条取数链路被删掉**（只 GET 已购档）⇒ 配额恒为 0 消耗，
+   *   `popQuotaUsed` 这个变量也随之消失。守的东西因此改成更强的那个：
+   *   **报告页里不许再出现任何计费入口**，且"不消耗配额"要如实写在界面上。
+   */
+  it('🔴 报告页不再自己取数 ⇒ ⛔ 出现计费入口就是回退（v1.13.413）', () => {
+    for (const bad of ['/api/smartsteps/population', 'chargeAndRecord', 'checkQuota', 'popQuotaUsed']) {
+      expect(REPORT, `报告页出现了 ${bad} ⇒ 又能自己花钱了`).not.toContain(bad)
+    }
+    expect(REPORT, '必须如实写明不消耗配额').toContain('不消耗配额')
   })
 })

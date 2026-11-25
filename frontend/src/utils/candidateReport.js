@@ -386,7 +386,10 @@ function numOrNull(v) {
  *
  * @param {object} candidate store_candidates 一行
  * @param {{district:object|null, contained:boolean, distanceM:number|null}} hit pickDistrictForPoint 的结果
- * @param {{population?:object|null, popMonth?:string, popRadius?:number, brandScope?:object|null}} opts 联通 1001 解析结果、期次、半径（米）
+ * @param {{population?:object|null, popMonth?:string, popRadius?:number, brandScope?:object|null,
+ *          tiers?:Array<{radius:number, cityMonth:string, population:object}>|null}} opts
+ *        联通 1001 解析结果、期次、半径（米）；`tiers`（v1.13.413）＝该位置**已购**的各档人口
+ *        （原样来自 `GET /api/candidates/purchased-population` 的 `tiers`，用于多档对比表）
  *        · `brandScope`（v1.13.346）：`/api/districts` 返回的 `{ configured, brands }`，
  *          决定「商圈内竞品」的注记怎么写 —— 未指定品牌 / 未配置映射 / 已按映射收窄，三态必须分开写。
  */
@@ -400,6 +403,83 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
 
   const facts = []
   const risks = []
+
+  // ── 多档并列对比（v1.13.413）─────────────────────────────────────────────
+  // 业主 2026-11-24：「立项报告不要固定为 1/3/5km，以实际购买的联通人口半径为基础」，
+  //   多档呈现形态选「多档并列对比」（纸面像初步分析那样排一张对比表，主档给完整正文）。
+  //
+  // 🔴 数据从哪来：`GET /api/candidates/purchased-population` 直接回**已购档 + 1001 原始结构**。
+  //   报告侧没有任何取数请求 ⇒ 人口一项不可能产生费用（护栏在后端结构上）。
+  // 🔴 为什么只比「人口类」指标：竞品数/商圈评分是**商圈面**口径（面数据没法按圆重算），
+  //   摆进这张按半径排的表里，读者会以为换半径它们也会变 ⇒ 与正文自相矛盾。
+  // 🔴 密度必须用**同一份联通人口**算（`live ÷ 圆面积`），⛔ 不要掺本地 1km 网格的常住人口：
+  //   两个数据源混在一张表里，读者拿「密度 × 面积」一算就跟「居住人口」列对不上。
+  //
+  // ⚠️ 只有 1 档时 `has=false` —— 一行数据的"对比表"没有信息量，正文已经说清了。
+  const tierRows = (Array.isArray(opts.tiers) ? opts.tiers : [])
+    .map((t) => {
+      const r = Number(t?.radius) || 0
+      if (!(r > 0)) return null
+      const p = t?.population || null
+      // 🔴 `Number(null) === 0`（本项目踩过一次的经典坑，§6.128）：直接写
+      //    `Number(p.live) || 0` 会把「这个档没有居住人口字段」变成「0 人」，
+      //    再除一圈面积就得出「密度 0 人/km²」——那是**假的结论**，不是缺数据。
+      //    ⇒ 必须显式判空，缺失一律 null（纸面渲染成「—」）。
+      const num = (v) => {
+        if (v === null || v === undefined || v === '') return null
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      const live = p ? num(p.live) : null
+      const work = p ? num(p.work) : null
+      const visit = p ? num(p.visit) : null
+      const areaKm2 = (Math.PI * r * r) / 1e6
+      return {
+        radius: r,
+        radiusText: radiusText(r),
+        isMain: r === popRadius,
+        popMonth: String(t?.cityMonth || ''),
+        live,
+        work,
+        visit,
+        // 职住比只做两套**人数**口径的比值（到访是人次，⛔ 不参与任何比值）
+        workLiveRatio: (live !== null && live > 0 && work !== null ? work / live : null),
+        density: (live !== null && areaKm2 > 0 ? Math.round((live / areaKm2) * 10) / 10 : null)
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.radius - b.radius)
+
+  const tierBlock = {
+    has: tierRows.length >= 2,
+    count: tierRows.length,
+    mainRadius: popRadius,
+    rows: tierRows,
+    /**
+     * 放大一圈的净效果（只陈述两个已购档之间的变化，⛔ 不外推营业额/客流）。
+     * 为什么值得写：人口绝对值**一定**随半径变大，光看那一列等于「5km 永远赢」；
+     * 密度与职住比才是能横向比的量 ⇒ 用一句话把两列的变化讲明白。
+     */
+    summary: []
+  }
+  if (tierRows.length >= 2) {
+    const a = tierRows[0]
+    const b = tierRows[tierRows.length - 1]
+    const pct = (from, to) => (from > 0 ? ((to - from) / from) * 100 : null)
+    const popPct = a.live > 0 && b.live !== null ? pct(a.live, b.live) : null
+    const denPct = a.density > 0 && b.density !== null ? pct(a.density, b.density) : null
+    // ⚠️ 两端都必须有居住人口才写这句：缺一头就没有"放大多少"可谈，
+    //    硬拼会得到「null → 60,000 人」或者 `null.toLocaleString()` 直接抛错。
+    if (a.live !== null && b.live !== null) {
+      tierBlock.summary.push(
+        `从 ${a.radiusText} 放大到 ${b.radiusText}：居住人口 ${a.live.toLocaleString('zh-CN')} → ${b.live.toLocaleString('zh-CN')} 人` +
+        (popPct !== null ? `（${popPct >= 0 ? '+' : ''}${popPct.toFixed(0)}%）` : '') +
+        `，人口密度 ${a.density !== null ? a.density.toLocaleString('zh-CN') : '—'} → ${b.density !== null ? b.density.toLocaleString('zh-CN') : '—'} 人/km²` +
+        (denPct !== null ? `（${denPct >= 0 ? '+' : ''}${denPct.toFixed(0)}%）` : '') +
+        '。半径越大人口越多是必然的，密度是否被摊薄才说明这片客群有多集中。'
+      )
+    }
+  }
 
   // ── 位置 ────────────────────────────────────────────────
   facts.push({
@@ -637,6 +717,11 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     facts,
     district: districtBlock,
     population: populationBlock,
+    /**
+     * 多档并列对比（v1.13.413）：`{ has, count, mainRadius, rows[], summary[] }`。
+     * `has=false`（0 档或 1 档）时纸面不渲染这张表。
+     */
+    tiers: tierBlock,
     risks,
     completeness,
     /** 报告里必须明写的口径（模板直接渲染，⛔ 不要另写一份） */
@@ -649,7 +734,8 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
         ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')
         : '人口无期次（未取数）；商圈基线未标注数据期次',
       sample: populationBlock.hasPop
-        ? `人口为点位半径${radiusText(populationBlock.popRadius) || ''} 内的圆口径，非商圈面口径；评分与竞争计数为商圈面（${districtBlock?.name || '未匹配商圈面'}）口径`
+        ? `人口为点位半径${radiusText(populationBlock.popRadius) || ''} 内的圆口径，非商圈面口径；评分与竞争计数为商圈面（${districtBlock?.name || '未匹配商圈面'}）口径` +
+          (tierBlock.has ? `；对比表每列各按自己那个半径的圆单独取数（已购 ${tierBlock.rows.map((r) => r.radiusText).join(' / ')}）` : '')
         : '人口未取数 ⇒ 无人口样本；评分与竞争为商圈面口径',
       confidence: '本报告不含销售预测；人口与竞争为存量数据，不代表实时客流'
     }

@@ -423,16 +423,20 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
     expect(SS).toMatch(/center_lat BETWEEN \? AND \?/)
   })
 
-  it('半径只开放 1/3/5km 三档（面积 3.1/28.3/78.5 km²，都在联通 0.3~80 限制内）', () => {
+  it('半径档位：后端单一来源；🔴 前端⛔ 不许再自己写死三档（v1.13.413）', () => {
     // 🔴 v1.13.379：档位收归 siteSelectConfig 单一来源（初步分析的「升级取数」要按同一组档位映射），
     //    路由改 import，⛔ 不许再写一份字面量 —— 两处各写一份，联通开新档时会「买得到 / 买不到」不一致。
     const CFG = read('backend/src/utils/siteSelectConfig.js')
     expect(CFG).toMatch(/UNICOM_REPORT_RADII = Object\.freeze\(\[1000, 3000, 5000\]\)/)
     expect(SS).toContain('UNICOM_REPORT_RADII')
     expect(SS).not.toMatch(/const REPORT_RADII = \[/)
-    // 前端选项必须与后端一致
+    // 🔴 v1.13.413：立项报告的档位改为「用户实际买过的半径」。
+    //    `REPORT_RADII` 只是 `/population`（智能选址等链路）自己的入参校验，⛔ 不再是报告的档位来源。
+    //    ⇒ 前端那份字面量必须消失，否则会出现「报告只能选 1/3/5km、用户买的 1.5km 选不出来」。
     const comp = read('frontend/src/components/CandidateReport.vue')
-    expect(comp).toContain('RADIUS_OPTIONS = [1000, 3000, 5000]')
+    expect(comp, '前端又写死三档了').not.toMatch(/RADIUS_OPTIONS\s*=\s*\[/)
+    expect(comp, '前端又长出「把半径归到最近一档」的逻辑').not.toContain('nearestRadius')
+    expect(comp, '报告的档位必须来自已购接口').toContain('/api/candidates/purchased-population')
   })
 
   it('purchases.radius 存的是 JSON 字符串，必须解析后比对（⛔ 用 LIKE 会误命中）', () => {
@@ -498,50 +502,78 @@ describe('H. 打通「我的门店」已购数据（后端取数优先级）', (
   })
 })
 
-describe('I. 前端交互（探测免费 / 不预检配额 / VIP 拦截）', () => {
+/**
+ * I. 前端交互 —— 🔴 v1.13.413 起这一组整体换口径：
+ *   报告**不再自己取数**（旧实现 `POST /api/smartsteps/population` 能自己花钱、
+ *   且半径写死 1/3/5km）。现在只 `GET /api/candidates/purchased-population`（只读、0 消耗）。
+ *   ⚠️ 换口径时**只删不适用的断言**，同时把新不变量补上（341 的教训）：
+ *      「不可能花钱」这件事必须由**源码**层钉死，不能只靠"用户不会点"。
+ */
+describe('I. 前端交互（只读已购档 / 不可能花钱 / VIP 拦截）', () => {
   const COMP = read('frontend/src/components/CandidateReport.vue')
+  /**
+   * 🔴 「不许出现 X」这类断言必须打**剥掉注释后的源码**。
+   *    v1.13.413 的注释里会写「旧实现 POST 了 /api/smartsteps/population」「不再有 watch(popRadius)」——
+   *    那是说明文字，不是回退。拿原文断言会把**写清缘由的注释**判成违规，
+   *    结果只能逼着后人把原因删掉（本文件前面 341 的教训同款）。
+   */
+  const stripComments = (s) => s
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  const CODE = stripComments(COMP)
 
-  it('🔴 打开报告只做 probeOnly 探测，⛔ 不调会扣费的取数', () => {
-    const i = COMP.indexOf('async function onOpened')
-    const body = COMP.slice(i, COMP.indexOf('async function renderMap', i))
-    expect(body).toContain('probePopulation')
+  it('🔴🔴 报告侧⛔ 不许出现任何取数/计费入口（这是「买过才能用」的硬护栏）', () => {
+    for (const bad of ['/api/smartsteps/population', 'probeOnly', 'fetchPointPopulation', 'chargeAndRecord', 'checkQuota']) {
+      expect(CODE, `报告页出现了 ${bad} ⇒ 报告可以自己花钱`).not.toContain(bad)
+    }
+    // 也不许再出现"获取人口数据"这种会诱导用户点付费的动作
+    expect(CODE, '又长出「获取人口数据」按钮了').not.toContain('获取人口数据')
+  })
+
+  it('🔴 打开报告只拉「已购档」，且只发一次 GET', () => {
+    const i = CODE.indexOf('async function onOpened')
+    expect(i).toBeGreaterThan(-1)
+    const body = CODE.slice(i, CODE.indexOf('async function renderMap', i))
+    expect(body, 'onOpened 必须拉已购档').toContain('loadTiers')
     expect(body).not.toContain('fetchPopulation')
-    const p = COMP.indexOf('async function probePopulation')
-    const pBody = COMP.slice(p, COMP.indexOf('async function onRadiusChange', p))
-    expect(pBody).toContain('probeOnly: true')
-    expect(pBody).not.toContain('checkQuota')
+
+    const t = CODE.indexOf('async function loadTiers')
+    expect(t).toBeGreaterThan(-1)
+    const tBody = CODE.slice(t, CODE.indexOf('function pickNearestTier', t))
+    // 必须只读、且是**一次**请求（多档要一次拿全，⛔ 按档循环发请求）
+    expect(tBody).toContain("axios.get('/api/candidates/purchased-population'")
+    expect(tBody).not.toContain('axios.post')
+    expect((tBody.match(/axios\.get\(/g) || []).length).toBe(1)
   })
 
-  it('🔴 前端不许预检配额 —— 否则「能免费复用」也被拦掉', () => {
-    const i = COMP.indexOf('async function fetchPopulation')
-    const body = COMP.slice(i, i + 2600)
-    // 不能在弹确认之前就跑 available < 1 的分支
-    const confirmIdx = body.indexOf('ElMessageBox.confirm')
-    const precheckIdx = body.indexOf('available < 1')
-    expect(confirmIdx).toBeGreaterThan(-1)
-    expect(precheckIdx === -1 || precheckIdx > confirmIdx,
-      '配额预检不能挡在确认框之前：复用是免费的，池空时也可能取到数据').toBe(true)
+  it('🔴 人口数据必须派生自「当前选中档」，⛔ 退化成手工清空的 ref', () => {
+    // 旧实现靠 `watch(popRadius)` 手工清空；现在 popData 是 computed（换档自动跟着变）。
+    // 退回去就会重新出现「1km 的数字挂在 3km 标签下」这类 bug。
+    expect(CODE).toMatch(/const popData = computed\(/)
+    expect(CODE).toMatch(/const curTier = computed\(/)
+    expect(CODE, '又长出 watch(popRadius) 式的手工清空').not.toMatch(/watch\(popRadius/)
   })
 
-  it('切换半径必须清空已取数据（⛔ 别把 1km 的数挂到 3km 标签下）', () => {
-    expect(COMP).toMatch(/watch\(popRadius/)
-    const i = COMP.indexOf('watch(popRadius')
-    const body = COMP.slice(i, i + 300)
-    expect(body).toContain('popData.value = null')
+  it('⭐ 没有已购人口 ⇒ 不出纸、不给 PDF / 分享（护栏在模板上，不只靠入口拦截）', () => {
+    expect(CODE).toContain(':disabled="!hasTiers || !model"')   // 分享
+    expect(CODE).toContain(':disabled="!hasTiers"')             // 下载 PDF
+    expect(COMP, '缺空态：没买过时用户不知道下一步该去哪').toContain('去「初步分析」购买联通人口')
+    // 导出函数里也要兜一层（按钮 disabled 挡不住脚本/键盘触发）
+    const e = CODE.indexOf('async function exportPdf')
+    expect(CODE.slice(e, e + 400)).toContain('if (!hasTiers.value)')
   })
 
-  it('配额不足走统一引导出口（⛔ 不就地写联系方式）', () => {
-    expect(COMP).toContain('requireQuota')
-    expect(COMP).toContain('QUOTA_REASON')
-    expect(COMP).not.toMatch(/138\s*1779\s*1741/)
-    expect(COMP).not.toContain('jyo@youshi-tech.com')
+  it('配额引导文案不在报告里就地写联系方式（⛔ 硬编码手机号/邮箱）', () => {
+    expect(CODE).not.toMatch(/138\s*1779\s*1741/)
+    expect(CODE).not.toContain('jyo@youshi-tech.com')
   })
 
   it('AI 勾选必须拦住非 VIP 并给出申请路径（⛔ 不能只把 checkbox 禁用）', () => {
-    expect(COMP).toContain('onWantAiChange')
-    expect(COMP).toContain('VIP 专属')
-    expect(COMP).toContain('/account')
-    expect(COMP).not.toMatch(/:disabled="!isVip\s*\|\|/)
+    expect(CODE).toContain('onWantAiChange')
+    expect(CODE).toContain('VIP 专属')
+    expect(CODE).toContain('/account')
+    expect(CODE).not.toMatch(/:disabled="!isVip\s*\|\|/)
   })
 })
 
@@ -574,17 +606,19 @@ describe('J. 341 收尾：守卫不许在改写中丢失', () => {
     expect(COMP2).not.toMatch(/const radiusText\s*=/)
   })
 
-  it('🔴 切换半径要自动免费重探（否则「已购数据自动复用」失效）', () => {
-    expect(COMP2).toContain('@change="onRadiusChange"')
-    const i = COMP2.indexOf('async function onRadiusChange')
-    expect(i).toBeGreaterThan(-1)
-    const body = COMP2.slice(i, i + 400)
-    expect(body).toContain('nextTick()')
-    expect(body).toContain('probePopulation()')
-  })
-
-  it('🔴 探测要有序号防竞态（切半径后旧请求不许回填）', () => {
-    expect(COMP2).toContain('seq !== probeSeq')
+  /**
+   * 🔴 v1.13.413：G/J 两条老断言（「换半径要自动免费重探」+「探测要用序号防竞态」）
+   *    随「报告不再取数」一起失效 —— 没有请求了，就没有竞态要防。
+   *    ⚠️ 但它们守的**意图**（切档不许把上一档的数字留在页面上）仍然成立，
+   *    只是实现从「重探 + 竞态序号」改成了「computed 派生」⇒ 断言改成钉这个。
+   */
+  it('🔴 换档不许残留上一档的数字（v1.13.413 起靠 computed，不再靠重探）', () => {
+    expect(COMP2, '换档的数据来源必须是「当前选中档」的派生').toMatch(/const curTier = computed\(/)
+    // 下拉必须绑已购档（`tiers`），⛔ 绑一个写死的档位数组
+    expect(COMP2).toContain('v-for="t in tiers"')
+    // 旧实现的两个标志物都不许回来：回来就意味着又走回"前端自己取数"的老路
+    expect(COMP2).not.toContain('probePopulation')
+    expect(COMP2).not.toContain('onRadiusChange')
   })
 })
 

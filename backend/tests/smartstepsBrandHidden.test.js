@@ -108,8 +108,12 @@ describe('C. 用户可见文案必须是「联通人口」', () => {
     expect(s).toContain('联通人口 1001 · 半径')
   })
 
-  it('C2 立项报告取数条说明', () => {
-    expect(read('frontend/src/components/CandidateReport.vue')).toContain('联通人口 · 点位半径口径')
+  it('C2 立项报告人口条说明', () => {
+    // v1.13.413：取数条改成「只选已购档」，原来的「联通人口 · 点位半径口径 · 同半径已购自动复用」
+    // 那句随取数按钮一起撤了。用户可见文案仍必须是「联通人口」（⛔ 不许写上游厂商名）。
+    const s = read('frontend/src/components/CandidateReport.vue')
+    expect(s).toContain('<b>联通人口</b>')
+    expect(s, '必须如实写明不消耗配额').toContain('已购数据 · 不消耗配额')
   })
 
   it('C3 初步分析「要不要花钱深入」面板表头', () => {

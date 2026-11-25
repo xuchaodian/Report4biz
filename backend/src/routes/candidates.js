@@ -304,11 +304,14 @@ function gridForCity(db, user, city) {
 }
 
 /**
- * 读出「本账号在这个位置买过哪些半径」（**只读**，v1.13.380）。
+ * 读出「本账号在这个位置买过哪些半径」的**明细**（**只读**，v1.13.413 从 380 的
+ * `readPurchasedRadii` 升级而来：原来只回半径数字，现在连 1001 解析结果一起带回）。
  *
- * ── 用途单一 ───────────────────────────────────────────────────────────
- *   只喂给初步分析的升级文案：判「同位置买过别的档 ⇒ 本次要另买 1 次」。
- *   ⛔ 不参与计费、不写库、不发请求；读失败就返回空（少一句提示，不影响报告）。
+ * ── 两个消费方 ─────────────────────────────────────────────────────────
+ *   ① 初步分析（`GET /brief`）：只判「同位置买过别的档 ⇒ 本次要另买 1 次」⇒ 只用 `radius`；
+ *   ② 立项报告（`GET /purchased-population`，v1.13.413）：报告的**人口正文与多档对比表**
+ *      全部由这里的 `population` 直接渲染 ⇒ 报告侧一条取数请求都不发，
+ *      在代码层面**不可能**自己花钱（护栏落在后端结构上，不靠前端自觉）。
  *
  * ── 🔴 五关必须与取数侧 `smartsteps.js::fetchPointPopulation` 逐关对齐 ──
  *   ① `user_id = ?`         —— 复用是**按账号**的，别人的购买不算
@@ -318,18 +321,30 @@ function gridForCity(db, user, city) {
  *      只靠粗筛会把 30m 外的点算成同址
  *   ⑤ 能解析出 1001 —— 只买过 1005 之类的那笔购买对「客群」没有可复用内容
  *   少任何一关，报告就会出现「说能复用、真取数又扣钱」（§6.130 同类坑）。
+ *   🔴 本函数被抽出来给两个端点共用，⛔ 不许在 `/purchased-population` 里另写一份判据 ——
+ *      两份判据漂移的后果是「报告显示了某档人口，但升级面板说这档没买过」。
  *
- * @returns {{radii:number[]}} 已购半径去重升序（空数组＝没买过）
+ * ── 同一半径可能命中多条购买记录 ────────────────────────────────────────
+ *   SQL 已按 `city_month DESC, id DESC` 排序 ⇒ **第一次遇到某个半径的那条就是最新的**，
+ *   后面同半径的一律丢掉（报告要的是「现在能用的那份数据」，不是购买流水）。
+ *   一条记录里 `radius` 是数组（`"[1000,3000]"`，老数据形态）时逐档展开、共用同一份
+ *   `result_data` —— 与 `radiusIncludes` 的语义保持一致（那边也认数组里任意一档）。
+ *
+ * @returns {Array<{radius:number, cityMonth:string, purchaseId:number|null,
+ *                  purchasedAt:string, storeName:string, population:object}>}
+ *          按半径升序；空数组＝这个位置没买过（或读失败，⛔ 不抛错）
  */
-function readPurchasedRadii(db, uid, lng, lat) {
-  const out = { radii: [] }
+function readPurchasedEntries(db, uid, lng, lat) {
   const gLng = Number(lng)
   const gLat = Number(lat)
-  if (!Number.isFinite(gLng) || !Number.isFinite(gLat) || (!gLng && !gLat)) return out
+  if (!Number.isFinite(gLng) || !Number.isFinite(gLat) || (!gLng && !gLat)) return []
+  const out = []
+  const seen = new Set()
   try {
     const box = 0.0003   // ≈33m 粗筛（与 fetchPointPopulation 同值）
     const rows = db.prepare(`
-      SELECT radius, result_data, center_lng, center_lat
+      SELECT id, radius, result_data, center_lng, center_lat,
+             city_month, created_at, store_name
         FROM purchases
        WHERE user_id = ? AND status = 'active' AND result_data IS NOT NULL
          AND center_lat BETWEEN ? AND ? AND center_lng BETWEEN ? AND ?
@@ -345,14 +360,64 @@ function readPurchasedRadii(db, uid, lng, lat) {
       try { pop = parsePopulation1001(row.result_data) } catch { pop = null }
       if (!pop) continue
       for (const r of parseRadii(row.radius)) {
-        if (!out.radii.includes(r)) out.radii.push(r)
+        if (seen.has(r)) continue
+        seen.add(r)
+        out.push({
+          radius: r,
+          cityMonth: str(row.city_month),
+          purchaseId: Number(row.id) || null,
+          purchasedAt: str(row.created_at),
+          storeName: str(row.store_name),
+          population: pop
+        })
       }
     }
-    out.radii.sort((a, b) => a - b)
+    out.sort((a, b) => a.radius - b.radius)
   } catch (e) {
-    console.error('[brief] 读取已购半径失败（本次不提示，不影响报告）:', e.message)
+    console.error('[candidates] 读取已购半径失败（本次不提示，不影响报告）:', e.message)
   }
   return out
+}
+
+/**
+ * 只要半径数字的旧视图（380 起 `/brief` 用它判「买过别的档」）。
+ * ⚠️ v1.13.413 起内部改调 `readPurchasedEntries` —— 判据只有一份。
+ * @returns {{radii:number[]}} 已购半径去重升序（空数组＝没买过）
+ */
+function readPurchasedRadii(db, uid, lng, lat) {
+  return { radii: readPurchasedEntries(db, uid, lng, lat).map((e) => e.radius) }
+}
+
+/**
+ * 把 `?id=` / `?markerId=` 解析成「门店行 + 候选记录」。
+ *
+ * 🔴 抽出来是为了**两处同口径**（v1.13.413）：`GET /brief` 与 `GET /purchased-population`
+ *    必须接受完全相同的入参、给出完全相同的拒绝理由 —— 否则会出现
+ *    「初步分析打得开、立项报告说找不到点位」这种对着干的行为。
+ * 🔴 门店驱动的候选点位**可能没有 id**（还没建推进记录）⇒ 必须支持只传 markerId，
+ *    否则「查一下买没买过」就得先 `POST /ensure` 建一行 —— 看一眼不该写库。
+ *
+ * @returns {{marker:object|null, cand:object|null} | {status:number, message:string}}
+ */
+function resolvePointRequest(db, uid, q = {}) {
+  const markerId = Number(q.markerId)
+  const cid = Number(q.id)
+  if (!markerId && !cid) return { status: 400, message: '缺少 id 或 markerId' }
+  if (markerId) {
+    const marker = db.prepare(
+      `SELECT id, store_code, name, brand, store_type, city, district, address,
+              latitude, longitude, area, rent
+         FROM markers WHERE id = ? AND user_id = ? AND merged_into IS NULL`
+    ).get(markerId, uid) || null
+    if (!marker) return { status: 404, message: '未找到该门店' }
+    if (!CANDIDATE_STORE_TYPES.includes(str(marker.store_type))) {
+      return { status: 400, message: '该门店不是候选门店（门店类型需为「重点候选」或「一般候选」）' }
+    }
+    return { marker, cand: null }
+  }
+  const cand = ownCandidate(db, cid, uid)
+  if (!cand) return { status: 404, message: '未找到该候选点位' }
+  return { marker: linkedStoreFor(db, uid, cand), cand }
 }
 
 /** 半径内最近的自有门店（返回实体，报告要显示名字与编码）；窗外一律不算 */
@@ -532,27 +597,10 @@ router.get('/brief', authenticate, (req, res) => {
     const uid = req.user.id
     const q = req.query || {}
 
-    let marker = null
-    let cand = null
-    const markerId = Number(q.markerId)
-    const cid = Number(q.id)
-    if (markerId) {
-      marker = db.prepare(
-        `SELECT id, store_code, name, brand, store_type, city, district, address,
-                latitude, longitude, area, rent
-           FROM markers WHERE id = ? AND user_id = ? AND merged_into IS NULL`
-      ).get(markerId, uid) || null
-      if (!marker) return res.status(404).json({ message: '未找到该门店' })
-      if (!CANDIDATE_STORE_TYPES.includes(str(marker.store_type))) {
-        return res.status(400).json({ message: '该门店不是候选门店（门店类型需为「重点候选」或「一般候选」）' })
-      }
-    } else if (cid) {
-      cand = ownCandidate(db, cid, uid)
-      if (!cand) return res.status(404).json({ message: '未找到该候选点位' })
-      marker = linkedStoreFor(db, uid, cand)
-    } else {
-      return res.status(400).json({ message: '缺少 id 或 markerId' })
-    }
+    // v1.13.413：入参解析与「/purchased-population」共用同一份（拒绝理由也必须一致）
+    const resolved = resolvePointRequest(db, uid, q)
+    if (resolved.message) return res.status(resolved.status).json({ message: resolved.message })
+    const { marker, cand } = resolved
 
     // 半径：请求可覆盖（同一点位想看 1km 与 3km 的差别），默认取候选点位自己的评估半径
     const radiusM = clampInt(q.radius, RADIUS_MIN, RADIUS_MAX, Number(cand?.radius) || DEFAULT_RADIUS)
@@ -700,6 +748,10 @@ router.get('/brief', authenticate, (req, res) => {
       origin: marker
         ? { kind: 'store', markerId: marker.id, storeCode: str(marker.store_code), storeType: str(marker.store_type) }
         : { kind: 'candidate', markerId: null, storeCode: str(cand?.store_code), storeType: '' },
+      // v1.13.413：该位置**已购**的联通半径（本账号 + 10m 内 + 含 1001）。
+      //   前端据此决定顶部「生成立项报告」按钮是「可点」还是「先买人口」——
+      //   ⚠️ 它同时进过 `buildCompareRow` 的 `purchased` 标记，两处同源（都来自 `purchased`）。
+      purchasedRadii: [...purchased.radii],
       generatedAt: new Date().toISOString(),
       // 口径常量（前端 ⛔ 不许自己硬编码 2000/2/35 这些数）
       consts: BRIEF_CONST
@@ -707,6 +759,67 @@ router.get('/brief', authenticate, (req, res) => {
   } catch (e) {
     console.error('[Candidates] 初步分析失败:', e)
     res.status(500).json({ message: '生成初步分析失败' })
+  }
+})
+
+/**
+ * 某点位「已购联通人口」明细（只读、0 消耗、0 写入）—— **立项报告的唯一人口来源**
+ * GET /api/candidates/purchased-population?id=123 | ?markerId=456[&radius=1000]
+ *
+ * ── 🔴🔴 为什么立项报告不再自己取数（v1.13.413，业主 2026-11-24 拍板）──────────
+ *   业主原话：「大前提是在『初步分析』中购买了联通配额之后才使用『生成立项报告』」。
+ *   旧实现（341~412）让报告弹窗自己 POST `/api/smartsteps/population` 按 1/3/5km 取数：
+ *     · 一是**报告可以自己花钱**，护栏只能靠前端「用户点了按钮」这种自觉；
+ *     · 二是**半径被写死成 1/3/5km**，而初步分析里能买 0.35~5km 任意档
+ *       ⇒ 用户买的 1.5km 在报告里根本选不出来，「以实际购买的半径为基础」无从谈起。
+ *   现在报告侧的取数链路被整条删掉，只读这里；`probeOnly` / 配额闸门 / `chargeAndRecord`
+ *   一条都不经过 ⇒ 在代码结构上**不可能**产生费用（不是「靠前端不点」）。
+ *
+ * ── 为什么不是一个「复用版 /population」（曾考虑加 `reuseOnly`）────────────
+ *   那个思路仍把报告接在计费通路的入口上，将来任何一次重构都可能把它重新接回③（调上游）。
+ *   而且它一次只回一档，多档要发 N 次请求。这里一次性把**所有已购档**连人口结构一起回，
+ *   一个请求、毫秒级、零副作用。
+ *
+ * ── 复用判据 ⛔ 不要在这里另写 ────────────────────────────────────────────
+ *   全在 `readPurchasedEntries`（与取数侧 `fetchPointPopulation` 的五关逐关对齐）。
+ *
+ * ⚠️ 路由必须注册在 `GET /:id` **之前**（同 `/brief` 的理由）：否则 `/:id` 先接住请求。
+ * ⚠️ 返回 `population` 是 `parsePopulation1001` 的**原始结构**，⚠️ 不是商圈面属性；
+ *    派生指标（密度/职住比/研判表）一律交给前端 `utils/candidateReport.js` 算 ——
+ *    后端只给事实，⛔ 不在这里造第二套派生口径。
+ */
+router.get('/purchased-population', authenticate, (req, res) => {
+  try {
+    const db = getDb()
+    const uid = req.user.id
+    const q = req.query || {}
+
+    const resolved = resolvePointRequest(db, uid, q)
+    if (resolved.message) return res.status(resolved.status).json({ message: resolved.message })
+    const { marker, cand } = resolved
+
+    // 半径只用于「点位的评估半径」这一项展示（默认选中哪一档由前端按它取最近）；
+    // ⚠️ 这里**不校验**是不是 1/3/5km —— 报告的档位来自用户实际买过的，不是固定三档。
+    const radiusM = clampInt(q.radius, RADIUS_MIN, RADIUS_MAX, Number(cand?.radius) || DEFAULT_RADIUS)
+    const point = briefPointOf(marker, cand, radiusM)
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || (point.lat === 0 && point.lng === 0)) {
+      return res.status(400).json({ message: '该点位没有有效坐标，无法匹配已购人口数据。请先到「我的门店」补上经纬度。' })
+    }
+
+    const tiers = readPurchasedEntries(db, uid, point.lng, point.lat)
+
+    res.json({
+      point,
+      // 报告中「主档」的默认候选（前端仍会按已购档重新取最近的一档）
+      radiusM,
+      tiers,
+      // 已购档数：0 ⇒ 前端进「先去初步分析买人口」的空态，且 ⛔ 不许导出 PDF / 分享
+      purchasedCount: tiers.length,
+      generatedAt: new Date().toISOString()
+    })
+  } catch (e) {
+    console.error('[Candidates] 读取已购人口失败:', e)
+    res.status(500).json({ message: '读取已购人口数据失败' })
   }
 })
 

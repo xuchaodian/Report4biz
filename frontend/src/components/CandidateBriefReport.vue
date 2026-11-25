@@ -72,12 +72,34 @@
           ⛔ 别因为它「半径没变时点了数字不变」就删掉：弱网超时后页面上没有第二个重试入口。
         -->
         <el-button :loading="loading" @click="load">刷新</el-button>
+        <!--
+          立项报告直达按钮（v1.13.413，业主 2026-11-24 选了「加直达按钮」）。
+
+          🔴 为什么不做成 disabled：灰按钮点不动，用户只看到一块灰、不知道缺什么，
+             也不知道下一步该去哪。这里允许点，点了明确告诉他「先去下面买人口」。
+          🔴 判据只看后端 `/brief` 回传的 `purchasedRadii`（本账号 + 同坐标 10m + 含 1001），
+             ⛔ 不要在前端用「compare 里有没有 purchased 标记」来代替 —— 那张表只覆盖对比档位，
+             用户买了 1.5km 而在看 3km 时它会全 false，按钮就永远点不亮。
+        -->
+        <el-button
+          type="primary"
+          plain
+          :disabled="!brief"
+          :loading="reportOpening"
+          @click="onOpenReport"
+        >生成立项报告</el-button>
         <el-button type="primary" :loading="exporting" :disabled="!brief" @click="exportPdf">下载 PDF</el-button>
       </div>
     </div>
     <!-- 🔴 v1.13.386：原句尾「（要改请点「编辑信息」）」已删 —— 门店来源的点位不再有那个按钮，
          留着就是把用户指向一个不存在的入口。这里只说「不写回」，不指路。 -->
     <p class="bf-bar-note">换半径（含手动输入 0.35~5 公里）只改这份报告的口径，不会写回点位的评估半径。</p>
+    <!-- v1.13.413：把「已买过哪些档」直接摆在纸外 —— 用户买完最想知道的就是
+         「现在能不能出立项报告、报告会用哪个半径」，让他去猜购买履历是在制造客服工单。 -->
+    <p v-if="purchasedRadii.length" class="bf-bar-buy">
+      已购联通人口：{{ purchasedRadii.map(radiusText).join(' / ') }}
+      —— 立项报告只读这些档，不会再次消耗配额。
+    </p>
 
     <div v-if="errorMsg" class="bf-error">
       <el-icon><WarningFilled /></el-icon>{{ errorMsg }}
@@ -439,6 +461,7 @@
       :plan="brief.upgrade"
       :point="brief.point"
       :report-radius="brief.point.radius"
+      @refresh="load"
     />
   </div>
 </template>
@@ -458,15 +481,23 @@ const props = defineProps({
   // 列表行：{ id, markerId, name, origin, radius, ... }；id 可能为 null（门店还没推进记录）
   row: { type: Object, required: true }
 })
-defineEmits(['close'])
+// `open-report`：需要立项报告（v1.13.413）—— 由 CandidateView 接管（它才持有弹窗与详情态）
+const emit = defineEmits(['close', 'open-report'])
 
 const userStore = useUserStore()
 const username = computed(() => userStore.user?.username || '—')
 
 const loading = ref(false)
 const exporting = ref(false)
+const reportOpening = ref(false)
 const errorMsg = ref('')
 const brief = ref(null)
+/**
+ * 该位置**已购**的联通人口半径（米，升序）—— `/brief` 回传（v1.13.413）。
+ * 🔴 立项报告的唯一人口来源就是它命中的那些档：买了 1.5km 就只会有 1.5km，
+ *   ⛔ 不再固定 1/3/5km。空数组＝这个位置没买过 ⇒ 立项报告按钮点了只给引导。
+ */
+const purchasedRadii = ref([])
 // 多半径对比（v1.13.403）：整块由后端一次算好，前端只摆（⛔ 不在前端自己按半径算）
 const compare = ref(null)
 const consts = ref(null)
@@ -658,14 +689,34 @@ async function load() {
     // /brief 每次都重建全城网格索引，重庆一次就要 1.5s）
     compare.value = data.compare || null
     consts.value = data.consts || null
+    // 已购半径（v1.13.413）：决定「生成立项报告」是直达还是先引导去买人口
+    purchasedRadii.value = Array.isArray(data.purchasedRadii) ? data.purchasedRadii : []
     generatedAt.value = data.generatedAt
   } catch (e) {
     brief.value = null
     compare.value = null
+    purchasedRadii.value = []
     errorMsg.value = e?.response?.data?.message || e?.message || '生成初步分析失败'
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 生成立项报告（v1.13.413）。
+ *
+ * 🔴 为什么没买过也允许点：disabled 的按钮点不动，用户只看到一块灰、不知道缺什么，
+ *   也不知道下一步该去哪。这里点了就明说「先去下面买人口」，并指路。
+ * ⚠️ 真正的护栏不在这一层（前端自觉不算数）：
+ *   ① 报告弹窗读的是 `GET /purchased-population`，没买过就是空态、不出纸、不给 PDF/分享；
+ *   ② `CandidateView.openReport` 在开弹窗前还会再查一次。
+ */
+function onOpenReport() {
+  if (!purchasedRadii.value.length) {
+    ElMessage.warning('该点位还没有购买联通人口 —— 请先用下方「打开联通人口查询」取数，之后就能按已购半径生成立项报告')
+    return
+  }
+  emit('open-report')
 }
 
 async function exportPdf() {
@@ -697,6 +748,13 @@ onMounted(load)
    需要 ≥108px ⇒ 再留 24px 余量。⛔ 别压回 104px（选项文字会被截成「1.5…」） */
 .bf-radius-sel { width: 132px; }
 .bf-bar-note { margin: 6px 0 12px; font-size: 12px; color: var(--text-secondary); }
+/* 已购档提示（v1.13.413）：与上面那句"换半径不写回"同一行距节奏，但要显眼一档 ——
+   它回答的是「现在能不能出立项报告」，是用户买完之后第一个问题。 */
+.bf-bar-buy {
+  margin: -6px 0 12px; padding: 6px 10px;
+  font-size: 12px; color: #16794a;
+  background: #f0f9f4; border: 1px solid #c8e8d6; border-radius: 6px;
+}
 
 .bf-error { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #fef0f0; color: #f56c6c; border-radius: 6px; font-size: 13px; }
 /* A4 纸张固定 794px：窄屏（笔记本分屏 / 平板竖屏）放不下时**横向滚动**，

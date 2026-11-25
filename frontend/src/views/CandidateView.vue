@@ -3,7 +3,12 @@
     <!-- 初步分析（378 · P1）：**页面内视图切换**，不是弹窗 ——
          业主拍板「页面内嵌 + 可导出 PDF」。弹窗会遮住地图，长内容还要在 62vh 里滚两层。
          ⚠️ v-else 必须紧邻这个 v-if（中间不能插注释），所以说明写在上面。 -->
-    <CandidateBriefReport v-if="briefRow" :row="briefRow" @close="briefRow = null" />
+    <CandidateBriefReport
+      v-if="briefRow"
+      :row="briefRow"
+      @close="briefRow = null"
+      @open-report="launchReportFromBrief"
+    />
 
     <template v-else>
     <!-- 头部 -->
@@ -264,8 +269,9 @@
         </div>
 
         <div class="cd-detail-actions">
-          <!-- 🔴 顺序有意：先「初步分析」（0 消耗），再「立项报告」（可能消耗联通配额）。
-               主按钮给免费的这条路 —— 产品方向是「免费层给结论、付费层给证据」。 -->
+          <!-- 🔴 顺序有意：先「初步分析」（0 消耗），再「立项报告」。
+               v1.13.413 起立项报告也**不消耗**了（只读初步分析里买过的联通人口），
+               但顺序仍然保留：没有人口数据时报告页只会给一句"先去买"，先看点免费结论更顺。 -->
           <el-button type="primary" @click="openBrief(detail)">初步分析</el-button>
           <el-button plain :loading="reportOpening" @click="openReport">生成立项报告</el-button>
           <!-- 🔴 v1.13.386：门店来源**不显示**「编辑信息」（业主 2026-11-20 定）。
@@ -340,9 +346,18 @@
       </template>
     </el-dialog>
 
-    <!-- 立项报告（P1-5）：默认不含 AI 建议，勾选后才调 AI -->
-    <CandidateReport v-model="reportVisible" :candidate="detail" />
     </template>
+
+    <!-- 立项报告（P1-5）：默认不含 AI 建议，勾选后才调 AI。
+         🔴 v1.13.413：人口只读「初步分析」里买过的联通档位 ⇒ 空态时给一个回初步分析的出口。
+         🔴🔴 必须挂在 `v-if="briefRow"` / `v-else` 这条**分支之外**。413 实测踩过：
+            原先它写在 `<template v-else>` 里（只属于列表分支），而「初步分析 → 生成立项报告」
+            的直达链路里 `briefRow` 仍然非空 ⇒ 组件**根本没被渲染**，
+            `reportVisible=true` 变成一个谁都不理的变量：请求都打完了（ensure + GET /:id）、
+            控制台零报错、界面上什么都不发生 —— 最难查的一类"静默无效"。
+            放在分支外还有个额外好处：报告以弹层盖在初步分析之上，关掉就回到原来那一页，
+            不会把用户甩回列表。 -->
+    <CandidateReport v-model="reportVisible" :candidate="detail" @gobrief="openBrief(detail)" />
   </div>
 </template>
 
@@ -502,6 +517,44 @@ function clearFilter() {
 }
 
 /**
+ * 把「列表行 / 初步分析行」补成**详情与立项报告所需的完整对象**（v1.13.413 从 openDetail 抽出）。
+ *
+ * 🔴 展示字段一律取 `row`（与列表同构，值来自门店台账），
+ *    ⛔ 不用 `candidate` 的同名字段：那是 store_candidates 里当年手工录的旧值，
+ *    现网两者确实不同（门店台账「浦锦路309弄6号」vs 候选表「江月路」），
+ *    混用会出现「列表显示一个地址、点开变另一个地址」。
+ *    `candidate` 仍整体铺开，因为立项报告读的是它的下划线字段（drop_reason 等）。
+ *
+ * ⚠️ 内部走 `ensureRow` ⇒ **没有 id 的会建行**。这是刻意的（出报告/编辑都属于"写"），
+ *    ⛔ 但**不要**在纯浏览路径（`openDetail` 的 id 为 null 分支）里调它。
+ * @returns {Promise<{full:object, notes:Array}>}
+ */
+async function hydrateRow(row) {
+  const merged = await ensureRow(row)
+  const { data } = await axios.get(`/api/candidates/${merged.id}`)
+  const base = data.row || data.candidate || {}
+  return {
+    full: {
+      ...data.candidate,
+      name: base.name,
+      city: base.city,
+      district: base.district,
+      address: base.address,
+      latitude: base.latitude,
+      longitude: base.longitude,
+      area: base.area,
+      rent: base.rent,
+      radius: base.radius,
+      storeType: base.storeType || merged.storeType,
+      storeCode: base.storeCode || merged.storeCode,
+      origin: merged.origin,
+      markerId: merged.markerId
+    },
+    notes: data.notes || []
+  }
+}
+
+/**
  * 打开详情。
  * 🔴 读操作**不建行**（376）：只是看一眼不该在库里留痕迹。
  *    需要 id 的动作（改阶段 / 记一笔 / 出报告 / 编辑）各自调 `ensureRow`。
@@ -516,30 +569,9 @@ async function openDetail(row) {
   drawer.value = true
   if (!row.id) return
   try {
-    const { data } = await axios.get(`/api/candidates/${row.id}`)
-    // 🔴 展示字段一律取 `row`（与列表同构，值来自门店台账），
-    //    ⛔ 不用 `candidate` 的同名字段：那是 store_candidates 里当年手工录的旧值，
-    //    现网两者确实不同（门店台账「浦锦路309弄6号」vs 候选表「江月路」），
-    //    混用会出现「列表显示一个地址、点开变另一个地址」。
-    //    `candidate` 仍整体铺开，因为立项报告读的是它的下划线字段（drop_reason 等）。
-    const base = data.row || data.candidate || {}
-    detail.value = {
-      ...data.candidate,
-      name: base.name,
-      city: base.city,
-      district: base.district,
-      address: base.address,
-      latitude: base.latitude,
-      longitude: base.longitude,
-      area: base.area,
-      rent: base.rent,
-      radius: base.radius,
-      storeType: base.storeType || row.storeType,
-      storeCode: base.storeCode || row.storeCode,
-      origin: row.origin,
-      markerId: row.markerId
-    }
-    notes.value = data.notes || []
+    const { full, notes: n } = await hydrateRow(row)
+    detail.value = full
+    notes.value = n
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '加载详情失败')
   }
@@ -610,10 +642,12 @@ function openBrief(row) {
 /**
  * 出立项报告：需要 id（报告导出会写一条留痕流水）⇒ 先 ensure。
  * ⚠️ 这里建行是合理的：用户已经决定要为这个点位出一份报告，那就是"推进了一步"。
+ * 🔴 v1.13.413：建行之前先过「买过联通人口」闸门（见 `ensureHasPopulation`）。
  */
 async function openReport() {
   reportOpening.value = true
   try {
+    if (!(await ensureHasPopulation(detail.value))) return
     const row = await ensureRow(detail.value)
     detail.value = { ...detail.value, id: row.id }
     reportVisible.value = true
@@ -622,6 +656,74 @@ async function openReport() {
   } finally {
     reportOpening.value = false
   }
+}
+
+/**
+ * 从「初步分析」页直达立项报告（v1.13.413，业主选了「加直达按钮」）。
+ *
+ * 🔴 为什么还要回查一次详情：`briefRow` 只有 id/markerId/name/origin/radius 五个字段
+ *   （初步分析刻意只读、允许 id 为 null），而报告要 city/address/坐标/面积/租金/门店类型。
+ * 🔴 为什么建行：导出 PDF 要写一条 `candidate_notes` 留痕，必须有 candidate.id。
+ *   初步分析里买过人口 → 用户已经花过钱、确实在推进这个点位，建行是合理的。
+ * ⚠️ 不在这里再过一次「买过人口」闸门：能点到这个按钮就说明 `/brief` 已回报
+ *   `purchasedRadii.length > 0`。但弹窗里的 `hasTiers` 仍会再兜一层（数据可能刚被作废）。
+ */
+async function launchReportFromBrief() {
+  const r = briefRow.value
+  if (!r) return
+  reportOpening.value = true
+  try {
+    const { full } = await hydrateRow({ ...r })
+    detail.value = full
+    drawer.value = false
+    reportVisible.value = true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '打开报告失败')
+  } finally {
+    reportOpening.value = false
+  }
+}
+
+/**
+ * 🔴🔴 立项报告的前置闸门（v1.13.413，业主 2026-11-24 拍板）：
+ *   「大前提是在『初步分析』中购买了联通配额之后才使用『生成立项报告』」。
+ *
+ * 为什么闸门放在这里（进入弹窗**之前**）而不是弹窗里：
+ *   · 弹窗里拦，用户会看到一个"打开就告诉你不行"的空窗口，白等一次渲染；
+ *   · 更关键的是 `openReport` 会先 `ensureRow` **建一行推进记录** —— 没买人口就建行，
+ *     等于替用户记了一笔他并不打算做的推进。
+ *
+ * 🔴 判据只认后端 `purchasedCount`（`GET /purchased-population`，只读、0 消耗）：
+ *   ⛔ 不在前端拿 `purchases` / 配额 / 缓存推算「算不算买过」——
+ *     那份判据一旦和取数侧漂移，就会出现「报告说有数据、初步分析说没买过」。
+ *
+ * @returns {Promise<boolean>} true＝可以出报告
+ */
+async function ensureHasPopulation(row) {
+  const params = row?.markerId ? { markerId: row.markerId } : (row?.id ? { id: row.id } : null)
+  if (!params) return false
+  try {
+    const { data } = await axios.get('/api/candidates/purchased-population', { params })
+    if (Number(data?.purchasedCount) > 0) return true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '读取已购人口数据失败，请稍后重试')
+    return false
+  }
+  let go = false
+  try {
+    await ElMessageBox.confirm(
+      '立项报告的人口分析基于「初步分析」中购买的联通人口数据 —— 这个点位还没有买过。\n\n' +
+      '去「初步分析」先看值不值得深入；需要时在那里取数（按次配额，取数前会明示消耗几次、剩余几次）。\n' +
+      '立项报告本身不取数、不会消耗配额。',
+      '还没有联通人口数据',
+      { confirmButtonText: '去初步分析', cancelButtonText: '暂不', type: 'info' }
+    )
+    go = true
+  } catch {
+    return false
+  }
+  if (go) openBrief(row)
+  return false
 }
 
 function openCreate() {

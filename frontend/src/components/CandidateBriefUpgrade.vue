@@ -70,7 +70,7 @@
 </template>
 
 <script setup>
-import { ref, computed, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, defineAsyncComponent } from 'vue'
 
 // 🔴 懒加载：前面头部注释 ② —— 2800+ 行的重型弹窗，⛔ 同步 import
 const StoreSmartstepsDialog = defineAsyncComponent(() => import('@/components/StoreSmartstepsDialog.vue'))
@@ -85,6 +85,17 @@ const props = defineProps({
 })
 
 const upOpen = ref(false)
+/**
+ * v1.13.413：弹窗关掉就通知父组件重取一次 `/brief`。
+ * 🔴 为什么必须这样：用户刚在弹窗里**买了人口**，而「生成立项报告」按钮亮不亮，
+ *   是靠 `/brief` 回传的 `purchasedRadii` 判的 ⇒ 不重取，买完了按钮还是灰的
+ *   （用户会以为没买成功，然后再买一次）。
+ * ⚠️ 只重取**只读**的 `/brief`（0 消耗），⛔ 不要在这里做任何计费动作。
+ */
+const emit = defineEmits(['refresh'])
+watch(upOpen, (v) => {
+  if (!v) emit('refresh')
+})
 
 const hasCoord = computed(() => {
   const lat = Number(props.point?.lat)

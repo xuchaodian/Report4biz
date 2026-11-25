@@ -92,8 +92,54 @@
       </template>
       <div v-else class="rp-pop-empty">
         <b>尚未获取联通人口数据</b>
-        <span>人口规模、职住结构、年龄与消费档位均无法计算。点上方「获取人口数据」按点位半径向联通取数 —— 若该位置在「我的门店」里同半径买过，会自动复用、不重复扣费。</span>
+        <span>人口规模、职住结构、年龄与消费档位均无法计算。请先到「初步分析」按点位半径购买联通人口（按次配额）—— 同一位置同一半径买过的档会自动复用、不重复扣费。</span>
       </div>
+    </div>
+
+    <!-- 多档半径对比（v1.13.413）
+         🔴 数据全部来自该位置**已购**的联通人口档位（`GET /api/candidates/purchased-population`），
+            ⛔ 不是按 1/3/5km 现取的 —— 用户买过 1.5km 就只会有 1.5km 这一列。
+         🔴 只比「人口类」指标：竞品数 / 商圈评分是**商圈面**口径（面数据没法按圆重算），
+            摆进这张按半径排的表里，读者会以为换半径它们也会跟着变 ⇒ 与正文自相矛盾。
+         🔴 密度用同一份联通人口算（`live ÷ 圆面积`），⛔ 不掺本地 1km 网格的常住人口。
+         ⚠️ `.rp-sec` 起头 ⇒ 自动成为 PDF 的安全切页点，⛔ 别塞进上面的人口块里。 -->
+    <div v-if="tiers.has" class="rp-sec">
+      <div class="rp-sec-hd">
+        <h2>多档半径对比</h2>
+        <span class="rp-sec-note">已购 {{ tiers.count }} 档 · 每列按自己那档半径单独取数（联通人口 1001）</span>
+      </div>
+      <table class="rp-tiers">
+        <thead>
+          <tr>
+            <th>半径</th>
+            <th>居住人口</th>
+            <th>工作人口</th>
+            <th>职住比</th>
+            <th>到访人次</th>
+            <th>人口密度</th>
+            <th>期次</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in tiers.rows" :key="r.radius" :class="{ 'is-main': r.isMain }">
+            <th>
+              {{ r.radiusText }}
+              <span v-if="r.isMain" class="rp-tiers-main">主档</span>
+            </th>
+            <td>{{ withUnit(r.live, ' 人') }}</td>
+            <td>{{ withUnit(r.work, ' 人') }}</td>
+            <td>{{ ratioText(r.workLiveRatio) }}</td>
+            <td>{{ withUnit(r.visit, ' 人次') }}</td>
+            <td>{{ withUnit(r.density, ' 人/km²') }}</td>
+            <td class="rp-tiers-m">{{ r.popMonth || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-for="(s, i) in tiers.summary" :key="i" class="rp-tiers-sum">{{ s }}</p>
+      <p class="rp-tiers-note">
+        人口密度＝该档圆内居住人口 ÷ 圆面积，与上方「居住人口」同源（不是本地 1km 网格口径）。
+        职住比＝工作人口 ÷ 居住人口；到访是「人次」（统计期累计），不与人数通约。
+      </p>
     </div>
 
     <!-- 地图 -->
@@ -202,6 +248,37 @@ const indicators = computed(() => {
 /** 1001 标签总数（纸面用来声明「这里只是摘要」）；旧快照没这个字段 ⇒ 用常量兜底 */
 const labelTotal = computed(() => Number(props.model?.population?.labelTotal) || POP_LABEL_TOTAL)
 
+/**
+ * 多档对比表（v1.13.413）。
+ * ⚠️ 旧快照（413 之前分享出去的）里没有 `model.tiers` ⇒ 必须兜底成 `has:false`，
+ *    否则老链接一打开就报 `Cannot read properties of undefined`。
+ */
+const tiers = computed(() => {
+  const t = props.model?.tiers
+  const rows = Array.isArray(t?.rows) ? t.rows : []
+  return {
+    has: !!t?.has && rows.length >= 2,
+    count: Number(t?.count) || rows.length,
+    rows,
+    summary: Array.isArray(t?.summary) ? t.summary.filter(Boolean) : []
+  }
+})
+
+/** 对比表里「有数就带单位、没数就 —」—— ⛔ 不写 0，「未评」和「这里是零」是两件事 */
+function withUnit(v, unit) {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return n.toLocaleString('zh-CN') + unit
+}
+
+/** 职住比两位小数；null 表示该档没有居住人口数据 */
+function ratioText(v) {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toFixed(2) : '—'
+}
+
 function num(v) {
   const n = Number(v) || 0
   return n ? n.toLocaleString('zh-CN') + ' 人' : '无数据'
@@ -279,6 +356,26 @@ function fmtTime(d) {
 .rp-ind tbody th { width: 92px; text-align: left; font-weight: 500; color: #1f2329; }
 .rp-ind-v { width: 148px; font-weight: 600; color: #1f2329; }
 .rp-ind-n { color: #646a73; line-height: 1.5; }
+
+/* ── 多档半径对比（v1.13.413）────────────────────────────────────────
+   与 `.rp-ind` 同款窄磅值表格，但列更多（7 列）⇒ 单独一组类名，
+   ⛔ 不要复用 `.rp-ind-*`：那张表是三列布局（指标/数值/判读），
+      宽度假设完全不同，混用会让某一列被挤成一字一行。 */
+.rp-tiers { width: 100%; border-collapse: collapse; }
+.rp-tiers th, .rp-tiers td { font-size: 11px; padding: 4px 6px; border-bottom: 1px solid #f0f1f3; text-align: right; vertical-align: top; }
+.rp-tiers thead th { font-size: 10.5px; font-weight: 500; color: #8a9099; padding-bottom: 3px; }
+/* 首列（半径）左对齐，其余数值列右对齐 —— 数字右对齐才看得出量级差 */
+.rp-tiers thead th:first-child, .rp-tiers tbody th { text-align: left; }
+.rp-tiers tbody th { font-weight: 600; color: #1f2329; white-space: nowrap; }
+.rp-tiers tbody tr.is-main { background: #f4f8ff; }
+.rp-tiers-main {
+  display: inline-block; margin-left: 4px; padding: 0 5px;
+  font-size: 9.5px; font-weight: 400; line-height: 15px; color: #fff;
+  background: var(--brand-primary, #2563eb); border-radius: 3px;
+}
+.rp-tiers-m { color: #8a9099; font-variant-numeric: tabular-nums; }
+.rp-tiers-sum { margin: 7px 0 0; font-size: 11.5px; line-height: 1.6; color: #1f2329; }
+.rp-tiers-note { margin: 5px 0 0; font-size: 10px; line-height: 1.55; color: #8a9099; }
 
 .rp-map { border: 1px solid #e6e8eb; border-radius: 6px; overflow: hidden; background: #fafbfc; }
 /* 🔴 必须同时给 width:100% 和**固定 height**，`object-fit` 才起作用。

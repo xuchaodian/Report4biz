@@ -11,96 +11,117 @@
     @update:model-value="$emit('update:modelValue', $event)"
     @opened="onOpened"
   >
-    <div class="rp-bar">
-      <div class="rp-bar-l">
-        <!-- 🔴 不做 disabled：禁用的勾选框点不动，用户根本看不到「为什么」。
-             现在允许点击，点了再明确告诉他「仅限 VIP + 怎么申请」（业主 2026-11-09 要求）。 -->
-        <el-checkbox :model-value="wantAi" :disabled="aiLoading" @change="onWantAiChange">
-          加入 AI 选址建议
-        </el-checkbox>
-        <span class="rp-hint">
-          <template v-if="!isVip">🔒 仅限 VIP 用户 · 点击勾选可查看申请方式</template>
-          <template v-else>勾选后消耗 1 次 AI 调用（约 ¥0.02），需额外等待十几秒；默认不包含</template>
+    <!-- ── 空态：该位置还没有买过联通人口 ────────────────────────────────────
+         🔴 v1.13.413（业主 2026-11-24）：「大前提是在『初步分析』中购买了联通配额之后
+            才使用『生成立项报告』」。⇒ 没买过就**不出纸**，也不给 PDF / 分享按钮。
+            护栏有两层：① 进入弹窗前 `CandidateView.openReport` 已经查过一次并拦下；
+            ② 这里再兜一层（数据可能在弹窗打开期间被作废），⛔ 不要因为"上面已经拦过"就删掉。 -->
+    <div v-if="tiersReady && !hasTiers" class="rp-empty">
+      <div class="rp-empty-t">该点位还没有可用的联通人口数据</div>
+      <p class="rp-empty-p">
+        立项报告的人口分析必须基于「初步分析」中购买的联通人口（按次配额）。
+        报告本身不发起任何取数，因此不会消耗配额。
+      </p>
+      <el-button type="primary" @click="goBrief">去「初步分析」购买联通人口</el-button>
+    </div>
+
+    <template v-if="!tiersReady || hasTiers">
+      <div class="rp-bar">
+        <div class="rp-bar-l">
+          <!-- 🔴 不做 disabled：禁用的勾选框点不动，用户根本看不到「为什么」。
+               现在允许点击，点了再明确告诉他「仅限 VIP + 怎么申请」（业主 2026-11-09 要求）。 -->
+          <el-checkbox :model-value="wantAi" :disabled="aiLoading" @change="onWantAiChange">
+            加入 AI 选址建议
+          </el-checkbox>
+          <span class="rp-hint">
+            <template v-if="!isVip">🔒 仅限 VIP 用户 · 点击勾选可查看申请方式</template>
+            <template v-else>勾选后消耗 1 次 AI 调用（约 ¥0.02），需额外等待十几秒；默认不包含</template>
+          </span>
+        </div>
+        <el-button
+          v-if="wantAi && !aiText"
+          type="primary"
+          size="small"
+          :loading="aiLoading"
+          @click="genAi"
+        >{{ aiLoading ? 'AI 生成中…' : '生成 AI 建议' }}</el-button>
+        <el-button v-else-if="aiText" size="small" :loading="aiLoading" @click="genAi">重新生成</el-button>
+      </div>
+
+      <!-- 人口数据条（**纸外**，不会进 PDF）
+           🔴 v1.13.413：这里只**读**该位置已购的档位，没有「获取人口数据」按钮了 ——
+              报告侧的取数链路已整条删除（旧实现走 POST /smartsteps/population，能自己花钱）。
+              下拉里的档位＝用户真正买过的半径，⛔ 不再固定 1/3/5km。 -->
+      <div v-if="candidate" class="rp-popbar">
+        <span class="rp-popbar-l">
+          <b>联通人口</b>
+          <el-select
+            v-model="popRadius"
+            size="small"
+            style="width: 132px"
+            :disabled="tiersLoading || !hasTiers"
+            aria-label="选择已购人口半径"
+          >
+            <el-option v-for="t in tiers" :key="t.radius" :value="t.radius" :label="`半径 ${radiusText(t.radius)}`" />
+          </el-select>
+          <template v-if="popData">
+            <!-- ⚠️ v1.13.413 起这里**恒为不消耗**：报告侧只有一条 GET 只读请求，
+                 没有配额闸门、没有缓存扣费、没有上游调用 ⇒ 再做「本次消耗 N 次」的
+                 条件渲染等于给一个不可能发生的事留分支。 -->
+            <span class="rp-popbar-ok">
+              已购数据 · 不消耗配额
+              <template v-if="popMonth"> · 期次 {{ popMonth }}</template>
+              <template v-if="tiers.length > 1"> · 共 {{ tiers.length }} 档可对比</template>
+            </span>
+            <span v-if="curTier && curTier.storeName" class="rp-popbar-note">（{{ curTier.storeName }}）</span>
+          </template>
+          <!-- ⚠️ 加载中与"确实没买过"必须分开写：把加载态显示成「尚未购买」，
+               用户会以为白买了又去买一次。 -->
+          <span v-else-if="tiersLoading" class="rp-popbar-note">正在读取该位置已购的人口档位…</span>
+          <span v-else class="rp-popbar-miss">尚未购买（先去初步分析买人口）</span>
+        </span>
+        <span class="rp-popbar-r">
+          <!-- 🔴 v1.13.400：纸面只放 8~9 项研判指标（76 个标签的摘要），逐项明细在
+               「购买履历」里本来就看得全 ⇒ 这里给一个跳转入口。
+               ⚠️ 这个按钮**必须在纸外**（纸面组件 ReportPaper 是纯展示，⛔ 不许有路由跳转，
+                  否则 392 的免登录分享页就没法复用它）。 -->
+          <el-button
+            v-if="popData && popPurchaseId"
+            size="small"
+            link
+            type="primary"
+            @click="openAllTags"
+          >查看全部标签</el-button>
         </span>
       </div>
-      <el-button
-        v-if="wantAi && !aiText"
-        type="primary"
-        size="small"
-        :loading="aiLoading"
-        @click="genAi"
-      >{{ aiLoading ? 'AI 生成中…' : '生成 AI 建议' }}</el-button>
-      <el-button v-else-if="aiText" size="small" :loading="aiLoading" @click="genAi">重新生成</el-button>
-    </div>
 
-    <!-- 人口取数条（**纸外**，不会进 PDF）：按「点位 + 半径」取联通 1001，可复用「我的门店」已购数据 -->
-    <div v-if="candidate" class="rp-popbar">
-      <span class="rp-popbar-l">
-        <b>人口数据</b>
-        <el-select v-model="popRadius" size="small" style="width: 108px" :disabled="popLoading" @change="onRadiusChange">
-          <el-option v-for="r in RADIUS_OPTIONS" :key="r" :value="r" :label="`半径 ${radiusText(r)}`" />
-        </el-select>
-        <template v-if="popData">
-          <span class="rp-popbar-ok">
-            <template v-if="popSource === 'purchase'">已复用「我的门店」已购数据</template>
-            <template v-else-if="popSource === 'cache'">命中同位置已有数据（未重复调用联通）</template>
-            <template v-else>已获取联通数据</template>
-            <template v-if="popMonth"> · 期次 {{ popMonth }}</template>
-            · {{ popQuotaUsed ? `本次消耗 ${popQuotaUsed} 次配额` : '本次未消耗配额' }}
-          </span>
-          <span v-if="popReused && popReused.storeName" class="rp-popbar-note">（{{ popReused.storeName }}）</span>
-        </template>
-        <template v-else>
-          <span class="rp-popbar-miss">尚未获取</span>
-          <!-- v1.13.381：平台有数据 ≠ 本账号买过 ⇒ 只提示「有数据可查」，取数照样计费 -->
-          <span v-if="popCachedMonth" class="rp-popbar-note">该位置已有数据可查（期次 {{ popCachedMonth }}），取数消耗 1 次配额</span>
-          <span v-else class="rp-popbar-note">联通人口 · 点位半径口径 · 同半径已购自动复用</span>
-        </template>
-      </span>
-      <span class="rp-popbar-r">
-        <!-- 🔴 v1.13.400：纸面只放 8~9 项研判指标（76 个标签的摘要），逐项明细在
-             「购买履历」里本来就看得全 ⇒ 这里给一个跳转入口。
-             ⚠️ 这个按钮**必须在纸外**（纸面组件 ReportPaper 是纯展示，⛔ 不许有路由跳转，
-                否则 392 的免登录分享页就没法复用它）。 -->
-        <el-button
-          v-if="popData && popPurchaseId"
-          size="small"
-          link
-          type="primary"
-          @click="openAllTags"
-        >查看全部标签</el-button>
-        <el-button v-if="!popData" size="small" type="primary" plain :loading="popLoading" @click="fetchPopulation">
-          获取人口数据（剩余 {{ quotaInfo.available }} 次）
-        </el-button>
-        <el-button v-else size="small" :loading="popLoading" @click="fetchPopulation">刷新</el-button>
-      </span>
-    </div>
+      <!-- AI 业态未知时先问一句（⛔ 不让模型猜业态，与 AI 选址建议同口径） -->
+      <div v-if="wantAi && needCategory" class="rp-cat">
+        <span>该品牌未收录业态，请先填写：</span>
+        <el-input v-model="categoryInput" size="small" style="width: 240px" maxlength="30" placeholder="例：日式牛肉盖饭快餐" />
+      </div>
 
-    <!-- AI 业态未知时先问一句（⛔ 不让模型猜业态，与 AI 选址建议同口径） -->
-    <div v-if="wantAi && needCategory" class="rp-cat">
-      <span>该品牌未收录业态，请先填写：</span>
-      <el-input v-model="categoryInput" size="small" style="width: 240px" maxlength="30" placeholder="例：日式牛肉盖饭快餐" />
-    </div>
-
-    <div v-loading="loading" class="rp-scroll">
-      <!-- 纸面本身抽成 ReportPaper（v1.13.392）：分享出去的免登录页用的是同一个组件，
-           两处渲染同源 ⇒ 同事看到的与作者看到的必然一致。 -->
-      <ReportPaper
-        ref="paperRef"
-        :model="model"
-        :map-img="mapImg"
-        :ai-text="aiText"
-        :author-name="username"
-        detail-hint="完整清单见购买履历"
-      />
-    </div>
+      <div v-loading="loading" class="rp-scroll">
+        <!-- 纸面本身抽成 ReportPaper（v1.13.392）：分享出去的免登录页用的是同一个组件，
+             两处渲染同源 ⇒ 同事看到的与作者看到的必然一致。 -->
+        <ReportPaper
+          ref="paperRef"
+          :model="model"
+          :map-img="mapImg"
+          :ai-text="aiText"
+          :author-name="username"
+          detail-hint="完整清单见购买履历"
+        />
+      </div>
+    </template>
 
     <template #footer>
       <el-button @click="$emit('update:modelValue', false)">关闭</el-button>
       <!-- v1.13.392：分享放在「下载 PDF」左边 —— 业主定的顺序是先判值不值得、
-           再发给同事及领导；PDF 是留档，分享是沟通，沟通先于留档。 -->
-      <el-button :disabled="!model" @click="shareVisible = true">分享给同事</el-button>
-      <el-button type="primary" :loading="exporting" @click="exportPdf">下载 PDF</el-button>
+           再发给同事及领导；PDF 是留档，分享是沟通，沟通先于留档。
+           🔴 v1.13.413：两份产物都要求「买过人口」—— 没有人口的分析报告不能外发。 -->
+      <el-button :disabled="!hasTiers || !model" @click="shareVisible = true">分享给同事</el-button>
+      <el-button type="primary" :disabled="!hasTiers" :loading="exporting" @click="exportPdf">下载 PDF</el-button>
     </template>
   </el-dialog>
 
@@ -115,7 +136,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -125,14 +146,14 @@ import { resolveBrandCategory } from '@/utils/storeBrand.js'
 import { captureMapOnlyCanvas } from '@/utils/mapCapture'
 import ReportPaper from '@/components/ReportPaper.vue'
 import ReportShareDialog from '@/components/ReportShareDialog.vue'
-import { requireQuota, QUOTA_REASON } from '@/utils/quotaContact.js'
 import { exportPaperPdf, fileStamp, safeFileName } from '@/utils/exportPaperPdf.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   candidate: { type: Object, default: null }
 })
-const emit = defineEmits(['update:modelValue'])
+// `gobrief`：空态里「去初步分析」——由父组件切视图（它才持有 briefRow / 抽屉状态）
+const emit = defineEmits(['update:modelValue', 'gobrief'])
 
 const userStore = useUserStore()
 const router = useRouter()
@@ -149,32 +170,35 @@ const brandScope = ref(null)
 const mapImg = ref('')
 
 // ── 联通人口（1001）────────────────────────────────────────
-// 🔴 业主 2026-11-09 定：报告人口**不再用商圈边界面属性**，改用按次计费的联通人口配额。
-//    ⇒ 打开报告只做免费探测，要花钱必须用户点按钮明确确认。
-const popData = ref(null)                       // 联通 1001 解析结果
-const popMonth = ref('')                        // 期次，如 202510
-const popLoading = ref(false)
-const popSource = ref('')                       // purchase（本人已购）| cache（平台有数据，仍计费）| fresh
-const popQuotaUsed = ref(0)                     // 本次实际扣了几次（0 = 复用本人已购）
-const popCachedMonth = ref('')                  // 探测到「有缓存可查」时的期次（仅提示，不展示数据）
-const popReused = ref(null)                     // { storeName, purchasedAt }
+// 🔴🔴 v1.13.413（业主 2026-11-24 拍板）：报告的联通人口**只读已购数据**，
+//   报告侧一条取数请求都不发。
+//   业主原话：「大前提是在『初步分析』中购买了联通配额之后才使用『生成立项报告』」。
+//   旧实现（341~412）在这里 POST `/api/smartsteps/population` 按 1/3/5km 现取：
+//     · 报告能**自己花钱**（护栏只剩"用户点了按钮"这种前端自觉）；
+//     · 半径写死 1/3/5km，而初步分析里能买 0.35~5km 任意档 ⇒ 用户买的 1.5km 选不出来。
+//   现在档位来自 `GET /api/candidates/purchased-population`（只读、毫秒级、0 消耗），
+//   ⇒ 「以实际购买的半径为基础」和「不可能产生费用」两件事同时成立。
+//
+// 🔴 守卫 `candidateReportPurchasedGuard.test.js` 钉死：本文件⛔ 不许再出现
+//   `/smartsteps/population`、`probeOnly`、`获取人口数据` 这些字样 —— 加回去就是回退。
+const tiers = ref([])            // [{ radius, cityMonth, purchaseId, purchasedAt, storeName, population }]
+const tiersLoading = ref(false)
+const tiersReady = ref(false)    // 拉取已结束（无论有没有），用于区分「加载中」与「空态」
+/** 当前选中档的半径（米）—— 报告正文与纸面主档都跟它走 */
+const popRadius = ref(null)
+// ⭐ radiusText 只用 utils/candidateReport.js 那一份（⛔ 组件里不许另写，否则标签与纸面口径会分叉）
+
+const hasTiers = computed(() => tiers.value.length > 0)
+const curTier = computed(() => tiers.value.find((t) => t.radius === popRadius.value) || null)
+/** 联通 1001 解析结果（给 buildReportModel 用的**原始结构**） */
+const popData = computed(() => curTier.value?.population || null)
+const popMonth = computed(() => curTier.value?.cityMonth || '')
 /**
  * 本次真正用在报告上的那条购买记录 id（v1.13.400）。
- * 三种来源各不相同：purchase＝被复用的那条（可能是门店买的多服务码套餐）、
- * cache/fresh＝本次计费新写的那条。⛔ 不要按门店名去履历里猜 —— 同名会有多条。
+ * 🔴 v1.13.413 起只有一种来源：该档被复用的那条购买记录（可能是门店买的多服务码套餐）。
+ *   ⛔ 不要按门店名去履历里猜 —— 同名会有多条。
  */
-const popPurchaseId = ref(null)
-const quotaInfo = ref({ available: 0, remaining: 0, loaded: false })
-
-/** 报告里可选的三档半径（与后端 REPORT_RADII 一致） */
-const RADIUS_OPTIONS = [1000, 3000, 5000]
-/** 把候选点位自带的半径归到最接近的一档（它可能是 800/1500 之类） */
-function nearestRadius(m) {
-  const n = Number(m) || 1000
-  return RADIUS_OPTIONS.reduce((a, b) => (Math.abs(b - n) < Math.abs(a - n) ? b : a))
-}
-const popRadius = ref(1000)
-// ⭐ radiusText 只用 utils/candidateReport.js 那一份（⛔ 组件里不许另写，否则标签与纸面口径会分叉）
+const popPurchaseId = computed(() => curTier.value?.purchaseId || null)
 
 const wantAi = ref(false)      // 🔴 默认 false：不勾就不花钱（业主 2026-11-09 定）
 const aiText = ref('')
@@ -199,7 +223,10 @@ const model = computed(() => {
     popRadius: popRadius.value,
     // v1.13.346：把后端返回的竞品口径一起交给报告 —— 否则报告只能说「N 家竞品」，
     //   说不出这 N 家是「全量」还是「按本品牌映射收窄后」的，口径不可追溯。
-    brandScope: brandScope.value
+    brandScope: brandScope.value,
+    // v1.13.413：多档并列对比（纸面那张表）。⚠️ 只传已购档，⛔ 不要塞 1/3/5km 默认档 ——
+    //   表里出现一个没买过的半径，等于纸上摆了一份没有证据的结论。
+    tiers: tiers.value
   })
 })
 
@@ -242,151 +269,59 @@ async function onWantAiChange(val) {
 
 
 /**
- * 读取「已缓存的」联通人口（免费）+ 剩余配额。
- * 🔴 打开报告**绝不自动扣配额** —— 只查缓存；要花钱必须用户点按钮（v1.13.340）。
- */
-/**
- * 探测「该位置是否已有可复用的人口数据」—— 打开报告就调，**免费**。
- * 走 `probeOnly`：后端只查 purchases / smartsteps_cache，⛔ 不查闸门、不调上游、不扣费。
- * （原先调的是商圈面端点，v1.13.341 改为半径口径后才能与「我的门店」打通）
- */
-let probeSeq = 0
-async function probePopulation() {
-  const seq = ++probeSeq
-  popData.value = null
-  popMonth.value = ''
-  popSource.value = ''
-  popQuotaUsed.value = 0
-  popCachedMonth.value = ''
-  popReused.value = null
-  popPurchaseId.value = null
-  const c = props.candidate
-  if (!c || !Number(c.latitude) || !Number(c.longitude)) return
-  try {
-    const { data } = await axios.post('/api/smartsteps/population', {
-      lng: Number(c.longitude),
-      lat: Number(c.latitude),
-      radius: popRadius.value,
-      probeOnly: true
-    })
-    if (seq !== probeSeq) return        // 半径已改 ⇒ 丢弃旧请求的结果
-    if (data?.population) {
-      popData.value = data.population
-      popMonth.value = data.dataMonth || ''
-      popSource.value = data.source
-      popReused.value = data.reused
-      popPurchaseId.value = data.purchaseId || data.reused?.purchaseId || null
-    } else if (data?.source === 'cache') {
-      // 🔴 后端按新规**不回 population**（回了就是白拿），只告知「有数据可查」
-      popCachedMonth.value = data.dataMonth || '未知'
-    }
-  } catch (e) {
-    console.warn('[立项报告] 探测人口数据失败:', e?.message || e)
-  }
-}
-
-/**
- * 用户换了半径 ⇒ 旧数据作废（watch 已清空），并**免费**重新探测一次。
- * 🔴 这一步是「已购数据自动复用」的关键：不重探的话，明明 3km 买过也要用户再点一次
- *    「确认取数」，甚至误以为要重新付费。probeOnly 不查闸门、不调上游、零费用。
- * ⚠️ 等 nextTick：el-select 的 change 早于 v-model 的 watch(flush:'pre')，
- *    先让清空跑完再发请求，否则旧请求回来会把清空后的状态又填回去。
- */
-async function onRadiusChange() {
-  await nextTick()
-  probePopulation()
-}
-
-/** 剩余配额（用于「消耗 1 次 / 剩余 N 次」的明示，⛔ 不做成隐藏成本） */
-async function loadQuota() {
-  try {
-    const { data } = await axios.get('/api/purchase/quota')
-    quotaInfo.value = {
-      available: Number(data?.available) || 0,
-      remaining: Number(data?.remainingQuota) || 0,
-      loaded: true
-    }
-  } catch {
-    quotaInfo.value = { available: 0, remaining: 0, loaded: false }
-  }
-}
-
-/**
- * 取联通人口数据（按「点位 + 半径」；**本人同半径买过才免费**）。
+ * 拉取该位置**已购**的联通人口档位（只读、0 消耗、0 写入）。
  *
- * 🔴 这里**不做前端配额预检**：本人已购复用的 0 费用路径不该被「剩余 0」拦掉；
- *   🔴 v1.13.381 起「命中平台缓存」不再免费（只省上游调用、仍扣 1 次），
- *   预检放在前端只会误导 —— 闸门统一交给后端：先查本人已购 → 再查缓存（计费）→ 最后判配额。
+ * 🔴🔴 这是报告唯一的人口数据来源（v1.13.413）。它只 `GET`，不 POST、不传 months、
+ *   不碰配额闸门 ⇒ 无论用户怎么点，都不可能产生费用。
+ * 🔴 档位来自「用户真正买过的半径」，⛔ 不再是固定的 1/3/5km：
+ *   初步分析里能买 0.35~5km 任意档，写死三档就等于「买得到的档在报告里选不出来」。
+ *
+ * ⚠️ 入参与 `GET /brief` 完全同源：优先 `markerId`（门店驱动的候选点位可能还没有
+ *   推进记录、`id === null`，用 id 会直接 404），没有再退回 `id`。
+ *   ⛔ 不要在这里调 `POST /ensure` 去"补一个 id"：看一眼买没买过不该在库里建行。
  */
-async function fetchPopulation() {
-  if (popLoading.value) return
+async function loadTiers() {
+  tiersLoading.value = true
+  tiersReady.value = false
+  tiers.value = []
+  popRadius.value = null
   const c = props.candidate
-  if (!c) return
-  const lng = Number(c.longitude)
-  const lat = Number(c.latitude)
-  if (!lng || !lat) return ElMessage.warning('该点位缺少有效坐标，无法取人口数据')
-
-  // 先拿最新可用月份（免费接口）—— 避免选到无数据月份换来一次无效的付费调用
-  let cityMonth = ''
-  let monthLabel = ''
-  try {
-    const { data } = await axios.get('/api/smartsteps/months')
-    cityMonth = data?.months?.[0]?.value || ''
-    monthLabel = data?.months?.[0]?.label || ''
-  } catch { /* 拿不到就不传，后端用本地推算兜底 */ }
-
-  try {
-    await ElMessageBox.confirm(
-      `将按「点位半径 ${radiusText(popRadius.value)}」向联通取人口数据` +
-      `${monthLabel ? '（期次 ' + monthLabel + '）' : ''}。\n\n` +
-      `· 若该位置在「我的门店」里同半径买过 ⇒ 不消耗配额，直接复用\n` +
-      `· 若平台上已有该位置数据（别人买过）⇒ 仍消耗 1 次配额，但不重复调用联通、即时返回\n` +
-      `· 否则消耗 1 次联通人口配额（当前剩余 ${quotaInfo.value.available} 次）`,
-      '确认取数',
-      { confirmButtonText: '确认取数', cancelButtonText: '取消', type: 'info' }
-    )
-  } catch {
-    return   // 用户取消
+  const params = c?.markerId ? { markerId: c.markerId } : (c?.id ? { id: c.id } : null)
+  if (!params) {
+    tiersLoading.value = false
+    tiersReady.value = true
+    return
   }
-
-  popLoading.value = true
   try {
-    const { data } = await axios.post('/api/smartsteps/population', {
-      lng,
-      lat,
-      radius: popRadius.value,
-      cityMonth,
-      storeName: String(c.name || '').slice(0, 100)
-    })
-    if (data?.population) {
-      popData.value = data.population
-      popMonth.value = data.dataMonth || ''
-      popSource.value = data.source
-      popQuotaUsed.value = Number(data.quotaUsed) || 0
-      popCachedMonth.value = ''
-      popReused.value = data.reused
-      popPurchaseId.value = data.purchaseId || data.reused?.purchaseId || null
-      ElMessage.success(data.message || '已获取联通人口数据')
-      loadQuota()
-    } else {
-      ElMessage.warning('联通未返回可用人口数据，请稍后重试')
-    }
+    const { data } = await axios.get('/api/candidates/purchased-population', { params })
+    const list = Array.isArray(data?.tiers) ? data.tiers : []
+    tiers.value = list
+    if (list.length) popRadius.value = pickNearestTier(list, Number(c.radius) || 1000)
   } catch (e) {
-    const code = e?.response?.data?.code
-    if (code === QUOTA_REASON.OWN || code === QUOTA_REASON.POOL) {
-      // 统一走配额引导出口（内含联系方式，⛔ 不在这里另写文案）
-      await requireQuota(code, {
-        need: e.response.data.need || 1,
-        own: e.response.data.own,
-        pool: e.response.data.pool
-      })
-    } else {
-      ElMessage.error(e?.response?.data?.message || '获取人口数据失败，请稍后重试')
-    }
+    // 读失败就按「没买过」处理：宁可让用户去初步分析看一眼，也不能谎称有数据可用
+    console.warn('[立项报告] 读取已购人口失败:', e?.response?.data?.message || e?.message || e)
+    tiers.value = []
   } finally {
-    popLoading.value = false
+    tiersLoading.value = false
+    tiersReady.value = true
   }
 }
+
+/**
+ * 默认选中哪一档：取候选点位评估半径**最近**的一档。
+ * 🔴 为什么是最近而不是最大：报告正文要回答的是「这个点位按它的评估半径看怎么样」，
+ *   评估半径是用户当初填的那个判断尺度。买过更大档只是"顺便能对比"，
+ *   ⛔ 不要拿最大档当默认 —— 那会让正文凭空放大成 5km 的结论。
+ */
+function pickNearestTier(list, wantM) {
+  const want = Number(wantM) || 0
+  let best = list[0]
+  for (const t of list) {
+    if (Math.abs(t.radius - want) < Math.abs(best.radius - want)) best = t
+  }
+  return best.radius
+}
+
 
 /**
  * 跳「购买履历」看这份人口数据的**全部标签**（v1.13.400）。
@@ -410,8 +345,6 @@ function openAllTags() {
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */
 async function onOpened() {
   if (!props.candidate) return
-  // 半径默认取候选点位自带的（归到 1/3/5km 三档），用户可在弹窗里改
-  popRadius.value = nearestRadius(props.candidate.radius)
   loading.value = true
   mapImg.value = ''
   try {
@@ -437,9 +370,20 @@ async function onOpened() {
   } finally {
     loading.value = false
   }
-  // 免费探测一次「有没有可复用的已购数据」，有就直接显示
-  await Promise.all([probePopulation(), loadQuota()])
+  // v1.13.413：人口改为「读已购档位」（0 消耗）。与商圈面并行，谁快谁先到都不影响渲染。
+  await loadTiers()
   renderMap()
+}
+
+/**
+ * 空态里的「去初步分析」。
+ * ⚠️ 本组件**不改路由、不调父组件方法名**：只 emit 一个意图，由 `CandidateView` 决定
+ *   怎么切视图（它还要顺手关掉抽屉/弹窗）。⛔ 不要在这里 `router.push` ——
+ *   初步分析是候选点位页内的视图状态（`briefRow`），不是一条独立路由。
+ */
+function goBrief() {
+  emit('update:modelValue', false)
+  emit('gobrief')
 }
 
 /** 地图截图：复用已有的纯 Canvas 渲染（只画点位与半径圈，不画竞品/购物中心） */
@@ -461,9 +405,11 @@ async function renderMap() {
 /** 生成 AI 建议（可选，默认不调 —— 调一次花一次钱） */
 async function genAi() {
   if (!isVip.value) return ElMessage.warning('AI 选址建议仅限 VIP 用户，请在「我的账户」申请开通')
+  // v1.13.413：没有已购人口 ⇒ 报告本身就是空的，⛔ 不要再花一次 AI 调用去评论一份不存在的报告
+  if (!hasTiers.value) return ElMessage.warning('该点位还没有联通人口数据，请先到「初步分析」购买')
   if (!popData.value) {
     // 不阻断（用户可能就想要竞争/地铁维度的建议），但必须说清楚少了一半依据
-    ElMessage.warning('尚未获取联通人口数据 —— AI 建议将缺少人口依据，可先点上方「获取联通人口数据」')
+    ElMessage.warning('当前档位缺少人口结构数据 —— AI 建议将缺少人口依据')
   }
   const cat = resolvedCat.value.mapped ? resolvedCat.value.category : categoryInput.value.trim()
   if (!cat) return ElMessage.warning('该品牌未收录业态，请先填写业态')
@@ -503,8 +449,11 @@ async function genAi() {
  * 🔴 v1.13.377：截图 + 分页逻辑抽到 utils/exportPaperPdf.js（初步分析报告共用同一份）。
  *    版本规则（A4 纵向 / ≥72% 才单页 / 最多 3 页）全部在那边，⛔ 不要在这里重新实现一遍。
  *    这里只保留**业务副作用**：导出成功后给候选点位写一条留痕流水。
+ * 🔴 v1.13.413：没有已购人口就 ⛔ 不出 PDF —— 按钮已 disabled，这里再兜一次，
+ *    防止「用键盘/脚本触发 click」绕过按钮状态。
  */
 async function exportPdf() {
+  if (!hasTiers.value) return ElMessage.warning('该点位还没有联通人口数据，请先到「初步分析」购买')
   // 🔴 纸面在 ReportPaper 里 ⇒ 必须取组件根元素（它的根就是 `.rp-paper`）。
   //    ⛔ 不要写成 `paperRef.value`：那是个组件实例，html2canvas 拿到它会直接报错。
   const paperEl = paperRef.value?.$el
@@ -523,24 +472,20 @@ async function exportPdf() {
   }
 }
 
-// 关掉弹窗时清掉 AI 文本与人口缓存，避免下次打开看到上一个点位的数据
-/** 换半径 ⇒ 之前取的那份就作废（⛔ 不许把 1km 的数据挂在 3km 标签下） */
-watch(popRadius, () => {
-  popData.value = null
-  popMonth.value = ''
-  popSource.value = ''
-  popReused.value = null
-})
-
+/**
+ * 关掉弹窗时清掉 AI 文本与已购档，避免下次打开看到上一个点位的数据。
+ * ⚠️ v1.13.413 起**没有** `watch(popRadius)` 了：`popData` 已改成从 `curTier` 派生的
+ *   computed，换档自动跟着变，不需要（也不许）手工清空 —— 手工清空反而会和 computed 打架。
+ */
 watch(() => props.modelValue, (v) => {
   if (!v) {
     aiText.value = ''
     wantAi.value = false
     categoryInput.value = ''
-    popData.value = null
-    popMonth.value = ''
-    popSource.value = ''
-    popReused.value = null
+    // 已购档也清掉：下次打开重新读（用户可能刚在初步分析里买过新档）
+    tiers.value = []
+    tiersReady.value = false
+    popRadius.value = null
   }
 })
 </script>
@@ -550,7 +495,15 @@ watch(() => props.modelValue, (v) => {
 .rp-bar-l { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .rp-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
-/* 人口取数条：在**纸外**（不进 PDF），只做操作与状态提示 */
+/* 空态（纸外）：该点位没买过联通人口 —— 不出纸、不给 PDF/分享（v1.13.413） */
+.rp-empty {
+  padding: 28px 22px; text-align: center;
+  background: #fbfdff; border: 1px dashed #b9d4f5; border-radius: 8px;
+}
+.rp-empty-t { font-size: 15px; font-weight: 600; color: #1f2329; margin-bottom: 8px; }
+.rp-empty-p { margin: 0 auto 16px; max-width: 520px; font-size: 13px; line-height: 1.7; color: #646a73; }
+
+/* 人口条：在**纸外**（不进 PDF），只做「读哪一档」的选择与状态提示 */
 .rp-popbar {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   padding: 8px 12px; margin-bottom: 10px;
