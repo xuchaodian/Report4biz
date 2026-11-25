@@ -1072,11 +1072,29 @@ async function onCategoryDone(updated) {
 
 // 表单数据
 const formRef = ref(null)
-const form = reactive({
+
+/**
+ * 门店表单的「空值基准」—— 唯一来源。
+ *
+ * 🔴 415：这里原来有两份清单：`reactive({...})` 声明一份、`showAddDialog()` 里手写一份。
+ * 手写那份漏了 store_area / frontage / store_status / mall_type / trade_area_type，
+ * 还写着一个死键 `area`（模板绑定的是 `store_area`）。
+ * 后果：**先编辑过 A 店，再点「新增」，新增的店会带着 A 店的面积/门幅/门店状态/商场类型/商圈类型**，
+ * 且没有任何提示 —— 用户完全看不出来，直到报表里发现两家店一模一样。
+ *
+ * ⇒ 改为一处定义，form 初始化与「新增」重置共用；守卫测试
+ *   `tests/storeFormReset.test.js` 断言「模板里绑定的每个 form.X 都必须在这个基准里」，
+ *   以后谁加了控件忘了加初值，测试直接红。
+ *
+ * ⚠️ rent = 整店月租金（元/月），不是销售预测里的「元/㎡/月」单价口径。
+ */
+const EMPTY_STORE_FORM = {
   store_code: '',
   brand: '',
   name: '',
-  store_type: '',
+  // 新增默认「已开业」（与 414 之前的 showAddDialog 一致，不要改成空串 ⇒ 下拉会变成「请选择」）。
+  // 后端 POST 也有 `store_type || '已开业'` 兜底，但 UI 默认值不能靠后端兜。
+  store_type: '已开业',
   city: '',
   district: '',
   area_manager: '',
@@ -1093,10 +1111,13 @@ const form = reactive({
   store_status: '',
   mall_type: '',
   trade_area_type: '',
+  rent: null,
   description: '',
   latitude: 39.9042,
   longitude: 116.4074
-})
+}
+
+const form = reactive({ ...EMPTY_STORE_FORM })
 
 const rules = {
   name: [{ required: true, message: '请输入门店名称', trigger: 'blur' }],
@@ -1225,30 +1246,9 @@ const handleClearFilters = () => {
 const showAddDialog = () => {
   isEdit.value = false
   editingId.value = null
-  Object.assign(form, {
-    store_code: '',
-    brand: '',
-    name: '',
-    store_type: '已开业',
-    city: '',
-    district: '',
-    area_manager: '',
-    phone1: '',
-    store_manager: '',
-    phone2: '',
-    address: '',
-    open_date: '',
-    business_hours: '',
-    area: null,
-    seats: null,
-    rent: null,
-    store_category: '',
-    contact_person: '',
-    contact_phone: '',
-    description: '',
-    latitude: 39.9042,
-    longitude: 116.4074
-  })
+  // ⛔ 不要在这里手写字段清单：漏一个字段就会把上一次编辑的那家店的值带进新增里。
+  //    统一用 EMPTY_STORE_FORM（见其上方注释）。
+  Object.assign(form, EMPTY_STORE_FORM)
   dialogVisible.value = true
 }
 
@@ -1273,7 +1273,9 @@ const handleEdit = (row) => {
     business_hours: row.business_hours || '',
     store_area: row.store_area || row.area || null,
     seats: row.seats || null,
-    rent: row.rent || null,
+    // ⚠️ 用 ?? 不用 ||：租金 0 是有意义的（自有物业 / 免租期），
+    //    `0 || null` 会把它悄悄变成空值，用户一保存租金就“消失”。
+    rent: row.rent ?? null,
     store_category: row.store_category || '',
     contact_person: row.contact_person || '',
     contact_phone: row.contact_phone || '',
