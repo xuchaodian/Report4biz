@@ -29,14 +29,22 @@
       <div class="rp-bar">
         <div class="rp-bar-l">
           <!-- 🔴 不做 disabled：禁用的勾选框点不动，用户根本看不到「为什么」。
-               现在允许点击，点了再明确告诉他「仅限 VIP + 怎么申请」（业主 2026-11-09 要求）。 -->
-          <el-checkbox :model-value="wantAi" :disabled="aiLoading" @change="onWantAiChange">
-            加入 AI 选址建议
-          </el-checkbox>
-          <span class="rp-hint">
-            <template v-if="!isVip">🔒 仅限 VIP 用户 · 点击勾选可查看申请方式</template>
-            <template v-else>勾选后消耗 1 次 AI 调用（约 ¥0.02），需额外等待十几秒；默认不包含</template>
-          </span>
+               现在允许点击，点了再明确告诉他「仅限 VIP + 怎么申请」（业主 2026-11-09 要求）。
+               ⚠️ v1.13.423 把旁边那句长提示改成悬停提示后，**更不能**改成 disabled ——
+                  否则连"点一下看申请方式"这个唯一出口都没了。 -->
+          <!-- v1.13.423（业主 2026-11-26：「隐藏页面上方显示的『勾选后消耗 1 次 AI 调用…』」）：
+               常显改成悬停才出现。两条理由：
+               ① 那句写着「约 ¥0.02」—— 与铁律「⛔ 文案不含单价」冲突（截图/对外演示会暴露成本）；
+               ② 一行工具条被它撑得很长，与右侧按钮抢宽度。
+               ⛔ 「消耗几次」的告知不能一起删（付费前必明），所以留在 tooltip 里。 -->
+          <el-tooltip :content="aiHint" placement="bottom-start" :show-after="200">
+            <el-checkbox :model-value="wantAi" :disabled="aiLoading" @change="onWantAiChange">
+              加入 AI 选址建议
+            </el-checkbox>
+          </el-tooltip>
+          <!-- 🔴 非 VIP 这一支**仍要常显**：它是「点了才知道为什么」的唯一出口（同 §6.41 的教训），
+               ⛔ 不要跟着那句一起藏起来。 -->
+          <span v-if="!isVip" class="rp-hint">🔒 仅限 VIP 用户 · 点击勾选可查看申请方式</span>
         </div>
         <el-button
           v-if="wantAi && !aiText"
@@ -264,6 +272,15 @@ const catFlash = ref(false)
 let catFlashTimer = null
 
 const isVip = computed(() => !!userStore.isVipActive)
+/**
+ * 勾选框的悬停提示（v1.13.423）。原来这行是常显在工具条上的，现在只在 hover 时出现。
+ * 🔴 两点必须守住：
+ *   ① **⛔ 不写单价**（铁律「文案不含单价」）—— 原来那句的「约 ¥0.02」是本批顺带修掉的违规；
+ *   ② **「消耗 1 次」必须还在这里**（付费前必明消耗）—— 藏起来 ≠ 不说，只是不在页面上常驻。
+ */
+const aiHint = computed(() => (isVip.value
+  ? '勾选后消耗 1 次 AI 调用，生成需等待十几秒；默认不包含，不勾选不产生费用'
+  : 'AI 选址建议为 VIP 专属，点击勾选可查看申请方式'))
 const username = computed(() => userStore.user?.username || '—')
 
 /** 点位命中的商圈（供取数用；模板里也用得到商圈名） */
