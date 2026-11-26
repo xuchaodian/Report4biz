@@ -387,11 +387,14 @@ function numOrNull(v) {
  * @param {object} candidate store_candidates 一行
  * @param {{district:object|null, contained:boolean, distanceM:number|null}} hit pickDistrictForPoint 的结果
  * @param {{population?:object|null, popMonth?:string, popRadius?:number, brandScope?:object|null,
+ *          competitorInRadius?:number|null,
  *          tiers?:Array<{radius:number, cityMonth:string, population:object}>|null}} opts
  *        联通 1001 解析结果、期次、半径（米）；`tiers`（v1.13.413）＝该位置**已购**的各档人口
  *        （原样来自 `GET /api/candidates/purchased-population` 的 `tiers`，用于多档对比表）
  *        · `brandScope`（v1.13.346）：`/api/districts` 返回的 `{ configured, brands }`，
  *          决定「商圈内竞品」的注记怎么写 —— 未指定品牌 / 未配置映射 / 已按映射收窄，三态必须分开写。
+ *        · `competitorInRadius`（v1.13.421）：`GET /api/districts/competitors-in-circle` 的 count，
+ *          「半径 X 内竞品」那条的数据。⚠️ `null/undefined` ＝ **没取到**，⛔ 不等于 0 家。
  */
 export function buildReportModel(candidate, hit = {}, opts = {}) {
   const c = candidate || {}
@@ -403,6 +406,67 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
 
   const facts = []
   const risks = []
+
+  // ── 半径文案 ＋ 竞品口径注记（v1.13.421）────────────────────────────────
+  // 🔴 「半径 X 内人口 / 到访 / 竞品」必须**同一个半径**：有已购档用当前档，
+  //    没有档退回候选点位的评估半径。⛔ 别在有档时用 c.radius ——
+  //    那会拼出「1km 人口」配「3km 竞品」的纸面（与 420 那张图同一个毛病）。
+  const compRadiusM = popRadius || Number(c.radius) || 1000
+  const rTxt = radiusText(compRadiusM)
+  const rPrefix = rTxt ? `半径 ${rTxt} 内` : '半径内'
+
+  /**
+   * 竞品口径注记（v1.13.346 起）—— 只跟「自有品牌 + 竞品映射」有关，与商圈面无关，
+   * 所以提到这里给「半径内竞品」和风险文案共用一份。⛔ 别两处各写一遍：写两遍必然漂移，
+   * 而立项报告是对外文档，口径写错比数字难看严重得多。
+   */
+  const bs = opts.brandScope || null
+  let compScopeNote
+  if (!c.brand) {
+    compScopeNote = '未指定自有品牌，竞品按全量统计（含全部竞品品牌）'
+  } else if (!bs || !bs.configured) {
+    compScopeNote = `自有品牌「${c.brand}」未配置竞品映射，竞品按全量统计（含全部竞品品牌）`
+  } else {
+    const list = (Array.isArray(bs.brands) ? bs.brands : []).filter(Boolean)
+    compScopeNote = list.length
+      ? `已按品牌映射收窄：仅统计 ${list.join(' / ')}（自有品牌「${c.brand}」）`
+      : `已按品牌映射收窄：自有品牌「${c.brand}」配置的竞品集合为空`
+  }
+
+  /**
+   * 半径内竞品数（v1.13.421）。⚠️ `Number(null) === 0` 是本项目的经典坑（§6.128）：
+   * 直接 `Number(opts.competitorInRadius)` 会把「没取到数」变成「0 家」，
+   * 而纸面上「0 家」是一个**结论**（这块没有竞争）—— 缺数据绝不能伪装成结论。
+   */
+  const rawComp = opts.competitorInRadius
+  const compCount = (rawComp === null || rawComp === undefined || rawComp === '')
+    ? null
+    : (Number.isFinite(Number(rawComp)) ? Number(rawComp) : null)
+
+  /**
+   * 把「半径内竞品」推进关键信息（v1.13.421）。
+   *   原来这里是「商圈内竞品」，**商圈面**口径，跟人口那个半径圆并排摆着，
+   *   读者会把「商圈内 0 家」当成「3km 内 0 家」（业主 2026-11-26 指出）。
+   *   ⇒ 改成按当前半径圆的实测数量，位置紧随人口量级行（原「半径内到访人次」的位置）。
+   * ⚠️ 计数与商圈评分里的竞品口径同源（后端 `countCompetitorsInCircle` 复用同一
+   *   可见域 + 品牌收窄 + status 过滤），只是把「面内」换成「圆内」。
+   * ⛔ 取不到数时写「未获取」，不写 0 家 —— 「这里没有竞品」是一个判断，不能凭空得出。
+   * ⚠️ 写成函数是因为「有档 / 没档」两个分支都要出这一条，且都必须紧跟人口行。
+   */
+  function pushCompetitorFact() {
+    if (compCount === null) {
+      facts.push({
+        label: `${rPrefix}竞品`,
+        value: '未获取',
+        note: '竞品统计未返回 —— 本项不计入判断（与「0 家」不是一回事）'
+      })
+      return
+    }
+    facts.push({ label: `${rPrefix}竞品`, value: `${compCount} 家`, note: compScopeNote })
+    if (compCount > 0) {
+      risks.push(`${rPrefix}已有竞品门店 ${compCount} 家，进店客流需与既有竞品分流（${compScopeNote}）。`)
+    }
+  }
 
   // ── 多档并列对比（v1.13.413）─────────────────────────────────────────────
   // 业主 2026-11-24：「立项报告不要固定为 1/3/5km，以实际购买的联通人口半径为基础」，
@@ -659,22 +723,20 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
   // ── 人口结论（独立于商圈面：无商圈面也要照常出）──────────
   if (populationBlock.hasPop) {
     const b = populationBlock
-    // 联通 1001 三件套：到访 / 居住 / 工作（⚠️ 到访是**人次**，与另两项不同量纲）
-    // 🔴 标签必须带「半径」，因为这是 point+radius 口径，不是商圈面口径（v1.13.341）
-    const rTxt = radiusText(b.popRadius)
-    const rPrefix = rTxt ? `半径 ${rTxt} 内` : '半径内'
     const srcNote = `联通人口${b.popMonth ? ' ' + b.popMonth : ''} · 点位半径口径（圆）`
+    /**
+     * 🔴 v1.13.421：原来「居住 / 工作 / 到访」三条各占一行，业主 2026-11-26 要求合成一行
+     *   （「3 行『半径 xx m 内人口』能一行显示吗」）。
+     *   合并的是**版式**，不是口径：到访仍是人次，⛔ 不与人相加、也不给合计数字 ——
+     *   三者量纲不同，求和会得出一个没有物理意义的数。
+     */
     facts.push({
-      label: `${rPrefix}居住人口`,
-      value: `${b.population.toLocaleString('zh-CN')} 人`,
-      note: `${srcNote} · ${populationNote(b.population)}`
+      label: `${rPrefix}人口`,
+      value: `居住 ${b.population.toLocaleString('zh-CN')} 人 · 工作 ${b.work.toLocaleString('zh-CN')} 人 · 到访 ${b.visit.toLocaleString('zh-CN')} 人次`,
+      note: `${srcNote} · ${populationNote(b.population)} · 到访为统计期累计人次，不与人数相加`
     })
-    facts.push({ label: `${rPrefix}工作人口`, value: `${b.work.toLocaleString('zh-CN')} 人`, note: srcNote })
-    facts.push({
-      label: `${rPrefix}到访人次`,
-      value: `${b.visit.toLocaleString('zh-CN')} 人次`,
-      note: '统计期内累计到访次数，不等于人数，不可与居住/工作相加'
-    })
+    // 竞品紧跟人口量级行（业主 2026-11-26：原先「到访人次」下方那条要留在这个位置）
+    pushCompetitorFact()
     if (b.gender.live) {
       facts.push({
         label: '居住性别比',
@@ -689,44 +751,33 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
   } else {
     // 没买/没取到就如实说，⛔ 不拿商圈面属性顶上
     facts.push({
-      label: '半径内人口',
+      label: `${rPrefix}人口`,
       value: '未获取',
       note: '需购买联通人口配额后按「点位 + 半径」取数（同一位置同半径买过的自动复用、不重复扣费）'
     })
     risks.push('本报告尚未获取联通人口数据 —— 人口规模、性别、年龄与消费档位均缺失，人口相关结论不成立。')
+    pushCompetitorFact()
   }
 
   // ── 商圈面基线结论（只在有商圈面时才有）──────────────────
+  //   ⚠️ v1.13.421：竞品不在这里出了（已按「半径 X 内」出在人口量级行下方）。
+  //      这里只留**商圈面**真的能回答的东西：客群标签、商圈评分、自家门店蚕食。
+  //      ⛔ 别把「商圈内竞品」加回来 —— 一份报告里两个口径的竞品数会让读者无从判断。
   if (districtBlock) {
     const b = districtBlock
-    // v1.13.346：竞品口径注记 —— 「N 家竞品」这三个字必须说清是数了哪些品牌。
-    //   🔴 旧文案写死「计数含同业态全品牌」，一旦按品牌映射收窄，这句话就成了假话；
-    //      而立项报告是对外文档，口径写错比数字难看严重得多 ⇒ 必须按实际口径生成。
-    const bs = opts.brandScope || null
-    let compScopeNote
-    if (!c.brand) {
-      compScopeNote = '未指定自有品牌，竞品按全量统计（含全部竞品品牌）'
-    } else if (!bs || !bs.configured) {
-      compScopeNote = `自有品牌「${c.brand}」未配置竞品映射，竞品按全量统计（含全部竞品品牌）`
-    } else {
-      const list = (Array.isArray(bs.brands) ? bs.brands : []).filter(Boolean)
-      compScopeNote = list.length
-        ? `已按品牌映射收窄：仅统计 ${list.join(' / ')}（自有品牌「${c.brand}」）`
-        : `已按品牌映射收窄：自有品牌「${c.brand}」配置的竞品集合为空`
-    }
     facts.push({
       label: '客群 / 能级',
       value: [b.crowd, b.level].filter(Boolean).join(' · ') || '无标签',
       note: [b.resident, '商圈面基线标签'].filter(Boolean).join(' · ')
     })
-    facts.push({ label: '商圈竞争评分', value: `${b.score} / 100`, note: '商圈面评分，非该点位自身评分' })
+    /**
+     * 🔴 v1.13.421 改名：「商圈竞争评分」→「商圈评分」。
+     *   它本来就是**商圈面综合分**（人口规模 40% + 消费能力 25% + 竞争宽松 25% + 客流 10%），
+     *   旧名会让人以为是"竞争这一项的得分"；note 也一直写着「非该点位自身评分」。
+     */
+    facts.push({ label: '商圈评分', value: `${b.score} / 100`, note: '商圈面综合评分，非该点位自身评分' })
 
-    // 竞争与自家蚕食：这是"风险"里最实的两条
-    if (b.competitorCount > 0) {
-      risks.push(`该商圈内已有竞品门店 ${b.competitorCount} 家，进店客流需与既有竞品分流（${compScopeNote}）。`)
-    } else {
-      facts.push({ label: '商圈内竞品', value: '0 家', note: compScopeNote })
-    }
+    // 自家蚕食只看商圈面（自家门店本来就按商圈面算，与半径无关）
     if (b.myStoreCount > 0) {
       risks.push(`同商圈内已有自家门店 ${b.myStoreCount} 家 —— 存在自我蚕食风险，需与现有门店做商圈切分。`)
     }

@@ -96,3 +96,78 @@ export function countMyStoresInDistrict(geometry, ids) {
   districtCountCache.set(cacheKey, count)
   return count
 }
+
+/**
+ * 计算「点位 + 半径」圆内的竞品数量（v1.13.421）
+ *
+ * ── 为什么要这个函数 ──────────────────────────────────────────────────────
+ *   立项报告原来只有「商圈内竞品」（商圈面口径）。但报告的人口是**点位半径圆**口径，
+ *   读者看到「3km 内到访 21,500 人次」下面紧跟一个「商圈内竞品 0 家」，会以为
+ *   0 家是 3km 内的结论 —— 两个口径混排。业主 2026-11-26 定：改成「半径 X 内竞品」。
+ *
+ * ── 与 countCompetitorsInDistrict 的关系 ─────────────────────────────────
+ *   同一个 WHERE（可见域 + 品牌收窄 + 排除已关/未营业），只把「是否落在面内」
+ *   换成「球面距离 ≤ 半径」。⛔ 品牌收窄与可见域**必须**走同一个 competitorWhere /
+ *   scopeKeyOf：两处口径漂移就会出现「商圈评分说 5 家、报告说 3 家」。
+ *   ⚠️ 缓存与 districtCountCache 共用（同一个 60s TTL）；key 里必须带
+ *   用户集合 + 品牌集合 + 数据版本 + 坐标 + 半径 —— 少一个就会被别人/别处的结果污染。
+ *
+ * ⚠️ 传空数组（判无权）时必须返回 0，⛔ 绝不退化成「不过滤」（与同文件其它计数一致）。
+ * ⚠️ 距离用 Haversine 精算：bbox 只是 ±r 的粗筛，直接用 bbox 会把角落上的店算进来
+ *   （r=3km 时对角误差约 40%）。
+ *
+ * @param {number} centerLng 圆心经度
+ * @param {number} centerLat 圆心纬度
+ * @param {number} radiusM   半径（米），≤0 或非法 ⇒ 0
+ * @param {number[]} ids     可见域账号 id（readableUserIds 的结果）
+ * @param {string[]|null} compBrands 竞品品牌集合；null/undefined ＝ 全量口径
+ * @returns {number}
+ */
+export function countCompetitorsInCircle(centerLng, centerLat, radiusM, ids, compBrands = null) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0
+  const lng = Number(centerLng)
+  const lat = Number(centerLat)
+  const r = Number(radiusM)
+  if (!Number.isFinite(lng) || !Number.isFinite(lat) || !(r > 0)) return 0
+  if (lng === 0 && lat === 0) return 0      // (0,0) 是"没填坐标"，不是几内亚湾
+
+  const db = getDb()
+  const ver = storeDataVersion(db)
+  const cacheKey = 'cir|' + scopeKeyOf(ids) + '|' + scopeCacheKey(compBrands) + '|' + ver +
+    '|' + lng.toFixed(5) + ',' + lat.toFixed(5) + '|' + Math.round(r)
+  const cached = districtCountCache.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  // bbox 粗筛：纬度 1° ≈ 111320m；经度随 cos(lat) 收缩（夹 0.2 防止高纬除爆）
+  const dLat = r / 111320
+  const dLng = r / (111320 * Math.max(0.2, Math.abs(Math.cos((lat * Math.PI) / 180))))
+  const ph = ids.map(() => '?').join(',')
+  const { sql: brandSql, params: brandParams } = competitorWhere(compBrands)
+  const rows = db.prepare(
+    `SELECT longitude, latitude FROM competitors
+      WHERE user_id IN (${ph})${brandSql}
+        AND (status IS NULL OR status NOT IN ('店铺已关','尚未营业'))
+        AND longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?`
+  ).all(...ids, ...brandParams, lng - dLng, lng + dLng, lat - dLat, lat + dLat)
+
+  let count = 0
+  for (const c of rows) {
+    if (c.longitude && c.latitude && circleDistM(lat, lng, c.latitude, c.longitude) <= r) count++
+  }
+  districtCountCache.set(cacheKey, count)
+  return count
+}
+
+/**
+ * 两点球面距离（米）。只在本文件的圆内计数里用。
+ * ⚠️ 不要和 siteScore / site-select 里的**平面近似**（111320 + cos）互换 ——
+ *   那两处是「10m 容差够用」的场景，这里是「用户能拿尺子量的半径」，用精算。
+ */
+function circleDistM(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}

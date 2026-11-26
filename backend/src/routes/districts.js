@@ -10,7 +10,7 @@ import { parsePopulation1001 } from '../utils/unicomPopulation.js'
 import { readableUserIds } from '../utils/visibleScope.js'
 // v1.13.297：几何判定抽到 utils/geoPoint.js（门店体检落圈要同一套算法，⛔ 不许复制第二份射线法）
 import { pointInFeature, geometryBBox } from '../utils/geoPoint.js'
-import { countCompetitorsInDistrict, countMyStoresInDistrict } from '../utils/districtCount.js'
+import { countCompetitorsInDistrict, countMyStoresInDistrict, countCompetitorsInCircle } from '../utils/districtCount.js'
 import { resolveCompBrands } from '../utils/competitorScope.js'
 import { computeScore } from '../utils/districtScore.js'
 import crypto from 'crypto'
@@ -495,6 +495,47 @@ router.get('/detail', authenticate, (req, res) => {
   } catch (e) {
     console.error('[Districts] 商圈详情失败:', e)
     res.status(500).json({ message: '获取商圈详情失败' })
+  }
+})
+
+/**
+ * 「半径圆内竞品数」—— 立项报告「关键信息」用（v1.13.421）
+ * GET /api/districts/competitors-in-circle?lat=&lng=&radius=&brand=
+ *
+ * ── 为什么放在 districts 而不是 candidates ────────────────────────────────
+ *   数的是**竞品**，不是候选点位。品牌收窄 / 可见域 / status 过滤必须与
+ *   「商圈评分」里那份竞品计数完全同源（`readableUserIds` + `resolveCompBrands`
+ *   + 同一组 `status NOT IN ('店铺已关','尚未营业')`），只是把「面内」换成「圆内」。
+ *   放在 candidates 会被那条「候选点位一律只看本人、admin 不放大」的红线误伤。
+ *
+ * 🔴 只读：不写库、不扣配额、不调上游接口 ⇒ 前端切档随便调都不会产生费用。
+ * ⚠️ 每次切档调一次（档位数很少，且底层有 60s 缓存，同点同半径重复调用是命中）。
+ */
+router.get('/competitors-in-circle', authenticate, (req, res) => {
+  try {
+    const q = req.query || {}
+    const lat = Number(q.lat)
+    const lng = Number(q.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+      return res.status(400).json({ message: '缺少有效坐标，无法统计半径内竞品' })
+    }
+    // 半径：报告档位实测区间 0.35~5km，给到 50m~50km 的宽松上下限（⛔ 不写死 1/3/5km）
+    const raw = Number(q.radius)
+    const radiusM = Number.isFinite(raw) && raw > 0
+      ? Math.min(50000, Math.max(50, Math.round(raw)))
+      : 1000
+
+    const db = getDb()
+    const scopeIds = readableUserIds(db, req.user.id)
+    // 与 /api/districts 完全同一套品牌收窄：未配置 ⇒ null ⇒ 全量
+    const compBrands = resolveCompBrands(db, req.user.id, q.brand)
+    const brandScope = { configured: Array.isArray(compBrands), brands: compBrands }
+
+    const count = countCompetitorsInCircle(lng, lat, radiusM, scopeIds, compBrands)
+    res.json({ count, radiusM, brandScope })
+  } catch (e) {
+    console.error('[Districts] 半径内竞品统计失败:', e)
+    res.status(500).json({ message: '统计半径内竞品失败' })
   }
 })
 

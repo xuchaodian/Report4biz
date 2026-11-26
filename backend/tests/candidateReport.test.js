@@ -125,9 +125,10 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     expect(m.population.hasPop).toBe(false)
     expect(m.population.population).toBeNull()
     const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('半径内人口')
-    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
-    expect(labels).toContain('商圈竞争评分')
+    // v1.13.421：无已购档时也写具体半径（回退候选评估半径 1km），⛔ 不再含糊地只说「半径内」
+    expect(labels).toContain('半径 1km 内人口')
+    expect(m.facts.find((f) => f.label === '半径 1km 内人口').value).toBe('未获取')
+    expect(labels).toContain('商圈评分')
     expect(labels).toContain('租金水平')
     // 租金单价 = 45000 / 120 = 375.0
     expect(m.facts.find((f) => f.label === '租金水平').value).toBe('375.0 元/㎡/月')
@@ -174,7 +175,8 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
   it('评分口径必须写明"是商圈面评分、非点位自身评分"', () => {
     const hit = pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
     const m = buildReportModel(cand, hit)
-    const scoreFact = m.facts.find((f) => f.label === '商圈竞争评分')
+    // v1.13.421 改名：「商圈竞争评分」→「商圈评分」（它是商圈面综合分，不是"竞争"这一项的分）
+    const scoreFact = m.facts.find((f) => f.label === '商圈评分')
     expect(scoreFact.note).toContain('非该点位自身评分')
   })
 
@@ -184,7 +186,8 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
   const hitFor = () => pickDistrictForPoint([district('五角场', square)], cand.latitude, cand.longitude)
 
   it('C-新1 未指定自有品牌 ⇒ 注记必须写「未指定自有品牌」，且不再声称"全品牌"以外的口径', () => {
-    const m = buildReportModel({ ...cand, brand: '' }, hitFor())
+    // v1.13.421：口径注记挂在「半径内竞品」那条 fact 与其风险句上 ⇒ 需要一个竞品数才会出
+    const m = buildReportModel({ ...cand, brand: '' }, hitFor(), { competitorInRadius: 1 })
     const t = m.risks.join('|')
     expect(t).toContain('未指定自有品牌')
     expect(t).not.toContain('已按品牌映射收窄')
@@ -192,14 +195,15 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
 
   it('C-新2 有品牌但后端没返回/未配置映射 ⇒ 注记写「未配置竞品映射」，仍是全量', () => {
     for (const bs of [null, { configured: false, brands: null }]) {
-      const m = buildReportModel(cand, hitFor(), { brandScope: bs })
+      const m = buildReportModel(cand, hitFor(), { brandScope: bs, competitorInRadius: 1 })
       expect(m.risks.join('|')).toContain('未配置竞品映射')
     }
   })
 
   it('C-新3 已配置映射且有集合 ⇒ 注记必须列出竞品品牌，⛔ 不许再说"含同业态全品牌"', () => {
     const m = buildReportModel(cand, hitFor(), {
-      brandScope: { configured: true, brands: ['老乡鸡', '大米先生'] }
+      brandScope: { configured: true, brands: ['老乡鸡', '大米先生'] },
+      competitorInRadius: 1
     })
     const t = m.risks.join('|')
     expect(t).toContain('已按品牌映射收窄')
@@ -210,7 +214,10 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
   })
 
   it('C-新4 已配置但集合为空 ⇒ 注记说"集合为空"，⛔ 不许退化成全量口吻', () => {
-    const m = buildReportModel(cand, hitFor(), { brandScope: { configured: true, brands: [] } })
+    const m = buildReportModel(cand, hitFor(), {
+      brandScope: { configured: true, brands: [] },
+      competitorInRadius: 1
+    })
     const t = m.risks.join('|')
     expect(t).toContain('已按品牌映射收窄')
     expect(t).toContain('集合为空')
@@ -221,8 +228,12 @@ describe('C. 报告模型：只陈述有出处的事实', () => {
     const hit = pickDistrictForPoint(
       [district('五角场', square, { competitorCount: 0 })], cand.latitude, cand.longitude
     )
-    const m = buildReportModel(cand, hit, { brandScope: { configured: true, brands: ['老乡鸡'] } })
-    const f = m.facts.find((x) => x.label === '商圈内竞品')
+    // v1.13.421：竞品数改成「半径 X 内」实测（与商圈面无关）⇒ 由 competitorInRadius 传入
+    const m = buildReportModel(cand, hit, {
+      brandScope: { configured: true, brands: ['老乡鸡'] },
+      competitorInRadius: 0
+    })
+    const f = m.facts.find((x) => x.label === '半径 1km 内竞品')
     expect(f).toBeTruthy()
     expect(f.note).toContain('已按品牌映射收窄')
   })
@@ -350,7 +361,7 @@ describe('G. 人口只认联通配额，且与「我的门店」打通（点位+
     expect(m.population.work).toBeNull()
     expect(m.population.visit).toBeNull()
     expect(JSON.stringify(m)).not.toContain('196440')
-    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
+    expect(m.facts.find((f) => f.label === '半径 1km 内人口').value).toBe('未获取')
     expect(m.risks.join('|')).toMatch(/尚未获取联通人口数据/)
   })
 
@@ -365,11 +376,16 @@ describe('G. 人口只认联通配额，且与「我的门店」打通（点位+
 
     // 🔴 标签必须写清「半径」，⛔ 不许写「商圈居住人口」（那是另一套口径）
     const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('半径 1km 内居住人口')
-    expect(labels).toContain('半径 1km 内工作人口')
-    expect(labels).toContain('半径 1km 内到访人次')
+    // v1.13.421：居住/工作/到访合成**一行**（业主 2026-11-26），label 只剩一条
+    const popFact = m.facts.find((f) => f.label === '半径 1km 内人口')
+    expect(popFact, '缺「半径 1km 内人口」这一行').toBeTruthy()
+    expect(popFact.value).toContain('居住')
+    expect(popFact.value).toContain('工作')
+    expect(popFact.value).toContain('到访')
+    expect(popFact.value).toContain('人次')
     expect(labels).not.toContain('商圈居住人口')
-    expect(m.facts.find((f) => f.label === '半径 1km 内到访人次').note).toMatch(/人次|人数/)
+    // 🔴 到访是**人次**这条不变量必须写在 note 里（合并版式不能把量纲说明弄丢）
+    expect(popFact.note).toMatch(/人次|人数/)
   })
 
   it('半径文案：1km / 3km / 500m', () => {
@@ -664,9 +680,8 @@ describe('K. 人口与商圈面解耦（v1.13.342）', () => {
     expect(m.population.population).toBe(399275)
     expect(m.population.popRadius).toBe(1000)
     const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('半径 1km 内居住人口')
-    expect(labels).toContain('半径 1km 内工作人口')
-    expect(labels).toContain('半径 1km 内到访人次')
+    // v1.13.421：三条合成一行
+    expect(labels).toContain('半径 1km 内人口')
     // ⛔ 不许再写「人口不可用」—— 人口明明已经取到了，那句话是撒谎
     expect(m.risks.join('|')).not.toMatch(/人口、竞争两项无数据支撑/)
     expect(m.provenance.source).toContain('点位半径 1km')
@@ -676,7 +691,7 @@ describe('K. 人口与商圈面解耦（v1.13.342）', () => {
     const m = buildReportModel(cand, noHit)
     expect(m.district).toBeNull()
     expect(m.population.hasPop).toBe(false)
-    expect(m.facts.find((f) => f.label === '半径内人口').value).toBe('未获取')
+    expect(m.facts.find((f) => f.label === '半径 1km 内人口').value).toBe('未获取')
     expect(m.facts.find((f) => f.label === '所在商圈').note).not.toContain('人口')
   })
 

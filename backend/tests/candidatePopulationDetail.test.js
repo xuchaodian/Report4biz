@@ -229,10 +229,12 @@ describe('F. 387 删掉的两条重复 fact 不许加回来', () => {
 
   it('量级三项（居住/工作/到访）仍必须在表格里 —— 领导先看数，再看结构', () => {
     const m = buildReportModel(cand, { district: null }, { population: fullPop(), popRadius: 1000 })
-    const labels = m.facts.map((f) => f.label)
-    expect(labels).toContain('半径 1km 内居住人口')
-    expect(labels).toContain('半径 1km 内工作人口')
-    expect(labels).toContain('半径 1km 内到访人次')
+    // v1.13.421：三项合成一行（「半径 1km 内人口」），但三个数一个都不能少
+    const f = m.facts.find((x) => x.label === '半径 1km 内人口')
+    expect(f, '缺「半径 1km 内人口」这一行').toBeTruthy()
+    expect(f.value).toContain('居住')
+    expect(f.value).toContain('工作')
+    expect(f.value).toContain('到访')
   })
 })
 

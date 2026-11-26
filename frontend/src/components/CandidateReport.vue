@@ -219,6 +219,13 @@ function withTierRoles(list) {
 const tiers = ref([])            // [{ radius, cityMonth, purchaseId, purchasedAt, storeName, population, roleLabel }]
 const tiersLoading = ref(false)
 const tiersReady = ref(false)    // 拉取已结束（无论有没有），用于区分「加载中」与「空态」
+/**
+ * 「半径 X 内竞品」的实测数量（v1.13.421）。null ＝ 还没取到 / 取失败 ⇒ 纸面写「未获取」。
+ * 🔴 它跟人口档位走（`popRadius`）：3km 档就该数 3km 内的竞品，⛔ 不再用商圈面那个数。
+ */
+const competitorInRadius = ref(null)
+/** 竞品统计的请求序号：切档连点时只认最后一次（与地图的 mapSeq 同一个道理） */
+let compSeq = 0
 /** 当前选中档的半径（米）—— 报告正文与纸面主档都跟它走 */
 const popRadius = ref(null)
 // ⭐ radiusText 只用 utils/candidateReport.js 那一份（⛔ 组件里不许另写，否则标签与纸面口径会分叉）
@@ -259,6 +266,9 @@ const model = computed(() => {
     // v1.13.346：把后端返回的竞品口径一起交给报告 —— 否则报告只能说「N 家竞品」，
     //   说不出这 N 家是「全量」还是「按本品牌映射收窄后」的，口径不可追溯。
     brandScope: brandScope.value,
+    // v1.13.421：「半径 X 内竞品」的实测数量。⚠️ null ＝ 没取到（纸面写「未获取」），
+    //   ⛔ 不要在这里写 `|| 0` —— 「0 家」是一个结论，缺数据不能伪装成结论。
+    competitorInRadius: competitorInRadius.value,
     // v1.13.413：多档并列对比（纸面那张表）。⚠️ 只传已购档，⛔ 不要塞 1/3/5km 默认档 ——
     //   表里出现一个没买过的半径，等于纸上摆了一份没有证据的结论。
     tiers: tiers.value
@@ -378,6 +388,41 @@ function openAllTags() {
   router.push({ path: '/account', query: { openHistory: 'true', purchase: String(id) } })
 }
 
+/**
+ * 「半径 X 内竞品」计数（v1.13.421，只读、0 消耗）。
+ *
+ * 🔴 为什么不在纸面算：竞品分布在 `competitors` 表里，前端拿不到全量点（也不该拿），
+ *   而且「可见域 + 品牌收窄 + 排除已关/未营业」这三条口径必须与商圈评分那份同源 ——
+ *   同一套判定只能在后端实现一次（`countCompetitorsInCircle`）。
+ * 🔴 半径跟当前档走：`popRadius || candidate.radius || 1000`，与地图圈、人口块同源。
+ * ⚠️ 取不到就保持 null（纸面「未获取」），⛔ 不要 `|| 0`。
+ */
+async function loadCompetitorInRadius() {
+  const c = props.candidate
+  if (!c) return
+  const lat = Number(c.latitude)
+  const lng = Number(c.longitude)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+    competitorInRadius.value = null
+    return
+  }
+  const radius = Number(popRadius.value) || Number(c.radius) || 1000
+  const seq = ++compSeq
+  try {
+    // 裸 axios（与 /api/districts 一致）：响应体未被解包，`{ data }` 才是 body
+    const { data } = await axios.get('/api/districts/competitors-in-circle', {
+      params: { lat, lng, radius, brand: c.brand || undefined }
+    })
+    if (seq !== compSeq) return          // 期间又切了档 ⇒ 这次结果作废
+    const n = Number(data?.count)
+    competitorInRadius.value = Number.isFinite(n) ? n : null
+  } catch (e) {
+    if (seq !== compSeq) return
+    competitorInRadius.value = null
+    console.warn('[立项报告] 半径内竞品统计失败:', e?.response?.data?.message || e?.message || e)
+  }
+}
+
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */
 async function onOpened() {
   if (!props.candidate) return
@@ -409,6 +454,9 @@ async function onOpened() {
   // v1.13.413：人口改为「读已购档位」（0 消耗）。与商圈面并行，谁快谁先到都不影响渲染。
   await loadTiers()
   renderMap()
+  // v1.13.421：半径内竞品（只读）。必须等档位定下来 —— 否则会先按候选评估半径算一遍，
+  //   再被当前档的结果覆盖，肉眼能看到数字跳一下。
+  loadCompetitorInRadius()
 }
 
 /**
@@ -466,6 +514,9 @@ watch(popRadius, (v, old) => {
   if (mapTimer) clearTimeout(mapTimer)
   mapImg.value = ''
   mapTimer = setTimeout(() => { mapTimer = null; renderMap() }, 300)
+  // v1.13.421：竞品数也跟着档位变（3km 档就该数 3km 内的）；
+  //   不必去抖 —— 后端按「同点同半径」缓存 60s，连点也只是一次真查询。
+  loadCompetitorInRadius()
 })
 
 /** 生成 AI 建议（可选，默认不调 —— 调一次花一次钱） */
@@ -554,6 +605,9 @@ watch(() => props.modelValue, (v) => {
     popRadius.value = null
     // v1.13.420：关窗时把待重画的定时器掐掉 —— 否则关掉后 300ms 还会去抓一轮瓦片
     if (mapTimer) { clearTimeout(mapTimer); mapTimer = null }
+    // v1.13.421：竞品数一并作废（compSeq 自增让在途请求的结果丢弃），下次打开重取
+    compSeq++
+    competitorInRadius.value = null
   }
 })
 </script>
