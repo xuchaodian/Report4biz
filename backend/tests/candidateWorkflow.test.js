@@ -217,8 +217,8 @@ describe('G. 地图选点入口（v1.13.335）', () => {
   it('右键菜单里有「加入候选点位」，并接到 addCandidateFromMap', () => {
     expect(MAP_RAW).toContain("contextMenuAction('candidate')")
     expect(MAP_RAW).toContain('加入候选点位')
-    // v1.13.343：候选点位收紧为 admin-only，case 里插入了 isAdmin 判据；
-    //   「接线仍在」由本行宽松断言守住，门禁精确断言见 candidateAdminOnly.test.js B④
+    // v1.13.424：候选点位恢复为所有登录用户可见，case 里的 isAdmin 判据已摘掉。
+    //   「接线仍在」由本行宽松断言守住，门禁精确断言见 candidateOpenToAll.test.js B⑤
     expect(MAP).toMatch(/case 'candidate':[^\n]*addCandidateFromMap\(\)/)
   })
 

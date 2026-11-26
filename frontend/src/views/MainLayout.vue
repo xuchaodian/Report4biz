@@ -87,11 +87,13 @@
                 <el-icon><Shop /></el-icon>{{ $t('nav.districtInsight') }}
               </el-dropdown-item>
               <!-- v1.13.333：候选点位（P1-6）。全免费、只本人可见，⛔ 不挂 VIP 角标
-                   v1.13.343：业主「这个功能还没想好」⇒ 先收紧为**仅管理员可见**。
-                   ⛔ 这是 UI 门禁，不是删功能：路由 / 后端 API / 表 / 数据 / 三语词条全保留。
-                   ⚠️ 后端 /api/candidates 仍可被已登录用户直接调用（只管「可见」，不管「可用」）。
-                   恢复：摘掉下面的 v-if ＋ router 的 meta.requiresAdmin ＋ MapView 的右键项与 case 拦截。 -->
-              <el-dropdown-item v-if="userStore.isAdmin" :class="{ 'dd-active': $route.path === '/candidates' }" @click="$router.push('/candidates')">
+                   v1.13.343：业主「这个功能还没想好」⇒ 一度收紧为仅管理员可见。
+                   v1.13.424（业主 2026-11-26「开放给所有用户」）：恢复为**所有登录用户**可见。
+                   🔴 门禁一共四处，本批**全部**摘掉：本菜单项 / router 的 meta / MapView 右键项 /
+                      MapView `contextMenuAction('candidate')` 的二次拦截。
+                      ⛔ 只摘一处等于没摘：只摘菜单 ⇒ 地图右键和深链仍进不去；只摘路由 ⇒ 菜单看不见。
+                   ⚠️ 路由侧同时把 requiresAdmin 换成 requiresAuth —— 见 router/index.js 那段注释。 -->
+              <el-dropdown-item :class="{ 'dd-active': $route.path === '/candidates' }" @click="$router.push('/candidates')">
                 <el-icon><Flag /></el-icon>{{ $t('nav.candidates') }}
               </el-dropdown-item>
               <!-- v1.13.369：智能选址。仅管理员（与 candidates 同款 UI 门禁）。

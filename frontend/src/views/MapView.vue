@@ -1080,7 +1080,7 @@
         <span>添加门店</span>
       </div>
       <!-- v1.13.343：候选点位收紧为仅管理员可见（与 MainLayout 下拉、路由 meta 同源判据） -->
-      <div v-if="userStore.isAdmin" class="map-context-menu-item" @click="contextMenuAction('candidate')">
+      <div class="map-context-menu-item" @click="contextMenuAction('candidate')">
         <el-icon><Flag /></el-icon>
         <span>加入候选点位</span>
       </div>
@@ -3173,7 +3173,7 @@ const contextMenuAction = (action) => {
   hideContextMenu()
   switch (action) {
     case 'addstore': setTool('marker'); break  // 与门店工具面板「添加门店」一致：进入选点模式
-    case 'candidate': if (userStore.isAdmin) addCandidateFromMap(); break  // v1.13.343：admin-only 二次拦截（v1.13.335 右键点预填坐标）
+    case 'candidate': addCandidateFromMap(); break  // v1.13.424：恢复所有登录用户（v1.13.335 右键点预填坐标）
     case 'locate': storeSearchVisible.value = !storeSearchVisible.value; break  // 与门店工具面板「定位门店」一致：切换定位门店搜索面板
     case 'clear': clearDrawings(); break
     case 'circle': setTool('circle'); break

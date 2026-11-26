@@ -142,9 +142,14 @@ const routes = [
         name: 'Candidates',
         // v1.13.333（P1-6 轻量工作流）：候选点位独立于门店台账，⛔ 不是 markers 的视图
         // v1.13.343：业主「还没想好」⇒ 收紧为仅管理员可进，全局守卫 next('/') 弹回首页。
-        //   ⛔ 只挡 UI 深链；后端 /api/candidates 未加 requireAdmin（见 candidateAdminOnly.test.js 文件头）。
+        // v1.13.424（业主 2026-11-26「开放给所有用户」）：恢复可见。
+        // 🔴 meta 必须是 `requiresAuth`，⛔ 不能写成空的 `{}`、⛔ 也不能留着 requiresAdmin：
+        //    删 requiresAdmin 却不加 requiresAuth ⇒ **未登录用户直接输 URL 就能打开空壳页**
+        //    （页面会渲染、随后每个接口 401），这是"开放给登录用户"最容易漏的一刀。
+        // ⚠️ 后端 `/api/candidates` 只挂 `authenticate`（与前端口径一致）——
+        //    别因为这里放开了就以为接口没保护，也别反过来偷偷加 requireAdmin 造成前后端不一致。
         component: () => import('@/views/CandidateView.vue'),
-        meta: { requiresAdmin: true, titleKey: 'nav.candidates' }
+        meta: { requiresAuth: true, titleKey: 'nav.candidates' }
       },
       {
         // v1.13.369：智能选址（点位自动推荐 + 评分排序）。
