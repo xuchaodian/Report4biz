@@ -27,3 +27,25 @@ export const IN_BUSINESS_SQL = `${OPEN_ONLY_SQL} ${ABNORMAL_STATUS_SQL}`
 
 /** 与 IN_BUSINESS_SQL 配套的参数 */
 export const IN_BUSINESS_PARAMS = [...ABNORMAL_STORE_STATUS]
+
+// ============================================================================
+// 「关停类」口径（v1.13.425）—— 给「推荐候选门店」用
+// ----------------------------------------------------------------------------
+// 与上面的「在营」不是一回事：在营还要 `store_type='已开业'`，而**待开业/筹备中的店
+// 依然是合法的导入对象**（先做开店前的商圈人口测算很常见），未知只代表没填。
+// ⇒ 推荐候选只排除「已经不经营」的那几个状态。
+// ⚠️ 词表仍以本文件为唯一真源，⛔ 不要在路由里另抄一份 ['闭店','停业',…]。
+// ============================================================================
+
+/** 已不经营的门店状态（闭店/停业类） */
+export const CLOSED_STORE_STATUS = ['闭店', '停业', '歇业', '关闭', '停业整顿']
+
+/**
+ * `AND (store_status IS NULL OR store_status NOT IN (?,…))`
+ * ⚠️ 必须带 `IS NULL` 分支：`NOT IN` 对 NULL 求值为 NULL ⇒ 会把这行整个筛掉。
+ *    参数顺序：...CLOSED_STORE_STATUS
+ */
+export const NOT_CLOSED_STATUS_SQL = `AND (store_status IS NULL OR store_status NOT IN (${CLOSED_STORE_STATUS.map(() => '?').join(',')}))`
+
+/** 与 NOT_CLOSED_STATUS_SQL 配套的参数 */
+export const NOT_CLOSED_STATUS_PARAMS = [...CLOSED_STORE_STATUS]

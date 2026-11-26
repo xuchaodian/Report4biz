@@ -15,6 +15,8 @@ import { dirname, join } from 'path'
 import * as XLSX from 'xlsx'
 import { getDb } from '../models/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { rankCandidates, escapeLike } from '../utils/storeNameMatcher.js'
+import { NOT_CLOSED_STATUS_SQL, NOT_CLOSED_STATUS_PARAMS } from '../utils/storeStatus.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -253,16 +255,113 @@ function readOriginalName(diskName) {
   return null
 }
 
-/** 解析单个文件并做门店匹配/去重 → 供 preview 与 commit 共用 */
-function analyzeFile(db, userId, filePath, originalName) {
+// ---- 候选池 / 候选缩略（v1.13.425）----
+
+/**
+ * 一次查好「可作为候选的门店池」。
+ *
+ * 🔴 为什么做成「一次查询、多个文件共用」：一次预检最多 200 个文件，
+ *    每个文件都扫一遍门店表就是 200 次全表扫描。池子在同一请求内不会变。
+ *
+ * 口径（三条都必须与现有读路径一致）：
+ *  ① 可见域：`user_id = 本人 OR user_id IS NULL`，与 `matchStore` 完全同口径 ——
+ *     ⛔ 不许换成 visibleScope（集团可见域），那是改语义，要单独拍板；
+ *  ② 软删：`merged_into IS NULL`（列表类读取必须排除已合并行）；
+ *  ③ 关停：排除已不经营的门店，但**保留**待开业/筹备中（开店前做人口测算很常见）。
+ *
+ * @returns {Array<object>} 原始行（含 id/name/city/district/address/lng/lat/store_type）
+ */
+export function loadStorePool(db, userId) {
+  return db.prepare(`
+    SELECT id, name, city, district, address, latitude, longitude, store_type, user_id
+      FROM markers
+     WHERE (user_id = ? OR user_id IS NULL)
+       AND merged_into IS NULL
+       ${NOT_CLOSED_STATUS_SQL}
+  `).all(userId, ...NOT_CLOSED_STATUS_PARAMS)
+}
+
+/**
+ * 候选对外只给「用户判断需要的字段」。
+ * ⚠️ 不要把整行原样吐给前端：坐标、user_id 对判断没帮助，少发一点少一点歧义。
+ */
+function pickCandidate(c) {
+  return {
+    id: c.id,
+    name: c.name,
+    city: c.city || '',
+    district: c.district || '',
+    address: c.address || '',
+    score: c.score,
+    suggest: !!c.suggest,
+    // 该门店在「同半径+同月份+同坐标」下是否已有购买记录（确认后会走「跳过重复」）
+    duplicate: !!c.duplicate
+  }
+}
+
+/**
+ * 解析单个文件并做门店匹配/去重 → 供 preview 与 commit 共用
+ *
+ * ⚠️ 导出是为了让测试用**真库 + 真 xlsx** 直接跑决策分支（候选/确认/越权/判重），
+ *    不是为了给别处调用；路由以外不要再引它。
+ *
+ * @param {number|null} confirmedStoreId 用户在前端显式选定的门店 id（近似名场景）。
+ *        🔴 传来的 id **不可信**：必须重新查归属，否则请求体里夹一个别人的门店 id
+ *        就能把人口数据挂到别人店上。
+ * @param {Array<object>|null} pool 候选池（同一请求内复用；为空时按需懒加载）
+ */
+export function analyzeFile(db, userId, filePath, originalName, confirmedStoreId = null, pool = null) {
   const parsed = parseReportFile(filePath, originalName)
   if (!parsed.ok) return { ok: false, reason: parsed.error }
-  const marker = matchStore(db, parsed.storeName, userId)
-  if (!marker) {
-    return { ...parsed, ok: false, reason: '系统无此门店（或门店不属于当前账号）', marker: null }
+
+  let marker = null
+  let confirmedByUser = false
+
+  const wantId = Number(confirmedStoreId)
+  if (confirmedStoreId !== null && confirmedStoreId !== undefined && confirmedStoreId !== '' && Number.isFinite(wantId) && wantId > 0) {
+    marker = db.prepare(`
+      SELECT id, name, city, district, address, latitude, longitude, store_type, user_id
+        FROM markers
+       WHERE id = ? AND (user_id = ? OR user_id IS NULL) AND merged_into IS NULL
+    `).get(wantId, userId)
+    if (!marker) {
+      return { ...parsed, ok: false, reason: '确认的门店不存在或不属于当前账号', marker: null }
+    }
+    confirmedByUser = true
+  } else {
+    marker = matchStore(db, parsed.storeName, userId) // 原精确匹配，一字不改
+    if (!marker) {
+      const rows = Array.isArray(pool) ? pool : loadStorePool(db, userId)
+      const { candidates, ambiguous } = rankCandidates(parsed.storeName, rows)
+      if (candidates.length) {
+        // 🔴 每个候选各自先算一次「同门店+同半径+同月份+同坐标」是否已有记录。
+        //    不这么做就会出现「预检说可导入、提交却跳重复」—— 因为预检时还没有用户确认的
+        //    门店名，判重只能用文件名，而提交时用的是确认后的门店名。两侧口径必须提前对齐。
+        const withDup = candidates.map((c) => ({
+          ...c,
+          duplicate: !!findDuplicate(db, userId, c.name, parsed.radiusM, parsed.cityMonth, c.longitude, c.latitude)
+        }))
+        // ⚠️ 这里刻意**不给 reason**：「近似名待确认」不是失败，前端要按 needConfirm 分支渲染。
+        //    但 commit 里必须补一句明确原因（见下方 needConfirm 分支），否则 failed[].reason 是空的。
+        return {
+          ...parsed,
+          ok: false,
+          needConfirm: true,
+          ambiguous: !!ambiguous,
+          candidates: withDup.map(pickCandidate),
+          marker: null
+        }
+      }
+      return { ...parsed, ok: false, reason: '系统无此门店（或门店不属于当前账号）', marker: null }
+    }
   }
-  const dup = findDuplicate(db, userId, parsed.storeName, parsed.radiusM, parsed.cityMonth, marker.longitude, marker.latitude)
-  return { ...parsed, ok: true, marker, duplicate: !!dup }
+
+  // 🔴 去重与落库都用**确认后的门店名**（marker.name），不用解析名：
+  //    否则「星空广场」和「星空广场店」两个文件名会被当成两家店，重复导入；
+  //    落库名也得是门店名，`/purchase/by-store/:storeName` 才查得到。
+  //    精确同名路径下两者本来就相等（matchStore 是 name 等值），行为不变。
+  const dup = findDuplicate(db, userId, marker.name, parsed.radiusM, parsed.cityMonth, marker.longitude, marker.latitude)
+  return { ...parsed, ok: true, marker, duplicate: !!dup, confirmedByUser }
 }
 
 // ============ 接口一：预检（dry-run，不写库） ============
@@ -282,11 +381,14 @@ router.post('/preview', authenticate, (req, res) => {
     const files = []
     const matchFailNames = []
     const duplicates = []
+    const needConfirmList = []
+    // 候选池一次查好，整批文件共用（200 个文件也只扫一遍门店表）
+    const pool = loadStorePool(db, req.user.id)
     for (const f of req.files) {
       const original = decodeOriginalName(f.originalname) || path.basename(f.path)
       // 旁路 meta：存 utf8 原名供 commit 解析还原
       try { fs.writeFileSync(`${f.path}.meta.json`, JSON.stringify({ original }), 'utf-8') } catch { /* 忽略 */ }
-      const analysis = analyzeFile(db, req.user.id, f.path, original)
+      const analysis = analyzeFile(db, req.user.id, f.path, original, null, pool)
       files.push({
         fileKey: f.filename,
         fileName: original,
@@ -299,19 +401,32 @@ router.post('/preview', authenticate, (req, res) => {
         cityMonth: analysis.cityMonth || null,
         serviceCodes: analysis.serviceCodes || [],
         rowCount: analysis.rowCount || 0,
-        duplicate: !!analysis.duplicate
+        duplicate: !!analysis.duplicate,
+        // v1.13.425：近似门店名 —— 系统只给候选，必须用户显式选店后才可导入
+        needConfirm: !!analysis.needConfirm,
+        ambiguous: !!analysis.ambiguous,
+        candidates: analysis.candidates || []
       })
       if (!analysis.ok && analysis.reason && analysis.reason.includes('系统无此门店')) {
         matchFailNames.push({ fileName: original, storeName: analysis.storeName || '' })
       }
+      if (analysis.needConfirm) {
+        needConfirmList.push({
+          fileName: original,
+          storeName: analysis.storeName || '',
+          candidateCount: (analysis.candidates || []).length
+        })
+      }
       if (analysis.duplicate) {
-        duplicates.push({ fileName: original, storeName: analysis.storeName || '', radiusM: analysis.radiusM, cityMonth: analysis.cityMonth })
+        duplicates.push({ fileName: original, storeName: analysis.marker?.name || analysis.storeName || '', radiusM: analysis.radiusM, cityMonth: analysis.cityMonth })
       }
     }
     const summary = {
       total: files.length,
       ok: files.filter((f) => f.ok && !f.duplicate).length,
-      parseFail: files.filter((f) => !f.ok).length,
+      // ⚠️ 待确认不算「解析失败」：它有完整解析结果，只是缺一步人工确认
+      parseFail: files.filter((f) => !f.ok && !f.needConfirm).length,
+      needConfirm: needConfirmList,
       matchFail: matchFailNames,
       duplicate: duplicates
     }
@@ -326,12 +441,19 @@ router.post('/commit', authenticate, (req, res) => {
   if (fileKeys.length === 0) return res.status(400).json({ message: '请提供要导入的文件' })
   if (fileKeys.length > MAX_FILES) return res.status(400).json({ message: `单次最多 ${MAX_FILES} 个文件` })
 
+  // v1.13.425：近似门店名的用户确认结果 { [fileKey(落盘名)]: storeId }
+  // ⚠️ 这里是**不可信输入**：id 存在性/归属一律在 analyzeFile 里重新查（防篡改请求体越权）。
+  const rawConfirm = req.body?.confirmMap
+  const confirmMap = (rawConfirm && typeof rawConfirm === 'object' && !Array.isArray(rawConfirm)) ? rawConfirm : {}
+
   const db = getDb()
   const imported = []
   const skipped = []
   const failed = []
   const storeNameOfFile = {}
   const missingTmp = []
+  // 候选池一次查好，整批共用
+  const pool = loadStorePool(db, req.user.id)
 
   db.beginTx()
   try {
@@ -350,18 +472,36 @@ router.post('/commit', authenticate, (req, res) => {
         removeTmpFiles([diskName])
         continue
       }
-      const analysis = analyzeFile(db, req.user.id, full, original)
+      const confirmedId = Object.prototype.hasOwnProperty.call(confirmMap, diskName) ? confirmMap[diskName] : null
+      const analysis = analyzeFile(db, req.user.id, full, original, confirmedId, pool)
       if (!analysis.ok) {
-        failed.push({ fileName: original, reason: analysis.reason })
-        removeTmpFiles([diskName])
+        // ⚠️ needConfirm 行若走到这里（没选门店却提交、或选的门店已失效），
+        //    必须给一句能看懂的原因 —— 否则前端「原因」列是空白，用户完全不知道该怎么办。
+        failed.push({
+          fileName: original,
+          reason: analysis.needConfirm
+            ? '该文件名与门店不同名，请先在预检里选择对应门店后再导入'
+            : analysis.reason
+        })
+        // 🔴 needConfirm 是「缺一步人工确认」，不是废文件：**留着**让用户选完门店再提交，
+        //    删了就变成「点了提交才发现，还得重新选文件夹上传一遍」。
+        //    其它失败（解析错误/越权/元数据缺失）重试也没用，照旧清理。
+        if (!analysis.needConfirm) removeTmpFiles([diskName])
         continue
       }
       if (analysis.duplicate) {
-        skipped.push({ fileName: original, storeName: analysis.storeName, radiusM: analysis.radiusM, cityMonth: analysis.cityMonth, reason: '重复（同门店+半径+月份+坐标已存在）' })
+        skipped.push({
+          fileName: original,
+          storeName: analysis.marker.name,
+          radiusM: analysis.radiusM,
+          cityMonth: analysis.cityMonth,
+          reason: '重复（同门店+半径+月份+坐标已存在）'
+        })
         removeTmpFiles([diskName])
         continue
       }
       // 落库：quota_used=0 / status='active' / radius 存数组 JSON（与 smartsteps 一致）
+      // store_name 用**确认后的门店名**（精确同名时两者相等，行为不变）
       const insertResult = db.prepare(`
         INSERT INTO purchases (
           user_id, store_name, store_type, center_lng, center_lat, radius,
@@ -369,24 +509,39 @@ router.post('/commit', authenticate, (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'active', ?)
       `).run(
         req.user.id,
-        analysis.storeName,
+        analysis.marker.name,
         analysis.marker.store_type || '',
         analysis.marker.longitude,
         analysis.marker.latitude,
         JSON.stringify([analysis.radiusM]),
         analysis.cityMonth,
-        JSON.stringify({ querySuccess: true, apiResult: analysis.apiResult, refunded: false })
+        // importMeta：本批**不改库**，但「这条履历是从哪个文件名、哪个门店确认来的」
+        // 必须留痕，否则事后发现挂错店完全查不回去。历史行没有这个键，读侧按缺失处理。
+        JSON.stringify({
+          querySuccess: true,
+          apiResult: analysis.apiResult,
+          refunded: false,
+          importMeta: {
+            fileName: original,
+            parsedStoreName: analysis.storeName,      // 文件名/E21 解析出来的原名
+            storeName: analysis.marker.name,          // 真正落库的门店名
+            storeId: analysis.marker.id,
+            confirmedByUser: !!analysis.confirmedByUser
+          }
+        })
       )
-      storeNameOfFile[diskName] = analysis.storeName
+      storeNameOfFile[diskName] = analysis.marker.name
       imported.push({
         fileKey: diskName,
         fileName: original,
         purchaseId: insertResult.lastInsertRowid,
-        storeName: analysis.storeName,
+        storeName: analysis.marker.name,
+        parsedStoreName: analysis.storeName,
         radiusM: analysis.radiusM,
         cityMonth: analysis.cityMonth,
         rowCount: analysis.rowCount,
-        nameMismatchWarning: !!analysis.nameMismatchWarning
+        nameMismatchWarning: !!analysis.nameMismatchWarning,
+        confirmedByUser: !!analysis.confirmedByUser
       })
       removeTmpFiles([diskName])
     }
@@ -408,6 +563,31 @@ router.post('/commit', authenticate, (req, res) => {
       skippedFiles: skipped.map((f) => f.fileName)
     }
   })
+})
+
+// ============ 接口三：门店搜索（近似名兜底，v1.13.425） ============
+// 用途：相似度算不出来的场景（改名、换址、差三个字以上）让用户自己在下拉里搜。
+// ⛔ 不做自动匹配，只把「本人可见门店」的名字/地址列出来供人判断。
+// 只读、不写库、不扣配额。口径与候选池完全一致（同可见域、同软删、同关停过滤）。
+const STORE_SEARCH_LIMIT = 50
+router.get('/stores', authenticate, (req, res) => {
+  const q = String(req.query.q == null ? '' : req.query.q).trim()
+  if (!q) return res.status(400).json({ message: '请输入门店名关键字' })
+  if (q.length > 30) return res.status(400).json({ message: '关键字过长（最多 30 字）' })
+  const db = getDb()
+  // 🔴 LIKE 必须转义：门店名本身可能含 `_`（文件名规则就是 门店名_半径km_月份）
+  const like = `%${escapeLike(q)}%`
+  const rows = db.prepare(`
+    SELECT id, name, city, district, address
+      FROM markers
+     WHERE (user_id = ? OR user_id IS NULL)
+       AND merged_into IS NULL
+       ${NOT_CLOSED_STATUS_SQL}
+       AND name LIKE ? ESCAPE '\\'
+     ORDER BY name
+     LIMIT ${STORE_SEARCH_LIMIT}
+  `).all(req.user.id, ...NOT_CLOSED_STATUS_PARAMS, like)
+  res.json({ stores: rows, total: rows.length, limit: STORE_SEARCH_LIMIT })
 })
 
 export default router
