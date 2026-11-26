@@ -12,10 +12,11 @@
  *
  * 🔴 守卫自身规范：断言前**先剥注释** —— 本文件头部就写着这些码，
  *   不剥的话文件自己把自己判红（同 smartstepsBrandHidden.test.js 的做法）。
- * ⚠️ 只扫「纸面可见」的两处文件：ReportPaper.vue（模板 + 版式派生的 label）
- *   与 candidateReport.js 的 provenance 段（口径页脚）。
+ * ⚠️ 只扫「用户可见」的三处文件：ReportPaper.vue（模板 + 版式派生的 label）、
+ *    candidateReport.js 的 provenance 段（报告口径页脚）、
+ *    dataProvenance.js（商圈洞察「数据口径」卡，v1.13.419 起一并纳入）。
  *    后端日志、注释、`utils/smartsteps1001.js` 这类解析器不在范围内 ——
- *    它们不渲染到纸上，扫它们只会逼人写错注释。
+ *    它们不渲染给用户，扫它们只会逼人写错注释。
  */
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
@@ -96,5 +97,28 @@ describe('C. 居民画像的「维度」列逐行都在，只是不带码', () =
   it('C2 没有一个 label 带「（10xx）」后缀', () => {
     const bad = (src.match(/label: '[^']*（10\d{2}）'/g) || [])
     expect(bad).toEqual([])
+  })
+})
+
+describe('D. 商圈洞察「数据口径」卡同样不许出现服务码（v1.13.419）', () => {
+  // 业主 2026-11-26 追加：「商圈洞察页『数据口径』卡里那处也一起去掉」
+  // 该文件是纯文案出口（无 @/router、无 stores），可以整篇扫
+  const src = strip(read('frontend/src/utils/dataProvenance.js'))
+
+  it('D0 扫描对象不是空文件', () => {
+    // 实际剥注释后约 1.9k 字符；阈值留足余量，只用来挡「路径写错 ⇒ 空文件 ⇒ 假绿」
+    expect(src.length).toBeGreaterThan(1200)
+  })
+
+  it('D1 剥离注释后零命中', () => {
+    const hits = src
+      .split('\n')
+      .map((line, i) => ({ line: line.trim(), no: i + 1 }))
+      .filter((x) => CODE.test(x.line))
+    expect(hits).toEqual([])
+  })
+
+  it('D2 反向：仍写明来源主体「联通人口接口（当期人口）」', () => {
+    expect(src).toContain('联通人口接口（当期人口）')
   })
 })

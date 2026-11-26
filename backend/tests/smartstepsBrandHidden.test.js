@@ -129,7 +129,8 @@ describe('C. 用户可见文案必须是「联通人口」', () => {
   })
 
   it('C5 商圈洞察数据口径卡', () => {
-    expect(read('frontend/src/utils/dataProvenance.js')).toContain('联通人口 1001 接口（当期人口）')
+    // v1.13.419：服务码一并摘掉（业主 2026-11-26「也一起去掉」）
+    expect(read('frontend/src/utils/dataProvenance.js')).toContain('联通人口接口（当期人口）')
   })
 
   it('C6 地图左侧按钮悬浮提示', () => {
@@ -160,7 +161,7 @@ describe('E. 来源主体不能一起删掉', () => {
       ['frontend/src/components/CandidateReport.vue', '联通人口'],
       ['frontend/src/components/CandidateBriefUpgrade.vue', '联通人口'],
       ['frontend/src/utils/candidateReport.js', '联通人口'],
-      ['frontend/src/utils/dataProvenance.js', '联通人口 1001'],
+      ['frontend/src/utils/dataProvenance.js', '联通人口'],
       ['frontend/src/components/map/BusinessCirclePanel.vue', '联通人口']
     ]
     for (const [f, needle] of cases) {
