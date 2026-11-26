@@ -101,10 +101,20 @@
         </span>
       </div>
 
-      <!-- AI 业态未知时先问一句（⛔ 不让模型猜业态，与 AI 选址建议同口径） -->
-      <div v-if="wantAi && needCategory" class="rp-cat">
-        <span>该品牌未收录业态，请先填写：</span>
-        <el-input v-model="categoryInput" size="small" style="width: 240px" maxlength="30" placeholder="例：日式牛肉盖饭快餐" />
+      <!-- AI 业态未知时先问一句（⛔ 不让模型猜业态，与 AI 选址建议同口径）
+           🔴 v1.13.422：① 输入框在有记忆值时也保留（让用户看得见本次用的业态、还能改）；
+              ② 点「生成 AI 建议」而业态为空时聚焦并高亮这一行 —— toast 一闪就没了，
+                 业主 2026-11-26 就没看见这个框，以为要去找系统配置。 -->
+      <div v-if="wantAi && needCategory" class="rp-cat" :class="{ 'rp-cat--flash': catFlash }">
+        <span>{{ categoryInput.trim() ? '本品牌业态（AI 按此分析，可直接修改）：' : '该品牌未收录业态，请先填写：' }}</span>
+        <el-input
+          ref="catInputRef"
+          v-model="categoryInput"
+          size="small"
+          style="width: 240px"
+          maxlength="30"
+          placeholder="例：日式牛肉盖饭快餐"
+        />
       </div>
 
       <div v-loading="loading" class="rp-scroll">
@@ -150,6 +160,7 @@ import { useUserStore } from '@/stores/user'
 import { pickDistrictForPoint, buildReportModel, fmtM, radiusText } from '@/utils/candidateReport.js'
 import { assignTierRoles } from '@/utils/tierRoles.js'
 import { resolveBrandCategory } from '@/utils/storeBrand.js'
+import { getSavedCategory, saveCategory } from '@/utils/brandCategoryMemory.js'
 import { captureMapOnlyCanvas } from '@/utils/mapCapture'
 import ReportPaper from '@/components/ReportPaper.vue'
 import ReportShareDialog from '@/components/ReportShareDialog.vue'
@@ -246,6 +257,11 @@ const wantAi = ref(false)      // 🔴 默认 false：不勾就不花钱（业�
 const aiText = ref('')
 const aiLoading = ref(false)
 const categoryInput = ref('')
+/** 补业态输入框的引用（v1.13.422）：点「生成 AI 建议」而业态为空时聚焦它 */
+const catInputRef = ref(null)
+/** 输入框高亮闪烁（v1.13.422）：toast 容易错过，闪一下把视线带到那一行 */
+const catFlash = ref(false)
+let catFlashTimer = null
 
 const isVip = computed(() => !!userStore.isVipActive)
 const username = computed(() => userStore.user?.username || '—')
@@ -280,7 +296,14 @@ const resolvedCat = computed(() => {
   const c = props.candidate || {}
   return resolveBrandCategory(c.brand || c.name || '', c.city || '')
 })
-const needCategory = computed(() => !resolvedCat.value.mapped && !categoryInput.value.trim())
+/**
+ * 是否显示「补业态」输入框（v1.13.422）。
+ * 🔴 判据只看「白名单有没有命中」，⛔ 不看 `categoryInput` 是否已填 ——
+ *    旧写法 `!mapped && !categoryInput.trim()` 会在用户填完后把输入框藏起来，
+ *    于是「这次 AI 到底按什么业态分析」在界面上无从确认，也改不了。
+ *    现在未收录品牌一直显示该行，带了记忆值就变成「本品牌业态（可直接修改）」。
+ */
+const needCategory = computed(() => !resolvedCat.value.mapped)
 
 /**
  * AI 勾选拦截：非 VIP 时**不允许勾上**，并把「仅限 VIP + 去哪申请」说清楚。
@@ -426,6 +449,11 @@ async function loadCompetitorInRadius() {
 /** 打开时按城市拉商圈面（一次），并把地图截图渲出来 */
 async function onOpened() {
   if (!props.candidate) return
+  // v1.13.422：白名单没命中的品牌，把用户上次填过的业态带出来（按品牌记在本机）。
+  //   ⚠️ 只在未收录时预填；白名单命中时 `resolvedCat.category` 才是权威，⛔ 不要用记忆值覆盖它。
+  if (!resolvedCat.value.mapped) {
+    categoryInput.value = getSavedCategory(resolvedCat.value.brand)
+  }
   loading.value = true
   mapImg.value = ''
   try {
@@ -519,6 +547,26 @@ watch(popRadius, (v, old) => {
   loadCompetitorInRadius()
 })
 
+/**
+ * 把视线拉到「补业态」输入框：聚焦 + 闪两下（v1.13.422）。
+ * ⚠️ 不自动滚动 —— 这一行就在工具条正下方，打开报告时本来就在视口内，
+ *    滚动反而会把纸面标题挤出去。
+ * ⚠️ 组件没渲染时（`wantAi` 没勾）ref 为 null，focus 静默跳过，⛔ 不要因此抛错中断 genAi。
+ */
+function flashCategoryInput() {
+  try {
+    catInputRef.value?.focus?.()
+  } catch (e) {
+    /* 输入框尚未渲染 ⇒ 忽略 */
+  }
+  catFlash.value = true
+  if (catFlashTimer) clearTimeout(catFlashTimer)
+  catFlashTimer = setTimeout(() => {
+    catFlash.value = false
+    catFlashTimer = null
+  }, 2400)
+}
+
 /** 生成 AI 建议（可选，默认不调 —— 调一次花一次钱） */
 async function genAi() {
   if (!isVip.value) return ElMessage.warning('AI 选址建议仅限 VIP 用户，请在「我的账户」申请开通')
@@ -529,7 +577,14 @@ async function genAi() {
     ElMessage.warning('当前档位缺少人口结构数据 —— AI 建议将缺少人口依据')
   }
   const cat = resolvedCat.value.mapped ? resolvedCat.value.category : categoryInput.value.trim()
-  if (!cat) return ElMessage.warning('该品牌未收录业态，请先填写业态')
+  if (!cat) {
+    // v1.13.422：不再只丢一句 toast —— 同时聚焦输入框并让它闪一下。
+    //   文案必须指明「就在这个弹窗的下方输入框」，否则用户会以为是系统缺配置、去找管理员。
+    flashCategoryInput()
+    return ElMessage.warning(`「${resolvedCat.value.brand || '该品牌'}」未收录业态，请在下方输入框填写后再点生成`)
+  }
+  // 用户自己填的业态按品牌记在本机（下次自动带出）。白名单命中的不记 —— 表里那份才是权威。
+  if (!resolvedCat.value.mapped) saveCategory(resolvedCat.value.brand, cat)
 
   aiLoading.value = true
   aiText.value = ''
@@ -599,6 +654,11 @@ watch(() => props.modelValue, (v) => {
     aiText.value = ''
     wantAi.value = false
     categoryInput.value = ''
+    // v1.13.422：关窗时把高亮定时器掐掉（否则关掉 2.4s 后还会改一次已卸载视图的 ref）；
+    //   ⚠️ `categoryInput` 仍然要清空 —— 记忆值在 `onOpened` 里按品牌重新带出，
+    //       ⛔ 不要为了"记住业态"就把这一行删掉，那会把上一个点位的业态串到下一个点位。
+    catFlash.value = false
+    if (catFlashTimer) { clearTimeout(catFlashTimer); catFlashTimer = null }
     // 已购档也清掉：下次打开重新读（用户可能刚在初步分析里买过新档）
     tiers.value = []
     tiersReady.value = false
@@ -638,6 +698,15 @@ watch(() => props.modelValue, (v) => {
 .rp-popbar-r { display: flex; align-items: center; gap: 8px; }
 
 .rp-cat { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-regular); margin-bottom: 10px; }
+/* v1.13.422：点「生成 AI 建议」而业态为空时，把这一行闪两下（toast 一闪就没了，用户看不到框在哪）。
+   ⚠️ 用 box-shadow 而不是 border —— 改 border 会挤动 240px 输入框的宽度，行内元素会跳一下。 */
+.rp-cat--flash :deep(.el-input__wrapper) {
+  animation: rp-cat-pulse 0.8s ease-in-out 3;
+}
+@keyframes rp-cat-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--el-color-danger) inset; }
+  50% { box-shadow: 0 0 0 3px rgba(245, 108, 108, 0.35) inset; }
+}
 .rp-scroll { max-height: 62vh; overflow: auto; background: #f2f3f5; padding: 16px; }
 
 /* ⚠️ 纸内样式（.rp-paper / .rp-sec / .rp-pop-* / .rp-map / .rp-table / .rp-foot …）
