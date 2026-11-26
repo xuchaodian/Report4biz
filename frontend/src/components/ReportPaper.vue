@@ -46,14 +46,16 @@
       </div>
     </div>
 
-    <!-- 人口数据（点位 + 半径圆，联通 1001）：**不依赖商圈面**（v1.13.342 解耦）。
+    <!-- 人口数据（点位 + 半径圆，联通人口）：**不依赖商圈面**（v1.13.342 解耦）。
+         🔴 v1.13.418：纸面是给业主/领导看的，⛔ 不出现联通服务码（1001 / 1013 之类）——
+            码是内部计费标识，读者看到只会问"1001 是什么"。
          ⛔ 这个块不能包在 v-if="model.district" 里：城市没有商圈面数据时，
          买了联通人口也必须能在纸面看到。用 .rp-sec 起头 ⇒ 自动纳入安全切页点。 -->
     <div class="rp-sec rp-pop">
       <div class="rp-sec-hd">
         <h2>人口数据（点位半径）</h2>
         <span class="rp-sec-note">
-          联通人口 1001 · 半径 {{ radiusText(model.population.popRadius) }} 内
+          联通人口 · 半径 {{ radiusText(model.population.popRadius) }} 内
           <template v-if="model.population.popMonth"> · 期次 {{ model.population.popMonth }}</template>
           <template v-if="role.label"> · {{ role.label }}</template>
         </span>
@@ -80,7 +82,7 @@
         <div v-if="indicators.length" class="rp-pop-blk">
           <div class="rp-pop-t">
             选址研判指标
-            <span class="rp-pop-tx">（{{ indicators.length }} 项摘要 · 联通 1001 共 {{ labelTotal }} 项标签<template v-if="detailHint">，{{ detailHint }}</template>）</span>
+            <span class="rp-pop-tx">（{{ indicators.length }} 项摘要 · 联通人口共 {{ labelTotal }} 项标签<template v-if="detailHint">，{{ detailHint }}</template>）</span>
           </div>
           <table class="rp-ind">
             <thead>
@@ -105,7 +107,7 @@
         <div v-if="profileRows.length" class="rp-pop-blk">
           <div class="rp-pop-t">
             居民画像
-            <span class="rp-pop-tx">（{{ profileScope }}口径 · 来自已购服务码 {{ (model.population.profileServices || []).join(' / ') || '1009/1010/1011/1012/1013/1015' }}）</span>
+            <span class="rp-pop-tx">（{{ profileScope }}口径 · 来自已购画像数据）</span>
           </div>
           <table class="rp-ind">
             <thead>
@@ -137,7 +139,7 @@
     <div v-if="tiers.has" class="rp-sec">
       <div class="rp-sec-hd">
         <h2>多档半径对比</h2>
-        <span class="rp-sec-note">已购 {{ tiers.count }} 档 · 每列按自己那档半径单独取数（联通人口 1001）</span>
+        <span class="rp-sec-note">已购 {{ tiers.count }} 档 · 每列按自己那档半径单独取数（联通人口）</span>
       </div>
       <table class="rp-tiers">
         <thead>
@@ -328,42 +330,42 @@ const profileRows = computed(() => {
   const sl = p.spendLevel
   if (sl && sl.total > 0) {
     rows.push({
-      label: '消费水平（1013）',
+      label: '消费水平',
       value: `高 ${pct(sl.high)} · 中 ${pct(sl.mid)} · 低 ${pct(sl.low)}`,
       note: '联通消费水平三档，占比按该口径可分档人口计'
     })
   }
   if (p.spendIndex && Number.isFinite(Number(p.spendIndex.avg))) {
     rows.push({
-      label: '消费力指数（1009）',
+      label: '消费力指数',
       value: `${Number(p.spendIndex.avg).toFixed(1)} / 8`,
       note: '1~8 档加权均值，越高消费力越强；与上面的高中低三档是两套口径'
     })
   }
   if (p.education && p.education.total > 0 && p.education.bachelorPlusPct !== null) {
     rows.push({
-      label: '教育（1010）',
+      label: '教育',
       value: `本科及以上 ${pct(p.education.bachelorPlusPct)}`,
       note: '本科 + 硕士 + 博士 占可分档人口'
     })
   }
   if (p.occupation && p.occupation.top && p.occupation.top.length) {
     rows.push({
-      label: '职业（1011）',
+      label: '职业',
       value: p.occupation.top.map((x) => `${x.label} ${pct(x.pct)}`).join(' · '),
       note: '占比最高的前 3 类职业'
     })
   }
   if (p.lifeStage && p.lifeStage.total > 0 && p.lifeStage.marriedWithKidsPct !== null) {
     rows.push({
-      label: '人生阶段（1012）',
+      label: '人生阶段',
       value: `已婚已育 ${pct(p.lifeStage.marriedWithKidsPct)}`,
       note: '家庭型客群占比，与「家庭客群占比」互为正交参考'
     })
   }
   if (p.income && p.income.total > 0 && p.income.highPlusPct !== null) {
     rows.push({
-      label: '收入预测（1015）',
+      label: '收入预测',
       value: `高 + 中高 ${pct(p.income.highPlusPct)}`,
       note: '联通收入预测概率档，⚠️ 是模型概率档不是实际收入金额'
     })
@@ -372,12 +374,12 @@ const profileRows = computed(() => {
   if (p.car && p.car.highPlusPct !== null) assets.push(`有车（高+中高）${pct(p.car.highPlusPct)}`)
   if (p.house && p.house.highPlusPct !== null) assets.push(`有房（高+中高）${pct(p.house.highPlusPct)}`)
   if (assets.length) {
-    rows.push({ label: '资产预测（1015）', value: assets.join(' · '), note: '同为概率档，只作量级参考' })
+    rows.push({ label: '资产预测', value: assets.join(' · '), note: '同为概率档，只作量级参考' })
   }
   const reach = props.model?.population?.reach
   if (reach && reach.total > 0 && reach.heavyPct !== null) {
     rows.push({
-      label: '月驻留频次（1007）',
+      label: '月驻留频次',
       value: `月到访 5 次以上 ${pct(reach.heavyPct)}`,
       note: '高频回头客占比 —— 越高越说明这个点是「目的地」而不只是路过'
     })

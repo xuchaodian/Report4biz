@@ -586,7 +586,10 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
      * 只买了 1001 的位置为 null ⇒ 纸面不出画像块（⛔ 不拿话费档冒充收入）。
      */
     profile: curProfile,
-    /** 这一档实际买到的服务码，纸面要写明画像的来源 */
+    /**
+     * 这一档实际买到的服务码 —— 只留给**内部/快照**用，⛔ 纸面不再显示（v1.13.418：
+     * 报告是给业主看的，服务码是计费标识，读者看到只会问"1001 是什么"）。
+     */
     profileServices: curTier?.services || [],
     /** 月驻留次数（1007，到访口径）→ 高频回头客占比 */
     reach: curTier?.reach || null,
@@ -778,7 +781,7 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     provenance: {
       source: populationBlock.hasPop
         // 人口与商圈面**分属两个来源、两套口径**，必须分开写，⛔ 不能糊成一句"联通数据"
-        ? `人口：联通人口 1001（点位半径${populationBlock.popRadius ? ' ' + radiusText(populationBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
+        ? `人口：联通人口（点位半径${populationBlock.popRadius ? ' ' + radiusText(populationBlock.popRadius) : ''} 内，按次配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记`
         : '人口未获取（需购买联通人口配额）；商圈评分/竞争：商圈面基线；点位与租金：用户登记',
       period: populationBlock.hasPop
         ? (popMonth ? `联通人口期次 ${popMonth}` : '联通人口未返回期次')

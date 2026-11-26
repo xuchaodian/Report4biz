@@ -105,7 +105,8 @@ describe('C. 用户可见文案必须是「联通人口」', () => {
 
   it('C1 立项报告纸面人口块小标题', () => {
     const s = read('frontend/src/components/ReportPaper.vue')
-    expect(s).toContain('联通人口 1001 · 半径')
+    // v1.13.418：业主「联通人口 1001 这样的描述统一去掉 1001，只留联通人口」
+    expect(s).toContain('联通人口 · 半径')
   })
 
   it('C2 立项报告人口条说明', () => {
@@ -124,7 +125,7 @@ describe('C. 用户可见文案必须是「联通人口」', () => {
     const s = read('frontend/src/utils/candidateReport.js')
     expect(s).toContain('联通人口${b.popMonth ?')
     expect(s).toContain("'联通人口 · 居住人口口径'")
-    expect(s).toContain('人口：联通人口 1001（点位半径')
+    expect(s).toContain('人口：联通人口（点位半径')
   })
 
   it('C5 商圈洞察数据口径卡', () => {
@@ -155,10 +156,10 @@ describe('D. AI 提示词：不写品牌名，模型才不会复述给用户', (
 describe('E. 来源主体不能一起删掉', () => {
   it('E1 六处文案仍必须写明「联通」（摘品牌名 ≠ 摘来源）', () => {
     const cases = [
-      ['frontend/src/components/ReportPaper.vue', '联通人口 1001'],
+      ['frontend/src/components/ReportPaper.vue', '联通人口'],
       ['frontend/src/components/CandidateReport.vue', '联通人口'],
       ['frontend/src/components/CandidateBriefUpgrade.vue', '联通人口'],
-      ['frontend/src/utils/candidateReport.js', '联通人口 1001'],
+      ['frontend/src/utils/candidateReport.js', '联通人口'],
       ['frontend/src/utils/dataProvenance.js', '联通人口 1001'],
       ['frontend/src/components/map/BusinessCirclePanel.vue', '联通人口']
     ]
