@@ -175,6 +175,10 @@ const districts = ref([])
 //        { configured:false }＝该自有品牌没配映射 ⇒ 全量；{ configured:true, brands:[…] }＝已收窄。
 const brandScope = ref(null)
 const mapImg = ref('')
+/** 地图截图的自增序号（v1.13.420）：切档连点时只认最后一次，见 renderMap 的竞态说明 */
+let mapSeq = 0
+/** 切档重画的去抖定时器（v1.13.420） */
+let mapTimer = null
 
 // ── 联通人口（1001）────────────────────────────────────────
 // 🔴🔴 v1.13.413（业主 2026-11-24 拍板）：报告的联通人口**只读已购数据**，
@@ -418,21 +422,51 @@ function goBrief() {
   emit('gobrief')
 }
 
-/** 地图截图：复用已有的纯 Canvas 渲染（只画点位与半径圈，不画竞品/购物中心） */
+/**
+ * 地图截图：复用已有的纯 Canvas 渲染（只画点位与**当前档**半径圈，不画竞品/购物中心）。
+ *
+ * 🔴 v1.13.420：半径必须跟当前人口档走（`popRadius`），⛔ 不再固定用 `c.radius`。
+ *   改前：切到 3km 档 ⇒ 人口块写「3km 内」，图还是 1km 的圈、标题也写 1.0 km（实测图字节完全没变）。
+ *   `captureMapOnlyCanvas` 的 zoom 是按半径算出来的（圈恒占短边 30%）⇒ 半径不变就必然出同一张图。
+ *
+ * 🔴 竞态保护（`mapSeq`）：用户可能连着切 500m → 3km → 1.5km，三张图并发抓瓦片，
+ *   谁先回来不代表谁最新。用自增序号丢弃过期结果 —— 否则最后显示的可能是中间那张，
+ *   而且**看不出来错**（图本身是合法截图，只是半径不对）。
+ */
 async function renderMap() {
   const c = props.candidate
   if (!c) return
+  const seq = ++mapSeq
+  const radius = Number(popRadius.value) || Number(c.radius) || 1000
   try {
-    const res = await captureMapOnlyCanvas(Number(c.latitude), Number(c.longitude), Number(c.radius) || 1000)
+    const res = await captureMapOnlyCanvas(Number(c.latitude), Number(c.longitude), radius)
+    // 期间又切了档 ⇒ 这次结果作废（后发的那次会自己写入）
+    if (seq !== mapSeq) return
     // ⚠️ `captureMapOnlyCanvas` 返回的是 **dataURL 字符串**（不是 canvas）；
     //    另外两个 capture* 的返回类型不同 ⇒ 两种都接住，别假设。
     //    （踩过：当成 canvas 用 `res.toDataURL` ⇒ undefined ⇒ 被 if 静默跳过，报告里地图空白且无报错）
     if (typeof res === 'string' && res) mapImg.value = res
     else if (res && typeof res.toDataURL === 'function') mapImg.value = res.toDataURL('image/jpeg', 0.82)
   } catch (e) {
-    console.warn('[立项报告] 地图截图失败:', e?.message || e)
+    if (seq === mapSeq) console.warn('[立项报告] 地图截图失败:', e?.message || e)
   }
 }
+
+/**
+ * 切档 ⇒ 重画位置示意图（v1.13.420）。
+ * ⚠️ 三个细节，少一个就是坑：
+ *   ① **首次不重画**：`null → 第一档` 发生在 `onOpened` 的 `loadTiers()` 里，
+ *      紧接着 `onOpened` 自己会 `renderMap()`；这里再画一次等于白抓一遍瓦片。
+ *   ② **先清图再画**：旧图是另一个半径的圈，标题已经变了 ⇒ 不能让它在"生成中"这一秒
+ *      继续冒充当前档的证据（纸面会短暂出现"新标题 + 旧圈"，正是本批要消除的误导）。
+ *   ③ **300ms 去抖**：下拉可以连着点，每点一次抓一轮瓦片既慢又容易触发底图服务限流。
+ */
+watch(popRadius, (v, old) => {
+  if (old === null || v === null || v === old) return
+  if (mapTimer) clearTimeout(mapTimer)
+  mapImg.value = ''
+  mapTimer = setTimeout(() => { mapTimer = null; renderMap() }, 300)
+})
 
 /** 生成 AI 建议（可选，默认不调 —— 调一次花一次钱） */
 async function genAi() {
@@ -518,6 +552,8 @@ watch(() => props.modelValue, (v) => {
     tiers.value = []
     tiersReady.value = false
     popRadius.value = null
+    // v1.13.420：关窗时把待重画的定时器掐掉 —— 否则关掉后 300ms 还会去抓一轮瓦片
+    if (mapTimer) { clearTimeout(mapTimer); mapTimer = null }
   }
 })
 </script>

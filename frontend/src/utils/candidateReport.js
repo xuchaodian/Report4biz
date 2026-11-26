@@ -765,7 +765,14 @@ export function buildReportModel(candidate, hit = {}, opts = {}) {
     coordinate: {
       lat: Number(c.latitude),
       lng: Number(c.longitude),
-      radius: Number(c.radius) || 1000
+      /**
+       * 🔴 v1.13.420：这里＝**图上实际画的那个圈**，必须跟当前人口档一致。
+       *   改前固定用 `c.radius`（候选点位的评估半径）⇒ 切到 3km 档时纸面同时出现
+       *   「位置示意 · 半径 1.0 km」和「人口数据 · 半径 3km 内」两套半径，
+       *   读图的人会拿 1km 的圈当 3km 数据的证据（真实踩过，2026-11-26 实测确认图不重画）。
+       *   ⚠️ 回退顺序：当前档 → 候选评估半径 → 1000（旧调用没传档位时行为不变）。
+       */
+      radius: popRadius || Number(c.radius) || 1000
     },
     facts,
     district: districtBlock,

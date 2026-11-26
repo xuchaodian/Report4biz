@@ -548,11 +548,23 @@ describe('I. 前端交互（只读已购档 / 不可能花钱 / VIP 拦截）', 
   })
 
   it('🔴 人口数据必须派生自「当前选中档」，⛔ 退化成手工清空的 ref', () => {
-    // 旧实现靠 `watch(popRadius)` 手工清空；现在 popData 是 computed（换档自动跟着变）。
+    // 旧实现靠 `watch(popRadius)` 手工清空人口数据；现在 popData 是 computed（换档自动跟着变）。
     // 退回去就会重新出现「1km 的数字挂在 3km 标签下」这类 bug。
     expect(CODE).toMatch(/const popData = computed\(/)
     expect(CODE).toMatch(/const curTier = computed\(/)
-    expect(CODE, '又长出 watch(popRadius) 式的手工清空').not.toMatch(/watch\(popRadius/)
+    /**
+     * ⚠️ v1.13.420 起允许出现 `watch(popRadius)`，但它**只能干一件事：重画位置示意图**。
+     *   本批业主授权：「重画也按当前档只画圈」⇒ 切档必须重画地图，这需要一个 watch。
+     *   🔴 判据不是"有没有 watch"，而是**它写不写人口数据**：
+     *      里面出现 `popData.value = … / popMonth.value = … / tiers.value = …` ⇒ 就是手工清空回退。
+     */
+    const i = CODE.indexOf('watch(popRadius')
+    if (i >= 0) {
+      const end = CODE.indexOf('\n})', i)          // 行首的 `})` 才是这个 watch 的收尾（体内有 `})` 别用）
+      const body = CODE.slice(i, end > i ? end : i + 800)
+      expect(body, 'watch(popRadius) 里不许手工改人口数据').not.toMatch(/(popData|popMonth|curTier|tiers)\.value\s*=/)
+      expect(body, 'watch(popRadius) 只该用来重画位置示意图').toContain('renderMap')
+    }
   })
 
   it('⭐ 没有已购人口 ⇒ 不出纸、不给 PDF / 分享（护栏在模板上，不只靠入口拦截）', () => {
