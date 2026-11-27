@@ -590,4 +590,63 @@ router.get('/stores', authenticate, (req, res) => {
   res.json({ stores: rows, total: rows.length, limit: STORE_SEARCH_LIMIT })
 })
 
+// ============ 接口四：映射预核（只读，v1.13.426） ============
+// 用途：前端把「某个门店」套用到若干文件后，**逐文件**确认这件事的后端结论 ——
+//   ① 该门店是否仍存在、仍属于当前账号（未被删/被合并/被划走）；
+//   ② 该门店 + 该文件的半径/月份/坐标 是否已有记录（＝提交时会被跳过）。
+//
+// 🔴 为什么不复用 preview 里 candidates[].duplicate 就完事：
+//    候选自带的 duplicate 只覆盖「候选列表里那 5 个门店」。用户在下拉里**搜索**出来的门店
+//    （score<70，压根不在候选里）没有这个标记，前端只能当「未知」—— 于是又回到
+//    425 修掉的那个坑：预检说可导入、提交却跳重复，用户白等一场。
+//
+// 🔴 为什么直接调 analyzeFile 而不是另写一套判重 SQL：
+//    判重口径（同门店名 + 同半径 + 同月份 + 同坐标）只能有一处实现。这里再写一份，
+//    将来改口径必然漂移 ⇒「预核说能导、提交说重复」。宁可多重解析一次 xlsx（文件小、
+//    ≤200 个、且只在用户点选时触发），也不许分叉口径。
+// ⚠️ 只读：不写库、不扣配额、不删临时文件（用户可能还要继续改）。
+const CHECK_MAX_ITEMS = 200
+router.post('/check-mapping', authenticate, (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : []
+  if (items.length === 0) return res.status(400).json({ message: '请提供待核对的映射' })
+  if (items.length > CHECK_MAX_ITEMS) return res.status(400).json({ message: `单次最多 ${CHECK_MAX_ITEMS} 条` })
+
+  const db = getDb()
+  const pool = loadStorePool(db, req.user.id)
+
+  const results = items.map((it) => {
+    const fileKey = String(it?.fileKey == null ? '' : it.fileKey)
+    const diskName = path.basename(fileKey) // 防 ../ 穿越，与 commit 同口径
+    const full = join(TMP_DIR, diskName)
+    if (!diskName || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+      return { fileKey, ok: false, reason: '文件不存在或已过期，请重新预检' }
+    }
+    const original = readOriginalName(diskName)
+    if (!original) return { fileKey, ok: false, reason: '文件元数据缺失，请重新预检' }
+
+    // ⚠️ storeId 是**不可信输入**：归属校验在 analyzeFile 内部（与 commit 完全同一条路）
+    const a = analyzeFile(db, req.user.id, full, original, it?.storeId, pool)
+    if (!a.ok) {
+      return {
+        fileKey,
+        ok: false,
+        needConfirm: !!a.needConfirm,
+        reason: a.needConfirm
+          ? '该文件名与门店不同名，请先在预检里选择对应门店后再导入'
+          : a.reason || '该门店不可用'
+      }
+    }
+    return {
+      fileKey,
+      ok: true,
+      storeName: a.marker.name,
+      radiusM: a.radiusM,
+      cityMonth: a.cityMonth,
+      duplicate: !!a.duplicate
+    }
+  })
+
+  res.json({ results, total: results.length })
+})
+
 export default router
