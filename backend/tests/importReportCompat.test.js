@@ -252,31 +252,75 @@ describe('兜底与边界', () => {
   })
 })
 
-describe('源码守卫：详情弹窗必须走标准结构，不许再自己拼表', () => {
+describe('源码守卫：两处共用同一套渲染（v1.13.429 抽成共享模块）', () => {
   const VIEW = read('frontend/src/views/MyAccountView.vue')
+  const HTML = read('frontend/src/utils/purchaseResultHtml.js')
+  const CHARTS = read('frontend/src/utils/purchaseCharts.js')
+  const STORE = read('frontend/src/components/StoreSmartstepsDialog.vue')
 
   it('I1 左栏：导入分支先取 buildCompatMap，命中即调 formatArrayData', () => {
-    const start = VIEW.indexOf('const formatReportRows')
-    const seg = VIEW.slice(start, VIEW.indexOf('const buildImportChartList', start))
+    const start = HTML.indexOf('const formatReportRows')
+    const seg = HTML.slice(start, HTML.indexOf('const formatResultData', start))
     expect(seg).toContain('buildCompatMap(rows, excludeServices)')
     expect(seg).toContain('formatArrayData(compat.data, compat.code)')
     expect(seg).toContain('getServiceName(compat.code)')
   })
 
   it('I2 右栏：标准结构的图带 compatData，初始化时走 buildChartOption', () => {
-    expect(VIEW).toContain('compatData: compat.data')
+    expect(CHARTS).toContain('compatData: compat.data')
     const start = VIEW.indexOf('const initAllCharts')
-    const seg = VIEW.slice(start, VIEW.indexOf('// 生成 ECharts 配置', start))
+    const seg = VIEW.slice(start, VIEW.indexOf('// 提炼联通数据摘要', start))
     expect(seg).toContain('buildChartOption(item.serviceCode, item.compatData, item.chartKey)')
+    expect(seg).toContain('buildImportBarOption(item)')
   })
 
   it('I3 导入分支仍保留中文长表兜底（认不出的码不能整段消失）', () => {
-    expect(VIEW).toContain('splitReportBlocks(codeRows)')
+    expect(HTML).toContain('splitReportBlocks(codeRows)')
   })
 
   it('I4 不许再给 1006 出「月度累计」图（报表没有逐日数据）', () => {
-    const start = VIEW.indexOf('const buildImportChartList')
-    const seg = VIEW.slice(start, VIEW.indexOf('const buildImportBarOption', start))
+    const start = CHARTS.indexOf('const buildImportChartList')
+    const seg = CHARTS.slice(start, CHARTS.indexOf('const buildImportBarOption', start))
     expect(seg).not.toContain('1006-b')
+  })
+
+  it('I5 两处必须 import 同一份：不许在视图/门店弹窗里各写一套渲染器', () => {
+    expect(VIEW).toContain("from '@/utils/purchaseResultHtml'")
+    expect(VIEW).toContain("from '@/utils/purchaseCharts'")
+    expect(STORE).toContain("from '@/utils/purchaseResultHtml'")
+    expect(STORE).toContain("from '@/utils/purchaseCharts'")
+    expect(VIEW).not.toContain('const formatArrayData')
+    expect(STORE).not.toContain('function formatArrayData')
+    expect(STORE).not.toContain('function formatResultData')
+  })
+
+  it('I6 门店「已购报表」必须是左表＋右图（与购买履历同款），并初始化图表', () => {
+    expect(STORE).toContain('result-two-col')
+    expect(STORE).toContain('chartList.value = buildChartListFrom(data.result_data)')
+    expect(STORE).toContain('buildChartOption(item.serviceCode, item.compatData, item.chartKey)')
+    expect(STORE).toContain('class="result-charts"')
+  })
+})
+
+describe('导入记录 1002 图表明细（业主 2026-11-27 追加）', () => {
+  const CHARTS = read('frontend/src/utils/purchaseCharts.js')
+  const HTML = read('frontend/src/utils/purchaseResultHtml.js')
+
+  it('J1 设计基准不变：普通记录的 1002 仍是 3 张图（到访/居住/工作）', () => {
+    const rows = [0, 1, 2].flatMap((p) => ([
+      { code: '1002', key: `webtag${p}_1`, label: `${['到访', '居住', '工作'][p]}网上购物标签人数`, value: 100 + p, group: '' }
+    ]))
+    const d = buildCompatForCode('1002', rows)
+    expect(chartsFor('1002', d.data).map((c) => c.chartKey)).toEqual(['1002-a', '1002-b', '1002-c'])
+  })
+
+  it('J2 导入记录：右栏跳过 1002，但左栏表照常保留', () => {
+    const start = CHARTS.indexOf('// 导入记录不出图的码')
+    const seg = CHARTS.slice(start, CHARTS.indexOf('const buildImportBarOption', start))
+    expect(seg).toContain("const IMPORT_NO_CHART_CODES = ['1002']")
+    expect(seg).toContain('if (IMPORT_NO_CHART_CODES.includes(ch.serviceCode)) continue')
+    // 跳过只发生在图循环里；表格那一侧（formatReportRows）不受影响
+    const fmt = HTML.slice(HTML.indexOf('const formatReportRows'), HTML.indexOf('const formatResultData'))
+    expect(fmt).not.toContain('IMPORT_NO_CHART_CODES')
   })
 })

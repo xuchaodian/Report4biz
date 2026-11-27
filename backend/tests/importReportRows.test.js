@@ -223,9 +223,10 @@ describe('D. 源码守卫：前端不许回退到"猜格式"', () => {
   })
 
   it('🔴 D3 详情：有 reportRows 才走中文分支，且 1001 仍走原来的四列透视', () => {
-    const seg = slice(VIEW_CODE, 'const formatResultData = (data) => {', 'if (!apiResult || typeof apiResult !==')
-    expect(seg).toContain('return formatReportRows(reportRows, apiResult)')
-    const fmt = slice(VIEW_CODE, 'const formatReportRows', 'const buildImportChartList')
+    const HTML = read('frontend/src/utils/purchaseResultHtml.js')
+    expect(HTML).toContain('const formatResultData = (data) => {')
+    expect(HTML).toContain('if (reportRows && reportRows.length) return formatReportRows(reportRows, apiResult)')
+    const fmt = slice(HTML, 'const formatReportRows', 'const formatResultData')
     expect(fmt).toContain("code === '1001'")
     expect(fmt).toContain('formatP0SData')
     // 走中文分支后不许再调"猜格式"的通用渲染
@@ -233,10 +234,11 @@ describe('D. 源码守卫：前端不许回退到"猜格式"', () => {
   })
 
   it('🔴 D4 图表：能还原结构的走 compatData（复用系统图表），认不出的才用 importBars 兜底', () => {
-    const cl = slice(VIEW_CODE, 'const buildImportChartList', 'const buildImportBarOption')
+    const CHARTS = read('frontend/src/utils/purchaseCharts.js')
+    const cl = slice(CHARTS, 'const buildImportChartList', 'const buildImportBarOption')
     expect(cl).toContain('compatData: compat.data')
     expect(cl).toContain('importBars')
-    const init = slice(VIEW_CODE, 'const initAllCharts', 'const buildChartOption')
+    const init = slice(VIEW_CODE, 'const initAllCharts', '// 提炼联通数据摘要')
     expect(init).toContain('item.compatData')
     expect(init).toContain('buildChartOption(item.serviceCode, item.compatData, item.chartKey)')
     expect(init).toContain('buildImportBarOption(item)')
@@ -244,15 +246,20 @@ describe('D. 源码守卫：前端不许回退到"猜格式"', () => {
   })
 
   it('🔴 D5 label 来自用户 Excel ⇒ 进 v-html 前必须转义', () => {
-    expect(VIEW_CODE).toContain('const escHtml')
-    const fmt = slice(VIEW_CODE, 'const formatReportRows', 'const buildImportChartList')
+    const HTML = read('frontend/src/utils/purchaseResultHtml.js')
+    expect(HTML).toContain('const escHtml')
+    const fmt = slice(HTML, 'const formatReportRows', 'const formatResultData')
     expect(fmt).toContain('escHtml(it.label)')
     expect(fmt).toContain('escHtml(codeName)')
   })
 
-  it('D6 切块算法只许有一份：组件用 util，不许在组件里再写一遍', () => {
-    expect(VIEW_CODE).toContain("from '@/utils/reportRows'")
-    expect(VIEW_CODE).not.toContain('const splitReportBlocks')
+  it('D6 切块算法只许有一份：共享模块用 util，不许在模块里再写一遍', () => {
+    const HTML = read('frontend/src/utils/purchaseResultHtml.js')
+    const CHARTS = read('frontend/src/utils/purchaseCharts.js')
+    expect(HTML).toContain("from './reportRows.js'")
+    expect(CHARTS).toContain("from './reportRows.js'")
+    expect(HTML).not.toContain('const splitReportBlocks')
+    expect(CHARTS).not.toContain('const splitReportBlocks')
     expect(UTIL).toContain('export function splitReportBlocks')
   })
 })
