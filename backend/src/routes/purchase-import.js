@@ -154,27 +154,57 @@ export function parseReportFile(filePath, originalName) {
   }
 
   // 遍历「商圈数据」第 3 行起（!ref 从第 2 行数据开始；sheet_to_json header:1）
+  //
+  // 🔴 v1.13.427：这张表是「长表」——A 服务码 / B 分类 / C 字段名 / D 字段含义 / E 数量。
+  //    以前只读 A、C、E，**把 B 分类和 D 中文含义整列丢掉**，落库只剩 {码:{字段名:值}}。
+  //    而详情弹窗的渲染全是按联通 API 的宽表（数组 + popu_type + p1..pN）写的 ⇒ 结构对不上
+  //    就掉进"猜格式"分支：拿 key 里的数字猜人群、把同组数值相加当总计、查不到中文就印英文键，
+  //    右栏图表还会留一堆空图框。所以这里把 B/D 一并带出来（reportRows），供前端按报表
+  //    自己的中文渲染。⚠️ apiResult 一个字不改：AI/洞察/商圈评分/分享仍按原结构取数。
   const apiResult = {}
+  /** @type {Array<{code:string, group:string, key:string, label:string, value:number|null}>} */
+  const reportRows = []
   let curCode = null
+  let curGroup = ''
   let rowCount = 0
   if (ds && ds['!ref']) {
     const range = XLSX.utils.decode_range(ds['!ref'])
     for (let r = 2; r <= range.e.r; r++) {
       const aCell = ds[XLSX.utils.encode_cell({ r, c: 0 })] // A 服务码（纵向合并，fill-down）
       if (aCell && aCell.v != null && String(aCell.v).trim() !== '') {
-        curCode = String(aCell.v).trim()
+        const code = String(aCell.v).trim()
+        if (code !== curCode) curGroup = '' // 换服务码 ⇒ 分类重新累计
+        curCode = code
       }
       if (!curCode) continue
+      // B 分类（纵向合并，fill-down 到本码的分组结束）
+      const bCell = ds[XLSX.utils.encode_cell({ r, c: 1 })]
+      if (bCell && bCell.v != null && String(bCell.v).trim() !== '') {
+        curGroup = String(bCell.v).trim()
+      }
+      // D 字段含义（中文名，报表里 100% 有值）
+      const dCell = ds[XLSX.utils.encode_cell({ r, c: 3 })]
+      const label = dCell && dCell.v != null ? String(dCell.v).trim() : ''
       const cCell = ds[XLSX.utils.encode_cell({ r, c: 2 })] // C 字段键
       const eCell = ds[XLSX.utils.encode_cell({ r, c: 4 })] // E 数值
       if (!cCell || cCell.v == null) continue
       const key = String(cCell.v).trim()
       if (!key) continue
-      if (!eCell || eCell.v == null) continue
-      const valStr = String(eCell.v).replace(/,/g, '').trim()
-      if (valStr === '') continue // 空值行（1003 截断等）跳过
-      const num = Number(valStr)
-      if (!Number.isFinite(num)) continue
+
+      // 数值口径与原来完全一致（去千分位逗号、空值跳过）；只是**空值行不再丢弃**，
+      // 记成 value:null —— 前端按分组过滤（整组都没值就不显示），避免把 1002 那种
+      // 「有字段、报表没给数」的段落渲染成 27 行"—"。
+      let num = null
+      if (eCell && eCell.v != null) {
+        const valStr = String(eCell.v).replace(/,/g, '').trim()
+        if (valStr !== '') {
+          const n = Number(valStr)
+          if (Number.isFinite(n)) num = n
+        }
+      }
+      reportRows.push({ code: curCode, group: curGroup, key: key.toLowerCase(), label, value: num })
+
+      if (num === null) continue
       if (!apiResult[curCode]) apiResult[curCode] = {}
       apiResult[curCode][key.toLowerCase()] = num
       rowCount++
@@ -195,6 +225,7 @@ export function parseReportFile(filePath, originalName) {
     cityMonth,
     serviceCodes: Object.keys(apiResult),
     rowCount,
+    reportRows,
     apiResult
   }
 }
@@ -520,6 +551,10 @@ router.post('/commit', authenticate, (req, res) => {
         JSON.stringify({
           querySuccess: true,
           apiResult: analysis.apiResult,
+          // v1.13.427：报表原生「分类 + 中文含义 + 数值」逐行快照（长表原貌）。
+          // 详情弹窗优先用它渲染（中文分组与行名都来自报表本身，不靠猜）；
+          // apiResult 保持不变，AI/洞察/评分/分享不受影响。老记录没有这个键 ⇒ 走旧渲染。
+          reportRows: analysis.reportRows || [],
           refunded: false,
           importMeta: {
             fileName: original,

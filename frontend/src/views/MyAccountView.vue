@@ -792,6 +792,8 @@ import { Loading, Location, Search, Close, ArrowDown, Present, GoldMedal, Settin
 import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
+// v1.13.427：导入记录（联通 Excel 长表）→ 按报表自带中文分组，纯函数、有单测
+import { splitReportBlocks, groupRowsByCode, shortBlockTitle, cleanGroupTitle } from '@/utils/reportRows'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
@@ -1801,8 +1803,15 @@ const buildChartList = (data) => {
   if (typeof apiResult === 'string') {
     try { apiResult = JSON.parse(data) } catch (e) { return }
   }
+  // v1.13.427：导入记录按报表中文出图（原按服务码硬拆的那套对不上导入结构，
+  // 会出现「有卡片标题、画不出图形」的空图框）
+  const reportRows = Array.isArray(apiResult?.reportRows) ? apiResult.reportRows : null
   if (apiResult && apiResult.apiResult) {
     apiResult = apiResult.apiResult
+  }
+  if (reportRows && reportRows.length) {
+    chartList.value = buildImportChartList(reportRows, apiResult)
+    return
   }
   if (!apiResult || typeof apiResult !== 'object') return
   
@@ -2674,6 +2683,107 @@ const formatOtherData = (data, serviceCode) => {
   return html
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.13.427 导入记录（联通 Excel）专用渲染
+//
+// 🔴 为什么需要这一套：Excel 导入的数据是「长表 + 报表自带中文」——
+//    {code, group(分类), key(字段名), label(字段含义), value}；
+//    而本文件原有的渲染全部按联通 API 的宽表写（数组 + popu_type + p1..pN）。
+//    结构对不上时会掉进 formatOtherData 的"猜格式"分支：拿 key 里的数字猜人群、
+//    把同组数值相加当总计、查不到中文就印英文键 ⇒ 分组错位、行名被拼成
+//    「消费力指数1_到访」、右栏还留一堆空图框（业主 2026-11-27 报的正是这个）。
+// ⇒ 导入记录一律用报表自己的「分类 + 中文含义」渲染，不猜、不查映射表；
+//   apiResult 不动，AI / 数据洞察 / 商圈评分 / 分享仍按原结构取数。
+// ⚠️ 分组/切块的算法在 utils/reportRows.js（纯函数，有单测）；这里只负责拼 HTML。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 转义：label/分类来自用户 Excel，进 v-html 前一律转义（sanitizeHtml 之外再兜一道） */
+const escHtml = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** 导入记录左栏：按 分类(+人群) 出中文表，数值千分位；整段无值则整段不出现 */
+const formatReportRows = (rows, apiResult) => {
+  let html = ''
+  for (const { code, rows: codeRows } of groupRowsByCode(rows, excludeServices)) {
+    // 1001 已有「指标名称 / 到访 / 居住 / 工作」四列透视，比长表更好读 ⇒ 保持原渲染
+    if (code === '1001' && apiResult && apiResult['1001']) {
+      html += `<div class="detail-result">${formatP0SData(apiResult['1001'])}</div>`
+      continue
+    }
+    const blocks = splitReportBlocks(codeRows)
+    if (!blocks.length) continue // 报表里该码全部无数值（如 1002）
+    const codeName = getServiceName(code)
+    html += `<div class="detail-result"><h4>📊 ${escHtml(codeName)}</h4>`
+    for (const b of blocks) {
+      const t = shortBlockTitle(codeName, b.title)
+      // 只有一个块、且块名与段名相同 ⇒ 不再重复印一遍块头
+      const head = (blocks.length === 1 && (!t || t === cleanGroupTitle(codeName)))
+        ? ''
+        : `<div class="group-header">${escHtml(t)}</div>`
+      html += `<div class="pop-group">
+        ${head}
+        <table class="data-table"><thead><tr><th>指标名称</th><th>数值</th></tr></thead><tbody>`
+      for (const it of b.items) {
+        html += `<tr><td>${escHtml(it.label)}</td><td class="num">${it.value.toLocaleString()}</td></tr>`
+      }
+      html += '</tbody></table></div>'
+    }
+    html += '</div>'
+  }
+  return html || '<p>暂无数据</p>'
+}
+
+/** 导入记录右栏：每个「分类(+人群)」一张横向条形图，标签就用报表中文 */
+const buildImportChartList = (rows, apiResult) => {
+  const list = []
+  // 1001 的四张图读 apiResult，口径没变 ⇒ 保留（顺序也与原来一致，排在最前）
+  if (apiResult && apiResult['1001']) {
+    list.push({ serviceCode: '1001', chartKey: '1001-a', title: '全量人口 - 人口总数' })
+    list.push({ serviceCode: '1001', chartKey: '1001-b', title: '全量人口 - 居住+工作年龄分布' })
+    list.push({ serviceCode: '1001', chartKey: '1001-c', title: '全量人口 - 到访年龄分布' })
+    list.push({ serviceCode: '1001', chartKey: '1001-d', title: '全量人口 - 居住+工作性别分布' })
+  }
+  for (const { code, rows: codeRows } of groupRowsByCode(rows, excludeServices)) {
+    if (code === '1001') continue
+    const codeName = getServiceName(code)
+    splitReportBlocks(codeRows).forEach((b, i) => {
+      if (b.items.length < 2) return // 单条不成图，留表格里看
+      const sub = shortBlockTitle(codeName, b.title)
+      list.push({
+        serviceCode: code,
+        chartKey: `imp-${code}-${i}`,
+        title: sub && sub !== cleanGroupTitle(codeName) ? `${codeName} · ${sub}` : codeName,
+        importBars: b.items.map((it) => ({ name: it.label, value: it.value }))
+      })
+    })
+  }
+  return list
+}
+
+/** 导入记录的条形图配置（数字统一「万」口径，与其它图一致） */
+const buildImportBarOption = (item) => {
+  const bars = item.importBars || []
+  const fmt = (v) => (v >= 10000 ? (v / 10000).toFixed(1) + '万' : Number(v).toLocaleString())
+  return {
+    grid: { left: 4, right: 56, top: 10, bottom: 6, containLabel: true },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    xAxis: { type: 'value', axisLabel: { formatter: (v) => (v >= 10000 ? v / 10000 + '万' : v) } },
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: bars.map((b) => b.name),
+      axisLabel: { fontSize: 11, width: 130, overflow: 'truncate' }
+    },
+    series: [{
+      type: 'bar',
+      data: bars.map((b) => b.value),
+      barMaxWidth: 16,
+      itemStyle: { color: '#4f7ef7', borderRadius: [0, 3, 3, 0] },
+      label: { show: true, position: 'right', fontSize: 10, formatter: (p) => fmt(p.value) }
+    }]
+  }
+}
+
 // 格式化结果显示
 const formatResultData = (data) => {
   if (!data) return '<p>暂无数据</p>'
@@ -2690,9 +2800,12 @@ const formatResultData = (data) => {
   }
   
   // 如果 data 是 { apiResult: {...} } 格式
+  // v1.13.427：导入记录多带一份报表原生长表（reportRows）⇒ 先取出来，走中文渲染
+  const reportRows = Array.isArray(apiResult?.reportRows) ? apiResult.reportRows : null
   if (apiResult && apiResult.apiResult) {
     apiResult = apiResult.apiResult
   }
+  if (reportRows && reportRows.length) return formatReportRows(reportRows, apiResult)
   
   if (!apiResult || typeof apiResult !== 'object') return '<p>暂无数据</p>'
   if (apiResult.error) return `<p style="color:red;">❌ ${apiResult.error}</p>`
@@ -2965,11 +3078,12 @@ const initAllCharts = () => {
     const dom = chartElMap.value[item.chartKey]
     if (!dom) continue
     const rawData = apiResult[item.serviceCode]
-    if (!rawData) continue
+    // 导入记录的图数据在 item.importBars 里（不依赖 apiResult 的服务码结构）
+    if (!item.importBars && !rawData) continue
     
     // 单个图表渲染失败不影响其他图表（防止未注册类型等异常中断循环）
     try {
-      const option = buildChartOption(item.serviceCode, rawData, item.chartKey)
+      const option = item.importBars ? buildImportBarOption(item) : buildChartOption(item.serviceCode, rawData, item.chartKey)
       if (!option) continue
       // A 档（v1.13.356）：这里是「数据洞察」卡片列表里所有图表的统一出口，
       // 在这注入 aria 一处覆盖全部；ECharts 会把 role="img" + 描述写到容器上。
