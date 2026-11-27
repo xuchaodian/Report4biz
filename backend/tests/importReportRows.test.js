@@ -232,12 +232,15 @@ describe('D. 源码守卫：前端不许回退到"猜格式"', () => {
     expect(fmt).not.toContain('formatOtherData')
   })
 
-  it('🔴 D4 图表：导入记录走 importBars，不许再按服务码硬拆（那会出空图框）', () => {
+  it('🔴 D4 图表：能还原结构的走 compatData（复用系统图表），认不出的才用 importBars 兜底', () => {
     const cl = slice(VIEW_CODE, 'const buildImportChartList', 'const buildImportBarOption')
+    expect(cl).toContain('compatData: compat.data')
     expect(cl).toContain('importBars')
     const init = slice(VIEW_CODE, 'const initAllCharts', 'const buildChartOption')
-    expect(init).toContain('item.importBars ? buildImportBarOption(item)')
-    expect(init).toContain('if (!item.importBars && !rawData) continue')
+    expect(init).toContain('item.compatData')
+    expect(init).toContain('buildChartOption(item.serviceCode, item.compatData, item.chartKey)')
+    expect(init).toContain('buildImportBarOption(item)')
+    expect(init).toContain('if (!item.compatData && !item.importBars && !rawData) continue')
   })
 
   it('🔴 D5 label 来自用户 Excel ⇒ 进 v-html 前必须转义', () => {

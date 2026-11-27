@@ -793,7 +793,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import axios from 'axios'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 // v1.13.427：导入记录（联通 Excel 长表）→ 按报表自带中文分组，纯函数、有单测
-import { splitReportBlocks, groupRowsByCode, shortBlockTitle, cleanGroupTitle } from '@/utils/reportRows'
+import { splitReportBlocks, groupRowsByCode, shortBlockTitle, cleanGroupTitle, buildCompatMap } from '@/utils/reportRows'
 import { get1001Dict, pick1001 } from '@/utils/smartsteps1001'
 import { FIELD_LABELS } from './field_labels'
 import PurchaseImportDialog from '@/components/PurchaseImportDialog.vue'
@@ -2684,34 +2684,63 @@ const formatOtherData = (data, serviceCode) => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v1.13.427 导入记录（联通 Excel）专用渲染
+// 导入记录（联通 Excel）专用渲染 —— v1.13.427 起，v1.13.428 补版式
 //
-// 🔴 为什么需要这一套：Excel 导入的数据是「长表 + 报表自带中文」——
+// 🔴 为什么需要这一套：Excel 是「长表 + 报表自带中文」——
 //    {code, group(分类), key(字段名), label(字段含义), value}；
-//    而本文件原有的渲染全部按联通 API 的宽表写（数组 + popu_type + p1..pN）。
-//    结构对不上时会掉进 formatOtherData 的"猜格式"分支：拿 key 里的数字猜人群、
-//    把同组数值相加当总计、查不到中文就印英文键 ⇒ 分组错位、行名被拼成
-//    「消费力指数1_到访」、右栏还留一堆空图框（业主 2026-11-27 报的正是这个）。
-// ⇒ 导入记录一律用报表自己的「分类 + 中文含义」渲染，不猜、不查映射表；
+//    而本文件原有渲染全部按联通 API 的宽表写（数组 + popu_type + p1..pN）。
+//    427 之前结构对不上，掉进 formatOtherData 的"猜格式"分支：拿 key 里的数字猜人群、
+//    把同组数值相加当总计、查不到中文就印英文键 ⇒ 分组错位、行名拼成
+//    「消费力指数1_到访」、右栏一堆空图框（业主 2026-11-27 第一次反馈）。
+//    427 改成按 B/D 中文出两列表：分组对了，但**版式**仍与系统设计不同
+//    （1005 成了 96 行两列表，系统设计是 24×5 交叉表 + 2 张双折线图）。
+//
+// ⇒ 428：报表键名自带结构（hour0_12_visit = 工作日 12 点到访），在
+//   utils/reportRows.js 里**机械还原**成 API 宽表，再走本文件原有的
+//   formatArrayData / buildChartOption ⇒ 版式、图例、图型与「报告取数」记录完全一致。
+//   认不出的码仍退回 427 的中文两列表。
 //   apiResult 不动，AI / 数据洞察 / 商圈评分 / 分享仍按原结构取数。
-// ⚠️ 分组/切块的算法在 utils/reportRows.js（纯函数，有单测）；这里只负责拼 HTML。
+// ⚠️ 转换/切块的算法都在 utils/reportRows.js（纯函数，有单测）；这里只负责拼 HTML。
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 转义：label/分类来自用户 Excel，进 v-html 前一律转义（sanitizeHtml 之外再兜一道） */
 const escHtml = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-/** 导入记录左栏：按 分类(+人群) 出中文表，数值千分位；整段无值则整段不出现 */
+/**
+ * 导入记录左栏
+ *  - 键名能还原成系统标准结构的码（1002/1005~1007/1009~1015，见 utils/reportRows.js）
+ *    ⇒ 直接调用 formatArrayData，版式与「报告取数」记录完全一致
+ *  - 认不出的码 ⇒ 退回「分类 + 中文含义」两列表（v1.13.427 的行为）
+ */
 const formatReportRows = (rows, apiResult) => {
+  const compatBySource = new Map()
+  for (const c of buildCompatMap(rows, excludeServices)) {
+    for (const s of c.sources) compatBySource.set(s, c)
+  }
+
   let html = ''
+  const rendered = new Set()
   for (const { code, rows: codeRows } of groupRowsByCode(rows, excludeServices)) {
     // 1001 已有「指标名称 / 到访 / 居住 / 工作」四列透视，比长表更好读 ⇒ 保持原渲染
     if (code === '1001' && apiResult && apiResult['1001']) {
       html += `<div class="detail-result">${formatP0SData(apiResult['1001'])}</div>`
       continue
     }
+    // ① 标准结构：与普通记录同一套表格渲染
+    const compat = compatBySource.get(code)
+    if (compat) {
+      if (rendered.has(compat.code)) continue // 老导出把资产拆成 1014/1015/1016 ⇒ 只出一段
+      rendered.add(compat.code)
+      html += `<div class="detail-result">
+        <h4>📊 ${escHtml(getServiceName(compat.code))}</h4>
+        ${formatArrayData(compat.data, compat.code)}
+      </div>`
+      continue
+    }
+    // ② 兜底：报表中文两列表
     const blocks = splitReportBlocks(codeRows)
-    if (!blocks.length) continue // 报表里该码全部无数值（如 1002）
+    if (!blocks.length) continue // 报表里该码全部无数值
     const codeName = getServiceName(code)
     html += `<div class="detail-result"><h4>📊 ${escHtml(codeName)}</h4>`
     for (const b of blocks) {
@@ -2733,7 +2762,11 @@ const formatReportRows = (rows, apiResult) => {
   return html || '<p>暂无数据</p>'
 }
 
-/** 导入记录右栏：每个「分类(+人群)」一张横向条形图，标签就用报表中文 */
+/**
+ * 导入记录右栏
+ *  - 标准结构：逐条照抄系统 buildChartList 的标题与 chartKey，数据走 compatData
+ *  - 认不出的码：仍用「分类(+人群)」横条图兜底
+ */
 const buildImportChartList = (rows, apiResult) => {
   const list = []
   // 1001 的四张图读 apiResult，口径没变 ⇒ 保留（顺序也与原来一致，排在最前）
@@ -2743,8 +2776,20 @@ const buildImportChartList = (rows, apiResult) => {
     list.push({ serviceCode: '1001', chartKey: '1001-c', title: '全量人口 - 到访年龄分布' })
     list.push({ serviceCode: '1001', chartKey: '1001-d', title: '全量人口 - 居住+工作性别分布' })
   }
+  const compatBySource = new Map()
+  for (const c of buildCompatMap(rows, excludeServices)) {
+    for (const s of c.sources) compatBySource.set(s, c)
+  }
+  const placed = new Set()
   for (const { code, rows: codeRows } of groupRowsByCode(rows, excludeServices)) {
     if (code === '1001') continue
+    const compat = compatBySource.get(code)
+    if (compat) {
+      if (placed.has(compat.code)) continue
+      placed.add(compat.code)
+      for (const ch of compat.charts) list.push({ ...ch, compatData: compat.data })
+      continue
+    }
     const codeName = getServiceName(code)
     splitReportBlocks(codeRows).forEach((b, i) => {
       if (b.items.length < 2) return // 单条不成图，留表格里看
@@ -3078,12 +3123,18 @@ const initAllCharts = () => {
     const dom = chartElMap.value[item.chartKey]
     if (!dom) continue
     const rawData = apiResult[item.serviceCode]
-    // 导入记录的图数据在 item.importBars 里（不依赖 apiResult 的服务码结构）
-    if (!item.importBars && !rawData) continue
-    
+    // 导入记录两种图数据来源：
+    //   compatData = 按报表键名还原的标准结构（走系统原 buildChartOption）
+    //   importBars = 认不出的码，用横条图兜底
+    if (!item.compatData && !item.importBars && !rawData) continue
+
     // 单个图表渲染失败不影响其他图表（防止未注册类型等异常中断循环）
     try {
-      const option = item.importBars ? buildImportBarOption(item) : buildChartOption(item.serviceCode, rawData, item.chartKey)
+      const option = item.compatData
+        ? buildChartOption(item.serviceCode, item.compatData, item.chartKey)
+        : item.importBars
+          ? buildImportBarOption(item)
+          : buildChartOption(item.serviceCode, rawData, item.chartKey)
       if (!option) continue
       // A 档（v1.13.356）：这里是「数据洞察」卡片列表里所有图表的统一出口，
       // 在这注入 aria 一处覆盖全部；ECharts 会把 role="img" + 描述写到容器上。
